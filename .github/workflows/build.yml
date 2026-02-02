@@ -71,6 +71,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Setup bundled Python
+        run: npm run setup-python-embed
+        shell: pwsh
+
       - name: Build Windows installer
         run: npm run build:win
         env:
@@ -99,6 +103,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Setup bundled Python
+        run: |
+          chmod +x scripts/setup-python-mac.sh
+          ./scripts/setup-python-mac.sh
 
       - name: Build macOS installer
         run: npm run build:mac
@@ -130,6 +139,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Setup bundled Python
+        run: |
+          chmod +x scripts/setup-python-linux.sh
+          ./scripts/setup-python-linux.sh
 
       - name: Build Linux packages
         run: npm run build:linux

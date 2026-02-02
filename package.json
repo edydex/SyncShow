@@ -13,6 +13,9 @@
     "build:all": "electron-builder --win --mac --linux",
     "generate-icon": "node scripts/generate-icon.js",
     "setup-python": "cd python && pip install -r requirements.txt",
+    "setup-python-embed": "powershell -ExecutionPolicy Bypass -File scripts/setup-python-embed.ps1",
+    "setup-python-embed:mac": "chmod +x scripts/setup-python-mac.sh && ./scripts/setup-python-mac.sh",
+    "setup-python-embed:linux": "chmod +x scripts/setup-python-linux.sh && ./scripts/setup-python-linux.sh",
     "convert": "python python/converter.py"
   },
   "keywords": [
@@ -49,12 +52,7 @@
       "signAndEditExecutable": false
     },
     "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": ["x64", "arm64"]
-        }
-      ],
+      "target": "dmg",
       "icon": "assets/icon.png",
       "category": "public.app-category.productivity"
     },
@@ -106,6 +104,11 @@
         "from": "python",
         "to": "python",
         "filter": ["**/*", "!__pycache__/**"]
+      },
+      {
+        "from": "python-embed",
+        "to": "python-embed",
+        "filter": ["**/*"]
       }
     ],
     "asar": true,

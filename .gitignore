@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Bundled Python (downloaded via setup script)
+python-embed/
+
 # Cache directory (converted images)
 cache/russian/
 cache/english/

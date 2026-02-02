@@ -65,6 +65,40 @@ function getCacheDir() {
   }
 }
 
+// Find Python executable - prefer bundled, fallback to system
+function getPythonPath() {
+  const isWindows = process.platform === 'win32';
+  const isMac = process.platform === 'darwin';
+  const isLinux = process.platform === 'linux';
+  
+  // Determine Python executable name based on platform
+  const pythonExe = isWindows ? 'python.exe' : 'bin/python3';
+  
+  if (isPackaged) {
+    // Check for bundled Python
+    const bundledPython = path.join(process.resourcesPath, 'python-embed', pythonExe);
+    if (fs.existsSync(bundledPython)) {
+      console.log('[Python] Using bundled Python:', bundledPython);
+      return bundledPython;
+    }
+  } else {
+    // In development, check for local python-embed folder
+    const devPython = path.join(__dirname, 'python-embed', pythonExe);
+    if (fs.existsSync(devPython)) {
+      console.log('[Python] Using dev bundled Python:', devPython);
+      return devPython;
+    }
+  }
+  
+  // Fallback to system Python
+  console.log('[Python] Using system Python');
+  // On Unix systems, try python3 first, then python
+  if (!isWindows) {
+    return 'python3';
+  }
+  return 'python';
+}
+
 // Configuration
 const CONFIG = {
   thumbnailWidth: 300,
@@ -72,7 +106,7 @@ const CONFIG = {
   displayWidth: 1920,
   displayHeight: 1080,
   get cacheDir() { return getCacheDir(); },
-  pythonPath: 'python' // or full path to python executable
+  get pythonPath() { return getPythonPath(); }
 };
 
 // Ensure cache directory exists (must be called after app is ready)
