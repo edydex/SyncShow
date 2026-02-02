@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
+  <title>SyncDisplay - Presentation</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+      cursor: none;
+    }
+    
+    .display-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .slide-image {
+      position: absolute;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      opacity: 0;
+      transition: opacity 300ms ease-in-out;
+      will-change: opacity;
+      /* Hardware acceleration */
+      transform: translateZ(0);
+      backface-visibility: hidden;
+    }
+    
+    .slide-image.active {
+      opacity: 1;
+    }
+    
+    /* Ensure proper layering during crossfade */
+    #slide-layer-0 { z-index: 1; }
+    #slide-layer-1 { z-index: 2; }
+    
+    /* Black screen when no slide */
+    .no-slide {
+      position: absolute;
+      inset: 0;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #333;
+      font-family: system-ui, sans-serif;
+      font-size: 24px;
+    }
+    
+    /* Loading indicator (hidden by default) */
+    .loading-indicator {
+      display: none;
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 30px;
+      height: 30px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .loading .loading-indicator {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="display-container" id="displayContainer">
+    <div class="no-slide" id="noSlide">Waiting for presentation...</div>
+    
+    <!-- Two image layers for crossfade effect -->
+    <img class="slide-image" id="slide-layer-0" alt="">
+    <img class="slide-image" id="slide-layer-1" alt="">
+    
+    <div class="loading-indicator" id="loadingIndicator"></div>
+  </div>
+  
+  <script src="display.js"></script>
+</body>
+</html>

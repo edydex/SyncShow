@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
+  <title>SyncShow - Control Panel</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header - only shown during setup -->
+    <header class="header" id="setupHeader">
+      <div class="header-left">
+        <h1 class="app-title">🎯 SyncShow</h1>
+        <span class="app-subtitle">Bilingual Presentation System</span>
+      </div>
+      <div class="header-center">
+        <div class="slide-counter">
+          <span id="setupSlideNum">--</span>
+          <span class="divider">/</span>
+          <span id="setupTotalSlides">--</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="btnRefreshDisplays" class="btn btn-secondary" title="Refresh Displays">
+          🔄 Displays
+        </button>
+        <button id="btnStartPresentation" class="btn btn-primary" disabled>
+          ▶️ Start
+        </button>
+        <button id="btnStopPresentation" class="btn btn-danger" style="display: none;">
+          ⏹️ Stop
+        </button>
+      </div>
+    </header>
+
+    <!-- Setup Panel -->
+    <section id="setupPanel" class="setup-panel">
+      <div class="setup-grid">
+        <!-- Russian Presentation -->
+        <div class="setup-card">
+          <h3>🇷🇺 Russian Presentation</h3>
+          <div class="file-selector">
+            <input type="text" id="russianFilePath" class="file-path" readonly placeholder="Select PowerPoint file...">
+            <button id="btnSelectRussian" class="btn btn-outline">Browse...</button>
+          </div>
+          <div class="conversion-status" id="russianStatus">
+            <span class="status-text">Not loaded</span>
+            <div class="progress-bar" style="display: none;">
+              <div class="progress-fill" id="russianProgress"></div>
+            </div>
+          </div>
+          <div class="display-selector">
+            <label>Display:</label>
+            <select id="russianDisplay" class="display-dropdown">
+              <option value="">Select display...</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- English Presentation -->
+        <div class="setup-card">
+          <h3>🇺🇸 English Presentation</h3>
+          <div class="file-selector">
+            <input type="text" id="englishFilePath" class="file-path" readonly placeholder="Select PowerPoint file...">
+            <button id="btnSelectEnglish" class="btn btn-outline">Browse...</button>
+          </div>
+          <div class="conversion-status" id="englishStatus">
+            <span class="status-text">Not loaded</span>
+            <div class="progress-bar" style="display: none;">
+              <div class="progress-fill" id="englishProgress"></div>
+            </div>
+          </div>
+          <div class="display-selector">
+            <label>Display:</label>
+            <select id="englishDisplay" class="display-dropdown">
+              <option value="">Select display...</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Singer Screen (Optional) -->
+        <div class="setup-card setup-card-optional">
+          <h3>🎤 Singer Screen <span class="optional-badge">Optional</span></h3>
+          <p class="setup-description">Shows current slide + preview of next slide text</p>
+          <div class="display-selector">
+            <label>Display:</label>
+            <select id="singerDisplay" class="display-dropdown">
+              <option value="">None (disabled)</option>
+            </select>
+          </div>
+          <div class="display-selector" style="margin-top: 10px;">
+            <label>Language:</label>
+            <select id="singerLanguage" class="display-dropdown">
+              <option value="russian">🇷🇺 Russian</option>
+              <option value="english">🇺🇸 English</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Transition Settings -->
+        <div class="setup-card setup-card-optional">
+          <h3>✨ Transition Effect</h3>
+          <p class="setup-description">Fade between slides for smoother presentations</p>
+          <div class="display-selector">
+            <label>Fade Duration:</label>
+            <select id="fadeDuration" class="display-dropdown">
+              <option value="0">None (instant)</option>
+              <option value="150">Fast (150ms)</option>
+              <option value="300" selected>Medium (300ms)</option>
+              <option value="500">Slow (500ms)</option>
+              <option value="750">Very Slow (750ms)</option>
+              <option value="1000">Extra Slow (1s)</option>
+            </select>
+          </div>
+          <div class="display-selector" style="margin-top: 12px;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="syncMode">
+              <span>Experimental Sync</span>
+            </label>
+            <p class="setup-hint">Coordinates exact reveal timing across all displays</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content - Slide Navigator -->
+    <main class="main-content" id="mainContent" style="display: none;">
+      <!-- Full-width layout: thumbnails left, controls right -->
+      <div class="main-horizontal-layout">
+        <!-- Left: Thumbnails grid (full height) -->
+        <div class="thumbnails-section">
+          <div class="thumbnails-header">
+            <h3>All Slides</h3>
+            <div class="lang-selector">
+              <button class="lang-btn active" data-lang="both">Both</button>
+              <button class="lang-btn" data-lang="russian">🇷🇺</button>
+              <button class="lang-btn" data-lang="english">🇺🇸</button>
+            </div>
+          </div>
+          <div class="thumbnails-grid" id="thumbnailsGrid">
+            <!-- Thumbnails will be generated dynamically -->
+          </div>
+        </div>
+
+        <!-- Right: Controls column -->
+        <div class="controls-column">
+          <!-- Branding -->
+          <div class="brand-box">
+            <div class="brand-logo">🔗</div>
+            <div class="brand-name">SyncShow</div>
+          </div>
+
+          <!-- Slide counter -->
+          <div class="slide-counter-box">
+            <span id="currentSlideNum">1</span>
+            <span class="divider">/</span>
+            <span id="totalSlides">--</span>
+          </div>
+
+          <!-- Navigation -->
+          <div class="nav-box">
+            <button id="btnPrevSlide" class="nav-btn-full" title="Previous (←)">
+              ◀ Previous
+            </button>
+            <button id="btnNextSlide" class="nav-btn-full" title="Next (→)">
+              Next ▶
+            </button>
+          </div>
+
+          <!-- Display controls -->
+          <div class="display-controls-box">
+            <button id="btnRefreshDisplays" class="btn btn-secondary btn-full" title="Refresh the list of available displays">
+              🔄 Displays
+            </button>
+            <button id="btnShowDisplays" class="btn btn-primary btn-full" title="Show current slide on all displays">
+              ▶️ Show
+            </button>
+            <button id="btnClearDisplays" class="btn btn-secondary btn-full" title="Clear all displays to black screens">
+              ⬛ Clear
+            </button>
+            <button id="btnStopDisplays" class="btn btn-warning btn-full" title="Stop displaying and hide display windows">
+              ⏹️ Stop
+            </button>
+            <button id="btnBackToSetup" class="btn btn-danger btn-full" title="Return to setup screen to change files or displays">
+              ↩️ Back to Setup
+            </button>
+          </div>
+
+          <!-- Current slide previews -->
+          <div class="preview-box">
+            <div class="mini-preview">
+              <div class="mini-preview-label">🇷🇺 RU</div>
+              <div class="mini-preview-img">
+                <img src="" alt="Russian" id="currentRussianImg">
+              </div>
+            </div>
+            <div class="mini-preview">
+              <div class="mini-preview-label">🇺🇸 EN</div>
+              <div class="mini-preview-img">
+                <img src="" alt="English" id="currentEnglishImg">
+              </div>
+            </div>
+          </div>
+
+          <!-- Keyboard hints -->
+          <div class="hints-box">
+            ← → Space
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+      <div class="status-left">
+        <span id="statusMessage">Ready</span>
+      </div>
+      <div class="status-right">
+        <span class="keyboard-shortcuts">
+          Shortcuts: ← Previous | → Next | Space Next | Home First | End Last | Esc Hide
+        </span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

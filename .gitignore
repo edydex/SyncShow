@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Cache directory (converted images)
+cache/russian/
+cache/english/
+!cache/README.md
+
+# Python cache
+python/__pycache__/
+*.pyc
+
+# Build output
+dist/
+out/
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test presentations (don't commit large files)
+*.pptx
+*.ppt
+*.pdf

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Thumbnail Debug Test</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
+  <style>
+    body {
+      background: #1a1a2e;
+      color: white;
+      font-family: sans-serif;
+      padding: 20px;
+    }
+    .test-section {
+      margin: 20px 0;
+      padding: 20px;
+      background: #252535;
+      border-radius: 8px;
+    }
+    h2 {
+      color: #4a9eff;
+      margin-bottom: 15px;
+    }
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 180px);
+      gap: 10px;
+    }
+    .test-item {
+      background: #1e1e2e;
+      border: 2px solid #333;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .test-header {
+      padding: 6px 10px;
+      background: #333;
+      font-size: 12px;
+    }
+    .test-images {
+      display: flex;
+      gap: 2px;
+      padding: 2px;
+      background: #111;
+      height: 84px;
+    }
+    .test-img-wrapper {
+      flex: 1;
+      height: 80px;
+      background: #0a0a15;
+      overflow: hidden;
+    }
+    .test-img-wrapper img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .result {
+      margin-top: 10px;
+      padding: 10px;
+      background: #333;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    .success { color: #22c55e; }
+    .error { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Thumbnail Rendering Debug Test</h1>
+  
+  <!-- TEST 1: Hardcoded base64 image (known working) -->
+  <div class="test-section">
+    <h2>Test 1: Hardcoded Base64 PNG (1x1 red pixel)</h2>
+    <p>If you see a red square below, basic image rendering works.</p>
+    <div class="test-grid">
+      <div class="test-item">
+        <div class="test-header">Hardcoded PNG</div>
+        <div class="test-images">
+          <div class="test-img-wrapper">
+            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==" 
+                 alt="Red" style="background:blue;">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="result1" class="result"></div>
+  </div>
+
+  <!-- TEST 2: innerHTML approach -->
+  <div class="test-section">
+    <h2>Test 2: innerHTML Approach</h2>
+    <p>Creates thumbnail using innerHTML (like renderThumbnails does)</p>
+    <div id="test2-container" class="test-grid"></div>
+    <div id="result2" class="result"></div>
+  </div>
+
+  <!-- TEST 3: createElement approach -->
+  <div class="test-section">
+    <h2>Test 3: createElement Approach</h2>
+    <p>Creates thumbnail using document.createElement</p>
+    <div id="test3-container" class="test-grid"></div>
+    <div id="result3" class="result"></div>
+  </div>
+
+  <!-- TEST 4: Load actual thumbnail from API -->
+  <div class="test-section">
+    <h2>Test 4: Actual Thumbnail from Slides API</h2>
+    <p>Loads real thumbnail data via window.api.getSlideList</p>
+    <div id="test4-container" class="test-grid"></div>
+    <div id="result4" class="result"></div>
+  </div>
+
+  <script>
+    // Test base64 image (known working format)
+    const testBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+    
+    // Test 1: Check if hardcoded image loaded
+    window.onload = function() {
+      const img1 = document.querySelector('.test-section img');
+      document.getElementById('result1').innerHTML = 
+        `Image naturalWidth: ${img1.naturalWidth}, naturalHeight: ${img1.naturalHeight}\n` +
+        `Image complete: ${img1.complete}\n` +
+        (img1.naturalWidth > 0 ? '<span class="success">✓ PASS: Hardcoded base64 works</span>' : '<span class="error">✗ FAIL: Image didn\'t load</span>');
+    };
+
+    // Test 2: innerHTML approach
+    (function() {
+      const container = document.getElementById('test2-container');
+      const html = `
+        <div class="test-item">
+          <div class="test-header">innerHTML Test</div>
+          <div class="test-images">
+            <div class="test-img-wrapper">
+              <img src="${testBase64}" alt="Test" style="width:100%;height:100%;object-fit:cover;display:block;">
+            </div>
+          </div>
+        </div>
+      `;
+      container.innerHTML = html;
+      
+      setTimeout(() => {
+        const img = container.querySelector('img');
+        document.getElementById('result2').innerHTML = 
+          `Image src length: ${img.src.length}\n` +
+          `Image src starts with: ${img.src.substring(0, 40)}...\n` +
+          `naturalWidth: ${img.naturalWidth}, naturalHeight: ${img.naturalHeight}\n` +
+          (img.naturalWidth > 0 ? '<span class="success">✓ PASS: innerHTML approach works</span>' : '<span class="error">✗ FAIL</span>');
+      }, 100);
+    })();
+
+    // Test 3: createElement approach
+    (function() {
+      const container = document.getElementById('test3-container');
+      
+      const item = document.createElement('div');
+      item.className = 'test-item';
+      
+      const header = document.createElement('div');
+      header.className = 'test-header';
+      header.textContent = 'createElement Test';
+      item.appendChild(header);
+      
+      const images = document.createElement('div');
+      images.className = 'test-images';
+      
+      const wrapper = document.createElement('div');
+      wrapper.className = 'test-img-wrapper';
+      
+      const img = document.createElement('img');
+      img.src = testBase64;
+      img.alt = 'Test';
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+      
+      wrapper.appendChild(img);
+      images.appendChild(wrapper);
+      item.appendChild(images);
+      container.appendChild(item);
+      
+      setTimeout(() => {
+        document.getElementById('result3').innerHTML = 
+          `Image src length: ${img.src.length}\n` +
+          `naturalWidth: ${img.naturalWidth}, naturalHeight: ${img.naturalHeight}\n` +
+          (img.naturalWidth > 0 ? '<span class="success">✓ PASS: createElement approach works</span>' : '<span class="error">✗ FAIL</span>');
+      }, 100);
+    })();
+
+    // Test 4: Real thumbnail from API
+    (async function() {
+      const container = document.getElementById('test4-container');
+      const result = document.getElementById('result4');
+      
+      if (!window.api) {
+        result.innerHTML = '<span class="error">✗ window.api not available (not running in Electron)</span>';
+        return;
+      }
+      
+      try {
+        result.innerHTML = 'Loading slides from API...';
+        
+        // Try both languages
+        let slides = await window.api.getSlideList('russian');
+        if (!slides || slides.length === 0) {
+          slides = await window.api.getSlideList('english');
+        }
+        
+        if (!slides || slides.length === 0) {
+          result.innerHTML = '<span class="error">✗ No slides returned from API. Load a presentation first.</span>';
+          return;
+        }
+        
+        const firstSlide = slides[0];
+        result.innerHTML = `Found ${slides.length} slides.\n` +
+          `First slide keys: ${Object.keys(firstSlide).join(', ')}\n` +
+          `Has thumbnailBase64: ${!!firstSlide.thumbnailBase64}\n` +
+          `thumbnailBase64 type: ${typeof firstSlide.thumbnailBase64}\n` +
+          `thumbnailBase64 length: ${firstSlide.thumbnailBase64?.length || 0}\n` +
+          `thumbnailBase64 starts with: ${firstSlide.thumbnailBase64?.substring(0, 50) || 'N/A'}\n\n`;
+        
+        if (!firstSlide.thumbnailBase64) {
+          result.innerHTML += '<span class="error">✗ No thumbnailBase64 data!</span>';
+          return;
+        }
+        
+        // Create thumbnail using innerHTML
+        const html = `
+          <div class="test-item">
+            <div class="test-header">Real Slide 1</div>
+            <div class="test-images">
+              <div class="test-img-wrapper">
+                <img src="${firstSlide.thumbnailBase64}" alt="Slide 1" style="width:100%;height:100%;object-fit:cover;display:block;">
+              </div>
+            </div>
+          </div>
+        `;
+        container.innerHTML = html;
+        
+        setTimeout(() => {
+          const img = container.querySelector('img');
+          const status = img.naturalWidth > 0 
+            ? '<span class="success">✓ PASS: Real thumbnail rendered!</span>'
+            : '<span class="error">✗ FAIL: Image didn\'t render (naturalWidth=0)</span>';
+          
+          result.innerHTML += `\nImage element:\n` +
+            `  src length: ${img.src.length}\n` +
+            `  complete: ${img.complete}\n` +
+            `  naturalWidth: ${img.naturalWidth}\n` +
+            `  naturalHeight: ${img.naturalHeight}\n` +
+            `  offsetWidth: ${img.offsetWidth}\n` +
+            `  offsetHeight: ${img.offsetHeight}\n\n` +
+            status;
+        }, 500);
+        
+      } catch (err) {
+        result.innerHTML = `<span class="error">✗ Error: ${err.message}</span>`;
+      }
+    })();
+  </script>
+</body>
+</html>
