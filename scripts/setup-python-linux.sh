@@ -4,7 +4,8 @@
 
 set -e
 
-PYTHON_VERSION="3.11.9"
+PYTHON_VERSION="3.13.11"
+STANDALONE_VERSION="20260127"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 EMBED_DIR="$PROJECT_ROOT/python-embed"
@@ -22,22 +23,31 @@ mkdir -p "$EMBED_DIR"
 
 # Detect architecture
 ARCH=$(uname -m)
-STANDALONE_VERSION="20240107"
 
 if [ "$ARCH" = "x86_64" ]; then
     echo "Detected x86_64"
-    STANDALONE_URL="https://github.com/indygreg/python-build-standalone/releases/download/${STANDALONE_VERSION}/cpython-${PYTHON_VERSION}+${STANDALONE_VERSION}-x86_64-unknown-linux-gnu-install_only.tar.gz"
+    STANDALONE_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${STANDALONE_VERSION}/cpython-${PYTHON_VERSION}+${STANDALONE_VERSION}-x86_64-unknown-linux-gnu-install_only.tar.gz"
 elif [ "$ARCH" = "aarch64" ]; then
     echo "Detected aarch64 (ARM64)"
-    STANDALONE_URL="https://github.com/indygreg/python-build-standalone/releases/download/${STANDALONE_VERSION}/cpython-${PYTHON_VERSION}+${STANDALONE_VERSION}-aarch64-unknown-linux-gnu-install_only.tar.gz"
+    STANDALONE_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${STANDALONE_VERSION}/cpython-${PYTHON_VERSION}+${STANDALONE_VERSION}-aarch64-unknown-linux-gnu-install_only.tar.gz"
 else
     echo "Unsupported architecture: $ARCH"
     exit 1
 fi
 
-echo "Downloading standalone Python..."
+echo "Downloading standalone Python from:"
+echo "$STANDALONE_URL"
 TEMP_FILE="/tmp/python-standalone.tar.gz"
 curl -L -o "$TEMP_FILE" "$STANDALONE_URL"
+
+# Verify download
+FILE_SIZE=$(stat -c%s "$TEMP_FILE" 2>/dev/null || stat -f%z "$TEMP_FILE" 2>/dev/null)
+echo "Downloaded file size: $FILE_SIZE bytes"
+if [ "$FILE_SIZE" -lt 1000000 ]; then
+    echo "ERROR: Downloaded file is too small, likely an error page"
+    cat "$TEMP_FILE"
+    exit 1
+fi
 
 echo "Extracting Python..."
 tar -xzf "$TEMP_FILE" -C "$EMBED_DIR"
