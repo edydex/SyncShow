@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Check if version changed
         id: check
@@ -26,9 +26,21 @@ jobs:
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT_VERSION"
           
+          # Check if this is triggered manually (workflow_dispatch)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger - building version $CURRENT_VERSION"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           # Get previous version (from previous commit)
-          git show HEAD~1:package.json > /tmp/old-package.json 2>/dev/null || echo '{"version":"0.0.0"}' > /tmp/old-package.json
-          PREVIOUS_VERSION=$(node -p "require('/tmp/old-package.json').version")
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            git show HEAD~1:package.json > /tmp/old-package.json 2>/dev/null || echo '{"version":"0.0.0"}' > /tmp/old-package.json
+            PREVIOUS_VERSION=$(node -p "require('/tmp/old-package.json').version")
+          else
+            PREVIOUS_VERSION="0.0.0"
+          fi
           echo "Previous version: $PREVIOUS_VERSION"
           
           if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
