@@ -40,19 +40,47 @@ let lastEscPress = 0;
 let conversionQueue = [];
 let isConverting = false;
 
+// Determine if running in production (packaged) or development
+const isPackaged = app.isPackaged;
+
+// Get the correct paths for packaged vs development mode
+function getResourcePath(relativePath) {
+  if (isPackaged) {
+    // In production, resources are in the resources folder
+    return path.join(process.resourcesPath, relativePath);
+  } else {
+    // In development, use __dirname
+    return path.join(__dirname, relativePath);
+  }
+}
+
+// Get cache directory - must be writable (not inside asar)
+function getCacheDir() {
+  if (isPackaged) {
+    // Use app's userData folder for cache in production
+    return path.join(app.getPath('userData'), 'cache');
+  } else {
+    // Use local cache folder in development
+    return path.join(__dirname, 'cache');
+  }
+}
+
 // Configuration
 const CONFIG = {
   thumbnailWidth: 300,
   thumbnailHeight: 169,
   displayWidth: 1920,
   displayHeight: 1080,
-  cacheDir: path.join(__dirname, 'cache'),
+  get cacheDir() { return getCacheDir(); },
   pythonPath: 'python' // or full path to python executable
 };
 
-// Ensure cache directory exists
-if (!fs.existsSync(CONFIG.cacheDir)) {
-  fs.mkdirSync(CONFIG.cacheDir, { recursive: true });
+// Ensure cache directory exists (must be called after app is ready)
+function ensureCacheDir() {
+  const cacheDir = CONFIG.cacheDir;
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  }
 }
 
 function createControlWindow() {
@@ -519,8 +547,8 @@ function runConversion(filePath, language) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
     
-    // Run Python converter
-    const pythonScript = path.join(__dirname, 'python', 'converter.py');
+    // Run Python converter - use getResourcePath for packaged app
+    const pythonScript = getResourcePath(path.join('python', 'converter.py'));
     const pythonProcess = spawn(CONFIG.pythonPath, [
       pythonScript,
       '--input', filePath,
@@ -781,6 +809,9 @@ ipcMain.handle('displays:refresh', async () => {
 
 // App lifecycle
 app.whenReady().then(() => {
+  // Ensure cache directory exists now that app is ready
+  ensureCacheDir();
+  
   createControlWindow();
   // Don't register shortcuts on startup - only when presentation starts
   

@@ -55,9 +55,11 @@ def find_libreoffice():
     
     # Check if soffice is in PATH first (works on all platforms)
     if shutil.which("soffice"):
-        return "soffice"
+        return shutil.which("soffice")
     if shutil.which("soffice.exe"):
-        return "soffice.exe"
+        return shutil.which("soffice.exe")
+    if shutil.which("libreoffice"):
+        return shutil.which("libreoffice")
     
     possible_paths = []
     
@@ -82,8 +84,23 @@ def find_libreoffice():
             "/usr/local/bin/libreoffice",
             "/opt/libreoffice/program/soffice",
             "/snap/bin/libreoffice",  # Snap package
+            "/var/lib/flatpak/exports/bin/org.libreoffice.LibreOffice",  # Flatpak system
+            os.path.expanduser("~/.local/share/flatpak/exports/bin/org.libreoffice.LibreOffice"),  # Flatpak user
             os.path.expanduser("~/.local/bin/soffice"),
         ]
+        
+        # Also check for flatpak command
+        if shutil.which("flatpak"):
+            # Check if LibreOffice is installed via flatpak
+            try:
+                result = subprocess.run(
+                    ["flatpak", "list", "--app", "--columns=application"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if "org.libreoffice.LibreOffice" in result.stdout:
+                    return "flatpak run org.libreoffice.LibreOffice"
+            except (subprocess.TimeoutExpired, Exception):
+                pass
     
     for path in possible_paths:
         if os.path.exists(path):
@@ -107,17 +124,37 @@ def convert_with_libreoffice(input_path, output_dir, width, height):
         print("Converting PPTX to PDF with LibreOffice...")
         print(f"Using LibreOffice at: {soffice_path}")
         
-        cmd = [
-            soffice_path,
-            "--headless",
-            "--nofirststartwizard",
-            "--norestore",
-            "--convert-to", "pdf",
-            "--outdir", temp_dir,
-            input_path
-        ]
+        # Handle flatpak command (contains spaces)
+        if soffice_path.startswith("flatpak run"):
+            cmd = soffice_path.split() + [
+                "--headless",
+                "--nofirststartwizard",
+                "--norestore",
+                "--convert-to", "pdf",
+                "--outdir", temp_dir,
+                input_path
+            ]
+        else:
+            cmd = [
+                soffice_path,
+                "--headless",
+                "--nofirststartwizard",
+                "--norestore",
+                "--convert-to", "pdf",
+                "--outdir", temp_dir,
+                input_path
+            ]
         
         try:
+            # Kill any stale LibreOffice processes that might block headless mode
+            # This is a common issue on Linux
+            import platform
+            if platform.system() == "Linux":
+                try:
+                    subprocess.run(["pkill", "-f", "soffice.bin"], capture_output=True, timeout=5)
+                except Exception:
+                    pass  # Ignore if pkill fails
+            
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             print(f"LibreOffice stdout: {result.stdout}")
             if result.stderr:
