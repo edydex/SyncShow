@@ -25,7 +25,10 @@
     "powerpoint",
     "dual-screen"
   ],
-  "author": "Church Media Team",
+  "author": {
+    "name": "Oles Maiovskyi",
+    "email": "oles@mayo.onl"
+  },
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.1.0",
@@ -53,7 +56,7 @@
     },
     "mac": {
       "target": "dmg",
-      "icon": "assets/icon.png",
+      "icon": "assets/icon-512.png",
       "category": "public.app-category.productivity"
     },
     "linux": {
