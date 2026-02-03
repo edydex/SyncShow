@@ -1,6 +1,6 @@
-# SyncDisplay - Synchronized Bilingual Presentation System
+# SyncShow - Synchronized Bilingual Presentation System
 
-A high-performance Windows desktop application for displaying bilingual presentations (Russian/English) on multiple screens simultaneously with zero-lag synchronization. Designed for church services and live events.
+A high-performance cross-platform desktop application for displaying bilingual presentations (Russian/English) on multiple screens simultaneously with zero-lag synchronization. Designed for church services and live events.
 
 ## Features
 
@@ -13,53 +13,102 @@ A high-performance Windows desktop application for displaying bilingual presenta
 
 ## System Requirements
 
-- **OS**: Windows 10 or Windows 11 (64-bit)
+- **OS**: Windows 10/11, macOS 11+ (Intel & Apple Silicon), or Linux
 - **RAM**: 8 GB minimum, 16 GB recommended
 - **Storage**: SSD recommended for fast image loading
 - **Displays**: 2-4 display outputs (HDMI, DisplayPort, or VGA)
-- **Software**: 
-  - Node.js 18+ 
-  - Python 3.9+
-  - LibreOffice (for high-quality PPTX conversion)
+- **Software**: [LibreOffice](https://www.libreoffice.org/download/) (required for PowerPoint conversion)
 
 ## Installation
 
-### Step 1: Install Prerequisites
+### Download Pre-built Releases
 
-1. **Install Node.js** (v18 or later)
-   - Download from https://nodejs.org/
-   - Choose the LTS version
+Download the latest installer for your platform from the [Releases page](https://github.com/omayo/SyncShow/releases):
 
-2. **Install Python** (v3.9 or later)
-   - Download from https://www.python.org/downloads/
-   - ✅ Check "Add Python to PATH" during installation
+- **Windows**: `SyncShow Setup X.X.X.exe`
+- **macOS**: `SyncShow-X.X.X-universal.dmg` (Intel & Apple Silicon)
+- **Linux**: `SyncShow-X.X.X.AppImage` or `.deb`
 
-3. **Install LibreOffice** (Required for best conversion quality)
-   - Download from https://www.libreoffice.org/download/
-   - Install with default options
-   - LibreOffice path is auto-detected
+### macOS Installation
 
-### Step 2: Setup the Application
+1. **Download** the `.dmg` file from [Releases](https://github.com/omayo/SyncShow/releases)
+2. **Open** the DMG file
+3. **Drag** SyncShow to the Applications folder
+4. **First launch** - You may see "SyncShow can't be opened because Apple cannot check it for malicious software"
 
-```powershell
-# Navigate to the project directory
-cd sync_display
+   **To bypass Gatekeeper** (required for unsigned apps):
+   - **Option 1**: Right-click (or Control-click) on SyncShow in Applications → click **Open** → click **Open** in the dialog
+   - **Option 2**: Go to **System Settings → Privacy & Security** → scroll down and click **Open Anyway**
+   - **Option 3**: Run in Terminal:
+     ```bash
+     xattr -cr /Applications/SyncShow.app
+     ```
+
+5. **Install LibreOffice** from https://www.libreoffice.org/download/
+
+### Windows Installation
+
+1. Download the `.exe` installer from [Releases](https://github.com/omayo/SyncShow/releases)
+2. Run the installer and follow the prompts
+3. Install [LibreOffice](https://www.libreoffice.org/download/)
+
+### Linux Installation
+
+1. Download the `.AppImage` or `.deb` from [Releases](https://github.com/omayo/SyncShow/releases)
+2. For AppImage: 
+   ```bash
+   chmod +x SyncShow-*.AppImage
+   ./SyncShow-*.AppImage
+   ```
+3. For deb: `sudo dpkg -i SyncShow-*.deb`
+4. Install LibreOffice: `sudo apt install libreoffice`
+
+**Troubleshooting Linux**: If you see a sandbox error, run with:
+```bash
+./SyncShow-*.AppImage --no-sandbox
+```
+
+---
+
+## Development Setup
+
+If you want to run from source or contribute:
+
+### Prerequisites
+
+1. **Node.js** (v18 or later) - https://nodejs.org/
+2. **Python** (v3.9 or later) - https://www.python.org/downloads/
+3. **LibreOffice** - https://www.libreoffice.org/download/
+
+### Setup the Application
+
+```bash
+# Clone the repository
+git clone https://github.com/omayo/SyncShow.git
+cd SyncShow
 
 # Install Node.js dependencies
 npm install
 
-# Install Python dependencies
-pip install -r python/requirements.txt
+# Setup bundled Python (recommended)
+# macOS:
+npm run setup-python-embed:mac
+
+# Windows (PowerShell):
+npm run setup-python-embed
+
+# Linux:
+npm run setup-python-embed:linux
 ```
 
-### Step 3: Run the Application
+### Run the Application
 
-```powershell
+```bash
 npm start
 ```
 
 For development with DevTools:
-```powershell
+```bash
 npm run dev
 ```
 

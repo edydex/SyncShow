@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=SyncShow
+Exec=AppRun --no-sandbox %U
+Terminal=false
+Type=Application
+Icon=sync-show
+StartupWMClass=SyncShow
+Comment=Synchronized bilingual presentation display for church services
+Categories=Office;Presentation;

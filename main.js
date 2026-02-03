@@ -3,6 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
+// Fix for Linux AppImage sandbox issue
+// Must be called before app is ready
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('no-sandbox');
+}
+
 // Keep references to prevent garbage collection
 let controlWindow = null;
 let displayWindows = {};
