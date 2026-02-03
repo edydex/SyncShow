@@ -23,7 +23,7 @@ A high-performance cross-platform desktop application for displaying bilingual p
 
 ### Download Pre-built Releases
 
-Download the latest installer for your platform from the [Releases page](https://github.com/omayo/SyncShow/releases):
+Download the latest installer for your platform from the [Releases page](https://github.com/edydex/SyncShow/releases):
 
 - **Windows**: `SyncShow Setup X.X.X.exe`
 - **macOS**: `SyncShow-X.X.X-universal.dmg` (Intel & Apple Silicon)
@@ -31,7 +31,7 @@ Download the latest installer for your platform from the [Releases page](https:/
 
 ### macOS Installation
 
-1. **Download** the `.dmg` file from [Releases](https://github.com/omayo/SyncShow/releases)
+1. **Download** the `.dmg` file from [Releases](https://github.com/edydex/SyncShow/releases)
 2. **Open** the DMG file
 3. **Drag** SyncShow to the Applications folder
 4. **First launch** - You may see "SyncShow can't be opened because Apple cannot check it for malicious software"
@@ -48,13 +48,13 @@ Download the latest installer for your platform from the [Releases page](https:/
 
 ### Windows Installation
 
-1. Download the `.exe` installer from [Releases](https://github.com/omayo/SyncShow/releases)
+1. Download the `.exe` installer from [Releases](https://github.com/edydex/SyncShow/releases)
 2. Run the installer and follow the prompts
 3. Install [LibreOffice](https://www.libreoffice.org/download/)
 
 ### Linux Installation
 
-1. Download the `.AppImage` or `.deb` from [Releases](https://github.com/omayo/SyncShow/releases)
+1. Download the `.AppImage` or `.deb` from [Releases](https://github.com/edydex/SyncShow/releases)
 2. For AppImage: 
    ```bash
    chmod +x SyncShow-*.AppImage
@@ -84,7 +84,7 @@ If you want to run from source or contribute:
 
 ```bash
 # Clone the repository
-git clone https://github.com/omayo/SyncShow.git
+git clone https://github.com/edydex/SyncShow.git
 cd SyncShow
 
 # Install Node.js dependencies
