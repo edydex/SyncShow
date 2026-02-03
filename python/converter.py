@@ -343,8 +343,10 @@ def create_metadata(output_dir, input_path, slide_count, slides_text):
     """Create metadata JSON file with slide information."""
     metadata = {
         "sourceFile": os.path.basename(input_path),
+        "originalFile": os.path.abspath(input_path),  # Full path for restore feature
         "slideCount": slide_count,
         "generatedAt": __import__("datetime").datetime.now().isoformat(),
+        "convertedAt": __import__("datetime").datetime.now().isoformat(),
         "slides": slides_text
     }
     

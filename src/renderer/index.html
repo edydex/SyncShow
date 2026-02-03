@@ -12,7 +12,7 @@
     <!-- Header - only shown during setup -->
     <header class="header" id="setupHeader">
       <div class="header-left">
-        <h1 class="app-title">🎯 SyncShow</h1>
+        <h1 class="app-title">SyncShow</h1>
         <span class="app-subtitle">Bilingual Presentation System</span>
       </div>
       <div class="header-center">
@@ -24,13 +24,13 @@
       </div>
       <div class="header-right">
         <button id="btnRefreshDisplays" class="btn btn-secondary" title="Refresh Displays">
-          🔄 Displays
+          Refresh Displays
         </button>
         <button id="btnStartPresentation" class="btn btn-primary" disabled>
-          ▶️ Start
+          Start
         </button>
         <button id="btnStopPresentation" class="btn btn-danger" style="display: none;">
-          ⏹️ Stop
+          Stop
         </button>
       </div>
     </header>
@@ -40,7 +40,7 @@
       <div class="setup-grid">
         <!-- Russian Presentation -->
         <div class="setup-card">
-          <h3>🇷🇺 Russian Presentation</h3>
+          <h3>Russian Presentation</h3>
           <div class="file-selector">
             <input type="text" id="russianFilePath" class="file-path" readonly placeholder="Select PowerPoint file...">
             <button id="btnSelectRussian" class="btn btn-outline">Browse...</button>
@@ -61,7 +61,7 @@
 
         <!-- English Presentation -->
         <div class="setup-card">
-          <h3>🇺🇸 English Presentation</h3>
+          <h3>English Presentation</h3>
           <div class="file-selector">
             <input type="text" id="englishFilePath" class="file-path" readonly placeholder="Select PowerPoint file...">
             <button id="btnSelectEnglish" class="btn btn-outline">Browse...</button>
@@ -82,7 +82,7 @@
 
         <!-- Singer Screen (Optional) -->
         <div class="setup-card setup-card-optional">
-          <h3>🎤 Singer Screen <span class="optional-badge">Optional</span></h3>
+          <h3>Singer Screen <span class="optional-badge">Optional</span></h3>
           <p class="setup-description">Shows current slide + preview of next slide text</p>
           <div class="display-selector">
             <label>Display:</label>
@@ -93,15 +93,15 @@
           <div class="display-selector" style="margin-top: 10px;">
             <label>Language:</label>
             <select id="singerLanguage" class="display-dropdown">
-              <option value="russian">🇷🇺 Russian</option>
-              <option value="english">🇺🇸 English</option>
+              <option value="russian">Russian</option>
+              <option value="english">English</option>
             </select>
           </div>
         </div>
 
         <!-- Transition Settings -->
         <div class="setup-card setup-card-optional">
-          <h3>✨ Transition Effect</h3>
+          <h3>Transition Effect</h3>
           <p class="setup-description">Fade between slides for smoother presentations</p>
           <div class="display-selector">
             <label>Fade Duration:</label>
@@ -135,8 +135,8 @@
             <h3>All Slides</h3>
             <div class="lang-selector">
               <button class="lang-btn active" data-lang="both">Both</button>
-              <button class="lang-btn" data-lang="russian">🇷🇺</button>
-              <button class="lang-btn" data-lang="english">🇺🇸</button>
+              <button class="lang-btn" data-lang="russian">RU</button>
+              <button class="lang-btn" data-lang="english">EN</button>
             </div>
           </div>
           <div class="thumbnails-grid" id="thumbnailsGrid">
@@ -148,7 +148,7 @@
         <div class="controls-column">
           <!-- Branding -->
           <div class="brand-box">
-            <div class="brand-logo">🔗</div>
+            <div class="brand-logo">S</div>
             <div class="brand-name">SyncShow</div>
           </div>
 
@@ -162,42 +162,42 @@
           <!-- Navigation -->
           <div class="nav-box">
             <button id="btnPrevSlide" class="nav-btn-full" title="Previous (←)">
-              ◀ Previous
+              Previous
             </button>
             <button id="btnNextSlide" class="nav-btn-full" title="Next (→)">
-              Next ▶
+              Next
             </button>
           </div>
 
           <!-- Display controls -->
           <div class="display-controls-box">
             <button id="btnRefreshDisplays" class="btn btn-secondary btn-full" title="Refresh the list of available displays">
-              🔄 Displays
+              Refresh Displays
             </button>
             <button id="btnShowDisplays" class="btn btn-primary btn-full" title="Show current slide on all displays">
-              ▶️ Show
+              Show
             </button>
             <button id="btnClearDisplays" class="btn btn-secondary btn-full" title="Clear all displays to black screens">
-              ⬛ Clear
+              Clear
             </button>
             <button id="btnStopDisplays" class="btn btn-warning btn-full" title="Stop displaying and hide display windows">
-              ⏹️ Stop
+              Stop
             </button>
             <button id="btnBackToSetup" class="btn btn-danger btn-full" title="Return to setup screen to change files or displays">
-              ↩️ Back to Setup
+              Back to Setup
             </button>
           </div>
 
           <!-- Current slide previews -->
           <div class="preview-box">
             <div class="mini-preview">
-              <div class="mini-preview-label">🇷🇺 RU</div>
+              <div class="mini-preview-label">RU</div>
               <div class="mini-preview-img">
                 <img src="" alt="Russian" id="currentRussianImg">
               </div>
             </div>
             <div class="mini-preview">
-              <div class="mini-preview-label">🇺🇸 EN</div>
+              <div class="mini-preview-label">EN</div>
               <div class="mini-preview-img">
                 <img src="" alt="English" id="currentEnglishImg">
               </div>

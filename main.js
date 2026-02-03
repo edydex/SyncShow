@@ -14,6 +14,36 @@ let controlWindow = null;
 let displayWindows = {};
 let singerWindow = null;
 
+// User settings storage path (in userData folder)
+function getSettingsPath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+// Load user settings
+function loadUserSettings() {
+  try {
+    const settingsPath = getSettingsPath();
+    if (fs.existsSync(settingsPath)) {
+      const data = fs.readFileSync(settingsPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Error loading user settings:', error);
+  }
+  return {};
+}
+
+// Save user settings
+function saveUserSettings(settings) {
+  try {
+    const settingsPath = getSettingsPath();
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+    console.log('[Settings] Saved to:', settingsPath);
+  } catch (error) {
+    console.error('Error saving user settings:', error);
+  }
+}
+
 // Application state
 let appState = {
   presentations: {
@@ -840,6 +870,83 @@ ipcMain.handle('app:getState', async () => {
       english: appState.presentations.english ? { loaded: true, slideCount: appState.presentations.english.slideCount } : null
     }
   };
+});
+
+// User settings handlers
+ipcMain.handle('settings:load', async () => {
+  return loadUserSettings();
+});
+
+ipcMain.handle('settings:save', async (event, settings) => {
+  saveUserSettings(settings);
+  return { success: true };
+});
+
+// Check if a cached presentation exists and is valid
+ipcMain.handle('cache:check', async (event, language) => {
+  const cacheDir = path.join(CONFIG.cacheDir, language);
+  const metadataPath = path.join(cacheDir, 'metadata.json');
+  
+  if (!fs.existsSync(metadataPath)) {
+    return { exists: false };
+  }
+  
+  try {
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    
+    // Count actual slide files
+    const slideFiles = fs.readdirSync(cacheDir)
+      .filter(f => f.startsWith('slide_') && f.endsWith('.jpg') && !f.includes('_thumb'));
+    
+    if (slideFiles.length === 0) {
+      return { exists: false };
+    }
+    
+    // Check if at least the first slide exists
+    const firstSlide = path.join(cacheDir, 'slide_001.jpg');
+    if (!fs.existsSync(firstSlide)) {
+      return { exists: false };
+    }
+    
+    return {
+      exists: true,
+      slideCount: slideFiles.length,
+      originalFile: metadata.originalFile || null,
+      convertedAt: metadata.convertedAt || null
+    };
+  } catch (error) {
+    console.error(`Error checking cache for ${language}:`, error);
+    return { exists: false };
+  }
+});
+
+// Load cached presentation (without reconverting)
+ipcMain.handle('cache:load', async (event, language) => {
+  const cacheDir = path.join(CONFIG.cacheDir, language);
+  const metadataPath = path.join(cacheDir, 'metadata.json');
+  
+  if (!fs.existsSync(metadataPath)) {
+    throw new Error('No cached presentation found');
+  }
+  
+  const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+  
+  // Count actual slide files
+  const slideFiles = fs.readdirSync(cacheDir)
+    .filter(f => f.startsWith('slide_') && f.endsWith('.jpg') && !f.includes('_thumb'));
+  
+  const result = {
+    success: true,
+    cacheDir: cacheDir,
+    slideCount: slideFiles.length,
+    metadata: metadata
+  };
+  
+  // Update app state
+  appState.presentations[language] = result;
+  console.log(`[Cache] Loaded ${language} from cache: ${result.slideCount} slides`);
+  
+  return result;
 });
 
 ipcMain.handle('displays:refresh', async () => {

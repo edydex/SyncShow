@@ -133,8 +133,162 @@ async function loadAppState() {
     state.displays = appState.displays;
     
     updateDisplayDropdowns();
+    
+    // Load saved user settings (display assignments, etc.)
+    await loadSavedSettings();
+    
+    // Check for cached presentations from previous session
+    await checkForCachedPresentations();
   } catch (error) {
     console.error('Failed to load app state:', error);
+  }
+}
+
+// Load saved user settings
+async function loadSavedSettings() {
+  try {
+    const settings = await window.api.loadSettings();
+    
+    // Apply saved display assignments after displays are loaded
+    if (settings.displayAssignments) {
+      setTimeout(() => {
+        if (settings.displayAssignments.russian && elements.russianDisplay) {
+          elements.russianDisplay.value = settings.displayAssignments.russian;
+        }
+        if (settings.displayAssignments.english && elements.englishDisplay) {
+          elements.englishDisplay.value = settings.displayAssignments.english;
+        }
+        if (settings.displayAssignments.singer && elements.singerDisplay) {
+          elements.singerDisplay.value = settings.displayAssignments.singer;
+        }
+        if (settings.singerLanguage && elements.singerLanguage) {
+          elements.singerLanguage.value = settings.singerLanguage;
+        }
+        if (settings.fadeDuration !== undefined && elements.fadeDuration) {
+          elements.fadeDuration.value = settings.fadeDuration.toString();
+        }
+        if (settings.syncMode !== undefined && elements.syncMode) {
+          elements.syncMode.checked = settings.syncMode;
+        }
+      }, 100); // Small delay to ensure dropdowns are populated
+    }
+    
+    console.log('[Settings] Loaded saved settings:', settings);
+  } catch (error) {
+    console.error('Failed to load saved settings:', error);
+  }
+}
+
+// Save current settings
+async function saveCurrentSettings() {
+  try {
+    const settings = {
+      displayAssignments: {
+        russian: elements.russianDisplay.value || null,
+        english: elements.englishDisplay.value || null,
+        singer: elements.singerDisplay.value || null
+      },
+      singerLanguage: elements.singerLanguage.value || 'russian',
+      fadeDuration: parseInt(elements.fadeDuration.value) || 300,
+      syncMode: elements.syncMode.checked || false
+    };
+    
+    await window.api.saveSettings(settings);
+    console.log('[Settings] Saved settings:', settings);
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+  }
+}
+
+// Check for cached presentations from previous session
+async function checkForCachedPresentations() {
+  try {
+    const [russianCache, englishCache] = await Promise.all([
+      window.api.checkCache('russian'),
+      window.api.checkCache('english')
+    ]);
+    
+    // If both caches exist, offer to restore them
+    if (russianCache.exists && englishCache.exists) {
+      setStatus(`Previous presentation found (${russianCache.slideCount} slides). Click "Restore Previous" to load it.`);
+      showRestoreButton(russianCache, englishCache);
+    } else if (russianCache.exists || englishCache.exists) {
+      const lang = russianCache.exists ? 'Russian' : 'English';
+      const cache = russianCache.exists ? russianCache : englishCache;
+      setStatus(`Previous ${lang} presentation found (${cache.slideCount} slides).`);
+    }
+  } catch (error) {
+    console.error('Failed to check for cached presentations:', error);
+  }
+}
+
+// Show restore button for previous presentation
+function showRestoreButton(russianCache, englishCache) {
+  // Check if restore button already exists
+  if (document.getElementById('btnRestorePrevious')) return;
+  
+  // Create restore button
+  const restoreBtn = document.createElement('button');
+  restoreBtn.id = 'btnRestorePrevious';
+  restoreBtn.className = 'btn btn-secondary';
+  restoreBtn.textContent = 'Restore Previous';
+  restoreBtn.title = `Restore previous presentation (Russian: ${russianCache.slideCount} slides, English: ${englishCache.slideCount} slides)`;
+  restoreBtn.style.marginLeft = '10px';
+  
+  restoreBtn.addEventListener('click', async () => {
+    await restorePreviousPresentation(russianCache, englishCache);
+    restoreBtn.remove();
+  });
+  
+  // Add button next to Start button
+  const startBtn = elements.btnStartPresentation;
+  startBtn.parentNode.insertBefore(restoreBtn, startBtn.nextSibling);
+}
+
+// Restore previous presentation from cache
+async function restorePreviousPresentation(russianCache, englishCache) {
+  try {
+    setStatus('Restoring previous presentation...');
+    
+    // Load Russian from cache
+    if (russianCache.exists) {
+      const result = await window.api.loadFromCache('russian');
+      if (result.success) {
+        state.presentations.russian = {
+          loaded: true,
+          path: russianCache.originalFile || 'Cached',
+          slideCount: result.slideCount,
+          cacheDir: result.cacheDir
+        };
+        
+        elements.russianFilePath.value = russianCache.originalFile || '[Cached presentation]';
+        updateConversionStatus('russian', `Restored: ${result.slideCount} slides`, false);
+        await loadSlideList('russian');
+      }
+    }
+    
+    // Load English from cache
+    if (englishCache.exists) {
+      const result = await window.api.loadFromCache('english');
+      if (result.success) {
+        state.presentations.english = {
+          loaded: true,
+          path: englishCache.originalFile || 'Cached',
+          slideCount: result.slideCount,
+          cacheDir: result.cacheDir
+        };
+        
+        elements.englishFilePath.value = englishCache.originalFile || '[Cached presentation]';
+        updateConversionStatus('english', `Restored: ${result.slideCount} slides`, false);
+        await loadSlideList('english');
+      }
+    }
+    
+    checkReadyState();
+    setStatus('Previous presentation restored successfully');
+  } catch (error) {
+    console.error('Failed to restore previous presentation:', error);
+    setStatus('Error restoring previous presentation');
   }
 }
 
@@ -294,6 +448,9 @@ async function startPresentation() {
       syncMode: elements.syncMode.checked || false
     };
     
+    // Save settings before starting
+    await saveCurrentSettings();
+    
     setStatus('Starting presentation...');
     
     const result = await window.api.startPresentation(displays);
@@ -357,6 +514,7 @@ async function handleFadeDurationChange() {
   const duration = parseInt(elements.fadeDuration.value) || 0;
   try {
     await window.api.setFadeDuration(duration);
+    await saveCurrentSettings();
     if (duration === 0) {
       setStatus('Transitions: Instant');
     } else {
@@ -372,6 +530,7 @@ async function handleSyncModeChange() {
   const enabled = elements.syncMode.checked;
   try {
     await window.api.setSyncMode(enabled);
+    await saveCurrentSettings();
     if (enabled) {
       setStatus('Experimental Sync: Enabled - displays will coordinate timing');
     } else {
@@ -524,9 +683,9 @@ function renderThumbnails() {
     const activeClass = i === state.currentSlide ? ' active' : '';
     
     // Determine flags based on filter
-    let flagsText = '🇷🇺 🇺🇸';
-    if (langFilter === 'russian') flagsText = '🇷🇺';
-    else if (langFilter === 'english') flagsText = '🇺🇸';
+    let flagsText = 'RU | EN';
+    if (langFilter === 'russian') flagsText = 'RU';
+    else if (langFilter === 'english') flagsText = 'EN';
     
     // Build Russian image HTML
     let ruImgHtml = '';
@@ -653,8 +812,16 @@ function setStatus(message) {
 }
 
 // Watch for display dropdown changes
-elements.russianDisplay.addEventListener('change', checkReadyState);
-elements.englishDisplay.addEventListener('change', checkReadyState);
+elements.russianDisplay.addEventListener('change', () => {
+  checkReadyState();
+  saveCurrentSettings();
+});
+elements.englishDisplay.addEventListener('change', () => {
+  checkReadyState();
+  saveCurrentSettings();
+});
+elements.singerDisplay.addEventListener('change', saveCurrentSettings);
+elements.singerLanguage.addEventListener('change', saveCurrentSettings);
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', init);

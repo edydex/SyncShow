@@ -28,6 +28,14 @@ contextBridge.exposeInMainWorld('api', {
   // App state
   getAppState: () => ipcRenderer.invoke('app:getState'),
   
+  // User settings (persisted)
+  loadSettings: () => ipcRenderer.invoke('settings:load'),
+  saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  
+  // Cache operations (for restoring previous presentations)
+  checkCache: (language) => ipcRenderer.invoke('cache:check', language),
+  loadFromCache: (language) => ipcRenderer.invoke('cache:load', language),
+  
   // Event listeners
   onDisplaysUpdated: (callback) => {
     ipcRenderer.on('displays:updated', (event, displays) => callback(displays));
