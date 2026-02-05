@@ -16,7 +16,10 @@
     "setup-python-embed": "powershell -ExecutionPolicy Bypass -File scripts/setup-python-embed.ps1",
     "setup-python-embed:mac": "chmod +x scripts/setup-python-mac.sh && ./scripts/setup-python-mac.sh",
     "setup-python-embed:linux": "chmod +x scripts/setup-python-linux.sh && ./scripts/setup-python-linux.sh",
-    "convert": "python python/converter.py"
+    "convert": "python python/converter.py",
+    "setup-imagemagick": "node scripts/setup-imagemagick.js",
+    "setup-ghostscript": "node scripts/setup-ghostscript.js",
+    "setup-deps": "npm run setup-imagemagick && npm run setup-ghostscript"
   },
   "keywords": [
     "presentation",
@@ -37,6 +40,8 @@
     "png-to-ico": "^3.0.1"
   },
   "dependencies": {
+    "gm": "^1.25.1",
+    "pptxtojson": "^1.12.0",
     "sharp": "^0.33.2"
   },
   "build": {
@@ -47,7 +52,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",
@@ -58,11 +65,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64", "x64"]
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["arm64", "x64"]
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon-512.png",
@@ -74,11 +87,15 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.png",
@@ -102,8 +119,16 @@
       "title": "SyncShow ${version}",
       "icon": "assets/icon-512.png",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ],
       "window": {
         "width": 540,
@@ -127,12 +152,17 @@
       {
         "from": "python",
         "to": "python",
-        "filter": ["**/*", "!__pycache__/**"]
+        "filter": [
+          "**/*",
+          "!__pycache__/**"
+        ]
       },
       {
         "from": "python-embed",
         "to": "python-embed",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asar": true,
