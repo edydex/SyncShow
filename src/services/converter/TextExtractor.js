@@ -19,13 +19,42 @@ class TextExtractor {
   async loadLibrary() {
     if (!this.pptxtojson) {
       try {
-        this.pptxtojson = require('pptxtojson');
+        // Use the CJS build for CommonJS compatibility
+        this.pptxtojson = require('pptxtojson/dist/index.cjs');
       } catch (e) {
         console.warn('pptxtojson not available, text extraction will return empty results');
         this.pptxtojson = null;
       }
     }
     return this.pptxtojson;
+  }
+
+  /**
+   * Strip HTML tags and decode common HTML entities
+   * @param {string} html - HTML string
+   * @returns {string} Plain text
+   */
+  stripHtml(html) {
+    if (!html || typeof html !== 'string') return '';
+
+    // Replace </p> with newlines to preserve paragraph breaks
+    let text = html.replace(/<\/p>/gi, '\n');
+
+    // Remove all other HTML tags
+    text = text.replace(/<[^>]*>/g, '');
+
+    // Decode common HTML entities
+    text = text
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#x27;/g, "'")
+      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code));
+
+    return text.trim();
   }
 
   /**
@@ -42,19 +71,26 @@ class TextExtractor {
 
     for (const element of slide.elements) {
       if (element.type === 'text' && element.content) {
-        // Handle text elements
-        if (Array.isArray(element.content)) {
+        // pptxtojson returns HTML strings in content
+        if (typeof element.content === 'string') {
+          const plainText = this.stripHtml(element.content);
+          if (plainText) {
+            textParts.push(plainText);
+          }
+        } else if (Array.isArray(element.content)) {
+          // Handle array format (fallback)
           for (const part of element.content) {
             if (part.text) {
               textParts.push(part.text.trim());
             }
           }
-        } else if (typeof element.content === 'string') {
-          textParts.push(element.content.trim());
         }
       } else if (element.type === 'shape' && element.text) {
         // Handle shapes with text
-        textParts.push(element.text.trim());
+        const plainText = this.stripHtml(element.text);
+        if (plainText) {
+          textParts.push(plainText);
+        }
       }
     }
 

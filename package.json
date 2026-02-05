@@ -148,12 +148,16 @@
       {
         "from": "imagemagick-embed/${platform}-${arch}",
         "to": "imagemagick-embed/${platform}-${arch}",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "ghostscript-embed/${platform}-${arch}",
         "to": "ghostscript-embed/${platform}-${arch}",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asarUnpack": [
