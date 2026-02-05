@@ -1,9 +1,6 @@
 # Dependencies
 node_modules/
 
-# Bundled Python (downloaded via setup script)
-python-embed/
-
 # Bundled ImageMagick and Ghostscript (downloaded via setup scripts)
 imagemagick-embed/
 ghostscript-embed/
@@ -12,10 +9,6 @@ ghostscript-embed/
 cache/russian/
 cache/english/
 !cache/README.md
-
-# Python cache
-python/__pycache__/
-*.pyc
 
 # Build output
 dist/

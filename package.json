@@ -12,11 +12,6 @@
     "build:linux": "electron-builder --linux",
     "build:all": "electron-builder --win --mac --linux",
     "generate-icon": "node scripts/generate-icon.js",
-    "setup-python": "cd python && pip install -r requirements.txt",
-    "setup-python-embed": "powershell -ExecutionPolicy Bypass -File scripts/setup-python-embed.ps1",
-    "setup-python-embed:mac": "chmod +x scripts/setup-python-mac.sh && ./scripts/setup-python-mac.sh",
-    "setup-python-embed:linux": "chmod +x scripts/setup-python-linux.sh && ./scripts/setup-python-linux.sh",
-    "convert": "python python/converter.py",
     "setup-imagemagick": "node scripts/setup-imagemagick.js",
     "setup-ghostscript": "node scripts/setup-ghostscript.js",
     "setup-deps": "npm run setup-imagemagick && npm run setup-ghostscript"
@@ -142,7 +137,6 @@
     "afterPack": "./scripts/afterPack.js",
     "files": [
       "**/*",
-      "!python/__pycache__/**",
       "!cache/**",
       "!dist/**",
       "!*.md",
@@ -150,20 +144,18 @@
     ],
     "extraResources": [
       {
-        "from": "python",
-        "to": "python",
-        "filter": [
-          "**/*",
-          "!__pycache__/**"
-        ]
+        "from": "imagemagick-embed/${platform}-${arch}",
+        "to": "imagemagick-embed/${platform}-${arch}",
+        "filter": ["**/*"]
       },
       {
-        "from": "python-embed",
-        "to": "python-embed",
-        "filter": [
-          "**/*"
-        ]
+        "from": "ghostscript-embed/${platform}-${arch}",
+        "to": "ghostscript-embed/${platform}-${arch}",
+        "filter": ["**/*"]
       }
+    ],
+    "asarUnpack": [
+      "node_modules/sharp/**"
     ],
     "asar": true,
     "compression": "maximum"

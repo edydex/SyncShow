@@ -77,8 +77,7 @@ If you want to run from source or contribute:
 ### Prerequisites
 
 1. **Node.js** (v18 or later) - https://nodejs.org/
-2. **Python** (v3.9 or later) - https://www.python.org/downloads/
-3. **LibreOffice** - https://www.libreoffice.org/download/
+2. **LibreOffice** - https://www.libreoffice.org/download/
 
 ### Setup the Application
 
@@ -90,15 +89,8 @@ cd SyncShow
 # Install Node.js dependencies
 npm install
 
-# Setup bundled Python (recommended)
-# macOS:
-npm run setup-python-embed:mac
-
-# Windows (PowerShell):
-npm run setup-python-embed
-
-# Linux:
-npm run setup-python-embed:linux
+# Setup bundled dependencies (ImageMagick + Ghostscript)
+npm run setup-deps
 ```
 
 ### Run the Application
@@ -148,21 +140,24 @@ npm run dev
 ## Project Structure
 
 ```
-sync_display/
+SyncShow/
 ├── main.js                 # Electron main process
 ├── preload.js              # Secure IPC bridge
 ├── package.json            # Node.js configuration
 ├── src/
-│   └── renderer/
-│       ├── index.html      # Control panel UI
-│       ├── styles.css      # Control panel styles
-│       ├── app.js          # Control panel logic
-│       ├── display.html    # Presentation display
-│       ├── display.js      # Display logic
-│       └── singer.html     # Singer screen
-├── python/
-│   ├── requirements.txt    # Python dependencies
-│   └── converter.py        # PPTX to JPEG converter
+│   ├── renderer/
+│   │   ├── index.html      # Control panel UI
+│   │   ├── styles.css      # Control panel styles
+│   │   ├── app.js          # Control panel logic
+│   │   ├── display.html    # Presentation display
+│   │   ├── display.js      # Display logic
+│   │   └── singer.html     # Singer screen
+│   └── services/
+│       └── converter/      # Node.js PPTX converter
+│           ├── Converter.js
+│           ├── PdfToImageConverter.js
+│           ├── TextExtractor.js
+│           └── strategies/
 └── cache/                  # Converted images (auto-created)
 ```
 

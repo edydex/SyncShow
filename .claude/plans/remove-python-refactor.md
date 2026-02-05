@@ -9,10 +9,10 @@
 - [x] Phase 4: Text Extraction & Metadata (TextExtractor)
 - [x] Phase 5: Main Converter & Integration (Converter.js, main.js integration)
 - [x] Documentation updates (CLAUDE.md, copilot-instructions.md)
+- [x] Phase 6: Cleanup Python files (python/, python-embed/, setup scripts)
+- [x] Update package.json electron-builder config for bundled binaries
 
 **Remaining:**
-- [ ] Phase 6: Cleanup Python files (python/, python-embed/, setup scripts)
-- [ ] Update package.json electron-builder config for bundled binaries
 - [ ] Final testing with actual PPTX files
 - [ ] Test bundled app on fresh machine
 
