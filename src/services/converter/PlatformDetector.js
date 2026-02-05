@@ -46,8 +46,8 @@ class PlatformDetector {
     if (isPackaged()) {
       return path.join(process.resourcesPath, `${tool}-embed`, platformDir);
     } else {
-      // Development: look in project root
-      return path.join(__dirname, '..', '..', '..', '..', `${tool}-embed`, platformDir);
+      // Development: look in project root (3 levels up from src/services/converter/)
+      return path.join(__dirname, '..', '..', '..', `${tool}-embed`, platformDir);
     }
   }
 
