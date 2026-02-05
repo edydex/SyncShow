@@ -9,13 +9,28 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const { app } = require('electron');
+const fsSync = require('fs');
 
 const LibreOfficeStrategy = require('./strategies/LibreOfficeStrategy');
 
+// Lazy-load electron app to avoid issues when module loads before app is ready
+let _app = null;
+function getApp() {
+  if (!_app) {
+    try {
+      _app = require('electron').app;
+    } catch (e) {
+      _app = null;
+    }
+  }
+  return _app;
+}
+
 // Determine if running in packaged app
-const isPackaged = app ? app.isPackaged : false;
-const resourcesPath = app ? (isPackaged ? process.resourcesPath : path.dirname(require.main?.filename || __dirname)) : __dirname;
+function isPackaged() {
+  const app = getApp();
+  return app ? app.isPackaged : false;
+}
 
 class PlatformDetector {
   /**
@@ -28,7 +43,7 @@ class PlatformDetector {
     const arch = process.arch;
     const platformDir = `${platform}-${arch}`;
 
-    if (isPackaged) {
+    if (isPackaged()) {
       return path.join(process.resourcesPath, `${tool}-embed`, platformDir);
     } else {
       // Development: look in project root
@@ -46,7 +61,7 @@ class PlatformDetector {
     const fullPath = path.join(bundledPath, exeName);
 
     try {
-      await fs.access(fullPath, fs.constants.X_OK);
+      await fs.access(fullPath, fsSync.constants.X_OK);
       return fullPath;
     } catch (e) {
       return null;
@@ -70,7 +85,7 @@ class PlatformDetector {
     const fullPath = path.join(bundledPath, exeName);
 
     try {
-      await fs.access(fullPath, fs.constants.X_OK);
+      await fs.access(fullPath, fsSync.constants.X_OK);
       return fullPath;
     } catch (e) {
       return null;
@@ -148,7 +163,7 @@ class PlatformDetector {
     return {
       platform: process.platform,
       arch: process.arch,
-      isPackaged,
+      isPackaged: isPackaged(),
       libreoffice: libreoffice ? libreoffice.path : null,
       libreofficeIsFlatpak: libreoffice ? libreoffice.isFlatpak : false,
       imageMagick,

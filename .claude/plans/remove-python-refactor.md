@@ -1,5 +1,23 @@
 # Plan: Remove Python from SyncShow Conversion Pipeline
 
+## Progress
+
+**Completed:**
+- [x] Phase 1: Core Infrastructure (directory structure, npm deps, setup scripts, PlatformDetector, BaseStrategy)
+- [x] Phase 2: LibreOffice Strategy
+- [x] Phase 3: PDF to Image Processing (PdfToImageConverter, ThumbnailGenerator)
+- [x] Phase 4: Text Extraction & Metadata (TextExtractor)
+- [x] Phase 5: Main Converter & Integration (Converter.js, main.js integration)
+- [x] Documentation updates (CLAUDE.md, copilot-instructions.md)
+
+**Remaining:**
+- [ ] Phase 6: Cleanup Python files (python/, python-embed/, setup scripts)
+- [ ] Update package.json electron-builder config for bundled binaries
+- [ ] Final testing with actual PPTX files
+- [ ] Test bundled app on fresh machine
+
+---
+
 ## Overview
 
 Replace the Python-based PPTX converter (`python/converter.py`) with a pure Node.js solution using:

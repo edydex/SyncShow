@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain, screen, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+
+// Node.js PPTX converter (replaces Python)
+const { Converter } = require('./src/services/converter');
 
 // Fix for Linux AppImage sandbox issue
 // Must be called before app is ready
@@ -101,48 +103,13 @@ function getCacheDir() {
   }
 }
 
-// Find Python executable - prefer bundled, fallback to system
-function getPythonPath() {
-  const isWindows = process.platform === 'win32';
-  const isMac = process.platform === 'darwin';
-  const isLinux = process.platform === 'linux';
-  
-  // Determine Python executable name based on platform
-  const pythonExe = isWindows ? 'python.exe' : 'bin/python3';
-  
-  if (isPackaged) {
-    // Check for bundled Python
-    const bundledPython = path.join(process.resourcesPath, 'python-embed', pythonExe);
-    if (fs.existsSync(bundledPython)) {
-      console.log('[Python] Using bundled Python:', bundledPython);
-      return bundledPython;
-    }
-  } else {
-    // In development, check for local python-embed folder
-    const devPython = path.join(__dirname, 'python-embed', pythonExe);
-    if (fs.existsSync(devPython)) {
-      console.log('[Python] Using dev bundled Python:', devPython);
-      return devPython;
-    }
-  }
-  
-  // Fallback to system Python
-  console.log('[Python] Using system Python');
-  // On Unix systems, try python3 first, then python
-  if (!isWindows) {
-    return 'python3';
-  }
-  return 'python';
-}
-
 // Configuration
 const CONFIG = {
   thumbnailWidth: 300,
   thumbnailHeight: 169,
   displayWidth: 1920,
   displayHeight: 1080,
-  get cacheDir() { return getCacheDir(); },
-  get pythonPath() { return getPythonPath(); }
+  get cacheDir() { return getCacheDir(); }
 };
 
 // Ensure cache directory exists (must be called after app is ready)
@@ -607,88 +574,67 @@ async function processConversionQueue() {
   }
 }
 
-// Actual conversion function
-function runConversion(filePath, language) {
-  return new Promise((resolve, reject) => {
-    const outputDir = path.join(CONFIG.cacheDir, language);
-    
-    // Ensure output directory exists
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-    
-    // Run Python converter - use getResourcePath for packaged app
-    const pythonScript = getResourcePath(path.join('python', 'converter.py'));
-    const pythonProcess = spawn(CONFIG.pythonPath, [
-      pythonScript,
-      '--input', filePath,
-      '--output', outputDir,
-      '--width', CONFIG.displayWidth.toString(),
-      '--height', CONFIG.displayHeight.toString(),
-      '--thumbnail-width', CONFIG.thumbnailWidth.toString()
-    ], {
-      // Set UTF-8 encoding for subprocess
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
-    });
-    
-    let stdout = '';
-    let stderr = '';
-    
-    pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-      // Send progress updates to renderer
-      const lines = data.toString().split('\n');
-      lines.forEach(line => {
-        if (line.startsWith('PROGRESS:')) {
-          const progress = parseInt(line.replace('PROGRESS:', '').trim());
-          if (controlWindow && !controlWindow.isDestroyed()) {
-            controlWindow.webContents.send('conversion:progress', { language, progress });
-          }
-        }
-      });
-    });
-    
-    pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-      console.error('Python error:', data.toString());
-    });
-    
-    pythonProcess.on('close', (code) => {
-      if (code === 0) {
-        // Read the generated metadata
-        const metadataPath = path.join(outputDir, 'metadata.json');
-        let metadata = {};
-        if (fs.existsSync(metadataPath)) {
-          metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-          console.log(`[Metadata] Loaded for ${language}: ${metadata.slides?.length || 0} slides`);
-          if (metadata.slides && metadata.slides[0]) {
-            console.log(`[Metadata] First slide text sample: "${metadata.slides[0].firstLine?.substring(0, 50) || metadata.slides[0].text?.substring(0, 50) || 'none'}..."`);
-          }
-        } else {
-          console.log(`[Metadata] No metadata file found at ${metadataPath}`);
-        }
-        
-        // Count slides
-        const slideFiles = fs.readdirSync(outputDir)
-          .filter(f => f.startsWith('slide_') && f.endsWith('.jpg') && !f.includes('_thumb'));
-        
-        const result = {
-          success: true,
-          cacheDir: outputDir,
-          slideCount: slideFiles.length,
-          metadata: metadata
-        };
-        
-        // Update app state
-        appState.presentations[language] = result;
-        console.log(`[State] Presentation ${language} stored with ${result.slideCount} slides and metadata: ${metadata.slides?.length || 0} slides`);
-        
-        resolve(result);
-      } else {
-        reject(new Error(`Conversion failed: ${stderr}`));
-      }
-    });
+// Actual conversion function using Node.js converter
+async function runConversion(filePath, language) {
+  const outputDir = path.join(CONFIG.cacheDir, language);
+
+  // Ensure output directory exists
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  // Create converter with options
+  const converter = new Converter({
+    width: CONFIG.displayWidth,
+    height: CONFIG.displayHeight,
+    thumbnailWidth: CONFIG.thumbnailWidth
   });
+
+  // Listen for progress events
+  converter.on('progress', ({ percent, stage }) => {
+    if (controlWindow && !controlWindow.isDestroyed()) {
+      controlWindow.webContents.send('conversion:progress', { language, progress: percent });
+    }
+    console.log(`[Converter] ${language}: ${percent}% (${stage})`);
+  });
+
+  try {
+    // Run conversion
+    const conversionResult = await converter.convert(filePath, outputDir);
+
+    // Read the generated metadata
+    const metadataPath = path.join(outputDir, 'metadata.json');
+    let metadata = {};
+    if (fs.existsSync(metadataPath)) {
+      metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+      console.log(`[Metadata] Loaded for ${language}: ${metadata.slides?.length || 0} slides`);
+      if (metadata.slides && metadata.slides[0]) {
+        console.log(`[Metadata] First slide text sample: "${metadata.slides[0].firstLine?.substring(0, 50) || metadata.slides[0].text?.substring(0, 50) || 'none'}..."`);
+      }
+    } else {
+      console.log(`[Metadata] No metadata file found at ${metadataPath}`);
+    }
+
+    // Count slides
+    const slideFiles = fs.readdirSync(outputDir)
+      .filter(f => f.startsWith('slide_') && f.endsWith('.jpg') && !f.includes('_thumb'));
+
+    const result = {
+      success: true,
+      cacheDir: outputDir,
+      slideCount: slideFiles.length,
+      metadata: metadata
+    };
+
+    // Update app state
+    appState.presentations[language] = result;
+    console.log(`[State] Presentation ${language} stored with ${result.slideCount} slides and metadata: ${metadata.slides?.length || 0} slides`);
+
+    return result;
+  } catch (error) {
+    console.error(`[Converter] Error converting ${language}:`, error);
+    throw error;
+  }
 }
 
 // Queued conversion handler - prevents concurrent conversions

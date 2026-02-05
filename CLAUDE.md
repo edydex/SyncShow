@@ -18,17 +18,11 @@ npm run build:linux    # Linux AppImage + deb
 npm run build:all      # Build all platforms
 ```
 
-**Python setup (bundled Python for production):**
+**Setup bundled dependencies (ImageMagick + Ghostscript):**
 ```bash
-npm run setup-python-embed:mac    # macOS
-npm run setup-python-embed        # Windows (PowerShell)
-npm run setup-python-embed:linux  # Linux
-```
-
-**Manual PPTX conversion:**
-```bash
-npm run convert
-python python/converter.py --input <file.pptx> --output <dir> --width <w> --height <h>
+npm run setup-deps     # Downloads both ImageMagick and Ghostscript
+npm run setup-imagemagick   # ImageMagick only
+npm run setup-ghostscript   # Ghostscript only
 ```
 
 **Note:** No test or lint scripts are currently configured.
@@ -53,13 +47,14 @@ python python/converter.py --input <file.pptx> --output <dir> --width <w> --heig
    │ app.js       │  │ display.js   │  │ display.js   │  │ singer.js    │
    └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
          │
-      ┌──▼──────────────────┐
-      │  PYTHON CONVERTER    │
-      │  converter.py        │
-      │  (PPTX → JPEG)       │
-      │  LibreOffice preferred│
-      │  PyMuPDF fallback    │
-      └─────────────────────┘
+      ┌──▼────────────────────────────┐
+      │  NODE.JS CONVERTER            │
+      │  src/services/converter/      │
+      │  PPTX → PDF (LibreOffice)     │
+      │  PDF → JPEG (Ghostscript)     │
+      │  Thumbnails (sharp)           │
+      │  Text extraction (pptxtojson) │
+      └───────────────────────────────┘
 ```
 
 **Key entry points:**
@@ -67,7 +62,18 @@ python python/converter.py --input <file.pptx> --output <dir> --width <w> --heig
 - `preload.js` - Secure IPC bridge using contextBridge
 - `src/renderer/app.js` - Control panel logic
 - `src/renderer/display.js` - Presentation display rendering
-- `python/converter.py` - PPTX to JPEG conversion engine
+- `src/services/converter/` - Node.js PPTX to JPEG conversion module
+
+## Converter Module
+
+The converter (`src/services/converter/`) handles PPTX to JPEG conversion:
+
+- **Converter.js** - Main orchestrator (EventEmitter for progress)
+- **strategies/LibreOfficeStrategy.js** - PPTX→PDF using LibreOffice headless
+- **PdfToImageConverter.js** - PDF→JPEG using bundled Ghostscript + sharp
+- **ThumbnailGenerator.js** - Generates 300px thumbnails
+- **TextExtractor.js** - Extracts slide text using pptxtojson
+- **PlatformDetector.js** - Detects LibreOffice and bundled tools
 
 ## Key Conventions
 
@@ -77,7 +83,6 @@ python python/converter.py --input <file.pptx> --output <dir> --width <w> --heig
 - **Fade transitions:** Configurable fade duration (300ms default)
 - **Singer screen:** Always shows preview of next slide text
 - **Sync mode:** Experimental feature for exact reveal timing across displays
-- **Windows encoding:** Console encoding set for Unicode/Cyrillic support in converter
 
 ## IPC Communication
 
@@ -91,7 +96,7 @@ The app uses Electron IPC with context isolation. Key channels defined in `prelo
 
 - **Linux:** `scripts/afterPack.js` adds `--no-sandbox` wrapper to fix sandbox issues
 - **macOS:** Unsigned app requires Gatekeeper bypass (right-click → Open)
-- **All platforms:** Requires LibreOffice for high-fidelity PPTX conversion
+- **All platforms:** Requires LibreOffice for PPTX→PDF conversion
 
 ## Performance Targets
 
@@ -103,5 +108,6 @@ The app uses Electron IPC with context isolation. Key channels defined in `prelo
 
 ## Dependencies
 
-- **Runtime:** Electron v28, Node.js v18+, Python v3.9+, LibreOffice
-- **Python packages:** python-pptx, Pillow, pdf2image, PyMuPDF (see `python/requirements.txt`)
+- **Runtime:** Electron v28, Node.js v18+, LibreOffice
+- **Bundled:** ImageMagick, Ghostscript (downloaded via `npm run setup-deps`)
+- **npm packages:** sharp, pptxtojson, gm

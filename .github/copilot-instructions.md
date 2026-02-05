@@ -9,9 +9,7 @@
 - **Build for Mac:** `npm run build:mac`
 - **Build for Linux:** `npm run build:linux`
 - **Generate app icon:** `npm run generate-icon`
-- **Setup Python dependencies:** `npm run setup-python`
-- **Convert PPTX to JPEG (manual):** `npm run convert`
-- **Run Python converter directly:** `python python/converter.py --input <file.pptx> --output <dir> --width <w> --height <h>`
+- **Setup bundled dependencies:** `npm run setup-deps` (downloads ImageMagick + Ghostscript)
 
 > **Note:** No test or lint scripts are currently defined in package.json. Add them if needed.
 
@@ -25,7 +23,10 @@
   - **Display #1 (Russian)**: Borderless window, hardware-accelerated
   - **Display #2 (English)**: Borderless window, hardware-accelerated
   - **Singer Screen**: Shows current slide image and preview of next slide text
-- **Python Converter** handles PPTX to JPEG conversion, preferring LibreOffice, with PyMuPDF/pdf2image fallback
+- **Node.js Converter** (`src/services/converter/`) handles PPTX to JPEG conversion:
+  - Uses LibreOffice (headless) for PPTX → PDF
+  - Uses bundled Ghostscript + sharp for PDF → JPEG
+  - Uses pptxtojson for text extraction
 - **Control Panel (Renderer)** provides grid view, navigation, and display assignment
 
 ## Key Conventions
@@ -37,7 +38,16 @@
 - **Sync mode:** Experimental feature for exact reveal timing across displays
 - **Singer screen:** Always shows preview of next slide text for singers
 - **App icon generation:** Use `scripts/generate-icon.js` for consistent branding
-- **Python encoding fix:** Windows console encoding is set for Unicode (Cyrillic) support in converter
+
+## Converter Module
+
+The converter is in `src/services/converter/`:
+- **Converter.js** - Main orchestrator with EventEmitter for progress
+- **strategies/LibreOfficeStrategy.js** - PPTX→PDF using LibreOffice
+- **PdfToImageConverter.js** - PDF→JPEG using Ghostscript + sharp
+- **ThumbnailGenerator.js** - 300px thumbnails via sharp
+- **TextExtractor.js** - Slide text extraction via pptxtojson
+- **PlatformDetector.js** - Detects LibreOffice and bundled tools
 
 ---
 
