@@ -146,6 +146,6 @@
       "node_modules/@img/**"
     ],
     "asar": true,
-    "compression": "maximum"
+    "compression": "normal"
   }
 }
