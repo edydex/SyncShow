@@ -142,7 +142,8 @@
       "!.git/**"
     ],
     "asarUnpack": [
-      "node_modules/sharp/**"
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
     ],
     "asar": true,
     "compression": "maximum"
