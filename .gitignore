@@ -1,9 +1,6 @@
 # Dependencies
 node_modules/
 
-# Bundled ImageMagick and Ghostscript (downloaded via setup scripts)
-imagemagick-embed/
-ghostscript-embed/
 
 # Cache directory (converted images)
 cache/russian/

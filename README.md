@@ -88,9 +88,6 @@ cd SyncShow
 
 # Install Node.js dependencies
 npm install
-
-# Setup bundled dependencies (ImageMagick + Ghostscript)
-npm run setup-deps
 ```
 
 ### Run the Application

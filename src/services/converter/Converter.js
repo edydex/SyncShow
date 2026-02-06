@@ -3,7 +3,7 @@
  *
  * Coordinates the full conversion pipeline:
  * 1. PPTX → PDF (via LibreOffice)
- * 2. PDF → JPEG (via ImageMagick/Ghostscript)
+ * 2. PDF → JPEG (via MuPDF + sharp)
  * 3. Thumbnail generation (via sharp)
  * 4. Text extraction (via pptxtojson)
  * 5. Metadata generation

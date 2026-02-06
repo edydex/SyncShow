@@ -71,9 +71,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup bundled dependencies
-        run: npm run setup-deps
-
       - name: Build Windows installer
         run: npm run build:win
         env:
@@ -102,16 +99,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Setup bundled dependencies
-        run: npm run setup-deps
-
-      - name: Ensure cross-arch embed directories exist
-        run: |
-          mkdir -p imagemagick-embed/darwin-x64
-          mkdir -p imagemagick-embed/darwin-arm64
-          mkdir -p ghostscript-embed/darwin-x64
-          mkdir -p ghostscript-embed/darwin-arm64
 
       - name: Build macOS installer
         run: npm run build:mac
@@ -143,9 +130,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Setup bundled dependencies
-        run: npm run setup-deps
 
       - name: Build Linux packages
         run: npm run build:linux

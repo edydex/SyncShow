@@ -9,7 +9,6 @@
 - **Build for Mac:** `npm run build:mac`
 - **Build for Linux:** `npm run build:linux`
 - **Generate app icon:** `npm run generate-icon`
-- **Setup bundled dependencies:** `npm run setup-deps` (downloads ImageMagick + Ghostscript)
 
 > **Note:** No test or lint scripts are currently defined in package.json. Add them if needed.
 
@@ -25,7 +24,7 @@
   - **Singer Screen**: Shows current slide image and preview of next slide text
 - **Node.js Converter** (`src/services/converter/`) handles PPTX to JPEG conversion:
   - Uses LibreOffice (headless) for PPTX → PDF
-  - Uses bundled Ghostscript + sharp for PDF → JPEG
+  - Uses MuPDF (WASM) + sharp for PDF → JPEG
   - Uses pptxtojson for text extraction
 - **Control Panel (Renderer)** provides grid view, navigation, and display assignment
 
@@ -44,7 +43,7 @@
 The converter is in `src/services/converter/`:
 - **Converter.js** - Main orchestrator with EventEmitter for progress
 - **strategies/LibreOfficeStrategy.js** - PPTX→PDF using LibreOffice
-- **PdfToImageConverter.js** - PDF→JPEG using Ghostscript + sharp
+- **PdfToImageConverter.js** - PDF→JPEG using MuPDF (WASM) + sharp
 - **ThumbnailGenerator.js** - 300px thumbnails via sharp
 - **TextExtractor.js** - Slide text extraction via pptxtojson
 - **PlatformDetector.js** - Detects LibreOffice and bundled tools

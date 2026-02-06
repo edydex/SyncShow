@@ -1,8 +1,7 @@
 /**
  * SyncShow Converter Module
  *
- * Converts PPTX presentations to JPEG images using LibreOffice and ImageMagick.
- * Replaces the Python-based converter with a pure Node.js solution.
+ * Converts PPTX presentations to JPEG images using LibreOffice and MuPDF.
  */
 
 const Converter = require('./Converter');

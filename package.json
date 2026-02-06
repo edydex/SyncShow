@@ -13,10 +13,7 @@
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "build:all": "electron-builder --win --mac --linux",
-    "generate-icon": "node scripts/generate-icon.js",
-    "setup-imagemagick": "node scripts/setup-imagemagick.js",
-    "setup-ghostscript": "node scripts/setup-ghostscript.js",
-    "setup-deps": "npm run setup-imagemagick && npm run setup-ghostscript"
+    "generate-icon": "node scripts/generate-icon.js"
   },
   "keywords": [
     "presentation",
@@ -37,7 +34,7 @@
     "png-to-ico": "^3.0.1"
   },
   "dependencies": {
-    "gm": "^1.25.1",
+    "mupdf": "^1.27.0",
     "pptxtojson": "^1.12.0",
     "sharp": "^0.33.2"
   },
@@ -143,22 +140,6 @@
       "!dist/**",
       "!*.md",
       "!.git/**"
-    ],
-    "extraResources": [
-      {
-        "from": "imagemagick-embed/${platform}-${arch}",
-        "to": "imagemagick-embed/${platform}-${arch}",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "ghostscript-embed/${platform}-${arch}",
-        "to": "ghostscript-embed/${platform}-${arch}",
-        "filter": [
-          "**/*"
-        ]
-      }
     ],
     "asarUnpack": [
       "node_modules/sharp/**"

@@ -1,16 +1,24 @@
 /**
  * PDF to Image Converter
  *
- * Converts PDF pages to JPEG images using bundled Ghostscript and sharp.
- * Uses Ghostscript directly for PDF rendering, then sharp for resizing/formatting.
+ * Converts PDF pages to JPEG images using MuPDF (WASM) and sharp.
+ * MuPDF renders PDF pages to pixel buffers directly, then sharp
+ * resizes and converts to JPEG.
  */
 
 const { EventEmitter } = require('events');
-const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
 const sharp = require('sharp');
-const PlatformDetector = require('./PlatformDetector');
+
+// mupdf is ESM-only; cache the dynamic import
+let _mupdf = null;
+async function getMupdf() {
+  if (!_mupdf) {
+    _mupdf = await import('mupdf');
+  }
+  return _mupdf;
+}
 
 class PdfToImageConverter extends EventEmitter {
   constructor(options = {}) {
@@ -19,36 +27,9 @@ class PdfToImageConverter extends EventEmitter {
       width: options.width || 1920,
       height: options.height || 1080,
       quality: options.quality || 92,
-      density: options.density || 150, // DPI for PDF rendering
+      scale: options.scale || 2.0, // Render scale for PDF pages
       ...options
     };
-  }
-
-  /**
-   * Get the number of pages in a PDF
-   * @param {string} pdfPath - Path to PDF file
-   * @param {string} gsPath - Path to Ghostscript executable
-   * @returns {Promise<number>}
-   */
-  async getPageCount(pdfPath, gsPath) {
-    return new Promise((resolve, reject) => {
-      const args = [
-        '-q',
-        '-dNODISPLAY',
-        '-c',
-        `(${pdfPath.replace(/\\/g, '/')}) (r) file runpdfbegin pdfpagecount = quit`
-      ];
-
-      execFile(gsPath, args, { encoding: 'utf8' }, (error, stdout, stderr) => {
-        if (error) {
-          // Fallback: try using pdfinfo-like approach or estimate
-          reject(error);
-          return;
-        }
-        const count = parseInt(stdout.trim(), 10);
-        resolve(isNaN(count) ? 1 : count);
-      });
-    });
   }
 
   /**
@@ -58,85 +39,39 @@ class PdfToImageConverter extends EventEmitter {
    * @returns {Promise<{slideCount: number}>}
    */
   async convert(pdfPath, outputDir) {
-    const gsPath = await PlatformDetector.getGhostscriptPath();
-    if (!gsPath) {
-      throw new Error('Ghostscript not found. Run npm run setup-deps to install bundled dependencies.');
-    }
+    const mupdf = await getMupdf();
 
-    // Create temp directory for PNG output
-    const tempDir = path.join(outputDir, '_temp_png');
-    await fs.mkdir(tempDir, { recursive: true });
+    const data = await fs.readFile(pdfPath);
+    const doc = mupdf.Document.openDocument(data, 'application/pdf');
+    const slideCount = doc.countPages();
 
-    // Set up environment for Ghostscript
-    const gsLibPath = PlatformDetector.getGhostscriptLibPath();
-    const env = { ...process.env };
+    for (let i = 0; i < slideCount; i++) {
+      const page = doc.loadPage(i);
 
-    if (process.platform === 'win32') {
-      // Windows: set GS_LIB
-      env.GS_LIB = gsLibPath;
-    } else {
-      // Unix: add lib path
-      env.GS_LIB = gsLibPath;
-    }
+      // Render page to a pixmap at the configured scale
+      const pixmap = page.toPixmap(
+        mupdf.Matrix.scale(this.options.scale, this.options.scale),
+        mupdf.ColorSpace.DeviceRGB,
+        true,  // alpha — unrendered edge pixels become transparent instead of white
+        true   // include annotations
+      );
 
-    // Render PDF pages to PNG using Ghostscript
-    const gsArgs = [
-      '-dNOPAUSE',
-      '-dBATCH',
-      '-dSAFER',
-      '-sDEVICE=png16m',
-      `-r${this.options.density}`,
-      '-dTextAlphaBits=4',
-      '-dGraphicsAlphaBits=4',
-      `-sOutputFile=${path.join(tempDir, 'page_%03d.png')}`,
-      pdfPath
-    ];
+      const pngBuffer = pixmap.asPNG();
 
-    await new Promise((resolve, reject) => {
-      execFile(gsPath, gsArgs, { env, maxBuffer: 50 * 1024 * 1024 }, (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(`Ghostscript failed: ${stderr || error.message}`));
-          return;
-        }
-        resolve();
-      });
-    });
-
-    // Get list of generated PNG files
-    const pngFiles = (await fs.readdir(tempDir))
-      .filter(f => f.startsWith('page_') && f.endsWith('.png'))
-      .sort();
-
-    const slideCount = pngFiles.length;
-
-    // Convert each PNG to JPEG with proper sizing
-    for (let i = 0; i < pngFiles.length; i++) {
-      const pngPath = path.join(tempDir, pngFiles[i]);
+      // Convert to JPEG. flatten() replaces any transparent edge pixels
+      // (from sub-pixel rounding) with black. No resize/letterboxing needed —
+      // the display browser uses object-fit:contain to adapt to any screen.
       const slideNum = String(i + 1).padStart(3, '0');
       const jpgPath = path.join(outputDir, `slide_${slideNum}.jpg`);
 
-      // Resize and convert to JPEG with letterboxing
-      await sharp(pngPath)
-        .resize(this.options.width, this.options.height, {
-          fit: 'contain',
-          background: { r: 0, g: 0, b: 0 }
-        })
+      await sharp(Buffer.from(pngBuffer))
+        .flatten({ background: { r: 0, g: 0, b: 0 } })
         .jpeg({ quality: this.options.quality })
         .toFile(jpgPath);
 
       // Emit progress
       const percent = Math.round(((i + 1) / slideCount) * 100);
       this.emit('progress', { percent, current: i + 1, total: slideCount });
-
-      // Remove temp PNG
-      await fs.unlink(pngPath);
-    }
-
-    // Remove temp directory
-    try {
-      await fs.rmdir(tempDir);
-    } catch (e) {
-      // Ignore cleanup errors
     }
 
     return { slideCount };

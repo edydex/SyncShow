@@ -18,13 +18,6 @@ npm run build:linux    # Linux AppImage + deb
 npm run build:all      # Build all platforms
 ```
 
-**Setup bundled dependencies (ImageMagick + Ghostscript):**
-```bash
-npm run setup-deps     # Downloads both ImageMagick and Ghostscript
-npm run setup-imagemagick   # ImageMagick only
-npm run setup-ghostscript   # Ghostscript only
-```
-
 **Note:** No test or lint scripts are currently configured.
 
 ## Architecture
@@ -51,7 +44,7 @@ npm run setup-ghostscript   # Ghostscript only
       │  NODE.JS CONVERTER            │
       │  src/services/converter/      │
       │  PPTX → PDF (LibreOffice)     │
-      │  PDF → JPEG (Ghostscript)     │
+      │  PDF → JPEG (MuPDF + sharp)  │
       │  Thumbnails (sharp)           │
       │  Text extraction (pptxtojson) │
       └───────────────────────────────┘
@@ -70,10 +63,10 @@ The converter (`src/services/converter/`) handles PPTX to JPEG conversion:
 
 - **Converter.js** - Main orchestrator (EventEmitter for progress)
 - **strategies/LibreOfficeStrategy.js** - PPTX→PDF using LibreOffice headless
-- **PdfToImageConverter.js** - PDF→JPEG using bundled Ghostscript + sharp
+- **PdfToImageConverter.js** - PDF→JPEG using MuPDF (WASM) + sharp
 - **ThumbnailGenerator.js** - Generates 300px thumbnails
 - **TextExtractor.js** - Extracts slide text using pptxtojson
-- **PlatformDetector.js** - Detects LibreOffice and bundled tools
+- **PlatformDetector.js** - Detects LibreOffice
 
 ## Key Conventions
 
@@ -109,5 +102,4 @@ The app uses Electron IPC with context isolation. Key channels defined in `prelo
 ## Dependencies
 
 - **Runtime:** Electron v28, Node.js v18+, LibreOffice
-- **Bundled:** ImageMagick, Ghostscript (downloaded via `npm run setup-deps`)
-- **npm packages:** sharp, pptxtojson, gm
+- **npm packages:** sharp, pptxtojson, mupdf

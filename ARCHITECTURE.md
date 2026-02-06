@@ -51,13 +51,13 @@ This application provides synchronized dual-screen presentation display for bili
 **Technology Stack:**
 - `pptxtojson` for text extraction
 - `LibreOffice` CLI (soffice) for high-fidelity PPTX → PDF conversion
-- Bundled `Ghostscript` + `sharp` for PDF → JPEG conversion
+- `mupdf` (WASM) + `sharp` for PDF → JPEG conversion
 - `sharp` for image optimization and thumbnails
 
 **Process Flow:**
 1. User selects PPTX file
 2. LibreOffice converts PPTX to PDF (preserves fonts/formatting)
-3. Ghostscript renders PDF pages to images
+3. MuPDF (WASM) renders PDF pages to pixel buffers
 4. sharp resizes and converts to JPEG at 1920x1080 resolution
 5. Images stored in cache directory with naming convention: `{language}/slide_{number:03d}.jpg`
 6. Text extracted via pptxtojson and stored in JSON metadata file
@@ -134,15 +134,13 @@ SyncShow/
 │   └── services/
 │       └── converter/           # Node.js PPTX converter
 │           ├── Converter.js     # Main orchestrator
-│           ├── PdfToImageConverter.js  # PDF → JPEG
+│           ├── PdfToImageConverter.js  # PDF → JPEG (via PDF.js)
 │           ├── TextExtractor.js # Text extraction via pptxtojson
 │           ├── ThumbnailGenerator.js   # Thumbnails via sharp
 │           ├── PlatformDetector.js     # Tool detection
 │           └── strategies/
 │               ├── BaseStrategy.js
 │               └── LibreOfficeStrategy.js
-├── imagemagick-embed/           # Bundled ImageMagick (per platform)
-├── ghostscript-embed/           # Bundled Ghostscript (per platform)
 ├── cache/                       # Converted images (gitignored)
 └── README.md                    # Setup instructions
 ```
