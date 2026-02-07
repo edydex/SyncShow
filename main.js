@@ -583,10 +583,25 @@ async function runConversion(filePath, language) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
+  // Detect the largest display resolution for optimal render quality.
+  // Floor at 1080p so slides always look sharp even if all monitors are small.
+  const displays = screen.getAllDisplays();
+  let targetWidth = CONFIG.displayWidth;
+  let targetHeight = CONFIG.displayHeight;
+  for (const d of displays) {
+    const w = d.size.width * (d.scaleFactor || 1);
+    const h = d.size.height * (d.scaleFactor || 1);
+    if (w * h > targetWidth * targetHeight) {
+      targetWidth = w;
+      targetHeight = h;
+    }
+  }
+  console.log(`[Converter] Target resolution: ${targetWidth}x${targetHeight} (from ${displays.length} display(s))`);
+
   // Create converter with options
   const converter = new Converter({
-    width: CONFIG.displayWidth,
-    height: CONFIG.displayHeight,
+    width: targetWidth,
+    height: targetHeight,
     thumbnailWidth: CONFIG.thumbnailWidth
   });
 
