@@ -1,22 +1,19 @@
 {
   "name": "sync-show",
-  "version": "1.1.1",
+  "version": "1.2.1-beta",
   "description": "Synchronized bilingual presentation display for church services",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "start:linux": "electron . --no-sandbox",
     "dev": "electron . --dev",
+    "dev:linux": "electron . --no-sandbox --dev",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "build:all": "electron-builder --win --mac --linux",
-    "generate-icon": "node scripts/generate-icon.js",
-    "setup-python": "cd python && pip install -r requirements.txt",
-    "setup-python-embed": "powershell -ExecutionPolicy Bypass -File scripts/setup-python-embed.ps1",
-    "setup-python-embed:mac": "chmod +x scripts/setup-python-mac.sh && ./scripts/setup-python-mac.sh",
-    "setup-python-embed:linux": "chmod +x scripts/setup-python-linux.sh && ./scripts/setup-python-linux.sh",
-    "convert": "python python/converter.py"
+    "generate-icon": "node scripts/generate-icon.js"
   },
   "keywords": [
     "presentation",
@@ -37,6 +34,8 @@
     "png-to-ico": "^3.0.1"
   },
   "dependencies": {
+    "mupdf": "^1.27.0",
+    "pptxtojson": "^1.12.0",
     "sharp": "^0.33.2"
   },
   "build": {
@@ -47,7 +46,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",
@@ -58,11 +59,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64", "x64"]
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["arm64", "x64"]
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon-512.png",
@@ -74,11 +81,15 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.png",
@@ -102,8 +113,16 @@
       "title": "SyncShow ${version}",
       "icon": "assets/icon-512.png",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ],
       "window": {
         "width": 540,
@@ -117,25 +136,16 @@
     "afterPack": "./scripts/afterPack.js",
     "files": [
       "**/*",
-      "!python/__pycache__/**",
       "!cache/**",
       "!dist/**",
       "!*.md",
       "!.git/**"
     ],
-    "extraResources": [
-      {
-        "from": "python",
-        "to": "python",
-        "filter": ["**/*", "!__pycache__/**"]
-      },
-      {
-        "from": "python-embed",
-        "to": "python-embed",
-        "filter": ["**/*"]
-      }
+    "asarUnpack": [
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
     ],
     "asar": true,
-    "compression": "maximum"
+    "compression": "normal"
   }
 }
