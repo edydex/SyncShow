@@ -71,8 +71,6 @@ let appState = {
   syncMode: false  // Experimental: coordinate exact reveal timing across displays
 };
 
-// Track last Esc press for double-tap detection
-let lastEscPress = 0;
 
 // Conversion queue to prevent concurrent conversions
 let conversionQueue = [];
@@ -324,22 +322,9 @@ function registerGlobalShortcuts() {
   globalShortcut.register('Home', () => goToSlide(0));
   globalShortcut.register('End', () => goToSlide(appState.totalSlides - 1));
   
-  // Escape key: first press clears to black, double-press hides displays
+  // Escape key: clear displays to black
   globalShortcut.register('Escape', () => {
-    const now = Date.now();
-    const timeSinceLastEsc = now - lastEscPress;
-    lastEscPress = now;
-    
-    if (timeSinceLastEsc < 500) {
-      // Double-press: hide displays completely
-      hideDisplayWindows();
-    } else if (!appState.isCleared) {
-      // First press: clear to black
-      clearAllDisplays();
-    } else {
-      // Already cleared, single press again hides
-      hideDisplayWindows();
-    }
+    clearAllDisplays();
   });
   
   // Number keys for quick navigation (1-9 for slides 1-9, 0 for slide 10)

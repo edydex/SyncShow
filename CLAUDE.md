@@ -72,7 +72,7 @@ The converter (`src/services/converter/`) handles PPTX to JPEG conversion:
 
 - **Language separation:** Russian and English presentations are managed independently with separate caches and display assignments
 - **Slide navigation:** Keyboard shortcuts (arrows, space, Home/End) for fast control
-- **Double-tap Escape:** Single press clears to black, double press (within 500ms) hides displays
+- **Escape:** Clears all displays to black
 - **Fade transitions:** Configurable fade duration (300ms default)
 - **Singer screen:** Always shows preview of next slide text
 - **Sync mode:** Experimental feature for exact reveal timing across displays
