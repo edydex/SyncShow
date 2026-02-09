@@ -45,26 +45,28 @@ This application provides synchronized dual-screen presentation display for bili
 
 ## Component Details
 
-### 1. PPTX Processor (Python)
+### 1. PPTX Processor (Node.js)
 **Purpose:** Convert PowerPoint files to optimized JPEG images
 
 **Technology Stack:**
-- `python-pptx` for text extraction
-- `LibreOffice` CLI (soffice) for high-fidelity PPTX → PDF → JPEG conversion
-- `Pillow` for image optimization
+- `pptxtojson` for text extraction
+- `LibreOffice` CLI (soffice) for high-fidelity PPTX → PDF conversion
+- `mupdf` (WASM) + `sharp` for PDF → JPEG conversion
+- `sharp` for image optimization and thumbnails
 
 **Process Flow:**
 1. User selects PPTX file
 2. LibreOffice converts PPTX to PDF (preserves fonts/formatting)
-3. PDF pages converted to JPEG images at 1920x1080 resolution
-4. Images stored in cache directory with naming convention: `{presentation_id}/slide_{number:03d}.jpg`
-5. Text extracted and stored in JSON metadata file
+3. MuPDF (WASM) renders PDF pages to pixel buffers
+4. sharp resizes and converts to JPEG at 1920x1080 resolution
+5. Images stored in cache directory with naming convention: `{language}/slide_{number:03d}.jpg`
+6. Text extracted via pptxtojson and stored in JSON metadata file
 
 **Performance Considerations:**
 - Pre-render all slides during import (no runtime conversion)
 - Cache images at target display resolution
-- Use JPEG quality 90% for good quality/size balance
-- Generate thumbnails (300x169) for control panel
+- Use JPEG quality 92% for slides, 85% for thumbnails
+- Generate thumbnails (300px width) for control panel
 
 ### 2. Display Engine (Electron + Native)
 **Purpose:** Render slides on multiple screens with zero lag
@@ -118,7 +120,7 @@ This application provides synchronized dual-screen presentation display for bili
 ## File Structure
 
 ```
-sync_display/
+SyncShow/
 ├── package.json                 # Electron app config
 ├── main.js                      # Electron main process
 ├── preload.js                   # Secure IPC bridge
@@ -129,16 +131,16 @@ sync_display/
 │   │   ├── app.js               # Control panel logic
 │   │   ├── display.html         # Presentation display window
 │   │   └── display.js           # Display window logic
-│   ├── services/
-│   │   ├── slideManager.js      # Slide state management
-│   │   ├── displayCoordinator.js # Multi-screen coordination
-│   │   └── fileManager.js       # File operations
-│   └── utils/
-│       └── ipcChannels.js       # IPC channel constants
-├── python/
-│   ├── requirements.txt         # Python dependencies
-│   ├── converter.py             # PPTX → JPEG converter
-│   └── text_extractor.py        # Slide text extraction
+│   └── services/
+│       └── converter/           # Node.js PPTX converter
+│           ├── Converter.js     # Main orchestrator
+│           ├── PdfToImageConverter.js  # PDF → JPEG (via MuPDF WASM)
+│           ├── TextExtractor.js # Text extraction via pptxtojson
+│           ├── ThumbnailGenerator.js   # Thumbnails via sharp
+│           ├── PlatformDetector.js     # Tool detection
+│           └── strategies/
+│               ├── BaseStrategy.js
+│               └── LibreOfficeStrategy.js
 ├── cache/                       # Converted images (gitignored)
 └── README.md                    # Setup instructions
 ```
@@ -178,7 +180,7 @@ sync_display/
 
 ## Fallback Strategies
 
-1. **LibreOffice unavailable:** Fall back to python-pptx basic rendering
+1. **LibreOffice unavailable:** Show error message with installation instructions
 2. **GPU acceleration disabled:** Use software rendering
 3. **Display detection fails:** Manual display position input
 4. **Image load failure:** Show placeholder with slide number
