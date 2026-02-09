@@ -639,12 +639,11 @@ function updateThumbnailHighlight() {
     const gridRect = grid.getBoundingClientRect();
     const thumbRect = activeThumb.getBoundingClientRect();
     
-    // Check if thumbnail is in the lower 40% of the visible grid area
+    // Scroll down early: when thumbnail enters the bottom 40% of the grid
     const lowerThreshold = gridRect.top + gridRect.height * 0.6;
-    const upperThreshold = gridRect.top + gridRect.height * 0.2;
-    
-    // If thumbnail is below the lower threshold OR above the upper threshold, scroll to center it
-    if (thumbRect.top > lowerThreshold || thumbRect.bottom < upperThreshold) {
+
+    // Scroll up only when the thumbnail's top has left the viewport
+    if (thumbRect.top > lowerThreshold || thumbRect.top < gridRect.top) {
       const scrollOffset = activeThumb.offsetTop - (grid.offsetHeight / 2) + (activeThumb.offsetHeight / 2);
       grid.scrollTo({
         top: Math.max(0, scrollOffset),
