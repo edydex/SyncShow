@@ -133,10 +133,17 @@
         <div class="thumbnails-section">
           <div class="thumbnails-header">
             <h3>All Slides</h3>
-            <div class="lang-selector">
-              <button class="lang-btn active" data-lang="both">Both</button>
-              <button class="lang-btn" data-lang="russian">RU</button>
-              <button class="lang-btn" data-lang="english">EN</button>
+            <div class="thumbnails-header-controls">
+              <div class="lang-selector">
+                <button class="lang-btn active" data-lang="both">Both</button>
+                <button class="lang-btn" data-lang="russian">RU</button>
+                <button class="lang-btn" data-lang="english">EN</button>
+              </div>
+              <div class="zoom-control">
+                <button class="zoom-btn" id="zoomOut">−</button>
+                <span class="zoom-level" id="zoomLevel">100%</span>
+                <button class="zoom-btn" id="zoomIn">+</button>
+              </div>
             </div>
           </div>
           <div class="thumbnails-grid" id="thumbnailsGrid">

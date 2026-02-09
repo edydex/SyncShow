@@ -579,11 +579,48 @@ body {
   color: white;
 }
 
+/* Header controls wrapper (lang selector + zoom) */
+.thumbnails-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 /* Language selector for thumbnails */
 .lang-selector {
   display: flex;
   gap: 4px;
-  margin-left: 12px;
+}
+
+/* Thumbnail zoom control */
+.zoom-control {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.zoom-btn {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.zoom-btn:hover {
+  background: var(--bg-tertiary);
+}
+
+.zoom-level {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  min-width: 36px;
+  text-align: center;
+  user-select: none;
 }
 
 .lang-btn {
