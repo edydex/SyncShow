@@ -617,28 +617,17 @@ async function runConversion(filePath, language) {
     // Run conversion
     const conversionResult = await converter.convert(filePath, outputDir);
 
-    // Read the generated metadata
-    const metadataPath = path.join(outputDir, 'metadata.json');
-    let metadata = {};
-    if (fs.existsSync(metadataPath)) {
-      metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-      console.log(`[Metadata] Loaded for ${language}: ${metadata.slides?.length || 0} slides`);
-      if (metadata.slides && metadata.slides[0]) {
-        console.log(`[Metadata] First slide text sample: "${metadata.slides[0].firstLine?.substring(0, 50) || metadata.slides[0].text?.substring(0, 50) || 'none'}..."`);
-      }
-    } else {
-      console.log(`[Metadata] No metadata file found at ${metadataPath}`);
+    const { slideCount, metadata } = conversionResult;
+    console.log(`[Metadata] Loaded for ${language}: ${metadata.slides?.length || 0} slides`);
+    if (metadata.slides && metadata.slides[0]) {
+      console.log(`[Metadata] First slide text sample: "${metadata.slides[0].firstLine?.substring(0, 50) || metadata.slides[0].text?.substring(0, 50) || 'none'}..."`);
     }
-
-    // Count slides
-    const slideFiles = fs.readdirSync(outputDir)
-      .filter(f => f.startsWith('slide_') && f.endsWith('.jpg') && !f.includes('_thumb'));
 
     const result = {
       success: true,
       cacheDir: outputDir,
-      slideCount: slideFiles.length,
-      metadata: metadata
+      slideCount,
+      metadata
     };
 
     // Update app state

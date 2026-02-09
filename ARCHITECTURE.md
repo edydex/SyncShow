@@ -134,7 +134,7 @@ SyncShow/
 │   └── services/
 │       └── converter/           # Node.js PPTX converter
 │           ├── Converter.js     # Main orchestrator
-│           ├── PdfToImageConverter.js  # PDF → JPEG (via PDF.js)
+│           ├── PdfToImageConverter.js  # PDF → JPEG (via MuPDF WASM)
 │           ├── TextExtractor.js # Text extraction via pptxtojson
 │           ├── ThumbnailGenerator.js   # Thumbnails via sharp
 │           ├── PlatformDetector.js     # Tool detection
