@@ -154,6 +154,27 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          NOTES=$(bash scripts/generate_release_notes.sh)
+          # Write to multiline output
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Detect prerelease
+        id: prerelease
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          if echo "$VERSION" | grep -qiE '[-](alpha|beta|rc|dev)'; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -164,12 +185,12 @@ jobs:
         run: ls -R artifacts
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
           name: SyncShow v${{ needs.check-version.outputs.version }}
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           files: |
             artifacts/windows-installer/*.exe
             artifacts/macos-installer/*.dmg
@@ -178,12 +199,15 @@ jobs:
             artifacts/linux-installer/*.deb
           body: |
             ## SyncShow v${{ needs.check-version.outputs.version }}
-            
+
+            ### What's New
+            ${{ steps.notes.outputs.content }}
+
             ### Downloads
             - **Windows**: `SyncShow Setup ${{ needs.check-version.outputs.version }}.exe`
             - **macOS**: `SyncShow-${{ needs.check-version.outputs.version }}.dmg` (Intel & Apple Silicon)
             - **Linux**: `SyncShow-${{ needs.check-version.outputs.version }}.AppImage` or `.deb`
-            
+
             ### Requirements
             - [LibreOffice](https://www.libreoffice.org/download/download/) must be installed for PowerPoint conversion
         env:
