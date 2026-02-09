@@ -1,6 +1,6 @@
 {
   "name": "sync-show",
-  "version": "1.2.1-beta",
+  "version": "1.2.2-beta",
   "description": "Synchronized bilingual presentation display for church services",
   "main": "main.js",
   "scripts": {

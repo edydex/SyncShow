@@ -74,6 +74,7 @@ The converter (`src/services/converter/`) handles PPTX to JPEG conversion:
 - **Slide navigation:** Keyboard shortcuts (arrows, space, Home/End) for fast control
 - **Escape:** Clears all displays to black
 - **Fade transitions:** Configurable fade duration (300ms default)
+- **Thumbnail zoom:** Adjustable thumbnail grid size (50%–200%), persisted in user settings
 - **Singer screen:** Always shows preview of next slide text
 - **Sync mode:** Experimental feature for exact reveal timing across displays
 
