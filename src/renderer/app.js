@@ -12,7 +12,8 @@ const state = {
   totalSlides: 0,
   displays: [],
   isPresenting: false,
-  thumbnailLang: 'both'  // 'both', 'russian', or 'english'
+  thumbnailLang: 'both',  // 'both', 'russian', or 'english'
+  thumbnailZoom: 100  // percentage, 50-200
 };
 
 // DOM Elements
@@ -58,7 +59,12 @@ const elements = {
   currentRussianImg: document.getElementById('currentRussianImg'),
   currentEnglishImg: document.getElementById('currentEnglishImg'),
   thumbnailsGrid: document.getElementById('thumbnailsGrid'),
-  
+
+  // Zoom controls
+  zoomIn: document.getElementById('zoomIn'),
+  zoomOut: document.getElementById('zoomOut'),
+  zoomLevel: document.getElementById('zoomLevel'),
+
   // Status bar
   statusMessage: document.getElementById('statusMessage')
 };
@@ -115,6 +121,10 @@ function setupEventListeners() {
     });
   });
   
+  // Thumbnail zoom controls
+  elements.zoomIn.addEventListener('click', () => adjustThumbnailZoom(10));
+  elements.zoomOut.addEventListener('click', () => adjustThumbnailZoom(-10));
+
   // View controls (grid/list)
   document.querySelectorAll('.view-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -172,6 +182,10 @@ async function loadSavedSettings() {
         }
       }, 100); // Small delay to ensure dropdowns are populated
     }
+    if (settings.thumbnailZoom !== undefined) {
+      state.thumbnailZoom = Math.max(50, Math.min(200, settings.thumbnailZoom));
+      applyThumbnailZoom();
+    }
     
     console.log('[Settings] Loaded saved settings:', settings);
   } catch (error) {
@@ -190,7 +204,8 @@ async function saveCurrentSettings() {
       },
       singerLanguage: elements.singerLanguage.value || 'russian',
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
-      syncMode: elements.syncMode.checked || false
+      syncMode: elements.syncMode.checked || false,
+      thumbnailZoom: state.thumbnailZoom
     };
     
     await window.api.saveSettings(settings);
@@ -639,6 +654,41 @@ function updateThumbnailHighlight() {
   }
 }
 
+// Thumbnail zoom
+function adjustThumbnailZoom(delta) {
+  state.thumbnailZoom = Math.max(50, Math.min(200, state.thumbnailZoom + delta));
+  applyThumbnailZoom();
+  updateThumbnailHighlight();
+  saveCurrentSettings();
+}
+
+function applyThumbnailZoom() {
+  const zoom = state.thumbnailZoom / 100;
+  const imgHeight = Math.round(150 * zoom);
+  const itemMinHeight = Math.round(175 * zoom);
+  const minWidth = Math.round(250 * zoom);
+
+  elements.zoomLevel.textContent = `${state.thumbnailZoom}%`;
+  elements.thumbnailsGrid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${minWidth}px, 1fr))`;
+
+  // Update existing DOM elements in-place instead of rebuilding innerHTML
+  const grid = elements.thumbnailsGrid;
+  for (const item of grid.querySelectorAll('.thumbnail-item')) {
+    item.style.minHeight = `${itemMinHeight}px`;
+  }
+  for (const container of grid.querySelectorAll('.thumb-images')) {
+    container.style.height = `${imgHeight}px`;
+    container.style.minHeight = `${imgHeight}px`;
+  }
+  for (const div of grid.querySelectorAll('.thumb-images > div')) {
+    div.style.height = `${imgHeight}px`;
+    div.style.minHeight = `${imgHeight}px`;
+  }
+  for (const img of grid.querySelectorAll('.thumb-images img')) {
+    img.style.maxHeight = `${imgHeight}px`;
+  }
+}
+
 // Thumbnail Rendering - Using Base64 images
 function renderThumbnails() {
   const grid = elements.thumbnailsGrid;
@@ -669,54 +719,59 @@ function renderThumbnails() {
     return;
   }
   
+  // Compute pixel heights from zoom level
+  const zoom = state.thumbnailZoom / 100;
+  const imgHeight = Math.round(150 * zoom);
+  const itemMinHeight = Math.round(175 * zoom);
+
   // Clear and build using innerHTML (this approach works reliably)
   let html = '';
-  
+
   for (let i = 0; i < count; i++) {
     const ruSlide = russianSlides[i];
     const enSlide = englishSlides[i];
-    
+
     // Use base64 thumbnails (data URLs work reliably in Electron)
     const ruThumb = ruSlide?.thumbnailBase64 || '';
     const enThumb = enSlide?.thumbnailBase64 || '';
     const text = (ruSlide?.text || enSlide?.text || '').substring(0, 80) || '—';
     const activeClass = i === state.currentSlide ? ' active' : '';
-    
+
     // Determine flags based on filter
     let flagsText = 'RU | EN';
     if (langFilter === 'russian') flagsText = 'RU';
     else if (langFilter === 'english') flagsText = 'EN';
-    
+
     // Build Russian image HTML
     let ruImgHtml = '';
     if (langFilter === 'both' || langFilter === 'russian') {
       if (ruThumb) {
-        ruImgHtml = `<div style="flex:1;height:150px;min-height:150px;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center;"><img src="${ruThumb}" alt="RU ${i+1}" style="max-width:100%;max-height:150px;object-fit:contain;display:block;"></div>`;
+        ruImgHtml = `<div style="flex:1;height:${imgHeight}px;min-height:${imgHeight}px;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center;"><img src="${ruThumb}" alt="RU ${i+1}" style="max-width:100%;max-height:${imgHeight}px;object-fit:contain;display:block;"></div>`;
       } else {
-        ruImgHtml = `<div style="flex:1;height:150px;min-height:150px;background:#0a0a15;display:flex;align-items:center;justify-content:center;color:#444;">RU</div>`;
+        ruImgHtml = `<div style="flex:1;height:${imgHeight}px;min-height:${imgHeight}px;background:#0a0a15;display:flex;align-items:center;justify-content:center;color:#444;">RU</div>`;
       }
     }
-    
+
     // Build English image HTML
     let enImgHtml = '';
     if (langFilter === 'both' || langFilter === 'english') {
       if (enThumb) {
-        enImgHtml = `<div style="flex:1;height:150px;min-height:150px;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center;"><img src="${enThumb}" alt="EN ${i+1}" style="max-width:100%;max-height:150px;object-fit:contain;display:block;"></div>`;
+        enImgHtml = `<div style="flex:1;height:${imgHeight}px;min-height:${imgHeight}px;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center;"><img src="${enThumb}" alt="EN ${i+1}" style="max-width:100%;max-height:${imgHeight}px;object-fit:contain;display:block;"></div>`;
       } else {
-        enImgHtml = `<div style="flex:1;height:150px;min-height:150px;background:#0a0a15;display:flex;align-items:center;justify-content:center;color:#444;">EN</div>`;
+        enImgHtml = `<div style="flex:1;height:${imgHeight}px;min-height:${imgHeight}px;background:#0a0a15;display:flex;align-items:center;justify-content:center;color:#444;">EN</div>`;
       }
     }
-    
+
     const singleLangClass = langFilter !== 'both' ? ' single-lang' : '';
-    
+
     // Use INLINE styles with explicit heights to force visibility
     html += `
-      <div class="thumbnail-item${activeClass}" data-index="${i}" style="min-height:175px;">
+      <div class="thumbnail-item${activeClass}" data-index="${i}" style="min-height:${itemMinHeight}px;">
         <div class="thumb-header" style="padding:6px 10px;background:#252535;font-size:12px;display:flex;justify-content:space-between;">
           <span class="thumb-num">${i + 1}</span>
           <span class="thumb-flags">${flagsText}</span>
         </div>
-        <div class="thumb-images${singleLangClass}" style="display:flex;gap:2px;padding:2px;background:#000;height:150px;min-height:150px;">
+        <div class="thumb-images${singleLangClass}" style="display:flex;gap:2px;padding:2px;background:#000;height:${imgHeight}px;min-height:${imgHeight}px;">
           ${ruImgHtml}
           ${enImgHtml}
         </div>
