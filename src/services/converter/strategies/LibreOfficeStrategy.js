@@ -111,6 +111,10 @@ class LibreOfficeStrategy extends BaseStrategy {
     // Kill stale processes on Linux
     await this.killStaleProcesses();
 
+    // Use a fresh temp directory so stale PDFs from interrupted runs
+    // cannot be mistaken for the new output.
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'syncshow-pdf-'));
+
     return new Promise((resolve, reject) => {
       const timeout = 300000; // 5 minutes
       let args;
@@ -124,7 +128,7 @@ class LibreOfficeStrategy extends BaseStrategy {
           '--nofirststartwizard',
           '--norestore',
           '--convert-to', 'pdf',
-          '--outdir', outputDir,
+          '--outdir', tmpDir,
           inputPath
         ];
       } else {
@@ -134,7 +138,7 @@ class LibreOfficeStrategy extends BaseStrategy {
           '--nofirststartwizard',
           '--norestore',
           '--convert-to', 'pdf',
-          '--outdir', outputDir,
+          '--outdir', tmpDir,
           inputPath
         ];
       }
@@ -168,20 +172,21 @@ class LibreOfficeStrategy extends BaseStrategy {
           return;
         }
 
-        // Find the generated PDF
+        // LibreOffice names the output after the input basename.
+        // The temp dir is empty except for our output, so this is deterministic.
         const baseName = path.basename(inputPath, path.extname(inputPath));
-        const expectedPdfPath = path.join(outputDir, `${baseName}.pdf`);
+        const expectedPdfPath = path.join(tmpDir, `${baseName}.pdf`);
 
         try {
           await fs.access(expectedPdfPath);
           resolve({ pdfPath: expectedPdfPath });
         } catch (e) {
-          // PDF might have different name, search for it
-          const files = await fs.readdir(outputDir);
+          // Fallback: the only PDF in a fresh temp dir must be ours
+          const files = await fs.readdir(tmpDir);
           const pdfFile = files.find(f => f.endsWith('.pdf'));
 
           if (pdfFile) {
-            resolve({ pdfPath: path.join(outputDir, pdfFile) });
+            resolve({ pdfPath: path.join(tmpDir, pdfFile) });
           } else {
             reject(new Error(`PDF not found after conversion. Output: ${stdout}`));
           }
