@@ -1,0 +1,64 @@
+name: Promote Beta to Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'package.json'
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for prerelease version
+        id: check
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION"
+
+          if echo "$VERSION" | grep -qiE '[-](alpha|beta|rc|dev)'; then
+            CLEAN_VERSION=$(echo "$VERSION" | sed 's/[-]\(alpha\|beta\|rc\|dev\).*//')
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "clean_version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+            echo "Prerelease detected: $VERSION → $CLEAN_VERSION"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "No prerelease suffix found, nothing to promote"
+          fi
+
+      - name: Setup Node.js
+        if: steps.check.outputs.is_prerelease == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Promote version
+        if: steps.check.outputs.is_prerelease == 'true'
+        run: |
+          CLEAN_VERSION="${{ steps.check.outputs.clean_version }}"
+
+          # Update package.json and package-lock.json
+          npm version "$CLEAN_VERSION" --no-git-tag-version
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Commit, tag, and push
+          git add package.json package-lock.json
+          git commit -m "Release v${CLEAN_VERSION}"
+          git tag "v${CLEAN_VERSION}"
+          git push origin main --tags
+
+      - name: Trigger build workflow
+        if: steps.check.outputs.is_prerelease == 'true'
+        run: gh workflow run build.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

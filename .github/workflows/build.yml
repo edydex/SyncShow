@@ -26,7 +26,15 @@ jobs:
           # Get current version
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT_VERSION"
-          
+
+          # Skip prerelease versions on push - handled by promote-release workflow
+          if [ "${{ github.event_name }}" = "push" ] && echo "$CURRENT_VERSION" | grep -qiE '[-](alpha|beta|rc|dev)'; then
+            echo "Pre-release version $CURRENT_VERSION on push - deferring to promote-release workflow"
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           # Check if this is triggered manually (workflow_dispatch)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Manual trigger - building version $CURRENT_VERSION"
