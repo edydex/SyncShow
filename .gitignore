@@ -3,9 +3,9 @@ node_modules/
 
 
 # Cache directory (converted images)
-cache/russian/
-cache/english/
-!cache/README.md
+slide-cache/russian/
+slide-cache/english/
+!slide-cache/README.md
 
 # Build output
 dist/

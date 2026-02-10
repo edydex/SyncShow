@@ -91,13 +91,15 @@ function getResourcePath(relativePath) {
 }
 
 // Get cache directory - must be writable (not inside asar)
+// Named 'slide-cache' to avoid collision with Electron/Chromium's 'Cache'
+// directory on case-insensitive filesystems (Windows, macOS).
 function getCacheDir() {
   if (isPackaged) {
     // Use app's userData folder for cache in production
-    return path.join(app.getPath('userData'), 'cache');
+    return path.join(app.getPath('userData'), 'slide-cache');
   } else {
     // Use local cache folder in development
-    return path.join(__dirname, 'cache');
+    return path.join(__dirname, 'slide-cache');
   }
 }
 
