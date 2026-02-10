@@ -4,8 +4,11 @@
 
 set -eo pipefail
 
-# Get the latest tag (last release), falling back to the root commit
-LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null) || LAST_TAG=$(git rev-list --max-parents=0 HEAD)
+# Get the latest stable tag (skip prereleases), falling back to the root commit
+LAST_TAG=$(git describe --tags --abbrev=0 \
+  --exclude='*-alpha*' --exclude='*-beta*' \
+  --exclude='*-rc*' --exclude='*-dev*' \
+  HEAD^ 2>/dev/null) || LAST_TAG=$(git rev-list --max-parents=0 HEAD)
 
 # Get commit messages between last tag (non-inclusive) and HEAD (inclusive)
 # grep || true prevents set -e from exiting when no rel-note lines are found
