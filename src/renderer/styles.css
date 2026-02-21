@@ -404,30 +404,56 @@ body {
 }
 
 .preview-box {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
 }
 
-.mini-preview {
-  flex: 1;
+.preview-accordion {
   display: flex;
   flex-direction: column;
-  background: var(--bg-card);
+  min-height: 0;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   overflow: hidden;
-  min-height: 0;
 }
 
-.mini-preview-label {
+.preview-accordion-header {
   padding: 4px 8px;
   font-size: 0.75rem;
   font-weight: 600;
+  color: var(--text-secondary);
   background: var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
+}
+
+.preview-accordion-header::before {
+  content: '\25B6';
+  font-size: 0.6rem;
+  transition: transform 0.15s ease;
+}
+
+.preview-accordion[open] > .preview-accordion-header::before {
+  transform: rotate(90deg);
+}
+
+/* Hide default marker in WebKit/Blink */
+.preview-accordion-header::-webkit-details-marker {
+  display: none;
+}
+
+.mini-preview {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  min-height: 0;
 }
 
 .mini-preview-img {

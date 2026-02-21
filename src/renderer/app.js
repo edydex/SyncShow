@@ -65,6 +65,10 @@ const elements = {
   zoomOut: document.getElementById('zoomOut'),
   zoomLevel: document.getElementById('zoomLevel'),
 
+  // Preview accordions
+  previewAccordionRu: document.getElementById('previewAccordionRu'),
+  previewAccordionEn: document.getElementById('previewAccordionEn'),
+
   // Status bar
   statusMessage: document.getElementById('statusMessage')
 };
@@ -187,6 +191,12 @@ async function loadSavedSettings() {
       state.thumbnailZoom = Math.max(50, Math.min(200, settings.thumbnailZoom));
       applyThumbnailZoom();
     }
+    if (settings.previewOpenRu !== undefined) {
+      elements.previewAccordionRu.open = settings.previewOpenRu;
+    }
+    if (settings.previewOpenEn !== undefined) {
+      elements.previewAccordionEn.open = settings.previewOpenEn;
+    }
     
     console.log('[Settings] Loaded saved settings:', settings);
   } catch (error) {
@@ -206,7 +216,9 @@ async function saveCurrentSettings() {
       singerLanguage: elements.singerLanguage.value || 'russian',
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
       syncMode: elements.syncMode.checked || false,
-      thumbnailZoom: state.thumbnailZoom
+      thumbnailZoom: state.thumbnailZoom,
+      previewOpenRu: elements.previewAccordionRu.open,
+      previewOpenEn: elements.previewAccordionEn.open
     };
     
     await window.api.saveSettings(settings);
@@ -890,6 +902,8 @@ elements.englishDisplay.addEventListener('change', () => {
 });
 elements.singerDisplay.addEventListener('change', saveCurrentSettings);
 elements.singerLanguage.addEventListener('change', saveCurrentSettings);
+elements.previewAccordionRu.addEventListener('toggle', saveCurrentSettings);
+elements.previewAccordionEn.addEventListener('toggle', saveCurrentSettings);
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
