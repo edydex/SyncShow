@@ -13,7 +13,8 @@ const state = {
   displays: [],
   isPresenting: false,
   thumbnailLang: 'both',  // 'both', 'russian', or 'english'
-  thumbnailZoom: 100  // percentage, 50-200
+  thumbnailZoom: 100,  // percentage, 50-200
+  singerFontSize: 36   // px, 12-120
 };
 
 // DOM Elements
@@ -70,6 +71,11 @@ const elements = {
   previewAccordionEn: document.getElementById('previewAccordionEn'),
   previewAccordionSinger: document.getElementById('previewAccordionSinger'),
   currentSingerImg: document.getElementById('currentSingerImg'),
+
+  // Singer font size
+  singerFontSize: document.getElementById('singerFontSize'),
+  singerFontUp: document.getElementById('singerFontUp'),
+  singerFontDown: document.getElementById('singerFontDown'),
 
   // Status bar
   statusMessage: document.getElementById('statusMessage')
@@ -132,6 +138,18 @@ function setupEventListeners() {
   // Thumbnail zoom controls
   elements.zoomIn.addEventListener('click', () => adjustThumbnailZoom(10));
   elements.zoomOut.addEventListener('click', () => adjustThumbnailZoom(-10));
+
+  // Singer font size controls
+  elements.singerFontUp.addEventListener('click', () => adjustSingerFontSize(2));
+  elements.singerFontDown.addEventListener('click', () => adjustSingerFontSize(-2));
+  elements.singerFontSize.addEventListener('change', () => {
+    const val = Math.max(12, Math.min(240, parseInt(elements.singerFontSize.value) || 36));
+    state.singerFontSize = val;
+    elements.singerFontSize.value = val;
+    window.api.setSingerFontSize(val);
+    window.api.requestSingerPreview();
+    saveCurrentSettings();
+  });
 
   // View controls (grid/list)
   document.querySelectorAll('.view-btn').forEach(btn => {
@@ -203,6 +221,10 @@ async function loadSavedSettings() {
     if (settings.previewOpenSinger !== undefined) {
       elements.previewAccordionSinger.open = settings.previewOpenSinger;
     }
+    if (settings.singerFontSize !== undefined) {
+      state.singerFontSize = Math.max(12, Math.min(240, settings.singerFontSize));
+      elements.singerFontSize.value = state.singerFontSize;
+    }
     
     console.log('[Settings] Loaded saved settings:', settings);
   } catch (error) {
@@ -225,7 +247,8 @@ async function saveCurrentSettings() {
       thumbnailZoom: state.thumbnailZoom,
       previewOpenRu: elements.previewAccordionRu.open,
       previewOpenEn: elements.previewAccordionEn.open,
-      previewOpenSinger: elements.previewAccordionSinger.open
+      previewOpenSinger: elements.previewAccordionSinger.open,
+      singerFontSize: state.singerFontSize
     };
     
     await window.api.saveSettings(settings);
@@ -480,7 +503,8 @@ async function startPresentation() {
       singerDisplayId: elements.singerDisplay.value ? parseInt(elements.singerDisplay.value) : null,
       singerLanguage: elements.singerLanguage.value || 'russian',
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
-      syncMode: elements.syncMode.checked || false
+      syncMode: elements.syncMode.checked || false,
+      singerFontSize: state.singerFontSize
     };
     
     // Save settings before starting
@@ -689,6 +713,15 @@ function updateThumbnailHighlight() {
       });
     }
   }
+}
+
+// Singer font size
+function adjustSingerFontSize(delta) {
+  state.singerFontSize = Math.max(12, Math.min(240, state.singerFontSize + delta));
+  elements.singerFontSize.value = state.singerFontSize;
+  window.api.setSingerFontSize(state.singerFontSize);
+  window.api.requestSingerPreview();
+  saveCurrentSettings();
 }
 
 // Thumbnail zoom

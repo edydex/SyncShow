@@ -11,6 +11,7 @@ const elements = {
 };
 
 let currentImage = null;
+let baseFontSize = 36;
 
 // Initialize
 function init() {
@@ -18,10 +19,27 @@ function init() {
     console.error('[Singer] API not available');
     return;
   }
-  
+
   window.api.onSingerUpdate(handleUpdate);
   window.api.onDisplayClear(handleClear);
+  window.api.onSingerFontSize(handleFontSize);
   console.log('[Singer] Initialized');
+}
+
+function handleFontSize(size) {
+  baseFontSize = size;
+  applyFontSize();
+}
+
+function applyFontSize() {
+  const el = elements.nextText;
+  if (el.classList.contains('very-small')) {
+    el.style.fontSize = `${Math.round(baseFontSize * 0.61)}px`;
+  } else if (el.classList.contains('small')) {
+    el.style.fontSize = `${Math.round(baseFontSize * 0.78)}px`;
+  } else {
+    el.style.fontSize = `${baseFontSize}px`;
+  }
 }
 
 function handleClear() {
@@ -71,6 +89,7 @@ function handleUpdate(data) {
     } else if (displayText.length > 50) {
       elements.nextText.classList.add('small');
     }
+    applyFontSize();
   } else {
     elements.nextText.innerHTML = '<div class="waiting"></div>';
   }

@@ -449,6 +449,44 @@ body {
   display: none;
 }
 
+.singer-font-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.singer-font-control label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.font-size-adjuster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.font-size-input {
+  width: 48px;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 2px;
+  -moz-appearance: textfield;
+}
+
+.font-size-input::-webkit-outer-spin-button,
+.font-size-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .preview-info-icon {
   margin-left: auto;
   cursor: help;

@@ -68,7 +68,8 @@ let appState = {
   isCleared: false,  // Track if displays are currently cleared (black)
   singerLanguage: 'russian',
   fadeDuration: 300,  // Fade transition duration in ms
-  syncMode: false  // Experimental: coordinate exact reveal timing across displays
+  syncMode: false,  // Experimental: coordinate exact reveal timing across displays
+  singerFontSize: 36  // Singer screen next-text font size in px
 };
 
 
@@ -268,6 +269,8 @@ function createSingerWindow(displayInfo) {
 
   singerWindow.webContents.once('did-finish-load', () => {
     console.log('[Singer] Content loaded');
+    // Send current font size setting
+    singerWindow.webContents.send('singer:fontSizeUpdate', appState.singerFontSize);
   });
 
   singerWindow.once('ready-to-show', () => {
@@ -329,16 +332,6 @@ function registerGlobalShortcuts() {
     clearAllDisplays();
   });
 
-  // Number keys for quick navigation (1-9 for slides 1-9, 0 for slide 10)
-  for (let i = 0; i <= 9; i++) {
-    globalShortcut.register(`${i}`, () => {
-      const slideNum = i === 0 ? 9 : i - 1;
-      if (slideNum < appState.totalSlides) {
-        goToSlide(slideNum);
-      }
-    });
-  }
-
   shortcutsRegistered = true;
 }
 
@@ -352,10 +345,6 @@ function unregisterGlobalShortcuts() {
   globalShortcut.unregister('Home');
   globalShortcut.unregister('End');
   globalShortcut.unregister('Escape');
-
-  for (let i = 0; i <= 9; i++) {
-    globalShortcut.unregister(`${i}`);
-  }
 
   shortcutsRegistered = false;
 }
@@ -702,7 +691,7 @@ ipcMain.handle('slides:getList', async (event, language) => {
   });
 });
 
-ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode }) => {
+ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode, singerFontSize }) => {
   const displays = screen.getAllDisplays();
 
   // Store singer language setting
@@ -713,6 +702,9 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
 
   // Store sync mode setting
   appState.syncMode = syncMode || false;
+
+  // Store singer font size setting
+  appState.singerFontSize = singerFontSize || 36;
 
   // Create Russian display window
   if (russianDisplayId !== null && russianDisplayId !== undefined) {
@@ -805,6 +797,18 @@ ipcMain.handle('display:setSyncMode', async (event, enabled) => {
   });
 
   console.log(`[Display] Sync mode ${enabled ? 'enabled' : 'disabled'}`);
+  return { success: true };
+});
+
+// Set singer font size
+ipcMain.handle('singer:setFontSize', async (event, size) => {
+  appState.singerFontSize = size;
+
+  if (singerWindow && !singerWindow.isDestroyed()) {
+    singerWindow.webContents.send('singer:fontSizeUpdate', size);
+  }
+
+  console.log(`[Singer] Font size set to ${size}px`);
   return { success: true };
 });
 
