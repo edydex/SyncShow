@@ -449,6 +449,13 @@ body {
   display: none;
 }
 
+.preview-info-icon {
+  margin-left: auto;
+  cursor: help;
+  opacity: 0.5;
+  font-size: 0.85rem;
+}
+
 .mini-preview {
   display: flex;
   flex-direction: column;
