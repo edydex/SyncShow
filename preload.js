@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld('api', {
   onSlideChanged: (callback) => {
     ipcRenderer.on('slide:changed', (event, data) => callback(data));
   },
+
+  onDisplaysCleared: (callback) => {
+    ipcRenderer.on('displays:cleared', (event) => callback());
+  },
   
   // Display window specific
   onDisplayInit: (callback) => {

@@ -78,6 +78,7 @@ async function init() {
   window.api.onDisplaysUpdated(handleDisplaysUpdated);
   window.api.onConversionProgress(handleConversionProgress);
   window.api.onSlideChanged(handleSlideChanged);
+  window.api.onDisplaysCleared(handleDisplaysCleared);
   
   setStatus('Ready - Select PowerPoint files to begin');
 }
@@ -518,6 +519,7 @@ async function showDisplays() {
 async function clearDisplays() {
   try {
     await window.api.clearDisplays();
+    setPreviewsBlacked(true);
     setStatus('Displays cleared (black screens)');
   } catch (error) {
     console.error('Error clearing displays:', error);
@@ -602,10 +604,22 @@ function goToSlide(slideIndex) {
 function handleSlideChanged({ currentSlide, totalSlides }) {
   state.currentSlide = currentSlide;
   state.totalSlides = totalSlides;
-  
+
+  setPreviewsBlacked(false);
   updateSlideCounter();
   updateCurrentSlidePreview();
   updateThumbnailHighlight();
+}
+
+// Called when Escape is pressed globally (via main process notification)
+function handleDisplaysCleared() {
+  setPreviewsBlacked(true);
+  setStatus('Displays cleared (black screens)');
+}
+
+function setPreviewsBlacked(blacked) {
+  elements.currentRussianImg.style.visibility = blacked ? 'hidden' : '';
+  elements.currentEnglishImg.style.visibility = blacked ? 'hidden' : '';
 }
 
 function updateSlideCounter() {
