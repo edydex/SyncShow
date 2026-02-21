@@ -78,6 +78,12 @@ contextBridge.exposeInMainWorld('api', {
   onSingerUpdate: (callback) => {
     ipcRenderer.on('singer:update', (event, data) => callback(data));
   },
+
+  onSingerPreview: (callback) => {
+    ipcRenderer.on('singer:preview', (event, dataUrl) => callback(dataUrl));
+  },
+
+  requestSingerPreview: () => ipcRenderer.send('singer:requestPreview'),
   
   // Remove listeners (for cleanup)
   removeAllListeners: (channel) => {

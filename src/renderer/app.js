@@ -68,6 +68,8 @@ const elements = {
   // Preview accordions
   previewAccordionRu: document.getElementById('previewAccordionRu'),
   previewAccordionEn: document.getElementById('previewAccordionEn'),
+  previewAccordionSinger: document.getElementById('previewAccordionSinger'),
+  currentSingerImg: document.getElementById('currentSingerImg'),
 
   // Status bar
   statusMessage: document.getElementById('statusMessage')
@@ -83,6 +85,7 @@ async function init() {
   window.api.onConversionProgress(handleConversionProgress);
   window.api.onSlideChanged(handleSlideChanged);
   window.api.onDisplaysCleared(handleDisplaysCleared);
+  window.api.onSingerPreview(handleSingerPreview);
   
   setStatus('Ready - Select PowerPoint files to begin');
 }
@@ -197,6 +200,9 @@ async function loadSavedSettings() {
     if (settings.previewOpenEn !== undefined) {
       elements.previewAccordionEn.open = settings.previewOpenEn;
     }
+    if (settings.previewOpenSinger !== undefined) {
+      elements.previewAccordionSinger.open = settings.previewOpenSinger;
+    }
     
     console.log('[Settings] Loaded saved settings:', settings);
   } catch (error) {
@@ -218,7 +224,8 @@ async function saveCurrentSettings() {
       syncMode: elements.syncMode.checked || false,
       thumbnailZoom: state.thumbnailZoom,
       previewOpenRu: elements.previewAccordionRu.open,
-      previewOpenEn: elements.previewAccordionEn.open
+      previewOpenEn: elements.previewAccordionEn.open,
+      previewOpenSinger: elements.previewAccordionSinger.open
     };
     
     await window.api.saveSettings(settings);
@@ -629,6 +636,11 @@ function handleDisplaysCleared() {
   setStatus('Displays cleared (black screens)');
 }
 
+function handleSingerPreview(dataUrl) {
+  if (!elements.previewAccordionSinger.open) return;
+  elements.currentSingerImg.src = dataUrl;
+}
+
 function setPreviewsBlacked(blacked) {
   elements.currentRussianImg.style.visibility = blacked ? 'hidden' : '';
   elements.currentEnglishImg.style.visibility = blacked ? 'hidden' : '';
@@ -904,6 +916,12 @@ elements.singerDisplay.addEventListener('change', saveCurrentSettings);
 elements.singerLanguage.addEventListener('change', saveCurrentSettings);
 elements.previewAccordionRu.addEventListener('toggle', saveCurrentSettings);
 elements.previewAccordionEn.addEventListener('toggle', saveCurrentSettings);
+elements.previewAccordionSinger.addEventListener('toggle', () => {
+  saveCurrentSettings();
+  if (elements.previewAccordionSinger.open) {
+    window.api.requestSingerPreview();
+  }
+});
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
