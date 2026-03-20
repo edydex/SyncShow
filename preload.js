@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('api', {
   setFadeDuration: (duration) => ipcRenderer.invoke('display:setFade', duration),
   setSyncMode: (enabled) => ipcRenderer.invoke('display:setSyncMode', enabled),
   setSingerFontSize: (size) => ipcRenderer.invoke('singer:setFontSize', size),
+  setSingerCharLimit: (limit) => ipcRenderer.invoke('singer:setCharLimit', limit),
   
   // App state
   getAppState: () => ipcRenderer.invoke('app:getState'),
@@ -82,6 +83,10 @@ contextBridge.exposeInMainWorld('api', {
 
   onSingerFontSize: (callback) => {
     ipcRenderer.on('singer:fontSizeUpdate', (event, size) => callback(size));
+  },
+
+  onSingerCharLimit: (callback) => {
+    ipcRenderer.on('singer:charLimitUpdate', (event, limit) => callback(limit));
   },
 
   onSingerPreview: (callback) => {

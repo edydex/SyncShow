@@ -69,7 +69,8 @@ let appState = {
   singerLanguage: 'russian',
   fadeDuration: 300,  // Fade transition duration in ms
   syncMode: false,  // Experimental: coordinate exact reveal timing across displays
-  singerFontSize: 36  // Singer screen next-text font size in px
+  singerFontSize: 36,  // Singer screen next-text font size in px
+  singerCharLimit: 70  // Singer screen next-text character limit
 };
 
 
@@ -271,6 +272,7 @@ function createSingerWindow(displayInfo) {
     console.log('[Singer] Content loaded');
     // Send current font size setting
     singerWindow.webContents.send('singer:fontSizeUpdate', appState.singerFontSize);
+    singerWindow.webContents.send('singer:charLimitUpdate', appState.singerCharLimit);
   });
 
   singerWindow.once('ready-to-show', () => {
@@ -691,7 +693,7 @@ ipcMain.handle('slides:getList', async (event, language) => {
   });
 });
 
-ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode, singerFontSize }) => {
+ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode, singerFontSize, singerCharLimit }) => {
   const displays = screen.getAllDisplays();
 
   // Store singer language setting
@@ -705,6 +707,9 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
 
   // Store singer font size setting
   appState.singerFontSize = singerFontSize || 36;
+
+  // Store singer char limit setting
+  appState.singerCharLimit = singerCharLimit !== undefined ? singerCharLimit : 70;
 
   // Create Russian display window
   if (russianDisplayId !== null && russianDisplayId !== undefined) {
@@ -809,6 +814,18 @@ ipcMain.handle('singer:setFontSize', async (event, size) => {
   }
 
   console.log(`[Singer] Font size set to ${size}px`);
+  return { success: true };
+});
+
+// Set singer char limit
+ipcMain.handle('singer:setCharLimit', async (event, limit) => {
+  appState.singerCharLimit = limit;
+
+  if (singerWindow && !singerWindow.isDestroyed()) {
+    singerWindow.webContents.send('singer:charLimitUpdate', limit);
+  }
+
+  console.log(`[Singer] Char limit set to ${limit}`);
   return { success: true };
 });
 
