@@ -12,6 +12,8 @@ const elements = {
 
 let currentImage = null;
 let baseFontSize = 36;
+let charLimit = 70;
+let lastUpdateData = null;
 
 // Initialize
 function init() {
@@ -23,12 +25,18 @@ function init() {
   window.api.onSingerUpdate(handleUpdate);
   window.api.onDisplayClear(handleClear);
   window.api.onSingerFontSize(handleFontSize);
+  window.api.onSingerCharLimit(handleCharLimit);
   console.log('[Singer] Initialized');
 }
 
 function handleFontSize(size) {
   baseFontSize = size;
   applyFontSize();
+}
+
+function handleCharLimit(limit) {
+  charLimit = limit;
+  if (lastUpdateData) handleUpdate(lastUpdateData);
 }
 
 function applyFontSize() {
@@ -48,6 +56,7 @@ function handleClear() {
 
 function handleUpdate(data) {
   if (!data) return;
+  lastUpdateData = data;
   
   const { currentSlide, currentSlideImage, nextSlideText, totalSlides } = data;
   
@@ -79,7 +88,8 @@ function handleUpdate(data) {
   if (currentSlide >= totalSlides) {
     elements.nextText.innerHTML = '<div class="end-slide">End of Presentation</div>';
   } else if (nextSlideText && nextSlideText.trim()) {
-    const displayText = getFirstMeaningfulLine(nextSlideText);
+    const rawText = getFirstMeaningfulLine(nextSlideText);
+    const displayText = rawText.length > charLimit ? rawText.substring(0, charLimit) + '…' : rawText;
     elements.nextText.textContent = displayText;
     
     // Adjust font size based on text length
