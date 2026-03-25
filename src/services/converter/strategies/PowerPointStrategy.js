@@ -20,8 +20,8 @@ try {
   $pptApp = New-Object -ComObject PowerPoint.Application
   # Open read-only, not as template, not visible (AddToMRU = false)
   $presentation = $pptApp.Presentations.Open($InputPath, $true, $false, $false)
-  # ppFixedFormatTypePDF = 2
-  $presentation.ExportAsFixedFormat($OutputPath, 2)
+  # ppSaveAsPDF = 32 — more compatible than ExportAsFixedFormat across COM versions
+  $presentation.SaveAs($OutputPath, 32)
   $presentation.Close()
   $pptApp.Quit()
   [System.Runtime.InteropServices.Marshal]::ReleaseComObject($presentation) | Out-Null
