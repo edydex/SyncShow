@@ -15,7 +15,8 @@ const state = {
   thumbnailLang: 'both',  // 'both', 'russian', or 'english'
   thumbnailZoom: 100,  // percentage, 50-200
   singerFontSize: 36,   // px, 12-120
-  singerCharLimit: 70   // characters, 10-500
+  singerCharLimit: 70,  // characters, 10-500
+  singerTextPadding: 4  // px, 0-80
 };
 
 // DOM Elements
@@ -86,6 +87,11 @@ const elements = {
   singerCharLimit: document.getElementById('singerCharLimit'),
   singerCharLimitUp: document.getElementById('singerCharLimitUp'),
   singerCharLimitDown: document.getElementById('singerCharLimitDown'),
+
+  // Singer text padding
+  singerTextPadding: document.getElementById('singerTextPadding'),
+  singerTextPaddingUp: document.getElementById('singerTextPaddingUp'),
+  singerTextPaddingDown: document.getElementById('singerTextPaddingDown'),
 
   // Status bar
   statusMessage: document.getElementById('statusMessage')
@@ -173,6 +179,17 @@ function setupEventListeners() {
     saveCurrentSettings();
   });
 
+  // Singer text padding controls
+  elements.singerTextPaddingUp.addEventListener('click', () => adjustSingerTextPadding(2));
+  elements.singerTextPaddingDown.addEventListener('click', () => adjustSingerTextPadding(-2));
+  elements.singerTextPadding.addEventListener('change', () => {
+    const val = Math.max(0, Math.min(80, parseInt(elements.singerTextPadding.value) || 4));
+    state.singerTextPadding = val;
+    elements.singerTextPadding.value = val;
+    window.api.setSingerTextPadding(val);
+    saveCurrentSettings();
+  });
+
   // View controls (grid/list)
   document.querySelectorAll('.view-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -251,6 +268,10 @@ async function loadSavedSettings() {
       state.singerCharLimit = Math.max(10, Math.min(500, settings.singerCharLimit));
       elements.singerCharLimit.value = state.singerCharLimit;
     }
+    if (settings.singerTextPadding !== undefined) {
+      state.singerTextPadding = Math.max(0, Math.min(80, settings.singerTextPadding));
+      elements.singerTextPadding.value = state.singerTextPadding;
+    }
     
     console.log('[Settings] Loaded saved settings:', settings);
   } catch (error) {
@@ -275,7 +296,8 @@ async function saveCurrentSettings() {
       previewOpenEn: elements.previewAccordionEn.open,
       previewOpenSinger: elements.previewAccordionSinger.open,
       singerFontSize: state.singerFontSize,
-      singerCharLimit: state.singerCharLimit
+      singerCharLimit: state.singerCharLimit,
+      singerTextPadding: state.singerTextPadding
     };
 
     await window.api.saveSettings(settings);
@@ -610,7 +632,8 @@ async function startPresentation() {
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
       syncMode: elements.syncMode.checked || false,
       singerFontSize: state.singerFontSize,
-      singerCharLimit: state.singerCharLimit
+      singerCharLimit: state.singerCharLimit,
+      singerTextPadding: state.singerTextPadding
     };
 
     // Save settings before starting
@@ -836,6 +859,14 @@ function adjustSingerCharLimit(delta) {
   elements.singerCharLimit.value = state.singerCharLimit;
   window.api.setSingerCharLimit(state.singerCharLimit);
   window.api.requestSingerPreview();
+  saveCurrentSettings();
+}
+
+// Singer text padding
+function adjustSingerTextPadding(delta) {
+  state.singerTextPadding = Math.max(0, Math.min(80, state.singerTextPadding + delta));
+  elements.singerTextPadding.value = state.singerTextPadding;
+  window.api.setSingerTextPadding(state.singerTextPadding);
   saveCurrentSettings();
 }
 

@@ -70,7 +70,8 @@ let appState = {
   fadeDuration: 300,  // Fade transition duration in ms
   syncMode: false,  // Experimental: coordinate exact reveal timing across displays
   singerFontSize: 36,  // Singer screen next-text font size in px
-  singerCharLimit: 70  // Singer screen next-text character limit
+  singerCharLimit: 70,  // Singer screen next-text character limit
+  singerTextPadding: 4  // Singer screen next-text vertical padding in px
 };
 
 
@@ -273,6 +274,7 @@ function createSingerWindow(displayInfo) {
     // Send current font size setting
     singerWindow.webContents.send('singer:fontSizeUpdate', appState.singerFontSize);
     singerWindow.webContents.send('singer:charLimitUpdate', appState.singerCharLimit);
+    singerWindow.webContents.send('singer:textPaddingUpdate', appState.singerTextPadding);
   });
 
   singerWindow.once('ready-to-show', () => {
@@ -693,7 +695,7 @@ ipcMain.handle('slides:getList', async (event, language) => {
   });
 });
 
-ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode, singerFontSize, singerCharLimit }) => {
+ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode, singerFontSize, singerCharLimit, singerTextPadding }) => {
   const displays = screen.getAllDisplays();
 
   // Store singer language setting
@@ -710,6 +712,9 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
 
   // Store singer char limit setting
   appState.singerCharLimit = singerCharLimit !== undefined ? singerCharLimit : 70;
+
+  // Store singer text padding setting
+  appState.singerTextPadding = singerTextPadding !== undefined ? singerTextPadding : 4;
 
   // Create Russian display window
   if (russianDisplayId !== null && russianDisplayId !== undefined) {
@@ -814,6 +819,18 @@ ipcMain.handle('singer:setFontSize', async (event, size) => {
   }
 
   console.log(`[Singer] Font size set to ${size}px`);
+  return { success: true };
+});
+
+// Set singer text padding
+ipcMain.handle('singer:setTextPadding', async (event, padding) => {
+  appState.singerTextPadding = padding;
+
+  if (singerWindow && !singerWindow.isDestroyed()) {
+    singerWindow.webContents.send('singer:textPaddingUpdate', padding);
+  }
+
+  console.log(`[Singer] Text padding set to ${padding}px`);
   return { success: true };
 });
 
