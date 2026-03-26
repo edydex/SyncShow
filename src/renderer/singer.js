@@ -13,6 +13,7 @@ const elements = {
 let currentImage = null;
 let baseFontSize = 36;
 let charLimit = 70;
+let textPadding = 4;
 let lastUpdateData = null;
 
 // Initialize
@@ -26,6 +27,7 @@ function init() {
   window.api.onDisplayClear(handleClear);
   window.api.onSingerFontSize(handleFontSize);
   window.api.onSingerCharLimit(handleCharLimit);
+  window.api.onSingerTextPadding(handleTextPadding);
   console.log('[Singer] Initialized');
 }
 
@@ -37,6 +39,11 @@ function handleFontSize(size) {
 function handleCharLimit(limit) {
   charLimit = limit;
   if (lastUpdateData) handleUpdate(lastUpdateData);
+}
+
+function handleTextPadding(padding) {
+  textPadding = padding;
+  elements.nextText.style.padding = `${padding}px 30px`;
 }
 
 function applyFontSize() {
