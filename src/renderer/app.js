@@ -73,6 +73,10 @@ const elements = {
   previewAccordionSinger: document.getElementById('previewAccordionSinger'),
   currentSingerImg: document.getElementById('currentSingerImg'),
 
+  // Date warnings
+  russianDateWarning: document.getElementById('russianDateWarning'),
+  englishDateWarning: document.getElementById('englishDateWarning'),
+
   // Singer font size
   singerFontSize: document.getElementById('singerFontSize'),
   singerFontUp: document.getElementById('singerFontUp'),
@@ -343,6 +347,7 @@ async function restorePreviousPresentation(russianCache, englishCache) {
         };
         
         elements.russianFilePath.value = russianCache.originalFile || '[Cached presentation]';
+        if (russianCache.originalFile) checkFilenameDate('russian', russianCache.originalFile);
         updateConversionStatus('russian', `Restored: ${result.slideCount} slides`, false);
         await loadSlideList('russian');
       }
@@ -360,6 +365,7 @@ async function restorePreviousPresentation(russianCache, englishCache) {
         };
         
         elements.englishFilePath.value = englishCache.originalFile || '[Cached presentation]';
+        if (englishCache.originalFile) checkFilenameDate('english', englishCache.originalFile);
         updateConversionStatus('english', `Restored: ${result.slideCount} slides`, false);
         await loadSlideList('english');
       }
@@ -381,6 +387,7 @@ async function selectFile(language) {
     
     const pathInput = language === 'russian' ? elements.russianFilePath : elements.englishFilePath;
     pathInput.value = filePath;
+    checkFilenameDate(language, filePath);
     
     setStatus(`Converting ${language} presentation...`);
     updateConversionStatus(language, 'Converting...', true);
@@ -407,6 +414,81 @@ async function selectFile(language) {
     console.error(`Error loading ${language} file:`, error);
     updateConversionStatus(language, `✗ Error: ${error.message}`, false);
     setStatus(`Error loading ${language} presentation`);
+  }
+}
+
+// Extract a date from a filename, handling many common formats.
+// Returns a { year, month, day } object (1-based month/day) or null.
+function parseDateFromFilename(filePath) {
+  // Use only the basename
+  const basename = filePath.replace(/\\/g, '/').split('/').pop() || '';
+
+  // Patterns ordered from most-specific to least-specific to avoid false positives.
+  // Each entry: [regex, handler(match) -> {year,month,day} | null]
+  const patterns = [
+    // ISO / unambiguous: 2025-03-26, 2025.03.26, 2025_03_26, 20250326
+    [/\b(20\d{2})[-._]?(\d{2})[-._]?(\d{2})\b/, (m) => ({ year: +m[1], month: +m[2], day: +m[3] })],
+    // Written month name: March 26 2025 / 26 March 2025 / Mar-26-2025 etc.
+    [/\b(\d{1,2})[-.\s_]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-.\s_]*(\d{4})\b/i,
+      (m) => ({ year: +m[3], month: monthNameToNumber(m[2]), day: +m[1] })],
+    [/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-.\s_]*(\d{1,2})[-.\s_]*(\d{4})\b/i,
+      (m) => ({ year: +m[3], month: monthNameToNumber(m[1]), day: +m[2] })],
+    // Numeric with separators — try both M/D and D/M ambiguity resolved below
+    [/\b(\d{1,2})[\/\-._](\d{1,2})[\/\-._](\d{4})\b/, (m) => resolveNumericDate(+m[1], +m[2], +m[3])],
+    [/\b(\d{4})[\/\-._](\d{1,2})[\/\-._](\d{1,2})\b/, (m) => ({ year: +m[1], month: +m[2], day: +m[3] })],
+    // Short year last: 3/26/25 or 26/3/25
+    [/\b(\d{1,2})[\/\-._](\d{1,2})[\/\-._](\d{2})\b/, (m) => resolveNumericDate(+m[1], +m[2], 2000 + +m[3])],
+  ];
+
+  for (const [regex, handler] of patterns) {
+    const match = basename.match(regex);
+    if (match) {
+      const result = handler(match);
+      if (result && isValidDate(result)) return result;
+    }
+  }
+  return null;
+}
+
+function monthNameToNumber(name) {
+  const months = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6,
+                   jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+  return months[name.toLowerCase().slice(0, 3)] || 0;
+}
+
+// For ambiguous numeric dates (e.g. 3/26 vs 26/3), pick the one that makes sense.
+// If first number > 12, it must be the day (European DD/MM). Otherwise assume M/D (US).
+function resolveNumericDate(a, b, year) {
+  if (a > 12) return { year, month: b, day: a };   // a can only be day
+  if (b > 12) return { year, month: a, day: b };   // b can only be day
+  // Both ≤ 12: default to US convention M/D
+  return { year, month: a, day: b };
+}
+
+function isValidDate({ year, month, day }) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const d = new Date(year, month - 1, day);
+  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+}
+
+function checkFilenameDate(language, filePath) {
+  const warningEl = language === 'russian' ? elements.russianDateWarning : elements.englishDateWarning;
+  const parsed = parseDateFromFilename(filePath);
+  if (!parsed) {
+    warningEl.style.display = 'none';
+    return;
+  }
+  const today = new Date();
+  const match = parsed.year === today.getFullYear()
+    && parsed.month === today.getMonth() + 1
+    && parsed.day === today.getDate();
+  if (match) {
+    warningEl.style.display = 'none';
+  } else {
+    const fileDate = new Date(parsed.year, parsed.month - 1, parsed.day)
+      .toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    warningEl.textContent = `⚠ File date (${fileDate}) does not match today`;
+    warningEl.style.display = 'block';
   }
 }
 
