@@ -271,6 +271,13 @@ body {
   color: var(--danger-color);
 }
 
+.date-warning {
+  font-size: 0.8rem;
+  color: var(--warning-color);
+  margin-top: -10px;
+  margin-bottom: 10px;
+}
+
 .progress-bar {
   height: 6px;
   background: var(--bg-tertiary);
