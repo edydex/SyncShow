@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -317,41 +317,35 @@ function updateDisplayList() {
   }
 }
 
-// Track if shortcuts are registered
-let shortcutsRegistered = false;
-
-// Register keyboard shortcuts
-function registerGlobalShortcuts() {
-  if (shortcutsRegistered) return;
-
-  // These shortcuts work even when display windows are focused
-  globalShortcut.register('Right', () => navigateSlide(1));
-  globalShortcut.register('Left', () => navigateSlide(-1));
-  globalShortcut.register('Space', () => navigateSlide(1));
-  globalShortcut.register('Home', () => goToSlide(0));
-  globalShortcut.register('End', () => goToSlide(appState.totalSlides - 1));
-
-  // Escape key: clear displays to black
-  globalShortcut.register('Escape', () => {
-    clearAllDisplays();
-  });
-
-  shortcutsRegistered = true;
-}
-
-// Unregister keyboard shortcuts
-function unregisterGlobalShortcuts() {
-  if (!shortcutsRegistered) return;
-
-  globalShortcut.unregister('Right');
-  globalShortcut.unregister('Left');
-  globalShortcut.unregister('Space');
-  globalShortcut.unregister('Home');
-  globalShortcut.unregister('End');
-  globalShortcut.unregister('Escape');
-
-  shortcutsRegistered = false;
-}
+// DEPRECATED: Global keyboard shortcuts were disabled because Electron's globalShortcut
+// captures keys system-wide (even when the app is not focused), which caused accidental
+// slide navigation when typing in other applications during a live show.
+// Keyboard handling is now done entirely in the renderer (app.js) via document keydown
+// events, which only fire when the control panel window is focused.
+//
+// let shortcutsRegistered = false;
+//
+// function registerGlobalShortcuts() {
+//   if (shortcutsRegistered) return;
+//   globalShortcut.register('Right', () => navigateSlide(1));
+//   globalShortcut.register('Left', () => navigateSlide(-1));
+//   globalShortcut.register('Space', () => navigateSlide(1));
+//   globalShortcut.register('Home', () => goToSlide(0));
+//   globalShortcut.register('End', () => goToSlide(appState.totalSlides - 1));
+//   globalShortcut.register('Escape', () => { clearAllDisplays(); });
+//   shortcutsRegistered = true;
+// }
+//
+// function unregisterGlobalShortcuts() {
+//   if (!shortcutsRegistered) return;
+//   globalShortcut.unregister('Right');
+//   globalShortcut.unregister('Left');
+//   globalShortcut.unregister('Space');
+//   globalShortcut.unregister('Home');
+//   globalShortcut.unregister('End');
+//   globalShortcut.unregister('Escape');
+//   shortcutsRegistered = false;
+// }
 
 function navigateSlide(delta) {
   const newSlide = appState.currentSlide + delta;
@@ -748,8 +742,8 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
   const englishCount = appState.presentations.english?.slideCount || 0;
   appState.totalSlides = Math.min(russianCount, englishCount);
 
-  // Register keyboard shortcuts for presentation
-  registerGlobalShortcuts();
+  // Global shortcuts deprecated — keyboard handling is in the renderer (app.js).
+  // registerGlobalShortcuts();
 
   // Wait for windows to be ready, then go to first slide
   // Increased timeout to ensure singer window is fully loaded
@@ -763,14 +757,14 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
 
 ipcMain.handle('display:stop', async () => {
   hideDisplayWindows();
-  unregisterGlobalShortcuts();
+  // unregisterGlobalShortcuts(); // deprecated
   return { success: true };
 });
 
 // Show displays - re-show windows and current slide
 ipcMain.handle('display:show', async () => {
   showAllDisplays();
-  registerGlobalShortcuts();
+  // registerGlobalShortcuts(); // deprecated
   return { success: true };
 });
 
@@ -972,7 +966,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  globalShortcut.unregisterAll();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -984,6 +977,4 @@ app.on('activate', () => {
   }
 });
 
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
-});
+// app.on('will-quit', () => { globalShortcut.unregisterAll(); }); // deprecated with global shortcuts
