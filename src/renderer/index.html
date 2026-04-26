@@ -84,7 +84,17 @@
         <div class="setup-card setup-card-optional">
           <h3>Singer Screen <span class="optional-badge">Optional</span></h3>
           <p class="setup-description">Shows current slide + preview of next slide text</p>
-          <div class="display-selector">
+          <div class="file-selector">
+            <input type="text" id="singerFilePath" class="file-path" readonly placeholder="Select Singer PowerPoint file (optional)...">
+            <button id="btnSelectSinger" class="btn btn-outline">Browse...</button>
+          </div>
+          <div class="conversion-status" id="singerStatus">
+            <span class="status-text">Not loaded</span>
+            <div class="progress-bar" style="display: none;">
+              <div class="progress-fill" id="singerProgress"></div>
+            </div>
+          </div>
+          <div class="display-selector" style="margin-top: 10px;">
             <label>Display:</label>
             <select id="singerDisplay" class="display-dropdown">
               <option value="">None (disabled)</option>
@@ -93,6 +103,7 @@
           <div class="display-selector" style="margin-top: 10px;">
             <label>Language:</label>
             <select id="singerLanguage" class="display-dropdown">
+              <option value="singer">Singer (own file)</option>
               <option value="russian">Russian</option>
               <option value="english">English</option>
             </select>

@@ -50,7 +50,8 @@ function saveUserSettings(settings) {
 let appState = {
   presentations: {
     russian: null,
-    english: null
+    english: null,
+    singer: null
   },
   currentSlide: 0,
   totalSlides: 0,
@@ -63,6 +64,7 @@ let appState = {
   slideCache: {
     russian: [],
     english: [],
+    singer: [],
     metadata: {}
   },
   isCleared: false,  // Track if displays are currently cleared (black)
@@ -406,7 +408,13 @@ function goToSlide(slideIndex) {
   
   // Update singer screen with current slide image + next slide text
   if (singerWindow && !singerWindow.isDestroyed()) {
-    const singerLang = appState.singerLanguage || 'russian';
+    let singerLang;
+    if (appState.singerLanguage === 'singer') {
+      // Use dedicated singer presentation if loaded, otherwise fall back to russian
+      singerLang = appState.presentations.singer ? 'singer' : 'russian';
+    } else {
+      singerLang = appState.singerLanguage || 'russian';
+    }
     const currentSlideImage = getSlideImagePath(singerLang, slideIndex);
     const nextSlideText = getSlideText(singerLang, slideIndex + 1);
     

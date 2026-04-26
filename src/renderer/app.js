@@ -6,7 +6,8 @@
 const state = {
   presentations: {
     russian: { loaded: false, path: null, slides: [] },
-    english: { loaded: false, path: null, slides: [] }
+    english: { loaded: false, path: null, slides: [] },
+    singer: { loaded: false, path: null, slides: [] }
   },
   currentSlide: 0,
   totalSlides: 0,
@@ -21,14 +22,18 @@ const elements = {
   // File inputs
   russianFilePath: document.getElementById('russianFilePath'),
   englishFilePath: document.getElementById('englishFilePath'),
+  singerFilePath: document.getElementById('singerFilePath'),
   btnSelectRussian: document.getElementById('btnSelectRussian'),
   btnSelectEnglish: document.getElementById('btnSelectEnglish'),
+  btnSelectSinger: document.getElementById('btnSelectSinger'),
   
   // Status indicators
   russianStatus: document.getElementById('russianStatus'),
   englishStatus: document.getElementById('englishStatus'),
+  singerStatus: document.getElementById('singerStatus'),
   russianProgress: document.getElementById('russianProgress'),
   englishProgress: document.getElementById('englishProgress'),
+  singerProgress: document.getElementById('singerProgress'),
   
   // Display selectors
   russianDisplay: document.getElementById('russianDisplay'),
@@ -86,6 +91,7 @@ function setupEventListeners() {
   // File selection
   elements.btnSelectRussian.addEventListener('click', () => selectFile('russian'));
   elements.btnSelectEnglish.addEventListener('click', () => selectFile('english'));
+  elements.btnSelectSinger.addEventListener('click', () => selectFile('singer'));
   
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
@@ -218,19 +224,25 @@ async function saveCurrentSettings() {
 // Check for cached presentations from previous session
 async function checkForCachedPresentations() {
   try {
-    const [russianCache, englishCache] = await Promise.all([
+    const [russianCache, englishCache, singerCache] = await Promise.all([
       window.api.checkCache('russian'),
-      window.api.checkCache('english')
+      window.api.checkCache('english'),
+      window.api.checkCache('singer')
     ]);
     
-    // If both caches exist, offer to restore them
+    // If both main caches exist, offer to restore them
     if (russianCache.exists && englishCache.exists) {
       setStatus(`Previous presentation found (${russianCache.slideCount} slides). Click "Restore Previous" to load it.`);
-      showRestoreButton(russianCache, englishCache);
+      showRestoreButton(russianCache, englishCache, singerCache.exists ? singerCache : null);
     } else if (russianCache.exists || englishCache.exists) {
       const lang = russianCache.exists ? 'Russian' : 'English';
       const cache = russianCache.exists ? russianCache : englishCache;
       setStatus(`Previous ${lang} presentation found (${cache.slideCount} slides).`);
+    }
+    
+    // Restore singer cache silently if it exists (without requiring main caches)
+    if (singerCache.exists && !russianCache.exists && !englishCache.exists) {
+      setStatus(`Previous Singer presentation found (${singerCache.slideCount} slides).`);
     }
   } catch (error) {
     console.error('Failed to check for cached presentations:', error);
@@ -238,7 +250,7 @@ async function checkForCachedPresentations() {
 }
 
 // Show restore button for previous presentation
-function showRestoreButton(russianCache, englishCache) {
+function showRestoreButton(russianCache, englishCache, singerCache) {
   // Check if restore button already exists
   if (document.getElementById('btnRestorePrevious')) return;
   
@@ -247,11 +259,11 @@ function showRestoreButton(russianCache, englishCache) {
   restoreBtn.id = 'btnRestorePrevious';
   restoreBtn.className = 'btn btn-secondary';
   restoreBtn.textContent = 'Restore Previous';
-  restoreBtn.title = `Restore previous presentation (Russian: ${russianCache.slideCount} slides, English: ${englishCache.slideCount} slides)`;
+  restoreBtn.title = `Restore previous presentation (Russian: ${russianCache.slideCount} slides, English: ${englishCache.slideCount} slides${singerCache ? `, Singer: ${singerCache.slideCount} slides` : ''})`;
   restoreBtn.style.marginLeft = '10px';
   
   restoreBtn.addEventListener('click', async () => {
-    await restorePreviousPresentation(russianCache, englishCache);
+    await restorePreviousPresentation(russianCache, englishCache, singerCache);
     restoreBtn.remove();
   });
   
@@ -261,7 +273,7 @@ function showRestoreButton(russianCache, englishCache) {
 }
 
 // Restore previous presentation from cache
-async function restorePreviousPresentation(russianCache, englishCache) {
+async function restorePreviousPresentation(russianCache, englishCache, singerCache) {
   try {
     setStatus('Restoring previous presentation...');
     
@@ -299,6 +311,22 @@ async function restorePreviousPresentation(russianCache, englishCache) {
       }
     }
     
+    // Load Singer from cache if available
+    if (singerCache && singerCache.exists) {
+      const result = await window.api.loadFromCache('singer');
+      if (result.success) {
+        state.presentations.singer = {
+          loaded: true,
+          path: singerCache.originalFile || 'Cached',
+          slideCount: result.slideCount,
+          cacheDir: result.cacheDir
+        };
+        
+        elements.singerFilePath.value = singerCache.originalFile || '[Cached Singer presentation]';
+        updateConversionStatus('singer', `Restored: ${result.slideCount} slides`, false);
+      }
+    }
+    
     checkReadyState();
     setStatus('Previous presentation restored successfully');
   } catch (error) {
@@ -313,7 +341,9 @@ async function selectFile(language) {
     const filePath = await window.api.openPptxDialog(language);
     if (!filePath) return;
     
-    const pathInput = language === 'russian' ? elements.russianFilePath : elements.englishFilePath;
+    const pathInput = language === 'russian' ? elements.russianFilePath
+      : language === 'english' ? elements.englishFilePath
+      : elements.singerFilePath;
     pathInput.value = filePath;
     
     setStatus(`Converting ${language} presentation...`);
@@ -345,7 +375,9 @@ async function selectFile(language) {
 }
 
 function updateConversionStatus(language, message, showProgress) {
-  const statusEl = language === 'russian' ? elements.russianStatus : elements.englishStatus;
+  const statusEl = language === 'russian' ? elements.russianStatus
+    : language === 'english' ? elements.englishStatus
+    : elements.singerStatus;
   const progressBar = statusEl.querySelector('.progress-bar');
   const statusText = statusEl.querySelector('.status-text');
   
@@ -362,7 +394,9 @@ function updateConversionStatus(language, message, showProgress) {
 }
 
 function handleConversionProgress({ language, progress }) {
-  const progressEl = language === 'russian' ? elements.russianProgress : elements.englishProgress;
+  const progressEl = language === 'russian' ? elements.russianProgress
+    : language === 'english' ? elements.englishProgress
+    : elements.singerProgress;
   progressEl.style.width = `${progress}%`;
 }
 
