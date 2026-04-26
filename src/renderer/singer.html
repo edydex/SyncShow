@@ -37,9 +37,9 @@
       min-height: 0;
     }
     
-    /* Current slide image - takes most of the space */
+    /* Current slide image - takes all remaining space */
     .current-slide-section {
-      flex: 3;
+      flex: 1;
       display: flex;
       flex-direction: column;
       background: #0a0a15;
@@ -69,23 +69,20 @@
       font-size: 24px;
     }
     
-    /* Next slide text preview */
+    /* Next slide text preview - sized by content (font + padding) */
     .next-slide-section {
-      flex: 1;
+      flex: none;
       display: flex;
       flex-direction: column;
-      background: linear-gradient(180deg, #0d1f12 0%, #0a1810 100%);
-      border-radius: 12px;
+      border-top: 0.75rem dashed cyan;
       overflow: hidden;
-      min-height: 100px;
     }
-    
+
     .next-text {
-      flex: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 15px 30px;
+      padding: 4px 30px;
       color: #fff;
       font-size: 36px;
       font-weight: 400;
@@ -116,6 +113,28 @@
     /* Cleared/black screen state */
     .singer-container.cleared .main-content {
       display: none;
+    }
+
+    /* Mode B: Third PPTX — full-screen image, no text band */
+    .singer-container.mode-b {
+      padding: 0;
+      gap: 0;
+    }
+    .singer-container.mode-b .main-content {
+      gap: 0;
+    }
+    .singer-container.mode-b .next-slide-section {
+      display: none;
+    }
+    .singer-container.mode-b .current-slide-section {
+      border-radius: 0;
+      background: #000;
+    }
+    .singer-container.mode-b .current-slide-image {
+      padding: 0;
+    }
+    .singer-container.mode-b .current-slide-image img {
+      border-radius: 0;
     }
   </style>
 </head>

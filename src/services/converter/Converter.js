@@ -44,6 +44,27 @@ class Converter extends EventEmitter {
   }
 
   /**
+   * Remove stale slide images and metadata from a previous conversion.
+   * Called before starting a new conversion so leftover files from a
+   * larger previous presentation never appear in the grid.
+   * @param {string} outputDir
+   */
+  async _cleanOutputDir(outputDir) {
+    try {
+      const files = await fs.readdir(outputDir);
+      const toDelete = files.filter(f =>
+        (f.startsWith('slide_') && f.endsWith('.jpg')) || f === 'metadata.json'
+      );
+      await Promise.all(toDelete.map(f => fs.unlink(path.join(outputDir, f)).catch(() => {})));
+      if (toDelete.length > 0) {
+        console.log(`[Converter] Cleaned ${toDelete.length} stale file(s) from ${outputDir}`);
+      }
+    } catch (e) {
+      // Directory doesn't exist yet — nothing to clean
+    }
+  }
+
+  /**
    * Convert a PPTX file to slide images
    * @param {string} inputPath - Path to PPTX file
    * @param {string} outputDir - Output directory
@@ -52,6 +73,11 @@ class Converter extends EventEmitter {
   async convert(inputPath, outputDir) {
     // Ensure output directory exists
     await fs.mkdir(outputDir, { recursive: true });
+
+    // Remove stale files from any previous conversion before writing new ones.
+    // Without this, loading a shorter presentation leaves orphaned slide_NNN.jpg
+    // files that show up in the grid.
+    await this._cleanOutputDir(outputDir);
 
     // Initialize if not already done
     await this.initialize();

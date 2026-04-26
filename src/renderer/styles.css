@@ -271,6 +271,13 @@ body {
   color: var(--danger-color);
 }
 
+.date-warning {
+  font-size: 0.8rem;
+  color: var(--warning-color);
+  margin-top: -10px;
+  margin-bottom: 10px;
+}
+
 .progress-bar {
   height: 6px;
   background: var(--bg-tertiary);
@@ -404,30 +411,101 @@ body {
 }
 
 .preview-box {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
 }
 
-.mini-preview {
-  flex: 1;
+.preview-accordion {
   display: flex;
   flex-direction: column;
-  background: var(--bg-card);
+  min-height: 0;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   overflow: hidden;
-  min-height: 0;
 }
 
-.mini-preview-label {
+.preview-accordion-header {
   padding: 4px 8px;
   font-size: 0.75rem;
   font-weight: 600;
+  color: var(--text-secondary);
   background: var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
+}
+
+.preview-accordion-header::before {
+  content: '\25B6';
+  font-size: 0.6rem;
+  transition: transform 0.15s ease;
+}
+
+.preview-accordion[open] > .preview-accordion-header::before {
+  transform: rotate(90deg);
+}
+
+/* Hide default marker in WebKit/Blink */
+.preview-accordion-header::-webkit-details-marker {
+  display: none;
+}
+
+.singer-font-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.singer-font-control label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.font-size-adjuster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.font-size-input {
+  width: 48px;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 2px;
+  -moz-appearance: textfield;
+}
+
+.font-size-input::-webkit-outer-spin-button,
+.font-size-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.preview-info-icon {
+  margin-left: auto;
+  cursor: help;
+  opacity: 0.5;
+  font-size: 0.85rem;
+}
+
+.mini-preview {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  min-height: 0;
 }
 
 .mini-preview-img {

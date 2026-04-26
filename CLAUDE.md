@@ -71,8 +71,9 @@ The converter (`src/services/converter/`) handles PPTX to JPEG conversion:
 ## Key Conventions
 
 - **Language separation:** Russian and English presentations are managed independently with separate caches and display assignments
-- **Slide navigation:** Keyboard shortcuts (arrows, space, Home/End) for fast control
+- **Slide navigation:** Keyboard shortcuts (arrows, space, Home/End) for fast control — handled in the renderer (`app.js`) via `document keydown`, active only when the control panel window is focused
 - **Escape:** Clears all displays to black
+- **Note:** Electron `globalShortcut` (OS-wide key capture) was intentionally removed. It caused accidental slide navigation when the app was not in focus during a live show. The commented-out code remains in `main.js` for reference.
 - **Fade transitions:** Configurable fade duration (300ms default)
 - **Thumbnail zoom:** Adjustable thumbnail grid size (50%–200%), persisted in user settings
 - **Singer screen:** Always shows preview of next slide text

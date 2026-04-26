@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -51,7 +51,7 @@ let appState = {
   presentations: {
     russian: null,
     english: null,
-    singer: null
+    singer: null  // Optional third PPTX shown on the singer screen in 'third-pptx' mode
   },
   currentSlide: 0,
   totalSlides: 0,
@@ -70,7 +70,11 @@ let appState = {
   isCleared: false,  // Track if displays are currently cleared (black)
   singerLanguage: 'russian',
   fadeDuration: 300,  // Fade transition duration in ms
-  syncMode: false  // Experimental: coordinate exact reveal timing across displays
+  syncMode: false,  // Experimental: coordinate exact reveal timing across displays
+  singerFontSize: 36,  // Singer screen next-text font size in px
+  singerCharLimit: 70,  // Singer screen next-text character limit
+  singerTextPadding: 4,  // Singer screen next-text vertical padding in px
+  singerScreenMode: 'auto-preview'  // 'auto-preview' | 'third-pptx'
 };
 
 
@@ -124,7 +128,7 @@ function ensureCacheDir() {
 
 function createControlWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
-  
+
   controlWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -141,7 +145,7 @@ function createControlWindow() {
   });
 
   controlWindow.loadFile(path.join(__dirname, 'src', 'renderer', 'index.html'));
-  
+
   controlWindow.once('ready-to-show', () => {
     controlWindow.show();
     // Detect available displays
@@ -166,7 +170,7 @@ function createControlWindow() {
 
 function createDisplayWindow(displayId, displayInfo, language) {
   const { bounds } = displayInfo;
-  
+
   // For Windows: Use fullscreen mode with proper bounds
   // Kiosk mode doesn't work reliably on secondary displays
   const win = new BrowserWindow({
@@ -196,7 +200,7 @@ function createDisplayWindow(displayId, displayInfo, language) {
   });
 
   win.loadFile(path.join(__dirname, 'src', 'renderer', 'display.html'));
-  
+
   win.once('ready-to-show', () => {
     // First, position the window on the correct display
     win.setBounds({
@@ -205,28 +209,28 @@ function createDisplayWindow(displayId, displayInfo, language) {
       width: bounds.width,
       height: bounds.height
     });
-    
+
     // Show the window
     win.show();
-    
+
     // Now enter fullscreen mode on THIS display
     // This is the key - setFullScreen after the window is on the correct display
     win.setFullScreen(true);
-    
+
     // Set always on top with highest level
     win.setAlwaysOnTop(true, 'screen-saver');
-    
+
     // Focus the window
     win.focus();
-    
+
     // Send initial configuration
-    win.webContents.send('display:init', { 
-      language, 
-      displayId, 
+    win.webContents.send('display:init', {
+      language,
+      displayId,
       fadeDuration: appState.fadeDuration,
-      syncMode: appState.syncMode 
+      syncMode: appState.syncMode
     });
-    
+
     console.log(`[Display] Created ${language} window on display ${displayId} at ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
   });
 
@@ -243,7 +247,7 @@ function createDisplayWindow(displayId, displayInfo, language) {
 
 function createSingerWindow(displayInfo) {
   const { bounds } = displayInfo;
-  
+
   singerWindow = new BrowserWindow({
     x: bounds.x,
     y: bounds.y,
@@ -267,11 +271,17 @@ function createSingerWindow(displayInfo) {
   });
 
   singerWindow.loadFile(path.join(__dirname, 'src', 'renderer', 'singer.html'));
-  
+
   singerWindow.webContents.once('did-finish-load', () => {
     console.log('[Singer] Content loaded');
+    // Send current font size setting
+    singerWindow.webContents.send('singer:fontSizeUpdate', appState.singerFontSize);
+    singerWindow.webContents.send('singer:charLimitUpdate', appState.singerCharLimit);
+    singerWindow.webContents.send('singer:textPaddingUpdate', appState.singerTextPadding);
+    // Send current mode so the renderer applies the right layout immediately
+    singerWindow.webContents.send('singer:modeUpdate', appState.singerScreenMode || 'auto-preview');
   });
-  
+
   singerWindow.once('ready-to-show', () => {
     // First, position the window on the correct display
     singerWindow.setBounds({
@@ -280,18 +290,18 @@ function createSingerWindow(displayInfo) {
       width: bounds.width,
       height: bounds.height
     });
-    
+
     // Show the window
     singerWindow.show();
-    
+
     // Now enter fullscreen mode on THIS display
     singerWindow.setFullScreen(true);
-    
+
     // Set always on top with highest level
     singerWindow.setAlwaysOnTop(true, 'screen-saver');
-    
+
     singerWindow.focus();
-    
+
     console.log(`[Display] Created singer window at ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
   });
 
@@ -306,61 +316,41 @@ function updateDisplayList() {
     bounds: display.bounds,
     isPrimary: display.bounds.x === 0 && display.bounds.y === 0
   }));
-  
+
   if (controlWindow) {
     controlWindow.webContents.send('displays:updated', appState.displays);
   }
 }
 
-// Track if shortcuts are registered
-let shortcutsRegistered = false;
-
-// Register keyboard shortcuts
-function registerGlobalShortcuts() {
-  if (shortcutsRegistered) return;
-  
-  // These shortcuts work even when display windows are focused
-  globalShortcut.register('Right', () => navigateSlide(1));
-  globalShortcut.register('Left', () => navigateSlide(-1));
-  globalShortcut.register('Space', () => navigateSlide(1));
-  globalShortcut.register('Home', () => goToSlide(0));
-  globalShortcut.register('End', () => goToSlide(appState.totalSlides - 1));
-  
-  // Escape key: clear displays to black
-  globalShortcut.register('Escape', () => {
-    clearAllDisplays();
-  });
-  
-  // Number keys for quick navigation (1-9 for slides 1-9, 0 for slide 10)
-  for (let i = 0; i <= 9; i++) {
-    globalShortcut.register(`${i}`, () => {
-      const slideNum = i === 0 ? 9 : i - 1;
-      if (slideNum < appState.totalSlides) {
-        goToSlide(slideNum);
-      }
-    });
-  }
-  
-  shortcutsRegistered = true;
-}
-
-// Unregister keyboard shortcuts
-function unregisterGlobalShortcuts() {
-  if (!shortcutsRegistered) return;
-  
-  globalShortcut.unregister('Right');
-  globalShortcut.unregister('Left');
-  globalShortcut.unregister('Space');
-  globalShortcut.unregister('Home');
-  globalShortcut.unregister('End');
-  globalShortcut.unregister('Escape');
-  
-  for (let i = 0; i <= 9; i++) {
-    globalShortcut.unregister(`${i}`);
-  }
-  
-  shortcutsRegistered = false;
-}
+// DEPRECATED: Global keyboard shortcuts were disabled because Electron's globalShortcut
+// captures keys system-wide (even when the app is not focused), which caused accidental
+// slide navigation when typing in other applications during a live show.
+// Keyboard handling is now done entirely in the renderer (app.js) via document keydown
+// events, which only fire when the control panel window is focused.
+//
+// let shortcutsRegistered = false;
+//
+// function registerGlobalShortcuts() {
+//   if (shortcutsRegistered) return;
+//   globalShortcut.register('Right', () => navigateSlide(1));
+//   globalShortcut.register('Left', () => navigateSlide(-1));
+//   globalShortcut.register('Space', () => navigateSlide(1));
+//   globalShortcut.register('Home', () => goToSlide(0));
+//   globalShortcut.register('End', () => goToSlide(appState.totalSlides - 1));
+//   globalShortcut.register('Escape', () => { clearAllDisplays(); });
+//   shortcutsRegistered = true;
+// }
+//
+// function unregisterGlobalShortcuts() {
+//   if (!shortcutsRegistered) return;
+//   globalShortcut.unregister('Right');
+//   globalShortcut.unregister('Left');
+//   globalShortcut.unregister('Space');
+//   globalShortcut.unregister('Home');
+//   globalShortcut.unregister('End');
+//   globalShortcut.unregister('Escape');
+//   shortcutsRegistered = false;
+// }
 
 function navigateSlide(delta) {
   const newSlide = appState.currentSlide + delta;
@@ -371,15 +361,15 @@ function navigateSlide(delta) {
 
 function goToSlide(slideIndex) {
   if (slideIndex < 0 || slideIndex >= appState.totalSlides) return;
-  
+
   appState.currentSlide = slideIndex;
   const timestamp = Date.now();
-  
+
   // In sync mode, calculate a target reveal time in the future
   // This gives all windows time to load and prepare, then reveal simultaneously
   const revealDelay = appState.syncMode ? 100 : 0;  // 100ms coordination window
   const revealAt = timestamp + revealDelay;
-  
+
   // Send to all display windows simultaneously
   const slideData = {
     index: slideIndex,
@@ -391,7 +381,7 @@ function goToSlide(slideIndex) {
       next: Math.min(appState.totalSlides - 1, slideIndex + 1)
     }
   };
-  
+
   Object.entries(displayWindows).forEach(([lang, win]) => {
     if (win && !win.isDestroyed()) {
       win.webContents.send('slide:goto', {
@@ -405,32 +395,47 @@ function goToSlide(slideIndex) {
       });
     }
   });
-  
-  // Update singer screen with current slide image + next slide text
+
+  // Update singer screen — payload depends on mode
   if (singerWindow && !singerWindow.isDestroyed()) {
-    let singerLang;
-    if (appState.singerLanguage === 'singer') {
-      // Use dedicated singer presentation if loaded, otherwise fall back to russian
-      singerLang = appState.presentations.singer ? 'singer' : 'russian';
+    const mode = appState.singerScreenMode || 'auto-preview';
+
+    if (mode === 'third-pptx') {
+      // Third-PPTX mode: full-screen image from independent presentation, locked
+      // to main slide index. Out of range -> null image (renderer shows black).
+      const singerPres = appState.presentations.singer;
+      const inRange = singerPres && slideIndex < (singerPres.slideCount || 0);
+      const currentSlideImage = inRange ? getSlideImagePath('singer', slideIndex) : null;
+
+      console.log(`[Singer] Sending update (third-pptx): slide ${slideIndex + 1}, image: ${currentSlideImage ? 'yes' : 'BLACK'}`);
+
+      singerWindow.webContents.send('singer:update', {
+        mode: 'third-pptx',
+        currentSlide: slideIndex + 1,
+        currentSlideImage: currentSlideImage,
+        totalSlides: appState.totalSlides
+      });
     } else {
-      singerLang = appState.singerLanguage || 'russian';
+      // Auto-preview mode (default): current slide image + next slide text
+      const singerLang = appState.singerLanguage || 'russian';
+      const currentSlideImage = getSlideImagePath(singerLang, slideIndex);
+      const nextSlideText = getSlideText(singerLang, slideIndex + 1);
+
+      console.log(`[Singer] Sending update: slide ${slideIndex + 1}, lang ${singerLang}, image: ${currentSlideImage ? 'yes' : 'no'}, nextText: "${nextSlideText?.substring(0, 30) || 'none'}..."`);
+
+      singerWindow.webContents.send('singer:update', {
+        mode: 'auto-preview',
+        currentSlide: slideIndex + 1,
+        currentSlideImage: currentSlideImage,
+        nextSlideText: nextSlideText,
+        totalSlides: appState.totalSlides,
+        language: singerLang
+      });
     }
-    const currentSlideImage = getSlideImagePath(singerLang, slideIndex);
-    const nextSlideText = getSlideText(singerLang, slideIndex + 1);
-    
-    console.log(`[Singer] Sending update: slide ${slideIndex + 1}, lang ${singerLang}, image: ${currentSlideImage ? 'yes' : 'no'}, nextText: "${nextSlideText?.substring(0, 30) || 'none'}..."`);
-    
-    singerWindow.webContents.send('singer:update', {
-      currentSlide: slideIndex + 1,
-      currentSlideImage: currentSlideImage,
-      nextSlideText: nextSlideText,
-      totalSlides: appState.totalSlides,
-      language: singerLang
-    });
   } else {
     console.log('[Singer] Window not available');
   }
-  
+
   // Update control panel
   if (controlWindow && !controlWindow.isDestroyed()) {
     controlWindow.webContents.send('slide:changed', {
@@ -438,6 +443,9 @@ function goToSlide(slideIndex) {
       totalSlides: appState.totalSlides
     });
   }
+
+  // Capture singer screen preview after it has rendered
+  captureSingerPreview();
 }
 
 function getSlideImagePath(language, slideIndex) {
@@ -450,16 +458,16 @@ function getSlideImagePath(language, slideIndex) {
     console.log(`[getSlideImagePath] No cacheDir for ${language}`);
     return null;
   }
-  
+
   const paddedIndex = String(slideIndex + 1).padStart(3, '0');
   const imagePath = path.join(presentation.cacheDir, `slide_${paddedIndex}.jpg`);
-  
+
   // Check if file exists
   if (!fs.existsSync(imagePath)) {
     console.log(`[getSlideImagePath] File not found: ${imagePath}`);
     return null;
   }
-  
+
   return imagePath;
 }
 
@@ -473,7 +481,7 @@ function getSlideText(language, slideIndex) {
     console.log(`[getSlideText] No metadata for ${language}`);
     return '';
   }
-  
+
   const metadata = presentation.metadata;
   if (metadata && metadata.slides && metadata.slides[slideIndex]) {
     const text = metadata.slides[slideIndex].firstLine || metadata.slides[slideIndex].text || '';
@@ -512,12 +520,13 @@ function clearAllDisplays() {
   if (controlWindow && !controlWindow.isDestroyed()) {
     controlWindow.webContents.send('displays:cleared');
   }
+  captureSingerPreview();
 }
 
 // Show all displays and re-send current slide
 function showAllDisplays() {
   appState.isCleared = false;
-  
+
   // Re-show windows if hidden
   Object.values(displayWindows).forEach(win => {
     if (win && !win.isDestroyed() && !win.isVisible()) {
@@ -529,10 +538,35 @@ function showAllDisplays() {
     singerWindow.show();
     singerWindow.setFullScreen(true);
   }
-  
+
   // Re-send current slide to all displays
   goToSlide(appState.currentSlide);
 }
+
+// Capture singer screen preview and send to control panel
+let singerPreviewTimer = null;
+function captureSingerPreview() {
+  if (!singerWindow || singerWindow.isDestroyed()) return;
+  if (!controlWindow || controlWindow.isDestroyed()) return;
+
+  // Debounce: if rapid slide changes, only capture after settling
+  if (singerPreviewTimer) clearTimeout(singerPreviewTimer);
+  singerPreviewTimer = setTimeout(async () => {
+    try {
+      if (!singerWindow || singerWindow.isDestroyed()) return;
+      if (!controlWindow || controlWindow.isDestroyed()) return;
+      const image = await singerWindow.webContents.capturePage();
+      const dataUrl = 'data:image/jpeg;base64,' + image.toJPEG(60).toString('base64');
+      controlWindow.webContents.send('singer:preview', dataUrl);
+    } catch (err) {
+      console.error('[Singer] Preview capture failed:', err.message);
+    }
+  }, 120);
+}
+
+ipcMain.on('singer:requestPreview', () => {
+  captureSingerPreview();
+});
 
 // IPC Handlers
 ipcMain.handle('dialog:openPptx', async (event, language) => {
@@ -543,7 +577,7 @@ ipcMain.handle('dialog:openPptx', async (event, language) => {
     ],
     properties: ['openFile']
   });
-  
+
   if (!result.canceled && result.filePaths.length > 0) {
     return result.filePaths[0];
   }
@@ -553,10 +587,10 @@ ipcMain.handle('dialog:openPptx', async (event, language) => {
 // Process conversion queue
 async function processConversionQueue() {
   if (isConverting || conversionQueue.length === 0) return;
-  
+
   isConverting = true;
   const { filePath, language, resolve, reject } = conversionQueue.shift();
-  
+
   try {
     const result = await runConversion(filePath, language);
     resolve(result);
@@ -649,17 +683,17 @@ ipcMain.handle('pptx:convert', async (event, { filePath, language }) => {
 ipcMain.handle('slides:getList', async (event, language) => {
   const presentation = appState.presentations[language];
   if (!presentation) return [];
-  
+
   const slideFiles = fs.readdirSync(presentation.cacheDir)
     .filter(f => f.startsWith('slide_') && f.endsWith('.jpg') && !f.includes('_thumb'))
     .sort();
-  
+
   // Read thumbnail images as base64 for reliable display
   return slideFiles.map((file, index) => {
     const thumbFile = file.replace('.jpg', '_thumb.jpg');
     const thumbPath = path.join(presentation.cacheDir, thumbFile);
     const imagePath = path.join(presentation.cacheDir, file);
-    
+
     // Read thumbnail as base64
     let thumbnailBase64 = '';
     try {
@@ -670,7 +704,7 @@ ipcMain.handle('slides:getList', async (event, language) => {
     } catch (e) {
       console.error(`Error reading thumbnail ${thumbFile}:`, e);
     }
-    
+
     return {
       index: index,
       imagePath: imagePath,
@@ -681,18 +715,30 @@ ipcMain.handle('slides:getList', async (event, language) => {
   });
 });
 
-ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode }) => {
+ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode, singerFontSize, singerCharLimit, singerTextPadding, singerScreenMode }) => {
   const displays = screen.getAllDisplays();
-  
+
+  // Store singer screen mode
+  appState.singerScreenMode = singerScreenMode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+
   // Store singer language setting
   appState.singerLanguage = singerLanguage || 'russian';
-  
+
   // Store fade duration setting
   appState.fadeDuration = fadeDuration !== undefined ? fadeDuration : 300;
-  
+
   // Store sync mode setting
   appState.syncMode = syncMode || false;
-  
+
+  // Store singer font size setting
+  appState.singerFontSize = singerFontSize || 36;
+
+  // Store singer char limit setting
+  appState.singerCharLimit = singerCharLimit !== undefined ? singerCharLimit : 70;
+
+  // Store singer text padding setting
+  appState.singerTextPadding = singerTextPadding !== undefined ? singerTextPadding : 4;
+
   // Create Russian display window
   if (russianDisplayId !== null && russianDisplayId !== undefined) {
     const russianDisplay = displays.find(d => d.id === russianDisplayId) || displays[russianDisplayId];
@@ -701,7 +747,7 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
       appState.displayAssignments.russian = russianDisplayId;
     }
   }
-  
+
   // Create English display window
   if (englishDisplayId !== null && englishDisplayId !== undefined) {
     const englishDisplay = displays.find(d => d.id === englishDisplayId) || displays[englishDisplayId];
@@ -710,7 +756,7 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
       appState.displayAssignments.english = englishDisplayId;
     }
   }
-  
+
   // Create Singer display window (optional)
   if (singerDisplayId !== null && singerDisplayId !== undefined) {
     const singerDisplay = displays.find(d => d.id === singerDisplayId) || displays[singerDisplayId];
@@ -719,35 +765,35 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
       appState.displayAssignments.singer = singerDisplayId;
     }
   }
-  
+
   // Set total slides (use the smaller count if different)
   const russianCount = appState.presentations.russian?.slideCount || 0;
   const englishCount = appState.presentations.english?.slideCount || 0;
   appState.totalSlides = Math.min(russianCount, englishCount);
-  
-  // Register keyboard shortcuts for presentation
-  registerGlobalShortcuts();
-  
+
+  // Global shortcuts deprecated — keyboard handling is in the renderer (app.js).
+  // registerGlobalShortcuts();
+
   // Wait for windows to be ready, then go to first slide
   // Increased timeout to ensure singer window is fully loaded
   setTimeout(() => {
     console.log('[Display] Initial goToSlide(0)');
     goToSlide(0);
   }, 1000);
-  
+
   return { success: true, totalSlides: appState.totalSlides };
 });
 
 ipcMain.handle('display:stop', async () => {
   hideDisplayWindows();
-  unregisterGlobalShortcuts();
+  // unregisterGlobalShortcuts(); // deprecated
   return { success: true };
 });
 
 // Show displays - re-show windows and current slide
 ipcMain.handle('display:show', async () => {
   showAllDisplays();
-  registerGlobalShortcuts();
+  // registerGlobalShortcuts(); // deprecated
   return { success: true };
 });
 
@@ -760,14 +806,14 @@ ipcMain.handle('display:clear', async () => {
 // Set fade duration for transitions
 ipcMain.handle('display:setFade', async (event, duration) => {
   appState.fadeDuration = duration;
-  
+
   // Notify all display windows
   Object.values(displayWindows).forEach(win => {
     if (win && !win.isDestroyed()) {
       win.webContents.send('display:fadeUpdate', duration);
     }
   });
-  
+
   console.log(`[Display] Fade duration set to ${duration}ms`);
   return { success: true };
 });
@@ -775,15 +821,68 @@ ipcMain.handle('display:setFade', async (event, duration) => {
 // Set sync mode for coordinated reveal timing
 ipcMain.handle('display:setSyncMode', async (event, enabled) => {
   appState.syncMode = enabled;
-  
+
   // Notify all display windows
   Object.values(displayWindows).forEach(win => {
     if (win && !win.isDestroyed()) {
       win.webContents.send('display:syncModeUpdate', enabled);
     }
   });
-  
+
   console.log(`[Display] Sync mode ${enabled ? 'enabled' : 'disabled'}`);
+  return { success: true };
+});
+
+// Set singer font size
+ipcMain.handle('singer:setFontSize', async (event, size) => {
+  appState.singerFontSize = size;
+
+  if (singerWindow && !singerWindow.isDestroyed()) {
+    singerWindow.webContents.send('singer:fontSizeUpdate', size);
+  }
+
+  console.log(`[Singer] Font size set to ${size}px`);
+  return { success: true };
+});
+
+// Set singer text padding
+ipcMain.handle('singer:setTextPadding', async (event, padding) => {
+  appState.singerTextPadding = padding;
+
+  if (singerWindow && !singerWindow.isDestroyed()) {
+    singerWindow.webContents.send('singer:textPaddingUpdate', padding);
+  }
+
+  console.log(`[Singer] Text padding set to ${padding}px`);
+  return { success: true };
+});
+
+// Set singer screen mode ('auto-preview' | 'third-pptx')
+ipcMain.handle('singer:setMode', async (event, mode) => {
+  const normalized = mode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+  appState.singerScreenMode = normalized;
+
+  if (singerWindow && !singerWindow.isDestroyed()) {
+    singerWindow.webContents.send('singer:modeUpdate', normalized);
+    // Re-issue current slide so the singer screen updates immediately
+    if (appState.totalSlides > 0) {
+      goToSlide(appState.currentSlide);
+    }
+  }
+
+  console.log(`[Singer] Mode set to ${normalized}`);
+  return { success: true };
+});
+
+// Set singer char limit
+ipcMain.handle('singer:setCharLimit', async (event, limit) => {
+  appState.singerCharLimit = limit;
+
+  if (singerWindow && !singerWindow.isDestroyed()) {
+    singerWindow.webContents.send('singer:charLimitUpdate', limit);
+  }
+
+  console.log(`[Singer] Char limit set to ${limit}`);
   return { success: true };
 });
 
@@ -831,28 +930,28 @@ ipcMain.handle('settings:save', async (event, settings) => {
 ipcMain.handle('cache:check', async (event, language) => {
   const cacheDir = path.join(CONFIG.cacheDir, language);
   const metadataPath = path.join(cacheDir, 'metadata.json');
-  
+
   if (!fs.existsSync(metadataPath)) {
     return { exists: false };
   }
-  
+
   try {
     const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-    
+
     // Count actual slide files
     const slideFiles = fs.readdirSync(cacheDir)
       .filter(f => f.startsWith('slide_') && f.endsWith('.jpg') && !f.includes('_thumb'));
-    
+
     if (slideFiles.length === 0) {
       return { exists: false };
     }
-    
+
     // Check if at least the first slide exists
     const firstSlide = path.join(cacheDir, 'slide_001.jpg');
     if (!fs.existsSync(firstSlide)) {
       return { exists: false };
     }
-    
+
     return {
       exists: true,
       slideCount: slideFiles.length,
@@ -869,28 +968,28 @@ ipcMain.handle('cache:check', async (event, language) => {
 ipcMain.handle('cache:load', async (event, language) => {
   const cacheDir = path.join(CONFIG.cacheDir, language);
   const metadataPath = path.join(cacheDir, 'metadata.json');
-  
+
   if (!fs.existsSync(metadataPath)) {
     throw new Error('No cached presentation found');
   }
-  
+
   const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-  
+
   // Count actual slide files
   const slideFiles = fs.readdirSync(cacheDir)
     .filter(f => f.startsWith('slide_') && f.endsWith('.jpg') && !f.includes('_thumb'));
-  
+
   const result = {
     success: true,
     cacheDir: cacheDir,
     slideCount: slideFiles.length,
     metadata: metadata
   };
-  
+
   // Update app state
   appState.presentations[language] = result;
   console.log(`[Cache] Loaded ${language} from cache: ${result.slideCount} slides`);
-  
+
   return result;
 });
 
@@ -903,17 +1002,16 @@ ipcMain.handle('displays:refresh', async () => {
 app.whenReady().then(() => {
   // Ensure cache directory exists now that app is ready
   ensureCacheDir();
-  
+
   createControlWindow();
   // Don't register shortcuts on startup - only when presentation starts
-  
+
   // Handle display changes
   screen.on('display-added', updateDisplayList);
   screen.on('display-removed', updateDisplayList);
 });
 
 app.on('window-all-closed', () => {
-  globalShortcut.unregisterAll();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -925,6 +1023,4 @@ app.on('activate', () => {
   }
 });
 
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
-});
+// app.on('will-quit', () => { globalShortcut.unregisterAll(); }); // deprecated with global shortcuts

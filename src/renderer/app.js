@@ -7,14 +7,18 @@ const state = {
   presentations: {
     russian: { loaded: false, path: null, slides: [] },
     english: { loaded: false, path: null, slides: [] },
-    singer: { loaded: false, path: null, slides: [] }
+    singer: { loaded: false, path: null, slideCount: 0 }  // Optional third PPTX (Mode B)
   },
   currentSlide: 0,
   totalSlides: 0,
   displays: [],
   isPresenting: false,
   thumbnailLang: 'both',  // 'both', 'russian', or 'english'
-  thumbnailZoom: 100  // percentage, 50-200
+  thumbnailZoom: 100,  // percentage, 50-200
+  singerFontSize: 36,   // px, 12-120
+  singerCharLimit: 70,  // characters, 10-500
+  singerTextPadding: 4,  // px, 0-80
+  singerScreenMode: 'auto-preview'  // 'auto-preview' | 'third-pptx'
 };
 
 // DOM Elements
@@ -22,24 +26,26 @@ const elements = {
   // File inputs
   russianFilePath: document.getElementById('russianFilePath'),
   englishFilePath: document.getElementById('englishFilePath'),
-  singerFilePath: document.getElementById('singerFilePath'),
   btnSelectRussian: document.getElementById('btnSelectRussian'),
   btnSelectEnglish: document.getElementById('btnSelectEnglish'),
-  btnSelectSinger: document.getElementById('btnSelectSinger'),
   
   // Status indicators
   russianStatus: document.getElementById('russianStatus'),
   englishStatus: document.getElementById('englishStatus'),
-  singerStatus: document.getElementById('singerStatus'),
   russianProgress: document.getElementById('russianProgress'),
   englishProgress: document.getElementById('englishProgress'),
-  singerProgress: document.getElementById('singerProgress'),
   
   // Display selectors
   russianDisplay: document.getElementById('russianDisplay'),
   englishDisplay: document.getElementById('englishDisplay'),
   singerDisplay: document.getElementById('singerDisplay'),
   singerLanguage: document.getElementById('singerLanguage'),
+  singerScreenMode: document.getElementById('singerScreenMode'),
+  singerLanguageRow: document.getElementById('singerLanguageRow'),
+  singerThirdPptxRow: document.getElementById('singerThirdPptxRow'),
+  singerThirdPptxPath: document.getElementById('singerThirdPptxPath'),
+  singerThirdPptxStatus: document.getElementById('singerThirdPptxStatus'),
+  btnSelectSingerThirdPptx: document.getElementById('btnSelectSingerThirdPptx'),
   fadeDuration: document.getElementById('fadeDuration'),
   syncMode: document.getElementById('syncMode'),
   
@@ -70,6 +76,31 @@ const elements = {
   zoomOut: document.getElementById('zoomOut'),
   zoomLevel: document.getElementById('zoomLevel'),
 
+  // Preview accordions
+  previewAccordionRu: document.getElementById('previewAccordionRu'),
+  previewAccordionEn: document.getElementById('previewAccordionEn'),
+  previewAccordionSinger: document.getElementById('previewAccordionSinger'),
+  currentSingerImg: document.getElementById('currentSingerImg'),
+
+  // Date warnings
+  russianDateWarning: document.getElementById('russianDateWarning'),
+  englishDateWarning: document.getElementById('englishDateWarning'),
+
+  // Singer font size
+  singerFontSize: document.getElementById('singerFontSize'),
+  singerFontUp: document.getElementById('singerFontUp'),
+  singerFontDown: document.getElementById('singerFontDown'),
+
+  // Singer char limit
+  singerCharLimit: document.getElementById('singerCharLimit'),
+  singerCharLimitUp: document.getElementById('singerCharLimitUp'),
+  singerCharLimitDown: document.getElementById('singerCharLimitDown'),
+
+  // Singer text padding
+  singerTextPadding: document.getElementById('singerTextPadding'),
+  singerTextPaddingUp: document.getElementById('singerTextPaddingUp'),
+  singerTextPaddingDown: document.getElementById('singerTextPaddingDown'),
+
   // Status bar
   statusMessage: document.getElementById('statusMessage')
 };
@@ -83,6 +114,8 @@ async function init() {
   window.api.onDisplaysUpdated(handleDisplaysUpdated);
   window.api.onConversionProgress(handleConversionProgress);
   window.api.onSlideChanged(handleSlideChanged);
+  window.api.onDisplaysCleared(handleDisplaysCleared);
+  window.api.onSingerPreview(handleSingerPreview);
   
   setStatus('Ready - Select PowerPoint files to begin');
 }
@@ -91,7 +124,10 @@ function setupEventListeners() {
   // File selection
   elements.btnSelectRussian.addEventListener('click', () => selectFile('russian'));
   elements.btnSelectEnglish.addEventListener('click', () => selectFile('english'));
-  elements.btnSelectSinger.addEventListener('click', () => selectFile('singer'));
+  elements.btnSelectSingerThirdPptx.addEventListener('click', () => selectFile('singer'));
+
+  // Singer screen mode toggle (auto-preview vs third-pptx)
+  elements.singerScreenMode.addEventListener('change', handleSingerScreenModeChange);
   
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
@@ -130,6 +166,41 @@ function setupEventListeners() {
   // Thumbnail zoom controls
   elements.zoomIn.addEventListener('click', () => adjustThumbnailZoom(10));
   elements.zoomOut.addEventListener('click', () => adjustThumbnailZoom(-10));
+
+  // Singer font size controls
+  elements.singerFontUp.addEventListener('click', () => adjustSingerFontSize(2));
+  elements.singerFontDown.addEventListener('click', () => adjustSingerFontSize(-2));
+  elements.singerFontSize.addEventListener('change', () => {
+    const val = Math.max(12, Math.min(240, parseInt(elements.singerFontSize.value) || 36));
+    state.singerFontSize = val;
+    elements.singerFontSize.value = val;
+    window.api.setSingerFontSize(val);
+    window.api.requestSingerPreview();
+    saveCurrentSettings();
+  });
+
+  // Singer char limit controls
+  elements.singerCharLimitUp.addEventListener('click', () => adjustSingerCharLimit(5));
+  elements.singerCharLimitDown.addEventListener('click', () => adjustSingerCharLimit(-5));
+  elements.singerCharLimit.addEventListener('change', () => {
+    const val = Math.max(10, Math.min(500, parseInt(elements.singerCharLimit.value) || 70));
+    state.singerCharLimit = val;
+    elements.singerCharLimit.value = val;
+    window.api.setSingerCharLimit(val);
+    window.api.requestSingerPreview();
+    saveCurrentSettings();
+  });
+
+  // Singer text padding controls
+  elements.singerTextPaddingUp.addEventListener('click', () => adjustSingerTextPadding(2));
+  elements.singerTextPaddingDown.addEventListener('click', () => adjustSingerTextPadding(-2));
+  elements.singerTextPadding.addEventListener('change', () => {
+    const val = Math.max(0, Math.min(80, parseInt(elements.singerTextPadding.value) || 4));
+    state.singerTextPadding = val;
+    elements.singerTextPadding.value = val;
+    window.api.setSingerTextPadding(val);
+    saveCurrentSettings();
+  });
 
   // View controls (grid/list)
   document.querySelectorAll('.view-btn').forEach(btn => {
@@ -186,11 +257,44 @@ async function loadSavedSettings() {
         if (settings.syncMode !== undefined && elements.syncMode) {
           elements.syncMode.checked = settings.syncMode;
         }
+        // Restore singer screen mode and third-pptx path
+        const savedMode = settings.singerScreenMode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+        state.singerScreenMode = savedMode;
+        if (elements.singerScreenMode) {
+          elements.singerScreenMode.value = savedMode;
+        }
+        applySingerModeVisibility(savedMode);
+        // Push mode to main so it's authoritative immediately
+        window.api.setSingerScreenMode(savedMode).catch(() => {});
+        if (settings.singerThirdPptxPath && elements.singerThirdPptxPath) {
+          elements.singerThirdPptxPath.value = settings.singerThirdPptxPath;
+        }
       }, 100); // Small delay to ensure dropdowns are populated
     }
     if (settings.thumbnailZoom !== undefined) {
       state.thumbnailZoom = Math.max(50, Math.min(200, settings.thumbnailZoom));
       applyThumbnailZoom();
+    }
+    if (settings.previewOpenRu !== undefined) {
+      elements.previewAccordionRu.open = settings.previewOpenRu;
+    }
+    if (settings.previewOpenEn !== undefined) {
+      elements.previewAccordionEn.open = settings.previewOpenEn;
+    }
+    if (settings.previewOpenSinger !== undefined) {
+      elements.previewAccordionSinger.open = settings.previewOpenSinger;
+    }
+    if (settings.singerFontSize !== undefined) {
+      state.singerFontSize = Math.max(12, Math.min(240, settings.singerFontSize));
+      elements.singerFontSize.value = state.singerFontSize;
+    }
+    if (settings.singerCharLimit !== undefined) {
+      state.singerCharLimit = Math.max(10, Math.min(500, settings.singerCharLimit));
+      elements.singerCharLimit.value = state.singerCharLimit;
+    }
+    if (settings.singerTextPadding !== undefined) {
+      state.singerTextPadding = Math.max(0, Math.min(80, settings.singerTextPadding));
+      elements.singerTextPadding.value = state.singerTextPadding;
     }
     
     console.log('[Settings] Loaded saved settings:', settings);
@@ -209,11 +313,19 @@ async function saveCurrentSettings() {
         singer: elements.singerDisplay.value || null
       },
       singerLanguage: elements.singerLanguage.value || 'russian',
+      singerScreenMode: state.singerScreenMode || 'auto-preview',
+      singerThirdPptxPath: elements.singerThirdPptxPath.value || null,
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
       syncMode: elements.syncMode.checked || false,
-      thumbnailZoom: state.thumbnailZoom
+      thumbnailZoom: state.thumbnailZoom,
+      previewOpenRu: elements.previewAccordionRu.open,
+      previewOpenEn: elements.previewAccordionEn.open,
+      previewOpenSinger: elements.previewAccordionSinger.open,
+      singerFontSize: state.singerFontSize,
+      singerCharLimit: state.singerCharLimit,
+      singerTextPadding: state.singerTextPadding
     };
-    
+
     await window.api.saveSettings(settings);
     console.log('[Settings] Saved settings:', settings);
   } catch (error) {
@@ -229,8 +341,28 @@ async function checkForCachedPresentations() {
       window.api.checkCache('english'),
       window.api.checkCache('singer')
     ]);
-    
-    // If both main caches exist, offer to restore them
+
+    // Auto-restore the third PPTX silently — it's a separate optional asset
+    if (singerCache.exists) {
+      try {
+        const result = await window.api.loadFromCache('singer');
+        if (result.success) {
+          state.presentations.singer = {
+            loaded: true,
+            path: singerCache.originalFile || 'Cached',
+            slideCount: result.slideCount,
+            cacheDir: result.cacheDir
+          };
+          if (elements.singerThirdPptxStatus) {
+            elements.singerThirdPptxStatus.textContent = `✓ Restored: ${result.slideCount} slides`;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to restore singer cache:', e);
+      }
+    }
+
+    // If both caches exist, offer to restore them
     if (russianCache.exists && englishCache.exists) {
       setStatus(`Previous presentation found (${russianCache.slideCount} slides). Click "Restore Previous" to load it.`);
       showRestoreButton(russianCache, englishCache, singerCache.exists ? singerCache : null);
@@ -239,18 +371,13 @@ async function checkForCachedPresentations() {
       const cache = russianCache.exists ? russianCache : englishCache;
       setStatus(`Previous ${lang} presentation found (${cache.slideCount} slides).`);
     }
-    
-    // Restore singer cache silently if it exists (without requiring main caches)
-    if (singerCache.exists && !russianCache.exists && !englishCache.exists) {
-      setStatus(`Previous Singer presentation found (${singerCache.slideCount} slides).`);
-    }
   } catch (error) {
     console.error('Failed to check for cached presentations:', error);
   }
 }
 
 // Show restore button for previous presentation
-function showRestoreButton(russianCache, englishCache, singerCache) {
+function showRestoreButton(russianCache, englishCache) {
   // Check if restore button already exists
   if (document.getElementById('btnRestorePrevious')) return;
   
@@ -259,11 +386,11 @@ function showRestoreButton(russianCache, englishCache, singerCache) {
   restoreBtn.id = 'btnRestorePrevious';
   restoreBtn.className = 'btn btn-secondary';
   restoreBtn.textContent = 'Restore Previous';
-  restoreBtn.title = `Restore previous presentation (Russian: ${russianCache.slideCount} slides, English: ${englishCache.slideCount} slides${singerCache ? `, Singer: ${singerCache.slideCount} slides` : ''})`;
+  restoreBtn.title = `Restore previous presentation (Russian: ${russianCache.slideCount} slides, English: ${englishCache.slideCount} slides)`;
   restoreBtn.style.marginLeft = '10px';
   
   restoreBtn.addEventListener('click', async () => {
-    await restorePreviousPresentation(russianCache, englishCache, singerCache);
+    await restorePreviousPresentation(russianCache, englishCache);
     restoreBtn.remove();
   });
   
@@ -273,7 +400,7 @@ function showRestoreButton(russianCache, englishCache, singerCache) {
 }
 
 // Restore previous presentation from cache
-async function restorePreviousPresentation(russianCache, englishCache, singerCache) {
+async function restorePreviousPresentation(russianCache, englishCache) {
   try {
     setStatus('Restoring previous presentation...');
     
@@ -289,6 +416,7 @@ async function restorePreviousPresentation(russianCache, englishCache, singerCac
         };
         
         elements.russianFilePath.value = russianCache.originalFile || '[Cached presentation]';
+        if (russianCache.originalFile) checkFilenameDate('russian', russianCache.originalFile);
         updateConversionStatus('russian', `Restored: ${result.slideCount} slides`, false);
         await loadSlideList('russian');
       }
@@ -306,24 +434,9 @@ async function restorePreviousPresentation(russianCache, englishCache, singerCac
         };
         
         elements.englishFilePath.value = englishCache.originalFile || '[Cached presentation]';
+        if (englishCache.originalFile) checkFilenameDate('english', englishCache.originalFile);
         updateConversionStatus('english', `Restored: ${result.slideCount} slides`, false);
         await loadSlideList('english');
-      }
-    }
-    
-    // Load Singer from cache if available
-    if (singerCache && singerCache.exists) {
-      const result = await window.api.loadFromCache('singer');
-      if (result.success) {
-        state.presentations.singer = {
-          loaded: true,
-          path: singerCache.originalFile || 'Cached',
-          slideCount: result.slideCount,
-          cacheDir: result.cacheDir
-        };
-        
-        elements.singerFilePath.value = singerCache.originalFile || '[Cached Singer presentation]';
-        updateConversionStatus('singer', `Restored: ${result.slideCount} slides`, false);
       }
     }
     
@@ -340,17 +453,37 @@ async function selectFile(language) {
   try {
     const filePath = await window.api.openPptxDialog(language);
     if (!filePath) return;
-    
-    const pathInput = language === 'russian' ? elements.russianFilePath
-      : language === 'english' ? elements.englishFilePath
-      : elements.singerFilePath;
+
+    // Singer (third PPTX) follows a slimmer flow — no date warning, no thumbnails
+    if (language === 'singer') {
+      elements.singerThirdPptxPath.value = filePath;
+      elements.singerThirdPptxStatus.textContent = 'Converting third PPTX...';
+      setStatus('Converting third PPTX...');
+
+      const result = await window.api.convertPptx(filePath, 'singer');
+      if (result.success) {
+        state.presentations.singer = {
+          loaded: true,
+          path: filePath,
+          slideCount: result.slideCount,
+          cacheDir: result.cacheDir
+        };
+        elements.singerThirdPptxStatus.textContent = `✓ ${result.slideCount} slides loaded`;
+        setStatus(`Third PPTX loaded (${result.slideCount} slides)`);
+        await saveCurrentSettings();
+      }
+      return;
+    }
+
+    const pathInput = language === 'russian' ? elements.russianFilePath : elements.englishFilePath;
     pathInput.value = filePath;
-    
+    checkFilenameDate(language, filePath);
+
     setStatus(`Converting ${language} presentation...`);
     updateConversionStatus(language, 'Converting...', true);
-    
+
     const result = await window.api.convertPptx(filePath, language);
-    
+
     if (result.success) {
       state.presentations[language] = {
         loaded: true,
@@ -358,26 +491,104 @@ async function selectFile(language) {
         slideCount: result.slideCount,
         cacheDir: result.cacheDir
       };
-      
+
       updateConversionStatus(language, `✓ ${result.slideCount} slides loaded`, false);
       setStatus(`${language.charAt(0).toUpperCase() + language.slice(1)} presentation loaded successfully`);
-      
+
       // Load slide list
       await loadSlideList(language);
-      
+
       checkReadyState();
     }
   } catch (error) {
     console.error(`Error loading ${language} file:`, error);
-    updateConversionStatus(language, `✗ Error: ${error.message}`, false);
-    setStatus(`Error loading ${language} presentation`);
+    if (language === 'singer') {
+      elements.singerThirdPptxStatus.textContent = `✗ Error: ${error.message}`;
+      setStatus('Error loading third PPTX');
+    } else {
+      updateConversionStatus(language, `✗ Error: ${error.message}`, false);
+      setStatus(`Error loading ${language} presentation`);
+    }
+  }
+}
+
+// Extract a date from a filename, handling many common formats.
+// Returns a { year, month, day } object (1-based month/day) or null.
+function parseDateFromFilename(filePath) {
+  // Use only the basename
+  const basename = filePath.replace(/\\/g, '/').split('/').pop() || '';
+
+  // Patterns ordered from most-specific to least-specific to avoid false positives.
+  // Each entry: [regex, handler(match) -> {year,month,day} | null]
+  const patterns = [
+    // ISO / unambiguous: 2025-03-26, 2025.03.26, 2025_03_26, 20250326
+    [/\b(20\d{2})[-._]?(\d{2})[-._]?(\d{2})\b/, (m) => ({ year: +m[1], month: +m[2], day: +m[3] })],
+    // Written month name: March 26 2025 / 26 March 2025 / Mar-26-2025 etc.
+    [/\b(\d{1,2})[-.\s_]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-.\s_]*(\d{4})\b/i,
+      (m) => ({ year: +m[3], month: monthNameToNumber(m[2]), day: +m[1] })],
+    [/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-.\s_]*(\d{1,2})[-.\s_]*(\d{4})\b/i,
+      (m) => ({ year: +m[3], month: monthNameToNumber(m[1]), day: +m[2] })],
+    // Numeric with separators — try both M/D and D/M ambiguity resolved below
+    [/\b(\d{1,2})[\/\-._](\d{1,2})[\/\-._](\d{4})\b/, (m) => resolveNumericDate(+m[1], +m[2], +m[3])],
+    [/\b(\d{4})[\/\-._](\d{1,2})[\/\-._](\d{1,2})\b/, (m) => ({ year: +m[1], month: +m[2], day: +m[3] })],
+    // Short year last: 3/26/25 or 26/3/25
+    [/\b(\d{1,2})[\/\-._](\d{1,2})[\/\-._](\d{2})\b/, (m) => resolveNumericDate(+m[1], +m[2], 2000 + +m[3])],
+  ];
+
+  for (const [regex, handler] of patterns) {
+    const match = basename.match(regex);
+    if (match) {
+      const result = handler(match);
+      if (result && isValidDate(result)) return result;
+    }
+  }
+  return null;
+}
+
+function monthNameToNumber(name) {
+  const months = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6,
+                   jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+  return months[name.toLowerCase().slice(0, 3)] || 0;
+}
+
+// For ambiguous numeric dates (e.g. 3/26 vs 26/3), pick the one that makes sense.
+// If first number > 12, it must be the day (European DD/MM). Otherwise assume M/D (US).
+function resolveNumericDate(a, b, year) {
+  if (a > 12) return { year, month: b, day: a };   // a can only be day
+  if (b > 12) return { year, month: a, day: b };   // b can only be day
+  // Both ≤ 12: default to US convention M/D
+  return { year, month: a, day: b };
+}
+
+function isValidDate({ year, month, day }) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const d = new Date(year, month - 1, day);
+  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+}
+
+function checkFilenameDate(language, filePath) {
+  const warningEl = language === 'russian' ? elements.russianDateWarning : elements.englishDateWarning;
+  const parsed = parseDateFromFilename(filePath);
+  if (!parsed) {
+    warningEl.style.display = 'none';
+    return;
+  }
+  const today = new Date();
+  const match = parsed.year === today.getFullYear()
+    && parsed.month === today.getMonth() + 1
+    && parsed.day === today.getDate();
+  if (match) {
+    warningEl.style.display = 'none';
+  } else {
+    const fileDate = new Date(parsed.year, parsed.month - 1, parsed.day)
+      .toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    warningEl.textContent = `⚠ File date (${fileDate}) does not match today`;
+    warningEl.style.display = 'block';
   }
 }
 
 function updateConversionStatus(language, message, showProgress) {
-  const statusEl = language === 'russian' ? elements.russianStatus
-    : language === 'english' ? elements.englishStatus
-    : elements.singerStatus;
+  const statusEl = language === 'russian' ? elements.russianStatus : elements.englishStatus;
   const progressBar = statusEl.querySelector('.progress-bar');
   const statusText = statusEl.querySelector('.status-text');
   
@@ -394,9 +605,7 @@ function updateConversionStatus(language, message, showProgress) {
 }
 
 function handleConversionProgress({ language, progress }) {
-  const progressEl = language === 'russian' ? elements.russianProgress
-    : language === 'english' ? elements.englishProgress
-    : elements.singerProgress;
+  const progressEl = language === 'russian' ? elements.russianProgress : elements.englishProgress;
   progressEl.style.width = `${progress}%`;
 }
 
@@ -488,15 +697,28 @@ function checkReadyState() {
 
 async function startPresentation() {
   try {
+    const singerDisplayId = elements.singerDisplay.value ? parseInt(elements.singerDisplay.value) : null;
+    const singerScreenMode = state.singerScreenMode || 'auto-preview';
+
+    // Mode B requires a loaded third PPTX when a singer display is assigned
+    if (singerDisplayId !== null && singerScreenMode === 'third-pptx' && !state.presentations.singer.loaded) {
+      setStatus('Singer Screen is set to Third Presentation but no PPTX is loaded. Pick one or switch to Auto Text Preview.');
+      return;
+    }
+
     const displays = {
       russianDisplayId: parseInt(elements.russianDisplay.value) || 0,
       englishDisplayId: parseInt(elements.englishDisplay.value) || 1,
-      singerDisplayId: elements.singerDisplay.value ? parseInt(elements.singerDisplay.value) : null,
+      singerDisplayId: singerDisplayId,
       singerLanguage: elements.singerLanguage.value || 'russian',
+      singerScreenMode: singerScreenMode,
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
-      syncMode: elements.syncMode.checked || false
+      syncMode: elements.syncMode.checked || false,
+      singerFontSize: state.singerFontSize,
+      singerCharLimit: state.singerCharLimit,
+      singerTextPadding: state.singerTextPadding
     };
-    
+
     // Save settings before starting
     await saveCurrentSettings();
     
@@ -552,6 +774,7 @@ async function showDisplays() {
 async function clearDisplays() {
   try {
     await window.api.clearDisplays();
+    setPreviewsBlacked(true);
     setStatus('Displays cleared (black screens)');
   } catch (error) {
     console.error('Error clearing displays:', error);
@@ -571,6 +794,36 @@ async function handleFadeDurationChange() {
     }
   } catch (error) {
     console.error('Error setting fade duration:', error);
+  }
+}
+
+// Handle singer-screen mode change (auto-preview vs third-pptx)
+async function handleSingerScreenModeChange() {
+  const mode = elements.singerScreenMode.value === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+  state.singerScreenMode = mode;
+  applySingerModeVisibility(mode);
+  try {
+    await window.api.setSingerScreenMode(mode);
+    await saveCurrentSettings();
+    if (mode === 'third-pptx') {
+      setStatus('Singer Screen: Third Presentation mode');
+    } else {
+      setStatus('Singer Screen: Auto Text Preview mode');
+    }
+  } catch (error) {
+    console.error('Error setting singer screen mode:', error);
+  }
+}
+
+// Toggle which row is visible based on mode
+function applySingerModeVisibility(mode) {
+  if (!elements.singerLanguageRow || !elements.singerThirdPptxRow) return;
+  if (mode === 'third-pptx') {
+    elements.singerLanguageRow.style.display = 'none';
+    elements.singerThirdPptxRow.style.display = '';
+  } else {
+    elements.singerLanguageRow.style.display = '';
+    elements.singerThirdPptxRow.style.display = 'none';
   }
 }
 
@@ -636,10 +889,27 @@ function goToSlide(slideIndex) {
 function handleSlideChanged({ currentSlide, totalSlides }) {
   state.currentSlide = currentSlide;
   state.totalSlides = totalSlides;
-  
+
+  setPreviewsBlacked(false);
   updateSlideCounter();
   updateCurrentSlidePreview();
   updateThumbnailHighlight();
+}
+
+// Called when Escape is pressed globally (via main process notification)
+function handleDisplaysCleared() {
+  setPreviewsBlacked(true);
+  setStatus('Displays cleared (black screens)');
+}
+
+function handleSingerPreview(dataUrl) {
+  if (!elements.previewAccordionSinger.open) return;
+  elements.currentSingerImg.src = dataUrl;
+}
+
+function setPreviewsBlacked(blacked) {
+  elements.currentRussianImg.style.visibility = blacked ? 'hidden' : '';
+  elements.currentEnglishImg.style.visibility = blacked ? 'hidden' : '';
 }
 
 function updateSlideCounter() {
@@ -685,6 +955,32 @@ function updateThumbnailHighlight() {
       });
     }
   }
+}
+
+// Singer font size
+function adjustSingerFontSize(delta) {
+  state.singerFontSize = Math.max(12, Math.min(240, state.singerFontSize + delta));
+  elements.singerFontSize.value = state.singerFontSize;
+  window.api.setSingerFontSize(state.singerFontSize);
+  window.api.requestSingerPreview();
+  saveCurrentSettings();
+}
+
+// Singer char limit
+function adjustSingerCharLimit(delta) {
+  state.singerCharLimit = Math.max(10, Math.min(500, state.singerCharLimit + delta));
+  elements.singerCharLimit.value = state.singerCharLimit;
+  window.api.setSingerCharLimit(state.singerCharLimit);
+  window.api.requestSingerPreview();
+  saveCurrentSettings();
+}
+
+// Singer text padding
+function adjustSingerTextPadding(delta) {
+  state.singerTextPadding = Math.max(0, Math.min(80, state.singerTextPadding + delta));
+  elements.singerTextPadding.value = state.singerTextPadding;
+  window.api.setSingerTextPadding(state.singerTextPadding);
+  saveCurrentSettings();
 }
 
 // Thumbnail zoom
@@ -910,6 +1206,14 @@ elements.englishDisplay.addEventListener('change', () => {
 });
 elements.singerDisplay.addEventListener('change', saveCurrentSettings);
 elements.singerLanguage.addEventListener('change', saveCurrentSettings);
+elements.previewAccordionRu.addEventListener('toggle', saveCurrentSettings);
+elements.previewAccordionEn.addEventListener('toggle', saveCurrentSettings);
+elements.previewAccordionSinger.addEventListener('toggle', () => {
+  saveCurrentSettings();
+  if (elements.previewAccordionSinger.open) {
+    window.api.requestSingerPreview();
+  }
+});
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', init);

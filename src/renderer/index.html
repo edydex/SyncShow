@@ -51,6 +51,7 @@
               <div class="progress-fill" id="russianProgress"></div>
             </div>
           </div>
+          <div class="date-warning" id="russianDateWarning" style="display: none;"></div>
           <div class="display-selector">
             <label>Display:</label>
             <select id="russianDisplay" class="display-dropdown">
@@ -72,6 +73,7 @@
               <div class="progress-fill" id="englishProgress"></div>
             </div>
           </div>
+          <div class="date-warning" id="englishDateWarning" style="display: none;"></div>
           <div class="display-selector">
             <label>Display:</label>
             <select id="englishDisplay" class="display-dropdown">
@@ -83,30 +85,36 @@
         <!-- Singer Screen (Optional) -->
         <div class="setup-card setup-card-optional">
           <h3>Singer Screen <span class="optional-badge">Optional</span></h3>
-          <p class="setup-description">Shows current slide + preview of next slide text</p>
-          <div class="file-selector">
-            <input type="text" id="singerFilePath" class="file-path" readonly placeholder="Select Singer PowerPoint file (optional)...">
-            <button id="btnSelectSinger" class="btn btn-outline">Browse...</button>
-          </div>
-          <div class="conversion-status" id="singerStatus">
-            <span class="status-text">Not loaded</span>
-            <div class="progress-bar" style="display: none;">
-              <div class="progress-fill" id="singerProgress"></div>
-            </div>
-          </div>
-          <div class="display-selector" style="margin-top: 10px;">
+          <p class="setup-description">Auto text preview, or a third parallel PPTX</p>
+          <div class="display-selector">
             <label>Display:</label>
             <select id="singerDisplay" class="display-dropdown">
               <option value="">None (disabled)</option>
             </select>
           </div>
           <div class="display-selector" style="margin-top: 10px;">
+            <label>Mode:</label>
+            <select id="singerScreenMode" class="display-dropdown">
+              <option value="auto-preview">Auto Text Preview</option>
+              <option value="third-pptx">Third Presentation (Experimental)</option>
+            </select>
+          </div>
+          <div class="display-selector" id="singerLanguageRow" style="margin-top: 10px;">
             <label>Language:</label>
             <select id="singerLanguage" class="display-dropdown">
               <option value="singer">Singer (own file)</option>
               <option value="russian">Russian</option>
               <option value="english">English</option>
             </select>
+          </div>
+          <div id="singerThirdPptxRow" style="margin-top: 10px; display: none;">
+            <label>Third PPTX:</label>
+            <div class="file-selector" style="margin-top: 6px;">
+              <input type="text" id="singerThirdPptxPath" class="file-path" readonly placeholder="Select PowerPoint file...">
+              <button id="btnSelectSingerThirdPptx" class="btn btn-outline">Browse...</button>
+            </div>
+            <p class="setup-hint">Locked to main slide index. Singer screen goes black past this PPTX's last slide.</p>
+            <div id="singerThirdPptxStatus" class="setup-hint" style="margin-top: 4px;"></div>
           </div>
         </div>
 
@@ -208,17 +216,59 @@
 
           <!-- Current slide previews -->
           <div class="preview-box">
-            <div class="mini-preview">
-              <div class="mini-preview-label">RU</div>
-              <div class="mini-preview-img">
-                <img src="" alt="Russian" id="currentRussianImg">
+            <details class="preview-accordion" id="previewAccordionRu" open>
+              <summary class="preview-accordion-header">RU Preview</summary>
+              <div class="mini-preview">
+                <div class="mini-preview-img">
+                  <img src="" alt="Russian" id="currentRussianImg">
+                </div>
               </div>
+            </details>
+            <details class="preview-accordion" id="previewAccordionEn" open>
+              <summary class="preview-accordion-header">EN Preview</summary>
+              <div class="mini-preview">
+                <div class="mini-preview-img">
+                  <img src="" alt="English" id="currentEnglishImg">
+                </div>
+              </div>
+            </details>
+            <details class="preview-accordion" id="previewAccordionSinger" open>
+              <summary class="preview-accordion-header">Singer Preview <span class="preview-info-icon" title="This preview updates with a slight delay after each slide change. The actual singer screen updates instantly.">&#9432;</span></summary>
+              <div class="mini-preview">
+                <div class="mini-preview-img">
+                  <img src="" alt="Singer" id="currentSingerImg">
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <!-- Singer font size control -->
+          <div class="singer-font-control" id="singerFontControl">
+            <label>Singer Text Size:</label>
+            <div class="font-size-adjuster">
+              <button class="zoom-btn" id="singerFontDown">−</button>
+              <input type="number" class="font-size-input" id="singerFontSize" value="36" min="12" max="240" step="2">
+              <button class="zoom-btn" id="singerFontUp">+</button>
             </div>
-            <div class="mini-preview">
-              <div class="mini-preview-label">EN</div>
-              <div class="mini-preview-img">
-                <img src="" alt="English" id="currentEnglishImg">
-              </div>
+          </div>
+
+          <!-- Singer char limit control -->
+          <div class="singer-font-control" id="singerCharLimitControl">
+            <label>Singer Char Limit:</label>
+            <div class="font-size-adjuster">
+              <button class="zoom-btn" id="singerCharLimitDown">−</button>
+              <input type="number" class="font-size-input" id="singerCharLimit" value="70" min="10" max="500" step="5">
+              <button class="zoom-btn" id="singerCharLimitUp">+</button>
+            </div>
+          </div>
+
+          <!-- Singer text padding control -->
+          <div class="singer-font-control" id="singerTextPaddingControl">
+            <label>Singer Text Padding:</label>
+            <div class="font-size-adjuster">
+              <button class="zoom-btn" id="singerTextPaddingDown">−</button>
+              <input type="number" class="font-size-input" id="singerTextPadding" value="4" min="0" max="80" step="2">
+              <button class="zoom-btn" id="singerTextPaddingUp">+</button>
             </div>
           </div>
 

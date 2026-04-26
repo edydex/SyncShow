@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('api', {
   refreshDisplays: () => ipcRenderer.invoke('displays:refresh'),
   setFadeDuration: (duration) => ipcRenderer.invoke('display:setFade', duration),
   setSyncMode: (enabled) => ipcRenderer.invoke('display:setSyncMode', enabled),
+  setSingerFontSize: (size) => ipcRenderer.invoke('singer:setFontSize', size),
+  setSingerCharLimit: (limit) => ipcRenderer.invoke('singer:setCharLimit', limit),
+  setSingerTextPadding: (padding) => ipcRenderer.invoke('singer:setTextPadding', padding),
+  setSingerScreenMode: (mode) => ipcRenderer.invoke('singer:setMode', mode),
   
   // App state
   getAppState: () => ipcRenderer.invoke('app:getState'),
@@ -47,6 +51,10 @@ contextBridge.exposeInMainWorld('api', {
   
   onSlideChanged: (callback) => {
     ipcRenderer.on('slide:changed', (event, data) => callback(data));
+  },
+
+  onDisplaysCleared: (callback) => {
+    ipcRenderer.on('displays:cleared', (event) => callback());
   },
   
   // Display window specific
@@ -74,6 +82,28 @@ contextBridge.exposeInMainWorld('api', {
   onSingerUpdate: (callback) => {
     ipcRenderer.on('singer:update', (event, data) => callback(data));
   },
+
+  onSingerFontSize: (callback) => {
+    ipcRenderer.on('singer:fontSizeUpdate', (event, size) => callback(size));
+  },
+
+  onSingerCharLimit: (callback) => {
+    ipcRenderer.on('singer:charLimitUpdate', (event, limit) => callback(limit));
+  },
+
+  onSingerTextPadding: (callback) => {
+    ipcRenderer.on('singer:textPaddingUpdate', (event, padding) => callback(padding));
+  },
+
+  onSingerModeUpdate: (callback) => {
+    ipcRenderer.on('singer:modeUpdate', (event, mode) => callback(mode));
+  },
+
+  onSingerPreview: (callback) => {
+    ipcRenderer.on('singer:preview', (event, dataUrl) => callback(dataUrl));
+  },
+
+  requestSingerPreview: () => ipcRenderer.send('singer:requestPreview'),
   
   // Remove listeners (for cleanup)
   removeAllListeners: (channel) => {

@@ -115,6 +115,12 @@ class LibreOfficeStrategy extends BaseStrategy {
     // cannot be mistaken for the new output.
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'syncshow-pdf-'));
 
+    // Use an isolated user profile dir to prevent LibreOffice from connecting
+    // to an existing running instance (which would exit 0 but produce no output
+    // in our outdir). This is the most common cause of silent conversion failure.
+    const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), 'syncshow-lo-profile-'));
+    const profileUrl = 'file://' + profileDir.replace(/\\/g, '/');
+
     return new Promise((resolve, reject) => {
       const timeout = 300000; // 5 minutes
       let args;
@@ -127,6 +133,7 @@ class LibreOfficeStrategy extends BaseStrategy {
           '--headless',
           '--nofirststartwizard',
           '--norestore',
+          `-env:UserInstallation=${profileUrl}`,
           '--convert-to', 'pdf',
           '--outdir', tmpDir,
           inputPath
@@ -137,6 +144,7 @@ class LibreOfficeStrategy extends BaseStrategy {
           '--headless',
           '--nofirststartwizard',
           '--norestore',
+          `-env:UserInstallation=${profileUrl}`,
           '--convert-to', 'pdf',
           '--outdir', tmpDir,
           inputPath
@@ -167,8 +175,11 @@ class LibreOfficeStrategy extends BaseStrategy {
       child.on('close', async (code) => {
         clearTimeout(timeoutId);
 
+        // Clean up profile dir (fire and forget)
+        fs.rm(profileDir, { recursive: true, force: true }).catch(() => {});
+
         if (code !== 0) {
-          reject(new Error(`LibreOffice conversion failed with code ${code}: ${stderr}`));
+          reject(new Error(`LibreOffice conversion failed with code ${code}.\nstdout: ${stdout}\nstderr: ${stderr}`));
           return;
         }
 
@@ -188,7 +199,7 @@ class LibreOfficeStrategy extends BaseStrategy {
           if (pdfFile) {
             resolve({ pdfPath: path.join(tmpDir, pdfFile) });
           } else {
-            reject(new Error(`PDF not found after conversion. Output: ${stdout}`));
+            reject(new Error(`PDF not found after conversion.\nstdout: ${stdout}\nstderr: ${stderr}`));
           }
         }
       });
