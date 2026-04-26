@@ -6,7 +6,8 @@
 const state = {
   presentations: {
     russian: { loaded: false, path: null, slides: [] },
-    english: { loaded: false, path: null, slides: [] }
+    english: { loaded: false, path: null, slides: [] },
+    singer: { loaded: false, path: null, slideCount: 0 }  // Optional third PPTX (Mode B)
   },
   currentSlide: 0,
   totalSlides: 0,
@@ -16,7 +17,8 @@ const state = {
   thumbnailZoom: 100,  // percentage, 50-200
   singerFontSize: 36,   // px, 12-120
   singerCharLimit: 70,  // characters, 10-500
-  singerTextPadding: 4  // px, 0-80
+  singerTextPadding: 4,  // px, 0-80
+  singerScreenMode: 'auto-preview'  // 'auto-preview' | 'third-pptx'
 };
 
 // DOM Elements
@@ -38,6 +40,12 @@ const elements = {
   englishDisplay: document.getElementById('englishDisplay'),
   singerDisplay: document.getElementById('singerDisplay'),
   singerLanguage: document.getElementById('singerLanguage'),
+  singerScreenMode: document.getElementById('singerScreenMode'),
+  singerLanguageRow: document.getElementById('singerLanguageRow'),
+  singerThirdPptxRow: document.getElementById('singerThirdPptxRow'),
+  singerThirdPptxPath: document.getElementById('singerThirdPptxPath'),
+  singerThirdPptxStatus: document.getElementById('singerThirdPptxStatus'),
+  btnSelectSingerThirdPptx: document.getElementById('btnSelectSingerThirdPptx'),
   fadeDuration: document.getElementById('fadeDuration'),
   syncMode: document.getElementById('syncMode'),
   
@@ -116,6 +124,10 @@ function setupEventListeners() {
   // File selection
   elements.btnSelectRussian.addEventListener('click', () => selectFile('russian'));
   elements.btnSelectEnglish.addEventListener('click', () => selectFile('english'));
+  elements.btnSelectSingerThirdPptx.addEventListener('click', () => selectFile('singer'));
+
+  // Singer screen mode toggle (auto-preview vs third-pptx)
+  elements.singerScreenMode.addEventListener('change', handleSingerScreenModeChange);
   
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
@@ -245,6 +257,18 @@ async function loadSavedSettings() {
         if (settings.syncMode !== undefined && elements.syncMode) {
           elements.syncMode.checked = settings.syncMode;
         }
+        // Restore singer screen mode and third-pptx path
+        const savedMode = settings.singerScreenMode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+        state.singerScreenMode = savedMode;
+        if (elements.singerScreenMode) {
+          elements.singerScreenMode.value = savedMode;
+        }
+        applySingerModeVisibility(savedMode);
+        // Push mode to main so it's authoritative immediately
+        window.api.setSingerScreenMode(savedMode).catch(() => {});
+        if (settings.singerThirdPptxPath && elements.singerThirdPptxPath) {
+          elements.singerThirdPptxPath.value = settings.singerThirdPptxPath;
+        }
       }, 100); // Small delay to ensure dropdowns are populated
     }
     if (settings.thumbnailZoom !== undefined) {
@@ -289,6 +313,8 @@ async function saveCurrentSettings() {
         singer: elements.singerDisplay.value || null
       },
       singerLanguage: elements.singerLanguage.value || 'russian',
+      singerScreenMode: state.singerScreenMode || 'auto-preview',
+      singerThirdPptxPath: elements.singerThirdPptxPath.value || null,
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
       syncMode: elements.syncMode.checked || false,
       thumbnailZoom: state.thumbnailZoom,
@@ -310,11 +336,32 @@ async function saveCurrentSettings() {
 // Check for cached presentations from previous session
 async function checkForCachedPresentations() {
   try {
-    const [russianCache, englishCache] = await Promise.all([
+    const [russianCache, englishCache, singerCache] = await Promise.all([
       window.api.checkCache('russian'),
-      window.api.checkCache('english')
+      window.api.checkCache('english'),
+      window.api.checkCache('singer')
     ]);
-    
+
+    // Auto-restore the third PPTX silently — it's a separate optional asset
+    if (singerCache.exists) {
+      try {
+        const result = await window.api.loadFromCache('singer');
+        if (result.success) {
+          state.presentations.singer = {
+            loaded: true,
+            path: singerCache.originalFile || 'Cached',
+            slideCount: result.slideCount,
+            cacheDir: result.cacheDir
+          };
+          if (elements.singerThirdPptxStatus) {
+            elements.singerThirdPptxStatus.textContent = `✓ Restored: ${result.slideCount} slides`;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to restore singer cache:', e);
+      }
+    }
+
     // If both caches exist, offer to restore them
     if (russianCache.exists && englishCache.exists) {
       setStatus(`Previous presentation found (${russianCache.slideCount} slides). Click "Restore Previous" to load it.`);
@@ -406,16 +453,37 @@ async function selectFile(language) {
   try {
     const filePath = await window.api.openPptxDialog(language);
     if (!filePath) return;
-    
+
+    // Singer (third PPTX) follows a slimmer flow — no date warning, no thumbnails
+    if (language === 'singer') {
+      elements.singerThirdPptxPath.value = filePath;
+      elements.singerThirdPptxStatus.textContent = 'Converting third PPTX...';
+      setStatus('Converting third PPTX...');
+
+      const result = await window.api.convertPptx(filePath, 'singer');
+      if (result.success) {
+        state.presentations.singer = {
+          loaded: true,
+          path: filePath,
+          slideCount: result.slideCount,
+          cacheDir: result.cacheDir
+        };
+        elements.singerThirdPptxStatus.textContent = `✓ ${result.slideCount} slides loaded`;
+        setStatus(`Third PPTX loaded (${result.slideCount} slides)`);
+        await saveCurrentSettings();
+      }
+      return;
+    }
+
     const pathInput = language === 'russian' ? elements.russianFilePath : elements.englishFilePath;
     pathInput.value = filePath;
     checkFilenameDate(language, filePath);
-    
+
     setStatus(`Converting ${language} presentation...`);
     updateConversionStatus(language, 'Converting...', true);
-    
+
     const result = await window.api.convertPptx(filePath, language);
-    
+
     if (result.success) {
       state.presentations[language] = {
         loaded: true,
@@ -423,19 +491,24 @@ async function selectFile(language) {
         slideCount: result.slideCount,
         cacheDir: result.cacheDir
       };
-      
+
       updateConversionStatus(language, `✓ ${result.slideCount} slides loaded`, false);
       setStatus(`${language.charAt(0).toUpperCase() + language.slice(1)} presentation loaded successfully`);
-      
+
       // Load slide list
       await loadSlideList(language);
-      
+
       checkReadyState();
     }
   } catch (error) {
     console.error(`Error loading ${language} file:`, error);
-    updateConversionStatus(language, `✗ Error: ${error.message}`, false);
-    setStatus(`Error loading ${language} presentation`);
+    if (language === 'singer') {
+      elements.singerThirdPptxStatus.textContent = `✗ Error: ${error.message}`;
+      setStatus('Error loading third PPTX');
+    } else {
+      updateConversionStatus(language, `✗ Error: ${error.message}`, false);
+      setStatus(`Error loading ${language} presentation`);
+    }
   }
 }
 
@@ -624,11 +697,21 @@ function checkReadyState() {
 
 async function startPresentation() {
   try {
+    const singerDisplayId = elements.singerDisplay.value ? parseInt(elements.singerDisplay.value) : null;
+    const singerScreenMode = state.singerScreenMode || 'auto-preview';
+
+    // Mode B requires a loaded third PPTX when a singer display is assigned
+    if (singerDisplayId !== null && singerScreenMode === 'third-pptx' && !state.presentations.singer.loaded) {
+      setStatus('Singer Screen is set to Third Presentation but no PPTX is loaded. Pick one or switch to Auto Text Preview.');
+      return;
+    }
+
     const displays = {
       russianDisplayId: parseInt(elements.russianDisplay.value) || 0,
       englishDisplayId: parseInt(elements.englishDisplay.value) || 1,
-      singerDisplayId: elements.singerDisplay.value ? parseInt(elements.singerDisplay.value) : null,
+      singerDisplayId: singerDisplayId,
       singerLanguage: elements.singerLanguage.value || 'russian',
+      singerScreenMode: singerScreenMode,
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
       syncMode: elements.syncMode.checked || false,
       singerFontSize: state.singerFontSize,
@@ -711,6 +794,36 @@ async function handleFadeDurationChange() {
     }
   } catch (error) {
     console.error('Error setting fade duration:', error);
+  }
+}
+
+// Handle singer-screen mode change (auto-preview vs third-pptx)
+async function handleSingerScreenModeChange() {
+  const mode = elements.singerScreenMode.value === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+  state.singerScreenMode = mode;
+  applySingerModeVisibility(mode);
+  try {
+    await window.api.setSingerScreenMode(mode);
+    await saveCurrentSettings();
+    if (mode === 'third-pptx') {
+      setStatus('Singer Screen: Third Presentation mode');
+    } else {
+      setStatus('Singer Screen: Auto Text Preview mode');
+    }
+  } catch (error) {
+    console.error('Error setting singer screen mode:', error);
+  }
+}
+
+// Toggle which row is visible based on mode
+function applySingerModeVisibility(mode) {
+  if (!elements.singerLanguageRow || !elements.singerThirdPptxRow) return;
+  if (mode === 'third-pptx') {
+    elements.singerLanguageRow.style.display = 'none';
+    elements.singerThirdPptxRow.style.display = '';
+  } else {
+    elements.singerLanguageRow.style.display = '';
+    elements.singerThirdPptxRow.style.display = 'none';
   }
 }
 

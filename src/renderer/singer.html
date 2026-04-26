@@ -114,6 +114,28 @@
     .singer-container.cleared .main-content {
       display: none;
     }
+
+    /* Mode B: Third PPTX — full-screen image, no text band */
+    .singer-container.mode-b {
+      padding: 0;
+      gap: 0;
+    }
+    .singer-container.mode-b .main-content {
+      gap: 0;
+    }
+    .singer-container.mode-b .next-slide-section {
+      display: none;
+    }
+    .singer-container.mode-b .current-slide-section {
+      border-radius: 0;
+      background: #000;
+    }
+    .singer-container.mode-b .current-slide-image {
+      padding: 0;
+    }
+    .singer-container.mode-b .current-slide-image img {
+      border-radius: 0;
+    }
   </style>
 </head>
 <body>

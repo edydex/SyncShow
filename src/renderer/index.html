@@ -85,7 +85,7 @@
         <!-- Singer Screen (Optional) -->
         <div class="setup-card setup-card-optional">
           <h3>Singer Screen <span class="optional-badge">Optional</span></h3>
-          <p class="setup-description">Shows current slide + preview of next slide text</p>
+          <p class="setup-description">Auto text preview, or a third parallel PPTX</p>
           <div class="display-selector">
             <label>Display:</label>
             <select id="singerDisplay" class="display-dropdown">
@@ -93,11 +93,27 @@
             </select>
           </div>
           <div class="display-selector" style="margin-top: 10px;">
+            <label>Mode:</label>
+            <select id="singerScreenMode" class="display-dropdown">
+              <option value="auto-preview">Auto Text Preview</option>
+              <option value="third-pptx">Third Presentation (Experimental)</option>
+            </select>
+          </div>
+          <div class="display-selector" id="singerLanguageRow" style="margin-top: 10px;">
             <label>Language:</label>
             <select id="singerLanguage" class="display-dropdown">
               <option value="russian">Russian</option>
               <option value="english">English</option>
             </select>
+          </div>
+          <div id="singerThirdPptxRow" style="margin-top: 10px; display: none;">
+            <label>Third PPTX:</label>
+            <div class="file-selector" style="margin-top: 6px;">
+              <input type="text" id="singerThirdPptxPath" class="file-path" readonly placeholder="Select PowerPoint file...">
+              <button id="btnSelectSingerThirdPptx" class="btn btn-outline">Browse...</button>
+            </div>
+            <p class="setup-hint">Locked to main slide index. Singer screen goes black past this PPTX's last slide.</p>
+            <div id="singerThirdPptxStatus" class="setup-hint" style="margin-top: 4px;"></div>
           </div>
         </div>
 

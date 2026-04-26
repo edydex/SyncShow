@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
   setSingerFontSize: (size) => ipcRenderer.invoke('singer:setFontSize', size),
   setSingerCharLimit: (limit) => ipcRenderer.invoke('singer:setCharLimit', limit),
   setSingerTextPadding: (padding) => ipcRenderer.invoke('singer:setTextPadding', padding),
+  setSingerScreenMode: (mode) => ipcRenderer.invoke('singer:setMode', mode),
   
   // App state
   getAppState: () => ipcRenderer.invoke('app:getState'),
@@ -92,6 +93,10 @@ contextBridge.exposeInMainWorld('api', {
 
   onSingerTextPadding: (callback) => {
     ipcRenderer.on('singer:textPaddingUpdate', (event, padding) => callback(padding));
+  },
+
+  onSingerModeUpdate: (callback) => {
+    ipcRenderer.on('singer:modeUpdate', (event, mode) => callback(mode));
   },
 
   onSingerPreview: (callback) => {

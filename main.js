@@ -50,7 +50,8 @@ function saveUserSettings(settings) {
 let appState = {
   presentations: {
     russian: null,
-    english: null
+    english: null,
+    singer: null  // Optional third PPTX shown on the singer screen in 'third-pptx' mode
   },
   currentSlide: 0,
   totalSlides: 0,
@@ -71,7 +72,8 @@ let appState = {
   syncMode: false,  // Experimental: coordinate exact reveal timing across displays
   singerFontSize: 36,  // Singer screen next-text font size in px
   singerCharLimit: 70,  // Singer screen next-text character limit
-  singerTextPadding: 4  // Singer screen next-text vertical padding in px
+  singerTextPadding: 4,  // Singer screen next-text vertical padding in px
+  singerScreenMode: 'auto-preview'  // 'auto-preview' | 'third-pptx'
 };
 
 
@@ -275,6 +277,8 @@ function createSingerWindow(displayInfo) {
     singerWindow.webContents.send('singer:fontSizeUpdate', appState.singerFontSize);
     singerWindow.webContents.send('singer:charLimitUpdate', appState.singerCharLimit);
     singerWindow.webContents.send('singer:textPaddingUpdate', appState.singerTextPadding);
+    // Send current mode so the renderer applies the right layout immediately
+    singerWindow.webContents.send('singer:modeUpdate', appState.singerScreenMode || 'auto-preview');
   });
 
   singerWindow.once('ready-to-show', () => {
@@ -391,21 +395,42 @@ function goToSlide(slideIndex) {
     }
   });
 
-  // Update singer screen with current slide image + next slide text
+  // Update singer screen — payload depends on mode
   if (singerWindow && !singerWindow.isDestroyed()) {
-    const singerLang = appState.singerLanguage || 'russian';
-    const currentSlideImage = getSlideImagePath(singerLang, slideIndex);
-    const nextSlideText = getSlideText(singerLang, slideIndex + 1);
+    const mode = appState.singerScreenMode || 'auto-preview';
 
-    console.log(`[Singer] Sending update: slide ${slideIndex + 1}, lang ${singerLang}, image: ${currentSlideImage ? 'yes' : 'no'}, nextText: "${nextSlideText?.substring(0, 30) || 'none'}..."`);
+    if (mode === 'third-pptx') {
+      // Third-PPTX mode: full-screen image from independent presentation, locked
+      // to main slide index. Out of range -> null image (renderer shows black).
+      const singerPres = appState.presentations.singer;
+      const inRange = singerPres && slideIndex < (singerPres.slideCount || 0);
+      const currentSlideImage = inRange ? getSlideImagePath('singer', slideIndex) : null;
 
-    singerWindow.webContents.send('singer:update', {
-      currentSlide: slideIndex + 1,
-      currentSlideImage: currentSlideImage,
-      nextSlideText: nextSlideText,
-      totalSlides: appState.totalSlides,
-      language: singerLang
-    });
+      console.log(`[Singer] Sending update (third-pptx): slide ${slideIndex + 1}, image: ${currentSlideImage ? 'yes' : 'BLACK'}`);
+
+      singerWindow.webContents.send('singer:update', {
+        mode: 'third-pptx',
+        currentSlide: slideIndex + 1,
+        currentSlideImage: currentSlideImage,
+        totalSlides: appState.totalSlides
+      });
+    } else {
+      // Auto-preview mode (default): current slide image + next slide text
+      const singerLang = appState.singerLanguage || 'russian';
+      const currentSlideImage = getSlideImagePath(singerLang, slideIndex);
+      const nextSlideText = getSlideText(singerLang, slideIndex + 1);
+
+      console.log(`[Singer] Sending update: slide ${slideIndex + 1}, lang ${singerLang}, image: ${currentSlideImage ? 'yes' : 'no'}, nextText: "${nextSlideText?.substring(0, 30) || 'none'}..."`);
+
+      singerWindow.webContents.send('singer:update', {
+        mode: 'auto-preview',
+        currentSlide: slideIndex + 1,
+        currentSlideImage: currentSlideImage,
+        nextSlideText: nextSlideText,
+        totalSlides: appState.totalSlides,
+        language: singerLang
+      });
+    }
   } else {
     console.log('[Singer] Window not available');
   }
@@ -689,8 +714,11 @@ ipcMain.handle('slides:getList', async (event, language) => {
   });
 });
 
-ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode, singerFontSize, singerCharLimit, singerTextPadding }) => {
+ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplayId, singerDisplayId, singerLanguage, fadeDuration, syncMode, singerFontSize, singerCharLimit, singerTextPadding, singerScreenMode }) => {
   const displays = screen.getAllDisplays();
+
+  // Store singer screen mode
+  appState.singerScreenMode = singerScreenMode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
 
   // Store singer language setting
   appState.singerLanguage = singerLanguage || 'russian';
@@ -825,6 +853,23 @@ ipcMain.handle('singer:setTextPadding', async (event, padding) => {
   }
 
   console.log(`[Singer] Text padding set to ${padding}px`);
+  return { success: true };
+});
+
+// Set singer screen mode ('auto-preview' | 'third-pptx')
+ipcMain.handle('singer:setMode', async (event, mode) => {
+  const normalized = mode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+  appState.singerScreenMode = normalized;
+
+  if (singerWindow && !singerWindow.isDestroyed()) {
+    singerWindow.webContents.send('singer:modeUpdate', normalized);
+    // Re-issue current slide so the singer screen updates immediately
+    if (appState.totalSlides > 0) {
+      goToSlide(appState.currentSlide);
+    }
+  }
+
+  console.log(`[Singer] Mode set to ${normalized}`);
   return { success: true };
 });
 
