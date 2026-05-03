@@ -115,26 +115,46 @@
       display: none;
     }
 
-    /* Mode B: Third PPTX — full-screen image, no text band */
-    .singer-container.mode-b {
+    /* Mode B and Mode C share the full-bleed image setup */
+    .singer-container.mode-b,
+    .singer-container.mode-c {
       padding: 0;
       gap: 0;
     }
-    .singer-container.mode-b .main-content {
+    .singer-container.mode-b .main-content,
+    .singer-container.mode-c .main-content {
       gap: 0;
+      position: relative;
     }
-    .singer-container.mode-b .next-slide-section {
-      display: none;
-    }
-    .singer-container.mode-b .current-slide-section {
+    .singer-container.mode-b .current-slide-section,
+    .singer-container.mode-c .current-slide-section {
       border-radius: 0;
       background: #000;
     }
-    .singer-container.mode-b .current-slide-image {
+    .singer-container.mode-b .current-slide-image,
+    .singer-container.mode-c .current-slide-image {
       padding: 0;
     }
-    .singer-container.mode-b .current-slide-image img {
+    .singer-container.mode-b .current-slide-image img,
+    .singer-container.mode-c .current-slide-image img {
       border-radius: 0;
+    }
+
+    /* Mode B: Third PPTX only — hide text band entirely */
+    .singer-container.mode-b .next-slide-section {
+      display: none;
+    }
+
+    /* Mode C: Third PPTX with next-slide text overlayed at the bottom */
+    .singer-container.mode-c .next-slide-section {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      border-top: 0.75rem dashed cyan;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      pointer-events: none;
     }
   </style>
 </head>

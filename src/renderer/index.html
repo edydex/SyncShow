@@ -95,8 +95,9 @@
           <div class="display-selector" style="margin-top: 10px;">
             <label>Mode:</label>
             <select id="singerScreenMode" class="display-dropdown">
-              <option value="auto-preview">Auto Text Preview</option>
-              <option value="third-pptx">Third Presentation (Experimental)</option>
+              <option value="auto-preview">A · Split (slide + next text)</option>
+              <option value="third-pptx">B · Third PPTX only</option>
+              <option value="third-pptx-overlay">C · Third PPTX + text overlay</option>
             </select>
           </div>
           <div class="display-selector" id="singerLanguageRow" style="margin-top: 10px;">
@@ -237,6 +238,14 @@
                 <div class="mini-preview-img">
                   <img src="" alt="Singer" id="currentSingerImg">
                 </div>
+              </div>
+              <div class="display-selector" style="margin-top: 8px;">
+                <label>Mode:</label>
+                <select id="singerScreenModeLive" class="display-dropdown">
+                  <option value="auto-preview">A · Split</option>
+                  <option value="third-pptx">B · Third only</option>
+                  <option value="third-pptx-overlay">C · Third + overlay</option>
+                </select>
               </div>
             </details>
           </div>

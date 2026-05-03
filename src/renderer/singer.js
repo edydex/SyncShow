@@ -65,13 +65,19 @@ function handleClear() {
   elements.container.classList.add('cleared');
 }
 
+function normalizeMode(mode) {
+  if (mode === 'third-pptx' || mode === 'third-pptx-overlay') return mode;
+  return 'auto-preview';
+}
+
+function applyModeClasses(mode) {
+  elements.container.classList.toggle('mode-b', mode === 'third-pptx');
+  elements.container.classList.toggle('mode-c', mode === 'third-pptx-overlay');
+}
+
 function handleModeUpdate(mode) {
-  currentMode = mode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
-  if (currentMode === 'third-pptx') {
-    elements.container.classList.add('mode-b');
-  } else {
-    elements.container.classList.remove('mode-b');
-  }
+  currentMode = normalizeMode(mode);
+  applyModeClasses(currentMode);
   // Re-render the last update under the new mode
   if (lastUpdateData) handleUpdate(lastUpdateData);
 }
@@ -104,29 +110,28 @@ function handleUpdate(data) {
   lastUpdateData = data;
 
   const { currentSlide, currentSlideImage, nextSlideText, totalSlides, mode } = data;
-  const effectiveMode = mode || currentMode;
+  const effectiveMode = normalizeMode(mode || currentMode);
 
   // Remove cleared state if it was set
   elements.container.classList.remove('cleared');
 
   // Keep the body class in sync with the mode field of the latest update
-  if (effectiveMode === 'third-pptx') {
-    elements.container.classList.add('mode-b');
-  } else {
-    elements.container.classList.remove('mode-b');
-  }
+  applyModeClasses(effectiveMode);
   currentMode = effectiveMode;
 
-  if (effectiveMode === 'third-pptx') {
-    // Mode B: full-screen third-pptx image. Out of range -> silent black.
+  // Image source: Mode A uses singerLanguage image; Mode B/C use third PPTX image.
+  // Out-of-range third PPTX -> currentSlideImage is null; render silent black.
+  if (effectiveMode === 'third-pptx' || effectiveMode === 'third-pptx-overlay') {
     renderImage(currentSlideImage, currentSlide, '');
-    return;
+  } else {
+    renderImage(currentSlideImage, currentSlide, '<div class="waiting">No slide image</div>');
   }
 
-  // Mode A (default): current slide image + next slide text preview
-  renderImage(currentSlideImage, currentSlide, '<div class="waiting">No slide image</div>');
+  // Mode B has no text band — skip rendering work entirely.
+  if (effectiveMode === 'third-pptx') return;
 
-  // Update next slide preview
+  // Mode A and Mode C both render next-slide text. CSS positions it
+  // (split below in A, absolute overlay at bottom in C).
   if (currentSlide >= totalSlides) {
     elements.nextText.innerHTML = '<div class="end-slide">End of Presentation</div>';
   } else if (nextSlideText && nextSlideText.trim()) {

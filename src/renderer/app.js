@@ -18,7 +18,7 @@ const state = {
   singerFontSize: 36,   // px, 12-120
   singerCharLimit: 70,  // characters, 10-500
   singerTextPadding: 4,  // px, 0-80
-  singerScreenMode: 'auto-preview'  // 'auto-preview' | 'third-pptx'
+  singerScreenMode: 'auto-preview'  // 'auto-preview' | 'third-pptx' | 'third-pptx-overlay'
 };
 
 // DOM Elements
@@ -41,6 +41,7 @@ const elements = {
   singerDisplay: document.getElementById('singerDisplay'),
   singerLanguage: document.getElementById('singerLanguage'),
   singerScreenMode: document.getElementById('singerScreenMode'),
+  singerScreenModeLive: document.getElementById('singerScreenModeLive'),
   singerLanguageRow: document.getElementById('singerLanguageRow'),
   singerThirdPptxRow: document.getElementById('singerThirdPptxRow'),
   singerThirdPptxPath: document.getElementById('singerThirdPptxPath'),
@@ -126,8 +127,17 @@ function setupEventListeners() {
   elements.btnSelectEnglish.addEventListener('click', () => selectFile('english'));
   elements.btnSelectSingerThirdPptx.addEventListener('click', () => selectFile('singer'));
 
-  // Singer screen mode toggle (auto-preview vs third-pptx)
-  elements.singerScreenMode.addEventListener('change', handleSingerScreenModeChange);
+  // Singer screen mode toggle (A=split, B=third only, C=third+overlay).
+  // Two dropdowns kept in sync — the second one lives in the singer preview
+  // accordion so it's reachable while presenting.
+  elements.singerScreenMode.addEventListener('change', () => {
+    handleSingerScreenModeChange(elements.singerScreenMode.value);
+  });
+  if (elements.singerScreenModeLive) {
+    elements.singerScreenModeLive.addEventListener('change', () => {
+      handleSingerScreenModeChange(elements.singerScreenModeLive.value);
+    });
+  }
   
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
@@ -258,11 +268,9 @@ async function loadSavedSettings() {
           elements.syncMode.checked = settings.syncMode;
         }
         // Restore singer screen mode and third-pptx path
-        const savedMode = settings.singerScreenMode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+        const savedMode = normalizeSingerMode(settings.singerScreenMode);
         state.singerScreenMode = savedMode;
-        if (elements.singerScreenMode) {
-          elements.singerScreenMode.value = savedMode;
-        }
+        syncSingerModeDropdowns(savedMode);
         applySingerModeVisibility(savedMode);
         // Push mode to main so it's authoritative immediately
         window.api.setSingerScreenMode(savedMode).catch(() => {});
@@ -313,7 +321,7 @@ async function saveCurrentSettings() {
         singer: elements.singerDisplay.value || null
       },
       singerLanguage: elements.singerLanguage.value || 'russian',
-      singerScreenMode: state.singerScreenMode || 'auto-preview',
+      singerScreenMode: normalizeSingerMode(state.singerScreenMode),
       singerThirdPptxPath: elements.singerThirdPptxPath.value || null,
       fadeDuration: parseInt(elements.fadeDuration.value) || 300,
       syncMode: elements.syncMode.checked || false,
@@ -698,11 +706,12 @@ function checkReadyState() {
 async function startPresentation() {
   try {
     const singerDisplayId = elements.singerDisplay.value ? parseInt(elements.singerDisplay.value) : null;
-    const singerScreenMode = state.singerScreenMode || 'auto-preview';
+    const singerScreenMode = normalizeSingerMode(state.singerScreenMode);
 
-    // Mode B requires a loaded third PPTX when a singer display is assigned
-    if (singerDisplayId !== null && singerScreenMode === 'third-pptx' && !state.presentations.singer.loaded) {
-      setStatus('Singer Screen is set to Third Presentation but no PPTX is loaded. Pick one or switch to Auto Text Preview.');
+    // Modes B and C both require a loaded third PPTX when a singer display is assigned.
+    const needsThirdPptx = singerScreenMode === 'third-pptx' || singerScreenMode === 'third-pptx-overlay';
+    if (singerDisplayId !== null && needsThirdPptx && !state.presentations.singer.loaded) {
+      setStatus('Selected singer mode needs a third PPTX. Load one, or switch to Mode A.');
       return;
     }
 
@@ -797,34 +806,54 @@ async function handleFadeDurationChange() {
   }
 }
 
-// Handle singer-screen mode change (auto-preview vs third-pptx)
-async function handleSingerScreenModeChange() {
-  const mode = elements.singerScreenMode.value === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+// Normalize an incoming string to one of the three valid mode values.
+function normalizeSingerMode(mode) {
+  if (mode === 'third-pptx' || mode === 'third-pptx-overlay') return mode;
+  return 'auto-preview';
+}
+
+// Keep the setup-screen and presentation-view dropdowns showing the same mode.
+function syncSingerModeDropdowns(mode) {
+  if (elements.singerScreenMode && elements.singerScreenMode.value !== mode) {
+    elements.singerScreenMode.value = mode;
+  }
+  if (elements.singerScreenModeLive && elements.singerScreenModeLive.value !== mode) {
+    elements.singerScreenModeLive.value = mode;
+  }
+}
+
+const MODE_LABELS = {
+  'auto-preview': 'A · Split (slide + next text)',
+  'third-pptx': 'B · Third PPTX only',
+  'third-pptx-overlay': 'C · Third PPTX + text overlay'
+};
+
+// Handle singer-screen mode change. Called from either dropdown; we normalize
+// the value, sync state, push to main, persist, and update visibility.
+async function handleSingerScreenModeChange(rawMode) {
+  const mode = normalizeSingerMode(rawMode);
   state.singerScreenMode = mode;
+  syncSingerModeDropdowns(mode);
   applySingerModeVisibility(mode);
   try {
     await window.api.setSingerScreenMode(mode);
     await saveCurrentSettings();
-    if (mode === 'third-pptx') {
-      setStatus('Singer Screen: Third Presentation mode');
-    } else {
-      setStatus('Singer Screen: Auto Text Preview mode');
-    }
+    setStatus(`Singer Screen: ${MODE_LABELS[mode]}`);
   } catch (error) {
     console.error('Error setting singer screen mode:', error);
   }
 }
 
-// Toggle which row is visible based on mode
+// Toggle which setup rows are visible based on mode:
+//   A: language only
+//   B: third-pptx only
+//   C: language (text source) AND third-pptx (image source)
 function applySingerModeVisibility(mode) {
   if (!elements.singerLanguageRow || !elements.singerThirdPptxRow) return;
-  if (mode === 'third-pptx') {
-    elements.singerLanguageRow.style.display = 'none';
-    elements.singerThirdPptxRow.style.display = '';
-  } else {
-    elements.singerLanguageRow.style.display = '';
-    elements.singerThirdPptxRow.style.display = 'none';
-  }
+  const needsLanguage = mode === 'auto-preview' || mode === 'third-pptx-overlay';
+  const needsThirdPptx = mode === 'third-pptx' || mode === 'third-pptx-overlay';
+  elements.singerLanguageRow.style.display = needsLanguage ? '' : 'none';
+  elements.singerThirdPptxRow.style.display = needsThirdPptx ? '' : 'none';
 }
 
 // Handle sync mode toggle

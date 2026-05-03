@@ -46,6 +46,12 @@ function saveUserSettings(settings) {
   }
 }
 
+// Singer screen mode: 'auto-preview' (A), 'third-pptx' (B), 'third-pptx-overlay' (C)
+function normalizeSingerMode(mode) {
+  if (mode === 'third-pptx' || mode === 'third-pptx-overlay') return mode;
+  return 'auto-preview';
+}
+
 // Application state
 let appState = {
   presentations: {
@@ -73,7 +79,7 @@ let appState = {
   singerFontSize: 36,  // Singer screen next-text font size in px
   singerCharLimit: 70,  // Singer screen next-text character limit
   singerTextPadding: 4,  // Singer screen next-text vertical padding in px
-  singerScreenMode: 'auto-preview'  // 'auto-preview' | 'third-pptx'
+  singerScreenMode: 'auto-preview'  // 'auto-preview' | 'third-pptx' | 'third-pptx-overlay'
 };
 
 
@@ -278,7 +284,7 @@ function createSingerWindow(displayInfo) {
     singerWindow.webContents.send('singer:charLimitUpdate', appState.singerCharLimit);
     singerWindow.webContents.send('singer:textPaddingUpdate', appState.singerTextPadding);
     // Send current mode so the renderer applies the right layout immediately
-    singerWindow.webContents.send('singer:modeUpdate', appState.singerScreenMode || 'auto-preview');
+    singerWindow.webContents.send('singer:modeUpdate', normalizeSingerMode(appState.singerScreenMode));
   });
 
   singerWindow.once('ready-to-show', () => {
@@ -395,42 +401,36 @@ function goToSlide(slideIndex) {
     }
   });
 
-  // Update singer screen — payload depends on mode
+  // Update singer screen. Three modes:
+  //   'auto-preview'        — Mode A: split layout, image+text from singerLanguage
+  //   'third-pptx'          — Mode B: full-screen image from third PPTX, no text band
+  //   'third-pptx-overlay'  — Mode C: full-screen third PPTX image + next-text overlay at bottom
+  // The text payload is always included (singer.js decides whether to render it),
+  // so the user can flip modes mid-presentation without losing data.
   if (singerWindow && !singerWindow.isDestroyed()) {
-    const mode = appState.singerScreenMode || 'auto-preview';
+    const mode = normalizeSingerMode(appState.singerScreenMode);
+    const singerLang = appState.singerLanguage || 'russian';
+    const nextSlideText = getSlideText(singerLang, slideIndex + 1);
 
-    if (mode === 'third-pptx') {
-      // Third-PPTX mode: full-screen image from independent presentation, locked
-      // to main slide index. Out of range -> null image (renderer shows black).
+    let currentSlideImage;
+    if (mode === 'third-pptx' || mode === 'third-pptx-overlay') {
       const singerPres = appState.presentations.singer;
       const inRange = singerPres && slideIndex < (singerPres.slideCount || 0);
-      const currentSlideImage = inRange ? getSlideImagePath('singer', slideIndex) : null;
-
-      console.log(`[Singer] Sending update (third-pptx): slide ${slideIndex + 1}, image: ${currentSlideImage ? 'yes' : 'BLACK'}`);
-
-      singerWindow.webContents.send('singer:update', {
-        mode: 'third-pptx',
-        currentSlide: slideIndex + 1,
-        currentSlideImage: currentSlideImage,
-        totalSlides: appState.totalSlides
-      });
+      currentSlideImage = inRange ? getSlideImagePath('singer', slideIndex) : null;
     } else {
-      // Auto-preview mode (default): current slide image + next slide text
-      const singerLang = appState.singerLanguage || 'russian';
-      const currentSlideImage = getSlideImagePath(singerLang, slideIndex);
-      const nextSlideText = getSlideText(singerLang, slideIndex + 1);
-
-      console.log(`[Singer] Sending update: slide ${slideIndex + 1}, lang ${singerLang}, image: ${currentSlideImage ? 'yes' : 'no'}, nextText: "${nextSlideText?.substring(0, 30) || 'none'}..."`);
-
-      singerWindow.webContents.send('singer:update', {
-        mode: 'auto-preview',
-        currentSlide: slideIndex + 1,
-        currentSlideImage: currentSlideImage,
-        nextSlideText: nextSlideText,
-        totalSlides: appState.totalSlides,
-        language: singerLang
-      });
+      currentSlideImage = getSlideImagePath(singerLang, slideIndex);
     }
+
+    console.log(`[Singer] Sending update (${mode}): slide ${slideIndex + 1}, image: ${currentSlideImage ? 'yes' : 'BLACK'}, nextText: "${nextSlideText?.substring(0, 30) || 'none'}..."`);
+
+    singerWindow.webContents.send('singer:update', {
+      mode: mode,
+      currentSlide: slideIndex + 1,
+      currentSlideImage: currentSlideImage,
+      nextSlideText: nextSlideText,
+      totalSlides: appState.totalSlides,
+      language: singerLang
+    });
   } else {
     console.log('[Singer] Window not available');
   }
@@ -718,7 +718,7 @@ ipcMain.handle('display:start', async (event, { russianDisplayId, englishDisplay
   const displays = screen.getAllDisplays();
 
   // Store singer screen mode
-  appState.singerScreenMode = singerScreenMode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+  appState.singerScreenMode = normalizeSingerMode(singerScreenMode);
 
   // Store singer language setting
   appState.singerLanguage = singerLanguage || 'russian';
@@ -856,9 +856,9 @@ ipcMain.handle('singer:setTextPadding', async (event, padding) => {
   return { success: true };
 });
 
-// Set singer screen mode ('auto-preview' | 'third-pptx')
+// Set singer screen mode ('auto-preview' | 'third-pptx' | 'third-pptx-overlay')
 ipcMain.handle('singer:setMode', async (event, mode) => {
-  const normalized = mode === 'third-pptx' ? 'third-pptx' : 'auto-preview';
+  const normalized = normalizeSingerMode(mode);
   appState.singerScreenMode = normalized;
 
   if (singerWindow && !singerWindow.isDestroyed()) {
