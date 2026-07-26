@@ -114,6 +114,98 @@
     .singer-container.cleared .main-content {
       display: none;
     }
+
+    .bible-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 4vh;
+      padding: 7vh 8vw 5vh;
+      color: #fff;
+      background:
+        radial-gradient(circle at 78% 14%, rgba(70, 92, 150, 0.24), transparent 32%),
+        linear-gradient(145deg, #07101f 0%, #101a31 58%, #080d18 100%);
+    }
+
+    .bible-overlay[hidden] {
+      display: none;
+    }
+
+    .bible-overlay.staging {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .bible-reference {
+      color: #c9d5f9;
+      font-size: clamp(30px, 3.2vw, 62px);
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+
+    .bible-verses {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.34em;
+      max-width: 1500px;
+      overflow: hidden;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(38px, 4.15vw, 78px);
+      line-height: 1.28;
+      text-wrap: balance;
+    }
+
+    .bible-overlay.medium .bible-verses {
+      font-size: clamp(34px, 3.45vw, 64px);
+    }
+
+    .bible-overlay.long .bible-verses {
+      font-size: clamp(28px, 2.75vw, 52px);
+    }
+
+    .bible-overlay.compact {
+      gap: 2.5vh;
+      padding-top: 5vh;
+      padding-bottom: 4vh;
+    }
+
+    .bible-overlay.compact .bible-verses {
+      gap: 0.22em;
+      font-size: clamp(24px, 2.25vw, 42px);
+      line-height: 1.2;
+    }
+
+    .bible-verse-number {
+      margin-right: 0.32em;
+      color: #aabcf0;
+      font-size: 0.48em;
+      font-weight: 800;
+      vertical-align: super;
+    }
+
+    .bible-footer {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 3vw;
+      color: rgba(226, 232, 249, 0.72);
+      font-size: clamp(14px, 1.15vw, 23px);
+    }
+
+    .bible-translation {
+      flex: 0 0 auto;
+      color: #dce5ff;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+    }
+
+    .bible-attribution {
+      max-width: 70%;
+      text-align: right;
+    }
   </style>
 </head>
 <body>
@@ -133,8 +225,27 @@
         </div>
       </div>
     </div>
+
+    <section class="bible-overlay" id="bibleOverlay" aria-live="polite" hidden>
+      <h1 class="bible-reference" id="bibleReference"></h1>
+      <div class="bible-verses" id="bibleVerses"></div>
+      <footer class="bible-footer">
+        <span class="bible-translation" id="bibleTranslation"></span>
+        <span class="bible-attribution" id="bibleAttribution"></span>
+      </footer>
+    </section>
+
+    <section class="bible-overlay staging" id="bibleOverlayStaging" aria-hidden="true" hidden>
+      <h1 class="bible-reference" id="bibleReferenceStaging"></h1>
+      <div class="bible-verses" id="bibleVersesStaging"></div>
+      <footer class="bible-footer">
+        <span class="bible-translation" id="bibleTranslationStaging"></span>
+        <span class="bible-attribution" id="bibleAttributionStaging"></span>
+      </footer>
+    </section>
   </div>
   
+  <script src="bible-overlay.js"></script>
   <script src="singer.js"></script>
 </body>
 </html>

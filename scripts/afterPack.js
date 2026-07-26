@@ -1,37 +1,42 @@
-// electron-builder afterPack hook to fix Linux sandbox issues
-// This modifies the startup script to include --no-sandbox
+'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const { execFileSync } = require('node:child_process');
+const path = require('node:path');
 
-exports.default = async function(context) {
-  // Only process Linux builds
-  if (context.electronPlatformName !== 'linux') {
-    return;
+function plistBuddy(infoPlistPath, command, { optional = false } = {}) {
+  try {
+    execFileSync('/usr/libexec/PlistBuddy', ['-c', command, infoPlistPath], {
+      stdio: optional ? 'ignore' : 'inherit'
+    });
+  } catch (error) {
+    if (!optional) throw error;
   }
+}
 
-  const appOutDir = context.appOutDir;
-  const executableName = context.packager.executableName;
-  
-  // Create a wrapper script
-  const wrapperPath = path.join(appOutDir, executableName);
-  const realBinaryPath = path.join(appOutDir, `${executableName}.bin`);
-  
-  // Check if the executable exists
-  if (fs.existsSync(wrapperPath)) {
-    // Rename original binary
-    fs.renameSync(wrapperPath, realBinaryPath);
-    
-    // Create wrapper script
-    const wrapperScript = `#!/bin/bash
-# Wrapper to fix Chrome sandbox issue on Linux
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-exec "$SCRIPT_DIR/${executableName}.bin" --no-sandbox "$@"
-`;
-    
-    fs.writeFileSync(wrapperPath, wrapperScript);
-    fs.chmodSync(wrapperPath, '755');
-    
-    console.log(`Created --no-sandbox wrapper for ${executableName}`);
+exports.default = async function afterPack(context) {
+  if (context.electronPlatformName !== 'darwin') return;
+
+  const infoPlistPath = path.join(
+    context.appOutDir,
+    `${context.packager.appInfo.productFilename}.app`,
+    'Contents',
+    'Info.plist'
+  );
+
+  // SyncShow hosts an opt-in local Remote server but does not need arbitrary
+  // outbound cleartext access. Electron's stock plist enables it broadly.
+  plistBuddy(infoPlistPath, 'Set :NSAppTransportSecurity:NSAllowsArbitraryLoads false');
+  plistBuddy(infoPlistPath, 'Set :NSAppTransportSecurity:NSAllowsLocalNetworking true');
+
+  // SyncShow does not request these device capabilities. Removing Electron's
+  // generic descriptions keeps macOS privacy metadata honest and avoids
+  // implying that presentation files can activate unrelated hardware.
+  for (const key of [
+    'NSBluetoothAlwaysUsageDescription',
+    'NSBluetoothPeripheralUsageDescription',
+    'NSCameraUsageDescription',
+    'NSMicrophoneUsageDescription'
+  ]) {
+    plistBuddy(infoPlistPath, `Delete :${key}`, { optional: true });
   }
 };

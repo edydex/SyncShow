@@ -14,9 +14,9 @@ const PlatformDetector = require('./PlatformDetector');
  * @param {Object} options - Conversion options
  * @returns {Promise<Object>} Conversion result
  */
-async function convert(inputPath, outputDir, options = {}) {
+async function convert(inputPath, outputDir, options = {}, restoreContext = null) {
   const converter = new Converter(options);
-  return converter.convert(inputPath, outputDir);
+  return converter.convert(inputPath, outputDir, restoreContext);
 }
 
 module.exports = {

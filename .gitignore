@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Retired embedded-Python runtime left by pre-1.2 developer installs
+python-embed/
+
 
 # Cache directory (converted images)
 slide-cache/russian/
@@ -9,6 +12,7 @@ slide-cache/english/
 
 # Build output
 dist/
+dist-*/
 out/
 
 # IDE/Editor
@@ -26,11 +30,18 @@ Desktop.ini
 *.log
 npm-debug.log*
 
+# Local Google Cloud desktop-app configuration. The example is safe to commit;
+# release builds inject the real desktop client credentials and
+# Drive-API-restricted API key.
+assets/google-drive-config.json
+
 # Temporary files
 *.tmp
 *.temp
+.tmp-heritage-patches/
 
 # Test presentations (don't commit large files)
 *.pptx
 *.ppt
 *.pdf
+*.syncshow-service

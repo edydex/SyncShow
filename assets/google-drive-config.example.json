@@ -1,0 +1,5 @@
+{
+  "clientId": "YOUR_DESKTOP_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+  "clientSecret": "YOUR_DESKTOP_OAUTH_CLIENT_SECRET",
+  "apiKey": "YOUR_DRIVE_API_RESTRICTED_KEY"
+}

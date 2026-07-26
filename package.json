@@ -1,18 +1,25 @@
 {
   "name": "sync-show",
-  "version": "1.3.3",
-  "description": "Synchronized bilingual presentation display for church services",
+  "version": "1.4.0-preview.17",
+  "description": "Synchronized configurable presentation outputs for church services",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "start:linux": "electron . --no-sandbox",
     "dev": "electron . --dev",
     "dev:linux": "electron . --no-sandbox --dev",
+    "check": "node scripts/check-js.js",
+    "test": "node --test",
+    "ci": "npm run check && npm test",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
+    "build:mac:adhoc": "electron-builder --mac --config.mac.identity=-",
     "build:linux": "electron-builder --linux",
     "build:all": "electron-builder --win --mac --linux",
+    "build:configure-google-drive": "node scripts/google-drive-build-config.js inject",
+    "build:verify-google-drive": "node scripts/google-drive-build-config.js verify",
+    "build:clean-google-drive": "node scripts/google-drive-build-config.js clean",
     "generate-icon": "node scripts/generate-icon.js"
   },
   "keywords": [
@@ -28,19 +35,33 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "electron": "^28.1.0",
-    "electron-builder": "^24.9.1",
-    "electron-icon-builder": "^2.0.1",
-    "png-to-ico": "^3.0.1"
+    "@electron/asar": "3.4.1",
+    "electron": "43.2.0",
+    "electron-builder": "^26.15.3",
+    "png-to-ico": "^3.0.1",
+    "tslib": "^2.8.1"
   },
   "dependencies": {
+    "jszip": "3.10.1",
     "mupdf": "^1.27.0",
     "pptxtojson": "^1.12.0",
-    "sharp": "^0.33.2"
+    "qrcode": "1.5.4",
+    "sharp": "0.35.3"
+  },
+  "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "0.35.3",
+    "@img/sharp-darwin-x64": "0.35.3",
+    "@img/sharp-libvips-darwin-arm64": "1.3.2",
+    "@img/sharp-libvips-darwin-x64": "1.3.2",
+    "@img/sharp-libvips-linux-x64": "1.3.2",
+    "@img/sharp-linux-x64": "0.35.3",
+    "@img/sharp-win32-x64": "0.35.3"
   },
   "build": {
     "appId": "com.church.syncshow",
     "productName": "SyncShow",
+    "buildVersion": "140017",
+    "afterPack": "scripts/afterPack.js",
     "copyright": "Copyright © 2026 Church Media Team",
     "win": {
       "target": [
@@ -52,30 +73,29 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "publisherName": "Church Media Team",
       "signAndEditExecutable": false
     },
     "mac": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "target": "dmg"
         },
         {
-          "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "target": "zip"
         }
       ],
       "icon": "assets/icon-512.png",
       "category": "public.app-category.productivity",
+      "minimumSystemVersion": "12.0",
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "linux": {
       "target": [
@@ -133,15 +153,18 @@
       "output": "dist",
       "buildResources": "assets"
     },
-    "afterPack": "./scripts/afterPack.js",
     "files": [
-      "**/*",
-      "!cache/**",
-      "!dist/**",
-      "!*.md",
-      "!.git/**"
+      "main.js",
+      "preload.js",
+      "package.json",
+      "LICENSE.txt",
+      "src/**/*",
+      "!src/renderer/test-thumbnails.html",
+      "assets/**/*",
+      "node_modules/**/*"
     ],
     "asarUnpack": [
+      "assets/fonts/**",
       "node_modules/sharp/**",
       "node_modules/@img/**"
     ],

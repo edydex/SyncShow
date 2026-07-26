@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SyncShow is a synchronized bilingual presentation display system for church services. It enables real-time dual-screen presentation of Russian and English PowerPoint slides simultaneously with zero-lag synchronization. Supports 2-4 displays including an optional "Singer Screen" for text preview.
+SyncShow is a local-first church presentation controller with configurable inputs and outputs, a native editor, optional PowerPoint/Google Drive/Heritage Community adapters, and a Prepare → Load → Show workflow. Russian, English, and Singers remain only the safe starter profile. Do not describe synchronization as zero-lag or frame-perfect without a measured venue test.
 
 ## Build and Run Commands
 
@@ -13,12 +13,13 @@ npm start              # Run app (production)
 npm run dev            # Run app with DevTools open
 npm run build          # Build for current platform
 npm run build:win      # Windows NSIS installer
-npm run build:mac      # macOS DMG (universal)
+npm run build:mac -- --arm64  # macOS DMG/ZIP for Apple Silicon
+npm run build:mac -- --x64    # macOS DMG/ZIP for Intel
 npm run build:linux    # Linux AppImage + deb
 npm run build:all      # Build all platforms
 ```
 
-**Note:** No test or lint scripts are currently configured.
+Run the repository test/check scripts before packaging; see `package.json` for the current commands.
 
 ## Architecture
 
@@ -43,7 +44,7 @@ npm run build:all      # Build all platforms
       ┌──▼────────────────────────────┐
       │  NODE.JS CONVERTER            │
       │  src/services/converter/      │
-      │  PPTX → PDF (LibreOffice)     │
+      │  PPTX → PDF (PowerPoint/LO)   │
       │  PDF → JPEG (MuPDF + sharp)  │
       │  Thumbnails (sharp)           │
       │  Text extraction (pptxtojson) │
@@ -62,22 +63,23 @@ npm run build:all      # Build all platforms
 The converter (`src/services/converter/`) handles PPTX to JPEG conversion:
 
 - **Converter.js** - Main orchestrator (EventEmitter for progress)
-- **strategies/LibreOfficeStrategy.js** - PPTX→PDF using LibreOffice headless
+- **strategies/PowerPointStrategy.js** - Preferred Windows PPTX→PDF path when Microsoft PowerPoint is installed
+- **strategies/LibreOfficeStrategy.js** - Isolated PPTX→PDF fallback on Windows and converter on macOS/Linux
 - **PdfToImageConverter.js** - PDF→JPEG using MuPDF (WASM) + sharp
 - **ThumbnailGenerator.js** - Generates 300px thumbnails
 - **TextExtractor.js** - Extracts slide text using pptxtojson
-- **PlatformDetector.js** - Detects LibreOffice
+- **PlatformDetector.js** - Selects PowerPoint first on Windows, otherwise LibreOffice
 
 ## Key Conventions
 
-- **Language separation:** Russian and English presentations are managed independently with separate caches and display assignments
+- **Configurable roles:** Input/output names, counts, routing, previews, and display assignments come from the saved venue Profile; Russian, English, and Singers are defaults rather than product limits
 - **Slide navigation:** Keyboard shortcuts (arrows, space, Home/End) for fast control — handled in the renderer (`app.js`) via `document keydown`, active only when the control panel window is focused
 - **Escape:** Clears all displays to black
 - **Note:** Electron `globalShortcut` (OS-wide key capture) was intentionally removed. It caused accidental slide navigation when the app was not in focus during a live show. The commented-out code remains in `main.js` for reference.
 - **Fade transitions:** Configurable fade duration (300ms default)
 - **Thumbnail zoom:** Adjustable thumbnail grid size (50%–200%), persisted in user settings
-- **Singer screen:** Always shows preview of next slide text
-- **Sync mode:** Experimental feature for exact reveal timing across displays
+- **Singer screen:** Can show a supplied deck, mirror another deck, derive upcoming text, or be disabled for one service; its operator preview is enabled by default
+- **Sync mode:** Experimental best-effort coordinated reveal timing across displays
 
 ## IPC Communication
 
@@ -89,11 +91,14 @@ The app uses Electron IPC with context isolation. Key channels defined in `prelo
 
 ## Platform-Specific Notes
 
-- **Linux:** `scripts/afterPack.js` adds `--no-sandbox` wrapper to fix sandbox issues
+- **Linux:** Keep Chromium sandboxing enabled by default. `--no-sandbox` is an explicit troubleshooting fallback only.
 - **macOS:** Unsigned app requires Gatekeeper bypass (right-click → Open)
-- **All platforms:** Requires LibreOffice for PPTX→PDF conversion
+- **Windows:** Prefers Microsoft PowerPoint and falls back to LibreOffice
+- **macOS/Linux:** Requires LibreOffice for PPTX→PDF conversion
 
-## Performance Targets
+## Unverified Performance Targets
+
+These values are historical goals, not guarantees. Record hardware, converter, deck, resolution, and actual measurements before publishing a performance claim.
 
 | Operation | Target |
 |-----------|--------|
@@ -103,5 +108,5 @@ The app uses Electron IPC with context isolation. Key channels defined in `prelo
 
 ## Dependencies
 
-- **Runtime:** Electron v28, Node.js v18+, LibreOffice
+- **Runtime:** Electron v43.2, Node.js v22.12+ for development (CI uses Node 24); PowerPoint or LibreOffice as described above
 - **npm packages:** sharp, pptxtojson, mupdf

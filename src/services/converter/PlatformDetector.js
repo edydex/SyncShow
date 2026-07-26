@@ -2,7 +2,8 @@
  * Platform Detector
  *
  * Detects available conversion tools:
- * - LibreOffice (required for PPTX → PDF)
+ * - Microsoft PowerPoint on Windows (preferred for PPTX -> PDF)
+ * - LibreOffice (Windows fallback and macOS/Linux converter)
  */
 
 const LibreOfficeStrategy = require('./strategies/LibreOfficeStrategy');
