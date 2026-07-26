@@ -93,7 +93,11 @@ function requireRoleId(value, field) {
 }
 
 async function syncRegularFile(filePath) {
-  const handle = await fs.open(filePath, 'r');
+  // Windows requires a writable handle for FlushFileBuffers, which is what
+  // FileHandle.sync() uses. These thumbnail files were just created by the
+  // publisher, so opening them read/write keeps the durability guarantee
+  // without turning a supported Windows publish into EPERM.
+  const handle = await fs.open(filePath, 'r+');
   try {
     await handle.sync();
   } finally {
