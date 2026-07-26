@@ -37,7 +37,7 @@ jobs:
         if: steps.check.outputs.is_prerelease == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Promote version
         if: steps.check.outputs.is_prerelease == 'true'

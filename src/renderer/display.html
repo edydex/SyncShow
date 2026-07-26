@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; font-src 'self' file:; object-src 'none'; base-uri 'none';">
   <title>SyncDisplay - Presentation</title>
   <style>
     * {
@@ -49,6 +49,163 @@
     /* Ensure proper layering during crossfade */
     #slide-layer-0 { z-index: 1; }
     #slide-layer-1 { z-index: 2; }
+
+    .native-cue-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 300ms ease-in-out;
+      will-change: opacity;
+      transform: translateZ(0);
+      backface-visibility: hidden;
+    }
+
+    #native-layer-1 {
+      z-index: 4;
+    }
+
+    .native-cue-layer.active {
+      opacity: 1;
+    }
+
+    .native-scene-host {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .native-scene-surface {
+      position: relative;
+      flex: 0 0 auto;
+      overflow: hidden;
+      color: #fff;
+      font-family: "SyncShow Noto Sans", sans-serif;
+      font-kerning: normal;
+      text-rendering: geometricPrecision;
+    }
+
+    .native-scene-title,
+    .native-scene-body-region,
+    .native-song-title-region,
+    .native-song-title-credit,
+    .native-scene-picture,
+    .native-singer-current,
+    .native-singer-next {
+      position: absolute;
+    }
+
+    .native-scene-title {
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .native-scene-body-region {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .native-scene-body-region.native-scene-body-top {
+      justify-content: flex-start;
+    }
+
+    .native-scene-body {
+      width: 100%;
+      flex: 0 0 auto;
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .native-song-title-region {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .native-song-title-text,
+    .native-song-title-subtitle {
+      overflow: hidden;
+      line-height: 1.12;
+      text-align: center;
+      text-wrap: balance;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .native-song-title-subtitle {
+      line-height: 1.14;
+    }
+
+    .native-song-title-credit {
+      overflow: hidden;
+      font-style: italic;
+      line-height: 1.18;
+      text-align: right;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .native-scene-picture {
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .native-scene-attribution {
+      position: absolute;
+      right: 1.875%;
+      bottom: 2.6%;
+      max-width: 72%;
+      padding: 0.2em 0.45em;
+      color: #f8fafc;
+      background: rgba(0, 0, 0, 0.62);
+      font-size: clamp(18px, 1.25vw, 28px);
+      font-weight: 500;
+      line-height: 1.2;
+      text-align: right;
+      white-space: pre-wrap;
+    }
+
+    .native-singer-current {
+      inset: 2.13% 1.2% 21.13%;
+      overflow: hidden;
+      background: #0a0a15;
+    }
+
+    .native-singer-next {
+      inset: 81% 0 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 1.5% 4%;
+      border-top: max(4px, 1.1vh) dashed #22d3ee;
+      color: #f8fafc;
+      background: #07111c;
+      font-size: clamp(22px, 2.3vw, 48px);
+      line-height: 1.15;
+      text-align: center;
+      white-space: pre-wrap;
+    }
+
+    .native-singer-next.native-singer-end {
+      font-style: italic;
+    }
     
     /* Black screen when no slide */
     .no-slide {
@@ -84,6 +241,100 @@
     .loading .loading-indicator {
       display: block;
     }
+
+    .bible-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 4vh;
+      padding: 7vh 8vw 5vh;
+      color: #fff;
+      background:
+        radial-gradient(circle at 78% 14%, rgba(70, 92, 150, 0.24), transparent 32%),
+        linear-gradient(145deg, #07101f 0%, #101a31 58%, #080d18 100%);
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+
+    .bible-overlay[hidden] {
+      display: none;
+    }
+
+    .bible-overlay.staging {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .bible-reference {
+      color: #c9d5f9;
+      font-size: clamp(30px, 3.2vw, 62px);
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+
+    .bible-verses {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.34em;
+      max-width: 1500px;
+      overflow: hidden;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(38px, 4.15vw, 78px);
+      line-height: 1.28;
+      text-wrap: balance;
+    }
+
+    .bible-overlay.medium .bible-verses {
+      font-size: clamp(34px, 3.45vw, 64px);
+    }
+
+    .bible-overlay.long .bible-verses {
+      font-size: clamp(28px, 2.75vw, 52px);
+    }
+
+    .bible-overlay.compact {
+      gap: 2.5vh;
+      padding-top: 5vh;
+      padding-bottom: 4vh;
+    }
+
+    .bible-overlay.compact .bible-verses {
+      gap: 0.22em;
+      font-size: clamp(24px, 2.25vw, 42px);
+      line-height: 1.2;
+    }
+
+    .bible-verse-number {
+      margin-right: 0.32em;
+      color: #aabcf0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 0.48em;
+      font-weight: 800;
+      vertical-align: super;
+    }
+
+    .bible-footer {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 3vw;
+      color: rgba(226, 232, 249, 0.72);
+      font-size: clamp(14px, 1.15vw, 23px);
+    }
+
+    .bible-translation {
+      flex: 0 0 auto;
+      color: #dce5ff;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+    }
+
+    .bible-attribution {
+      max-width: 70%;
+      text-align: right;
+    }
   </style>
 </head>
 <body>
@@ -93,10 +344,34 @@
     <!-- Two image layers for crossfade effect -->
     <img class="slide-image" id="slide-layer-0" alt="">
     <img class="slide-image" id="slide-layer-1" alt="">
+
+    <!-- Constrained live-DOM scenes are staged here before their ready ACK. -->
+    <div class="native-cue-layer" id="native-layer-0" aria-hidden="true"></div>
+    <div class="native-cue-layer" id="native-layer-1" aria-hidden="true"></div>
     
     <div class="loading-indicator" id="loadingIndicator"></div>
+
+    <section class="bible-overlay" id="bibleOverlay" aria-live="polite" hidden>
+      <h1 class="bible-reference" id="bibleReference"></h1>
+      <div class="bible-verses" id="bibleVerses"></div>
+      <footer class="bible-footer">
+        <span class="bible-translation" id="bibleTranslation"></span>
+        <span class="bible-attribution" id="bibleAttribution"></span>
+      </footer>
+    </section>
+
+    <section class="bible-overlay staging" id="bibleOverlayStaging" aria-hidden="true" hidden>
+      <h1 class="bible-reference" id="bibleReferenceStaging"></h1>
+      <div class="bible-verses" id="bibleVersesStaging"></div>
+      <footer class="bible-footer">
+        <span class="bible-translation" id="bibleTranslationStaging"></span>
+        <span class="bible-attribution" id="bibleAttributionStaging"></span>
+      </footer>
+    </section>
   </div>
   
+  <script src="bible-overlay.js"></script>
+  <script src="native-cue-renderer.js"></script>
   <script src="display.js"></script>
 </body>
 </html>

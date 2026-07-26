@@ -4,278 +4,1303 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
-  <title>SyncShow - Control Panel</title>
+  <title>SyncShow</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="friendly-mode load-stage">
   <div class="app-container">
-    <!-- Header - only shown during setup -->
     <header class="header" id="setupHeader">
       <div class="header-left">
-        <h1 class="app-title">SyncShow</h1>
-        <span class="app-subtitle">Bilingual Presentation System</span>
-      </div>
-      <div class="header-center">
-        <div class="slide-counter">
-          <span id="setupSlideNum">--</span>
-          <span class="divider">/</span>
-          <span id="setupTotalSlides">--</span>
+        <div class="app-mark" aria-hidden="true">S</div>
+        <div>
+          <div class="app-title-row">
+            <h1 class="app-title">SyncShow</h1>
+            <span class="preview-label">Preview</span>
+          </div>
+          <span class="app-subtitle" id="appSubtitle">Load today’s service</span>
         </div>
       </div>
-      <div class="header-right">
-        <button id="btnRefreshDisplays" class="btn btn-secondary" title="Refresh Displays">
-          Refresh Displays
+
+      <nav class="workflow-steps" aria-label="Service workflow">
+        <button type="button" id="btnStagePrepare" class="workflow-step" data-workflow-stage="prepare" aria-controls="preparePanel">
+          <span class="workflow-number">1</span>
+          <span class="workflow-label">Prepare</span>
         </button>
-        <button id="btnStartPresentation" class="btn btn-primary" disabled>
-          Start
+        <button type="button" id="btnStageLoad" class="workflow-step active" data-workflow-stage="load" aria-controls="setupPanel" aria-current="step">
+          <span class="workflow-number">2</span>
+          <span class="workflow-label">Load</span>
         </button>
-        <button id="btnStopPresentation" class="btn btn-danger" style="display: none;">
-          Stop
+        <button type="button" id="btnStageShow" class="workflow-step" data-workflow-stage="show" aria-controls="mainContent" disabled>
+          <span class="workflow-number">3</span>
+          <span class="workflow-label">Show</span>
+        </button>
+      </nav>
+
+      <div class="header-right header-load-actions">
+        <button id="btnOpenSettings" class="btn btn-secondary" aria-controls="advancedSetupDetails">
+          Admin Settings
+        </button>
+        <button id="btnStartPresentation" class="btn btn-primary btn-start" disabled>
+          Start Show
         </button>
       </div>
     </header>
 
-    <!-- Setup Panel -->
-    <section id="setupPanel" class="setup-panel">
-      <div class="setup-grid">
-        <!-- Russian Presentation -->
-        <div class="setup-card">
-          <h3>Russian Presentation</h3>
-          <div class="file-selector">
-            <input type="text" id="russianFilePath" class="file-path" readonly placeholder="Select PowerPoint file...">
-            <button id="btnSelectRussian" class="btn btn-outline">Browse...</button>
+    <section id="preparePanel" class="prepare-panel" aria-labelledby="prepareHeading">
+      <div class="prepare-shell">
+        <div class="prepare-intro">
+          <div>
+            <p class="section-kicker">PREPARE</p>
+            <h2 id="prepareHeading" tabindex="-1">Build the service in order</h2>
+            <p>Choose a saved service, add songs and simple slides, then send the finished rundown to Load.</p>
           </div>
-          <div class="conversion-status" id="russianStatus">
-            <span class="status-text">Not loaded</span>
-            <div class="progress-bar" style="display: none;">
-              <div class="progress-fill" id="russianProgress"></div>
+          <div class="prepare-primary-actions">
+            <button type="button" id="btnImportServiceProject" class="btn btn-quiet">Import service</button>
+            <button type="button" id="btnNewServiceProject" class="btn btn-secondary">New service</button>
+            <button type="button" id="btnPublishServiceProject" class="btn btn-primary" disabled>Save &amp; go to Load</button>
+          </div>
+        </div>
+
+        <p id="prepareNotice" class="prepare-notice" role="status" aria-live="polite">
+          Choose a service project to begin.
+        </p>
+
+        <div class="prepare-workspace">
+          <aside class="prepare-column prepare-projects-pane" aria-labelledby="prepareProjectsHeading">
+            <div class="prepare-pane-heading">
+              <div>
+                <p class="section-kicker">SERVICES</p>
+                <h3 id="prepareProjectsHeading">Service projects</h3>
+              </div>
+              <span id="prepareProjectCount" class="prepare-count">0</span>
             </div>
-          </div>
-          <div class="date-warning" id="russianDateWarning" style="display: none;"></div>
-          <div class="display-selector">
-            <label>Display:</label>
-            <select id="russianDisplay" class="display-dropdown">
-              <option value="">Select display...</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- English Presentation -->
-        <div class="setup-card">
-          <h3>English Presentation</h3>
-          <div class="file-selector">
-            <input type="text" id="englishFilePath" class="file-path" readonly placeholder="Select PowerPoint file...">
-            <button id="btnSelectEnglish" class="btn btn-outline">Browse...</button>
-          </div>
-          <div class="conversion-status" id="englishStatus">
-            <span class="status-text">Not loaded</span>
-            <div class="progress-bar" style="display: none;">
-              <div class="progress-fill" id="englishProgress"></div>
-            </div>
-          </div>
-          <div class="date-warning" id="englishDateWarning" style="display: none;"></div>
-          <div class="display-selector">
-            <label>Display:</label>
-            <select id="englishDisplay" class="display-dropdown">
-              <option value="">Select display...</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Singer Screen (Optional) -->
-        <div class="setup-card setup-card-optional">
-          <h3>Singer Screen <span class="optional-badge">Optional</span></h3>
-          <p class="setup-description">Shows current slide + preview of next slide text</p>
-          <div class="display-selector">
-            <label>Display:</label>
-            <select id="singerDisplay" class="display-dropdown">
-              <option value="">None (disabled)</option>
-            </select>
-          </div>
-          <div class="display-selector" style="margin-top: 10px;">
-            <label>Language:</label>
-            <select id="singerLanguage" class="display-dropdown">
-              <option value="russian">Russian</option>
-              <option value="english">English</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Transition Settings -->
-        <div class="setup-card setup-card-optional">
-          <h3>Transition Effect</h3>
-          <p class="setup-description">Fade between slides for smoother presentations</p>
-          <div class="display-selector">
-            <label>Fade Duration:</label>
-            <select id="fadeDuration" class="display-dropdown">
-              <option value="0">None (instant)</option>
-              <option value="150">Fast (150ms)</option>
-              <option value="300" selected>Medium (300ms)</option>
-              <option value="500">Slow (500ms)</option>
-              <option value="750">Very Slow (750ms)</option>
-              <option value="1000">Extra Slow (1s)</option>
-            </select>
-          </div>
-          <div class="display-selector" style="margin-top: 12px;">
-            <label class="checkbox-label">
-              <input type="checkbox" id="syncMode">
-              <span>Experimental Sync</span>
+            <label class="prepare-search-field" for="prepareProjectSearch">
+              <span class="sr-only">Search service projects</span>
+              <input id="prepareProjectSearch" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="Search services">
             </label>
-            <p class="setup-hint">Coordinates exact reveal timing across all displays</p>
-          </div>
+            <div id="prepareProjectList" class="prepare-list" role="list" aria-live="polite"></div>
+          </aside>
+
+          <section class="prepare-column prepare-rundown-pane" aria-labelledby="prepareRundownHeading">
+            <div class="prepare-pane-heading prepare-rundown-heading">
+              <div>
+                <p class="section-kicker">RUNDOWN</p>
+                <h3 id="prepareRundownHeading">No service open</h3>
+                <p id="prepareProjectMeta" class="prepare-pane-subtitle">Select a service from the left.</p>
+              </div>
+              <div class="prepare-rundown-tools">
+                <button type="button" id="btnUndoPrepareChange" class="btn btn-quiet btn-compact" title="Undo the last saved change" disabled>Undo</button>
+                <button type="button" id="btnRedoPrepareChange" class="btn btn-quiet btn-compact" title="Redo the last undone change" disabled>Redo</button>
+                <button type="button" id="btnExportServiceProject" class="btn btn-quiet btn-compact" title="Save a portable copy" disabled>Export</button>
+                <span id="prepareSaveState" class="prepare-save-state">Local</span>
+              </div>
+            </div>
+
+            <div id="prepareRundownEmpty" class="prepare-empty-state">
+              <span class="prepare-empty-icon" aria-hidden="true">＋</span>
+              <h4>Start with what you have</h4>
+              <p>Import a song, add a sermon point, or place a picture. You can keep building as the service comes together.</p>
+            </div>
+            <ol id="prepareRundownList" class="prepare-rundown-list" aria-label="Service order"></ol>
+          </section>
+
+          <aside class="prepare-column prepare-library-pane" aria-labelledby="prepareLibraryHeading">
+            <section class="prepare-inspector" aria-labelledby="prepareInspectorHeading">
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">SELECTED</p>
+                  <h3 id="prepareInspectorHeading">Nothing selected</h3>
+                </div>
+              </div>
+              <p id="prepareInspectorSummary" class="prepare-pane-subtitle">Select an item in the rundown to see its details.</p>
+              <div id="prepareInspectorActions" class="prepare-inspector-actions" hidden>
+                <button type="button" id="btnEditPrepareItem" class="btn btn-outline btn-compact">Edit</button>
+                <button type="button" id="btnDuplicatePrepareItem" class="btn btn-quiet btn-compact">Duplicate</button>
+                <button type="button" id="btnAddInsidePrepareGroup" class="btn btn-quiet btn-compact" hidden>Add inside</button>
+                <button type="button" id="btnCollapsePrepareGroup" class="btn btn-quiet btn-compact" hidden>Collapse</button>
+                <button type="button" id="btnMovePrepareItemUp" class="btn btn-quiet btn-compact">Move up</button>
+                <button type="button" id="btnMovePrepareItemDown" class="btn btn-quiet btn-compact">Move down</button>
+                <button type="button" id="btnOutdentPrepareItem" class="btn btn-quiet btn-compact" title="Move this section out one level" disabled>Outdent</button>
+                <button type="button" id="btnIndentPrepareItem" class="btn btn-quiet btn-compact" title="Nest this section under the section above" disabled>Indent</button>
+                <button type="button" id="btnRemovePrepareItem" class="btn btn-danger-quiet btn-compact">Remove</button>
+              </div>
+            </section>
+
+            <section id="prepareItemPreview" class="prepare-item-preview" aria-labelledby="prepareItemPreviewHeading" hidden>
+              <div class="prepare-preview-heading">
+                <div>
+                  <p class="section-kicker">PREVIEW</p>
+                  <h4 id="prepareItemPreviewHeading">Selected slide</h4>
+                </div>
+                <label>
+                  <span class="sr-only">Preview output</span>
+                  <select id="preparePreviewChannel" class="display-dropdown" disabled></select>
+                </label>
+              </div>
+              <div class="prepare-preview-frame">
+                <img id="preparePreviewImage" alt="Selected prepared slide preview" hidden>
+                <p id="preparePreviewStatus">Select a projected item to preview it.</p>
+              </div>
+              <div class="prepare-preview-actions">
+                <button type="button" id="btnPreviousPreparePreview" class="btn btn-quiet btn-compact" disabled>Previous</button>
+                <span id="preparePreviewPosition">0 of 0</span>
+                <button type="button" id="btnNextPreparePreview" class="btn btn-quiet btn-compact" disabled>Next</button>
+              </div>
+            </section>
+
+            <section id="prepareSongInspector" class="prepare-song-inspector" aria-labelledby="prepareSongInspectorHeading" hidden>
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">SONG</p>
+                  <h3 id="prepareSongInspectorHeading">Selected song</h3>
+                </div>
+              </div>
+              <p id="prepareSongInspectorMeta" class="prepare-pane-subtitle">Choose a song in the rundown to edit its service arrangement.</p>
+              <div id="prepareSongOutputTranslations" class="prepare-song-output-list prepare-song-output-summary" aria-label="Current song on each output" aria-live="polite"></div>
+
+              <details id="prepareSongEditor" class="prepare-song-editor">
+                <summary>
+                  <span>
+                    <strong>Arrangement &amp; translation controls</strong>
+                    <small>Change section order or override an output</small>
+                  </span>
+                  <span class="prepare-detail-state" aria-hidden="true">Edit</span>
+                </summary>
+                <div class="prepare-song-editor-body">
+                  <section class="prepare-editor-section" aria-labelledby="prepareSongArrangementHeading">
+                    <div class="prepare-editor-heading">
+                      <div>
+                        <h4 id="prepareSongArrangementHeading">Service arrangement</h4>
+                        <p>Set the verse, chorus, and bridge order for this service.</p>
+                      </div>
+                      <div class="prepare-editor-add">
+                        <label for="prepareSongArrangementSection">
+                          <span class="sr-only">Song section to add</span>
+                          <select id="prepareSongArrangementSection" class="display-dropdown" disabled>
+                            <option value="">Choose section…</option>
+                          </select>
+                        </label>
+                        <button type="button" id="btnAddSongArrangementSection" class="btn btn-outline btn-compact" aria-controls="prepareSongArrangementList" disabled>Add</button>
+                      </div>
+                    </div>
+                    <ol id="prepareSongArrangementList" class="prepare-song-arrangement-list" aria-label="Song section order"></ol>
+                    <p id="prepareSongArrangementEmpty" class="prepare-editor-empty">This song does not have an arrangement yet.</p>
+                    <div class="prepare-editor-actions">
+                      <button type="button" id="btnMoveSongArrangementUp" class="btn btn-quiet btn-compact" aria-controls="prepareSongArrangementList" disabled>Move up</button>
+                      <button type="button" id="btnMoveSongArrangementDown" class="btn btn-quiet btn-compact" aria-controls="prepareSongArrangementList" disabled>Move down</button>
+                      <button type="button" id="btnRemoveSongArrangementItem" class="btn btn-danger-quiet btn-compact" aria-controls="prepareSongArrangementList" disabled>Remove</button>
+                    </div>
+                  </section>
+
+                  <section class="prepare-editor-section" aria-labelledby="prepareSongOutputsHeading">
+                    <div class="prepare-editor-heading">
+                      <div>
+                        <h4 id="prepareSongOutputsHeading">Change an output translation</h4>
+                        <p>The current mapping remains visible above. Override it here when this service needs something different.</p>
+                      </div>
+                    </div>
+                    <div class="prepare-song-link-controls">
+                      <label for="prepareSongTranslationChannel">
+                        <span>Output</span>
+                        <select id="prepareSongTranslationChannel" class="display-dropdown" disabled>
+                          <option value="">Choose output…</option>
+                        </select>
+                      </label>
+                      <label for="prepareSongTranslationSong">
+                        <span>Translated song</span>
+                        <select id="prepareSongTranslationSong" class="display-dropdown" disabled>
+                          <option value="">Choose song…</option>
+                        </select>
+                      </label>
+                      <button type="button" id="btnLinkSongTranslation" class="btn btn-outline btn-compact" disabled>Link</button>
+                    </div>
+                    <template id="prepareSongOutputTranslationTemplate">
+                      <div class="prepare-song-output-row">
+                        <span class="prepare-song-output-name" data-song-output-name>Output</span>
+                        <label>
+                          <span class="sr-only">Translation for this output</span>
+                          <select class="display-dropdown" data-song-output-translation disabled></select>
+                        </label>
+                        <button type="button" class="btn btn-quiet btn-compact" data-song-output-reset disabled>Use normal</button>
+                      </div>
+                    </template>
+                  </section>
+                </div>
+              </details>
+            </section>
+
+            <section class="prepare-add-section" aria-labelledby="prepareAddHeading">
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">ADD</p>
+                  <h3 id="prepareAddHeading">Add to this service</h3>
+                </div>
+              </div>
+              <div class="prepare-add-grid">
+                <button type="button" id="btnAddServiceText" class="prepare-add-button" disabled>
+                  <span aria-hidden="true">T</span><strong>Text</strong><small>Sermon point or notice</small>
+                </button>
+                <button type="button" id="btnAddServicePicture" class="prepare-add-button" disabled>
+                  <span aria-hidden="true">▧</span><strong>Picture</strong><small>PNG, JPEG, or WebP</small>
+                </button>
+                <button type="button" id="btnAddServiceGroup" class="prepare-add-button prepare-add-button-wide" disabled>
+                  <span aria-hidden="true">§</span><strong>Section</strong><small>Group songs, sermon notes, and pictures</small>
+                </button>
+              </div>
+            </section>
+
+            <details id="prepareBibleDetails" class="prepare-bible-panel">
+              <summary>
+                <span class="prepare-bible-summary-icon" aria-hidden="true">B</span>
+                <span class="prepare-bible-summary-copy">
+                  <strong>Add Bible passage</strong>
+                  <small>Find a reference and add it to the rundown</small>
+                </span>
+                <span class="prepare-detail-state" aria-hidden="true">Open</span>
+              </summary>
+              <form id="prepareBibleForm" class="prepare-bible-form" aria-describedby="prepareBibleStatus">
+                <div class="prepare-bible-fields">
+                  <label class="prepare-bible-reference" for="prepareBibleReference">
+                    <span>Reference</span>
+                    <input id="prepareBibleReference" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="John 3:16 or 1 pet 1 4" disabled>
+                  </label>
+                  <label for="prepareBibleTranslation">
+                    <span>Translation</span>
+                    <select id="prepareBibleTranslation" class="display-dropdown" disabled>
+                      <option value="BSB" selected>BSB</option>
+                      <option value="LSV">LSV</option>
+                    </select>
+                  </label>
+                  <button type="button" id="btnLookupPrepareBible" class="btn btn-outline btn-compact" disabled>Find</button>
+                </div>
+
+                <p id="prepareBibleStatus" class="prepare-bible-status" role="status">Open a service before adding a passage.</p>
+
+                <section id="prepareBibleAmbiguity" class="prepare-bible-response" aria-labelledby="prepareBibleAmbiguityHeading" hidden>
+                  <h4 id="prepareBibleAmbiguityHeading">Which book did you mean?</h4>
+                  <div id="prepareBibleAmbiguityChoices" class="prepare-bible-choices" role="listbox" aria-label="Matching Bible books"></div>
+                </section>
+
+                <section id="prepareBibleResult" class="prepare-bible-response prepare-bible-results" aria-labelledby="prepareBiblePreviewReference" hidden>
+                  <h4 id="prepareBiblePreviewReference">Passage preview</h4>
+                  <p id="prepareBiblePreviewText"></p>
+                </section>
+
+                <div class="prepare-bible-actions">
+                  <button type="button" id="btnAddBiblePassage" class="btn btn-primary btn-compact" disabled>Add passage to service</button>
+                </div>
+              </form>
+            </details>
+
+            <section class="prepare-song-library" aria-labelledby="prepareLibraryHeading">
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">LIBRARY</p>
+                  <h3 id="prepareLibraryHeading">Songs</h3>
+                </div>
+                <div class="prepare-library-actions">
+                  <button type="button" id="btnNewSongDocument" class="btn btn-secondary btn-compact" disabled>New song</button>
+                  <button type="button" id="btnImportSongDocument" class="btn btn-outline btn-compact" disabled>Import files</button>
+                </div>
+              </div>
+              <label class="prepare-search-field" for="prepareSongSearch">
+                <span class="sr-only">Search song library</span>
+                <input id="prepareSongSearch" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="Search songs" disabled>
+              </label>
+              <div id="prepareSongList" class="prepare-list prepare-song-list" role="list" aria-live="polite"></div>
+              <div class="prepare-song-pagination">
+                <p id="prepareSongCount" class="prepare-song-count" role="status" aria-live="polite">0 families · 0 versions</p>
+                <button type="button" id="btnLoadMoreSongs" class="btn btn-outline btn-compact" aria-controls="prepareSongList" hidden disabled>
+                  Load more songs
+                </button>
+              </div>
+            </section>
+          </aside>
         </div>
       </div>
     </section>
 
-    <!-- Main Content - Slide Navigator -->
-    <main class="main-content" id="mainContent" style="display: none;">
-      <!-- Full-width layout: thumbnails left, controls right -->
-      <div class="main-horizontal-layout">
-        <!-- Left: Thumbnails grid (full height) -->
-        <div class="thumbnails-section">
-          <div class="thumbnails-header">
-            <h3>All Slides</h3>
-            <div class="thumbnails-header-controls">
-              <div class="lang-selector">
-                <button class="lang-btn active" data-lang="both">Both</button>
-                <button class="lang-btn" data-lang="russian">RU</button>
-                <button class="lang-btn" data-lang="english">EN</button>
+    <section id="setupPanel" class="setup-panel" aria-labelledby="loadHeading">
+      <div class="load-workspace">
+        <div id="loadEssentials" class="load-essentials">
+          <div class="load-intro">
+            <div>
+              <p class="section-kicker">LOAD</p>
+              <h2 id="loadHeading">Today’s slideshows</h2>
+              <p>Synced files load automatically. If something is missing, choose it on its card.</p>
+            </div>
+            <span id="loadAutoStatus" class="load-auto-status" role="status" aria-live="polite">
+              Checking automatic loading…
+            </span>
+          </div>
+
+        <div class="setup-grid" id="inputCards" aria-label="Service slideshow inputs"></div>
+
+        <section class="readiness-card" aria-labelledby="readinessTitle">
+          <div class="readiness-icon" id="readinessIcon" aria-hidden="true">…</div>
+          <div class="readiness-copy">
+            <h3 id="readinessTitle">Checking the venue setup</h3>
+            <p id="readinessSummary">SyncShow is checking files and connected screens.</p>
+            <ul id="readinessIssues" class="readiness-issues"></ul>
+            <p id="restoreSummary" class="restore-summary" hidden></p>
+          </div>
+          <button id="btnRestorePrevious" class="btn btn-secondary" hidden>Use last service</button>
+        </section>
+        </div>
+
+        <dialog id="advancedSetupDetails" class="admin-settings-dialog" aria-labelledby="adminSettingsHeading">
+          <div class="admin-settings-shell">
+            <header class="admin-settings-header">
+              <div>
+                <p class="section-kicker">ADMIN SETTINGS</p>
+                <h2 id="adminSettingsHeading">Church connections and venue setup</h2>
+                <p>Configure Community, automatic loading, slideshow names, output screens, and venue behavior here.</p>
               </div>
-              <div class="zoom-control">
-                <button class="zoom-btn" id="zoomOut">−</button>
+              <button type="button" id="btnCloseAdminSettings" class="btn btn-secondary">Done</button>
+            </header>
+
+            <div class="admin-settings-scroll">
+              <section id="serviceFolderCard" class="service-folder-card" aria-labelledby="serviceFolderHeading">
+                <div class="service-folder-heading">
+                  <div class="service-folder-title">
+                    <span class="service-folder-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M3.75 6.5A1.75 1.75 0 0 1 5.5 4.75h4.02c.52 0 1.02.23 1.35.63l1.05 1.24c.14.17.35.26.57.26h6.01a1.75 1.75 0 0 1 1.75 1.75v8.87a1.75 1.75 0 0 1-1.75 1.75h-13a1.75 1.75 0 0 1-1.75-1.75v-11Z"/>
+                      </svg>
+                    </span>
+                    <div>
+                      <p class="section-kicker">AUTOMATIC LOADING</p>
+                      <h3 id="serviceFolderHeading">Automatic loading source</h3>
+                      <p id="serviceFolderLead">Connect Google Drive directly, paste a public folder link, or use a folder on this computer. Matching slideshows will populate the Load cards automatically.</p>
+                    </div>
+                  </div>
+                  <span id="serviceFolderStateBadge" class="service-state-badge">Not linked</span>
+                </div>
+
+                <div class="service-source-options" aria-label="Automatic loading source choices">
+                  <button type="button" id="btnConnectPrivateDrive" class="service-source-option">
+                    <span class="service-source-mark" aria-hidden="true">G</span>
+                    <span>
+                      <strong>Private Google Drive</strong>
+                      <small id="privateDriveSourceHelp">Sign in and choose one folder</small>
+                    </span>
+                  </button>
+                  <label id="publicDriveSourceOption" class="service-source-option service-source-public" for="publicDriveFolderUrl">
+                    <span class="service-source-mark" aria-hidden="true">↗</span>
+                    <span class="service-source-public-copy">
+                      <strong>Public Drive link</strong>
+                      <small id="publicDriveSourceHelp">No sign-in · view-only</small>
+                      <span class="service-public-link-row">
+                        <input id="publicDriveFolderUrl" class="text-input" type="url" maxlength="2048" autocomplete="off" placeholder="Paste a public Google Drive folder link">
+                        <button type="button" id="btnLinkPublicDrive" class="btn btn-outline btn-compact">Connect</button>
+                      </span>
+                    </span>
+                  </label>
+                  <button type="button" id="btnChooseServiceFolder" class="service-source-option">
+                    <span class="service-source-mark" aria-hidden="true">⌁</span>
+                    <span>
+                      <strong>Folder on this computer</strong>
+                      <small>Also works with Google Drive Desktop</small>
+                    </span>
+                  </button>
+                </div>
+                <p id="driveSetupNotice" class="service-source-notice" role="status" aria-live="polite" hidden></p>
+
+                <div class="service-folder-toolbar">
+                  <div class="service-folder-location" id="serviceFolderLocation">
+                    <span>Current source</span>
+                    <strong id="serviceFolderName">No folder selected</strong>
+                    <small id="serviceFolderPath">Choose where this church keeps service PowerPoints.</small>
+                  </div>
+                  <label class="field-group service-date-field">
+                    <span>Service date</span>
+                    <input id="serviceFolderDate" class="text-input" type="date" aria-describedby="serviceFolderScanStatus">
+                  </label>
+                  <div class="service-folder-actions">
+                    <button type="button" id="btnRefreshServiceFolder" class="btn btn-quiet" disabled>Refresh files</button>
+                    <button type="button" id="btnDisconnectServiceSource" class="btn btn-danger-quiet" hidden>Disconnect</button>
+                  </div>
+                </div>
+
+                <label id="drivePublishingControl" class="drive-publishing-control" hidden>
+                  <input type="checkbox" id="drivePublishingEnabled">
+                  <span>
+                    <strong>Allow publishing from SyncShow</strong>
+                    <small id="drivePublishingHelp">Off by default. Background loading never changes Drive files.</small>
+                  </span>
+                </label>
+
+                <div id="serviceFolderScanStatus" class="service-scan-status" role="status" aria-live="polite">
+                  <span class="service-status-dot" aria-hidden="true"></span>
+                  <span>Choose a service folder once, then SyncShow can load matching files automatically.</span>
+                </div>
+
+                <div id="serviceSetResults" class="service-set-results" hidden>
+                  <div id="serviceSetChoiceRow" class="service-set-choice" hidden>
+                    <label class="field-group">
+                      <span>Files to load</span>
+                      <select id="serviceSetSelect" class="display-dropdown"></select>
+                    </label>
+                    <p>Dates stay together—SyncShow never fills a missing file with one from another service.</p>
+                  </div>
+
+                  <ul id="serviceSetRoleSummary" class="service-role-summary" aria-label="Files found for this service"></ul>
+                  <div id="serviceSetWarnings" class="service-set-warnings" aria-live="polite"></div>
+
+                  <div class="service-set-footer">
+                    <div>
+                      <p id="serviceSetOfflineState" class="service-offline-state" hidden></p>
+                      <p id="serviceSetChangedNotice" class="service-changed-notice" role="alert" hidden></p>
+                    </div>
+                    <button type="button" id="btnLoadServiceSet" class="btn btn-primary service-load-button" disabled>
+                      Load selected service
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section id="communityConnectionSection" class="settings-section community-settings-section" aria-labelledby="communityConnectionHeading">
+                <div class="settings-section-heading community-settings-heading">
+                  <div>
+                    <p class="section-kicker">HERITAGE COMMUNITY</p>
+                    <h3 id="communityConnectionHeading">Shared song library</h3>
+                  </div>
+                  <span id="communityConnectionBadge" class="service-state-badge">Checking…</span>
+                </div>
+                <p class="community-settings-intro">Connect this computer to your church’s Heritage Community server. Songs stay available locally and can be kept private, shared now, or scheduled to appear later.</p>
+                <form id="communityConnectionForm" class="community-connection-form">
+                  <label class="field-group">
+                    <span>Community server</span>
+                    <input id="communityServerUrl" class="text-input" type="url" maxlength="2048" inputmode="url" autocomplete="url" placeholder="https://community.example.org" required>
+                  </label>
+                  <label class="field-group">
+                    <span>Admin email</span>
+                    <input id="communityAdminEmail" class="text-input" type="email" maxlength="320" inputmode="email" autocomplete="email" placeholder="admin@example.org" required>
+                  </label>
+                  <div class="community-connection-actions">
+                    <button type="submit" id="btnConnectCommunity" class="btn btn-primary">Connect</button>
+                    <button type="button" id="btnCancelCommunityConnection" class="btn btn-secondary" hidden>Cancel connection</button>
+                    <button type="button" id="btnDisconnectCommunity" class="btn btn-danger-quiet" hidden>Disconnect</button>
+                  </div>
+                </form>
+                <p id="communityConnectionHelp" class="settings-note">Connecting sends an approval link to the admin email. SyncShow never shows or stores a server password here.</p>
+                <div id="communityConnectionStatus" class="community-status-card" data-kind="idle" role="status" aria-live="polite">
+                  <span class="community-status-dot" aria-hidden="true"></span>
+                  <span class="community-status-copy">
+                    <strong id="communityConnectionStatusTitle">Checking Community connection…</strong>
+                    <small id="communityConnectionStatusDetail">Song sync is unavailable until the connection check finishes.</small>
+                  </span>
+                </div>
+                <div id="communityApprovalRecovery" class="community-approval-recovery" hidden>
+                  <div>
+                    <strong>Didn’t get the email?</strong>
+                    <p>Open the approval page and enter this public one-time code:</p>
+                  </div>
+                  <output id="communityApprovalCode" class="community-approval-code" aria-label="Community approval code"></output>
+                  <div class="community-approval-actions">
+                    <button type="button" id="btnOpenCommunityApproval" class="btn btn-outline" hidden>Open approval page</button>
+                    <button type="button" id="btnCopyCommunityApprovalCode" class="btn btn-secondary" hidden>Copy code</button>
+                  </div>
+                  <p id="communityApprovalActionStatus" class="community-approval-action-status" role="status" aria-live="polite"></p>
+                </div>
+                <div class="community-sync-row">
+                  <div>
+                    <strong>Song sync</strong>
+                    <p id="communityLastSyncSummary">Not synced on this computer yet.</p>
+                  </div>
+                  <button type="button" id="btnSyncCommunitySongs" class="btn btn-outline" disabled>Sync songs now</button>
+                </div>
+              </section>
+
+              <section class="settings-section display-tools-section" aria-labelledby="displayToolsHeading">
+                <div class="settings-section-heading">
+                  <div>
+                    <p class="section-kicker">SCREENS</p>
+                    <h3 id="displayToolsHeading">Connected screen tools</h3>
+                  </div>
+                  <p>Use these after changing cables, adapters, or monitor order.</p>
+                </div>
+                <div class="display-tools-actions">
+                  <button id="btnRefreshDisplays" class="btn btn-secondary" title="Look for connected screens again">
+                    Rescan screens
+                  </button>
+                  <button id="btnIdentifyDisplays" class="btn btn-outline" title="Show a large number and name on each connected screen">
+                    Identify screens
+                  </button>
+                </div>
+              </section>
+
+              <div class="settings-body">
+            <div class="friendly-setting">
+              <div>
+                <label for="friendlyMode">Normal Person Friendly Mode</label>
+                <p>Keep the safe defaults and hide controls volunteers should not need.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="friendlyMode" checked>
+                <span class="switch-track" aria-hidden="true"></span>
+                <span class="sr-only">Normal Person Friendly Mode</span>
+              </label>
+            </div>
+
+            <section class="settings-section" id="outputSettingsSection" aria-labelledby="outputSettingsHeading">
+              <div class="settings-section-heading">
+                <div>
+                  <p class="section-kicker">OUTPUTS</p>
+                  <h3 id="outputSettingsHeading">Venue output health</h3>
+                </div>
+                <p>Friendly Mode uses the saved venue setup. SyncShow will never silently substitute a missing screen.</p>
+              </div>
+              <div id="outputHealthSummary" class="output-health-summary" role="status" aria-live="polite"></div>
+              <p class="settings-note">Use Identify screens whenever cables or monitor order changed. Missing screens stay missing until an admin deliberately remaps them.</p>
+            </section>
+
+            <div id="expertSettingsSection" class="expert-settings">
+              <section class="settings-section" id="venueProfileSection" aria-labelledby="venueProfileHeading">
+                <div class="settings-section-heading">
+                  <div>
+                    <p class="section-kicker">ADMIN</p>
+                    <h3 id="venueProfileHeading">Venue profile</h3>
+                  </div>
+                  <p>Names and wiring live here, away from the volunteer’s Show controls. Changes are staged until Save.</p>
+                </div>
+                <label class="field-group profile-name-field">
+                  <span>Profile name</span>
+                  <input type="text" id="profileName" class="text-input" maxlength="120" autocomplete="off">
+                </label>
+
+                <div class="profile-source-grid">
+                  <label class="field-group profile-service-folder-field">
+                    <span>Automatic loading source <small>Managed above</small></span>
+                    <span class="profile-folder-picker">
+                      <input type="text" id="profileServiceFolder" class="text-input" readonly placeholder="No source linked">
+                      <button type="button" id="btnChooseProfileServiceFolder" class="btn btn-outline">Use local</button>
+                    </span>
+                  </label>
+                  <label class="field-group">
+                    <span>Church time zone</span>
+                    <input type="text" id="profileTimeZone" class="text-input" list="commonTimeZones" autocomplete="off" placeholder="America/Los_Angeles">
+                  </label>
+                  <label class="field-group">
+                    <span>Dates in filenames</span>
+                    <select id="profileServiceDateOrder" class="display-dropdown">
+                      <option value="mdy">Month / day / year</option>
+                      <option value="dmy">Day / month / year</option>
+                    </select>
+                  </label>
+                </div>
+                <datalist id="commonTimeZones">
+                  <option value="America/Los_Angeles"></option>
+                  <option value="America/Denver"></option>
+                  <option value="America/Chicago"></option>
+                  <option value="America/New_York"></option>
+                  <option value="America/Toronto"></option>
+                  <option value="Europe/Kyiv"></option>
+                  <option value="Europe/London"></option>
+                  <option value="Australia/Sydney"></option>
+                </datalist>
+
+                <div class="profile-editor-block">
+                  <div class="profile-editor-heading">
+                    <div>
+                      <strong>Slideshow inputs</strong>
+                      <small>Rename these for your church, or add another deck channel.</small>
+                    </div>
+                    <button type="button" id="btnAddInputRole" class="btn btn-outline btn-compact">Add input</button>
+                  </div>
+                  <ol id="inputRoleSettingsList" class="profile-list" aria-label="Configured slideshow inputs"></ol>
+                </div>
+
+                <div class="profile-editor-block">
+                  <div class="profile-editor-heading">
+                    <div>
+                      <strong>Outputs</strong>
+                      <small>Add, duplicate, rename, reorder, or remove destination screens.</small>
+                    </div>
+                    <button type="button" id="btnAddOutput" class="btn btn-outline btn-compact">Add output</button>
+                  </div>
+                  <ol id="outputSettingsList" class="profile-list output-profile-list" aria-label="Configured outputs"></ol>
+                </div>
+
+                <div class="profile-actions">
+                  <button type="button" id="btnResetProfileDraft" class="btn btn-quiet">Reset draft to safe defaults</button>
+                  <span class="profile-actions-spacer"></span>
+                  <button type="button" id="btnCancelProfileChanges" class="btn btn-secondary" disabled>Discard changes</button>
+                  <button type="button" id="btnSaveProfile" class="btn btn-primary" disabled>Save venue profile</button>
+                </div>
+                <p id="profileEditorStatus" class="settings-note" role="status" aria-live="polite">No unsaved profile changes.</p>
+              </section>
+
+              <section class="settings-section" aria-labelledby="technicalSettingsHeading">
+                <div class="settings-section-heading">
+                  <div>
+                    <p class="section-kicker">ADVANCED</p>
+                    <h3 id="technicalSettingsHeading">Timing &amp; Singers Screen text</h3>
+                  </div>
+                  <p>Venue-specific tuning. Test changes before a service.</p>
+                </div>
+                <div class="settings-grid settings-grid-three">
+                  <label class="field-group">
+                    <span>Fade between slides</span>
+                    <select id="fadeDuration" class="display-dropdown">
+                      <option value="0">None (instant)</option>
+                      <option value="150">Fast (150ms)</option>
+                      <option value="300" selected>Medium (300ms)</option>
+                      <option value="500">Slow (500ms)</option>
+                      <option value="750">Very slow (750ms)</option>
+                      <option value="1000">Extra slow (1s)</option>
+                    </select>
+                  </label>
+                  <label class="field-group">
+                    <span>Preferred source for Singer next text</span>
+                    <select id="singerLanguage" class="display-dropdown"></select>
+                  </label>
+                  <label class="field-group">
+                    <span>Singer text size</span>
+                    <span class="number-adjuster">
+                      <button type="button" class="step-btn" id="singerFontDown" aria-label="Make singer text smaller">−</button>
+                      <input type="number" class="number-input" id="singerFontSize" value="36" min="12" max="240" step="2">
+                      <button type="button" class="step-btn" id="singerFontUp" aria-label="Make singer text larger">+</button>
+                    </span>
+                  </label>
+                  <label class="field-group">
+                    <span>Next-text character limit</span>
+                    <span class="number-adjuster">
+                      <button type="button" class="step-btn" id="singerCharLimitDown" aria-label="Reduce singer character limit">−</button>
+                      <input type="number" class="number-input" id="singerCharLimit" value="70" min="10" max="500" step="5">
+                      <button type="button" class="step-btn" id="singerCharLimitUp" aria-label="Increase singer character limit">+</button>
+                    </span>
+                  </label>
+                  <label class="field-group">
+                    <span>Singer text padding</span>
+                    <span class="number-adjuster">
+                      <button type="button" class="step-btn" id="singerTextPaddingDown" aria-label="Reduce singer text padding">−</button>
+                      <input type="number" class="number-input" id="singerTextPadding" value="4" min="0" max="80" step="2">
+                      <button type="button" class="step-btn" id="singerTextPaddingUp" aria-label="Increase singer text padding">+</button>
+                    </span>
+                  </label>
+                </div>
+                <label class="check-card sync-setting">
+                  <input type="checkbox" id="syncMode">
+                  <span><strong>Experimental synchronized reveal</strong><small>Best-effort timing across screens; verify on venue hardware</small></span>
+                </label>
+              </section>
+            </div>
+          </div>
+            </div>
+          </div>
+        </dialog>
+      </div>
+    </section>
+
+    <main class="main-content" id="mainContent">
+      <div class="main-horizontal-layout">
+        <section class="thumbnails-section" aria-labelledby="allSlidesHeading">
+          <div class="thumbnails-header">
+            <div>
+              <p class="section-kicker">SHOW</p>
+              <h2 id="allSlidesHeading">All slides</h2>
+            </div>
+            <div class="thumbnails-header-controls">
+              <div class="lang-selector" id="thumbnailRoleSelector" role="group" aria-label="Thumbnail content"></div>
+              <div class="zoom-control" aria-label="Thumbnail size">
+                <button class="zoom-btn" id="zoomOut" aria-label="Smaller thumbnails">−</button>
                 <span class="zoom-level" id="zoomLevel">100%</span>
-                <button class="zoom-btn" id="zoomIn">+</button>
+                <button class="zoom-btn" id="zoomIn" aria-label="Larger thumbnails">+</button>
               </div>
             </div>
           </div>
-          <div class="thumbnails-grid" id="thumbnailsGrid">
-            <!-- Thumbnails will be generated dynamically -->
-          </div>
-        </div>
+          <div class="thumbnails-grid" id="thumbnailsGrid" aria-label="Slides"></div>
+        </section>
 
-        <!-- Right: Controls column -->
-        <div class="controls-column">
-          <!-- Branding -->
-          <div class="brand-box">
-            <div class="brand-logo">S</div>
-            <div class="brand-name">SyncShow</div>
+        <aside class="controls-column" aria-label="Show controls">
+          <div class="show-heading">
+            <p class="section-kicker">LIVE CONTROL</p>
+            <h2>Show</h2>
           </div>
 
-          <!-- Slide counter -->
-          <div class="slide-counter-box">
+          <div id="showOutputState" class="show-output-state" data-phase="idle" role="status" aria-live="polite">
+            <span class="show-output-state-dot" aria-hidden="true"></span>
+            <span class="show-output-state-copy">
+              <strong id="showOutputStateTitle">Outputs idle</strong>
+              <small id="showOutputStateDetail">Start Show from Load when the service is ready.</small>
+            </span>
+          </div>
+
+          <div class="slide-counter-box" aria-label="Current slide">
             <span id="currentSlideNum">1</span>
             <span class="divider">/</span>
             <span id="totalSlides">--</span>
           </div>
 
-          <!-- Navigation -->
           <div class="nav-box">
-            <button id="btnPrevSlide" class="nav-btn-full" title="Previous (←)">
-              Previous
+            <button id="btnPrevSlide" class="nav-btn-full" title="Previous slide (Left arrow)">
+              <span aria-hidden="true">←</span> Previous
             </button>
-            <button id="btnNextSlide" class="nav-btn-full" title="Next (→)">
-              Next
+            <button id="btnNextSlide" class="nav-btn-full nav-btn-primary" title="Next slide (Right arrow or Space)">
+              Next <span aria-hidden="true">→</span>
             </button>
           </div>
 
-          <!-- Display controls -->
+          <div class="live-tools-box" aria-label="Live tools">
+            <button id="btnOpenBible" class="live-tool-button" type="button" aria-haspopup="dialog" aria-controls="bibleDialog">
+              <span class="live-tool-icon" aria-hidden="true">B</span>
+              <span><strong>Bible</strong><small>Show a passage now</small></span>
+            </button>
+            <button id="btnOpenRemote" class="live-tool-button remote-tool-button" type="button" aria-haspopup="dialog" aria-controls="remoteDialog">
+              <span class="live-tool-icon live-tool-icon-remote" aria-hidden="true">R</span>
+              <span><strong>Remote Control</strong><small id="remoteTileSummary">Off · Control this Show from a phone</small></span>
+              <span id="remoteTileStatus" class="live-tool-status">Off</span>
+            </button>
+          </div>
+
+          <section id="remoteLiveStrip" class="remote-live-strip" aria-label="Remote Control status" hidden>
+            <span class="remote-live-dot" aria-hidden="true"></span>
+            <span class="remote-live-copy">
+              <strong>Remote on</strong>
+              <small id="remoteLiveDeviceCount" role="status" aria-live="polite">No phones connected</small>
+            </span>
+            <button id="btnOpenRemoteStatus" class="btn btn-quiet btn-compact" type="button" aria-haspopup="dialog" aria-controls="remoteDialog">Open</button>
+            <button id="btnRemoteOff" class="btn btn-remote-off btn-compact" type="button">Remote Off</button>
+          </section>
+
           <div class="display-controls-box">
-            <button id="btnRefreshDisplays" class="btn btn-secondary btn-full" title="Refresh the list of available displays">
-              Refresh Displays
+            <button id="btnShowDisplays" class="btn btn-primary btn-full" title="Restore the current slide to all output screens">
+              Show / Restore outputs
             </button>
-            <button id="btnShowDisplays" class="btn btn-primary btn-full" title="Show current slide on all displays">
-              Show
+            <button id="btnClearDisplays" class="btn btn-secondary btn-full" title="Turn every output black without closing it">
+              Clear to black
             </button>
-            <button id="btnClearDisplays" class="btn btn-secondary btn-full" title="Clear all displays to black screens">
-              Clear
-            </button>
-            <button id="btnStopDisplays" class="btn btn-warning btn-full" title="Stop displaying and hide display windows">
-              Stop
-            </button>
-            <button id="btnBackToSetup" class="btn btn-danger btn-full" title="Return to setup screen to change files or displays">
-              Back to Setup
+            <button id="btnStopDisplays" class="btn btn-warning btn-full" title="Hide output windows and stop keyboard control">
+              Stop outputs
             </button>
           </div>
 
-          <!-- Current slide previews -->
-          <div class="preview-box">
-            <details class="preview-accordion" id="previewAccordionRu" open>
-              <summary class="preview-accordion-header">RU Preview</summary>
-              <div class="mini-preview">
-                <div class="mini-preview-img">
-                  <img src="" alt="Russian" id="currentRussianImg">
-                </div>
-              </div>
-            </details>
-            <details class="preview-accordion" id="previewAccordionEn" open>
-              <summary class="preview-accordion-header">EN Preview</summary>
-              <div class="mini-preview">
-                <div class="mini-preview-img">
-                  <img src="" alt="English" id="currentEnglishImg">
-                </div>
-              </div>
-            </details>
-            <details class="preview-accordion" id="previewAccordionSinger" open>
-              <summary class="preview-accordion-header">Singer Preview <span class="preview-info-icon" title="This preview updates with a slight delay after each slide change. The actual singer screen updates instantly.">&#9432;</span></summary>
-              <div class="mini-preview">
-                <div class="mini-preview-img">
-                  <img src="" alt="Singer" id="currentSingerImg">
-                </div>
-              </div>
-            </details>
+          <div class="preview-box" id="previewBox" hidden>
+            <div id="outputPreviewList" aria-label="Selected output previews"></div>
           </div>
 
-          <!-- Singer font size control -->
-          <div class="singer-font-control" id="singerFontControl">
-            <label>Singer Text Size:</label>
-            <div class="font-size-adjuster">
-              <button class="zoom-btn" id="singerFontDown">−</button>
-              <input type="number" class="font-size-input" id="singerFontSize" value="36" min="12" max="240" step="2">
-              <button class="zoom-btn" id="singerFontUp">+</button>
-            </div>
-          </div>
-
-          <!-- Singer char limit control -->
-          <div class="singer-font-control" id="singerCharLimitControl">
-            <label>Singer Char Limit:</label>
-            <div class="font-size-adjuster">
-              <button class="zoom-btn" id="singerCharLimitDown">−</button>
-              <input type="number" class="font-size-input" id="singerCharLimit" value="70" min="10" max="500" step="5">
-              <button class="zoom-btn" id="singerCharLimitUp">+</button>
-            </div>
-          </div>
-
-          <!-- Singer text padding control -->
-          <div class="singer-font-control" id="singerTextPaddingControl">
-            <label>Singer Text Padding:</label>
-            <div class="font-size-adjuster">
-              <button class="zoom-btn" id="singerTextPaddingDown">−</button>
-              <input type="number" class="font-size-input" id="singerTextPadding" value="4" min="0" max="80" step="2">
-              <button class="zoom-btn" id="singerTextPaddingUp">+</button>
-            </div>
-          </div>
-
-          <!-- Keyboard hints -->
-          <div class="hints-box">
-            ← → Space
-          </div>
-        </div>
+          <p class="hints-box">← / → navigate · Space advances · Esc clears</p>
+          <button id="btnBackToSetup" class="btn btn-quiet btn-full" title="Stop outputs and return to the Load screen">
+            Back to Load
+          </button>
+        </aside>
       </div>
     </main>
 
-    <!-- Status Bar -->
     <footer class="status-bar">
       <div class="status-left">
-        <span id="statusMessage">Ready</span>
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="statusMessage" aria-live="polite">Choose today’s slideshows to begin</span>
       </div>
       <div class="status-right">
-        <span class="keyboard-shortcuts">
-          Shortcuts: ← Previous | → Next | Space Next | Home First | End Last | Esc Clear to Black
-        </span>
+        <span class="prepare-help">Projects are saved locally after every change.</span>
+        <span class="load-help">PowerPoint is preferred on Windows; LibreOffice remains the fallback.</span>
+        <span class="keyboard-shortcuts">← Previous · → / Space Next · Home First · End Last · Esc Clear</span>
       </div>
     </footer>
   </div>
 
+  <dialog id="driveOAuthDialog" class="warning-dialog drive-oauth-dialog" aria-labelledby="driveOAuthTitle" aria-describedby="driveOAuthDescription">
+    <div class="dialog-icon drive-oauth-icon" aria-hidden="true">G</div>
+    <p class="section-kicker">PRIVATE GOOGLE DRIVE</p>
+    <h2 id="driveOAuthTitle">Finish signing in with your browser</h2>
+    <p id="driveOAuthDescription">Google sign-in is waiting in your default browser. Keep SyncShow open while you choose the service folder.</p>
+    <div class="drive-oauth-recovery">
+      <strong>Browser crashed or the folder chooser is blank?</strong>
+      <p>Use SyncShow’s button below to copy the original one-time sign-in link, then open it in Safari, Chrome, Firefox, or another browser on this computer before the three-minute timer expires. Do not copy or replay a callback or Picker URL from the browser address bar, and do not share the link.</p>
+    </div>
+    <p id="driveOAuthActionStatus" class="drive-oauth-action-status" role="status" aria-live="polite">Waiting for Google sign-in…</p>
+    <div class="dialog-actions">
+      <button type="button" id="btnCancelDriveOAuth" class="btn btn-secondary">Cancel sign-in</button>
+      <button type="button" id="btnCopyDriveOAuthLink" class="btn btn-primary" autofocus>Copy sign-in link</button>
+    </div>
+  </dialog>
+
+  <dialog id="newServiceProjectDialog" class="prepare-dialog" aria-labelledby="newServiceProjectTitle">
+    <form id="newServiceProjectForm">
+      <p class="section-kicker">NEW SERVICE</p>
+      <h2 id="newServiceProjectTitle">Create a service project</h2>
+      <p class="prepare-dialog-description">Give volunteers a clear name and date. You can add songs and slides next.</p>
+      <label class="field-group">
+        <span>Service name</span>
+        <input id="newServiceProjectName" class="text-input" type="text" maxlength="200" autocomplete="off" required value="Sunday Service">
+      </label>
+      <label class="field-group">
+        <span>Service date</span>
+        <input id="newServiceProjectDate" class="text-input" type="date" required>
+      </label>
+      <p id="newServiceProjectError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelNewServiceProject" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnCreateServiceProject" class="btn btn-primary">Create service</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="addServiceGroupDialog" class="prepare-dialog" aria-labelledby="addServiceGroupDialogTitle">
+    <form id="addServiceGroupForm">
+      <p class="section-kicker">ADD SECTION</p>
+      <h2 id="addServiceGroupDialogTitle">Add a titled separator</h2>
+      <p class="prepare-dialog-description">Sections are headings in the rundown. They help volunteers scan the service and are never projected.</p>
+      <label class="field-group">
+        <span>Section title</span>
+        <input id="addServiceGroupTitle" class="text-input" type="text" maxlength="200" autocomplete="off" required placeholder="Example: Worship or Sermon">
+      </label>
+      <input id="addServiceGroupKind" type="hidden" value="section">
+      <p id="addServiceGroupError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="addServiceGroupCancel" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="addServiceGroupConfirm" class="btn btn-primary">Add section</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="addServiceTextDialog" class="prepare-dialog" aria-labelledby="addServiceTextTitle">
+    <form id="addServiceTextForm">
+      <p class="section-kicker">ADD TEXT</p>
+      <h2 id="addServiceTextTitle">Add a simple text slide</h2>
+      <p class="prepare-dialog-description">Use a sermon point for teaching or a notice for a short announcement.</p>
+      <label class="field-group">
+        <span>Slide type</span>
+        <select id="addServiceTextKind" class="display-dropdown">
+          <option value="sermon">Sermon point</option>
+          <option value="notice">Notice</option>
+          <option value="blank">Blank screen</option>
+        </select>
+      </label>
+      <label class="field-group">
+        <span>Title</span>
+        <input id="addServiceTextTitleInput" class="text-input" type="text" maxlength="200" autocomplete="off" required placeholder="Main point">
+      </label>
+      <label id="addServiceTextBodyField" class="field-group">
+        <span>Text</span>
+        <textarea id="addServiceTextBody" class="prepare-textarea" maxlength="20000" placeholder="Type the text people should see…"></textarea>
+      </label>
+      <p id="addServiceTextError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelServiceText" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnConfirmServiceText" class="btn btn-primary">Add slide</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="editServiceItemDialog" class="prepare-dialog prepare-dialog-wide" aria-labelledby="editServiceItemTitle">
+    <form id="editServiceItemForm">
+      <p class="section-kicker">EDIT ITEM</p>
+      <h2 id="editServiceItemTitle">Edit service item</h2>
+      <p id="editServiceItemDescription" class="prepare-dialog-description">Choose Save changes when you are done. Each save creates a recoverable revision.</p>
+      <label class="field-group">
+        <span id="editServiceItemNameLabel">Rundown title <small id="editServiceItemNameHint">Shown to the operator</small></span>
+        <input id="editServiceItemName" class="text-input" type="text" maxlength="200" autocomplete="off" required>
+      </label>
+      <label id="editServiceItemGroupKindField" class="field-group" hidden>
+        <span>Section type</span>
+        <select id="editServiceItemGroupKind" class="display-dropdown">
+          <option value="service">Service</option>
+          <option value="sermon">Sermon</option>
+          <option value="section">Service section</option>
+          <option value="point">Sermon point</option>
+          <option value="subpoint">Sermon subpoint</option>
+          <option value="custom">Custom group</option>
+        </select>
+      </label>
+      <label id="editServiceItemPresetField" class="field-group" hidden>
+        <span>Slide style</span>
+        <select id="editServiceItemPreset" class="display-dropdown"></select>
+      </label>
+      <section id="editServiceItemTextFields" class="prepare-output-text-fields" hidden>
+        <div class="prepare-editor-heading">
+          <div>
+            <h4>Projected title and body on each output</h4>
+            <p>The rundown title above is only for the operator. Leave both fields blank to hide this item on an output.</p>
+          </div>
+        </div>
+        <div id="editServiceItemChannelText"></div>
+      </section>
+      <section id="editServiceItemPictureOutputs" class="prepare-picture-output-usage" hidden>
+        <div class="prepare-editor-heading">
+          <div>
+            <h4>Picture on each output</h4>
+            <p>Choose replaces the picture only on that output. Remove hides it there. Keep at least one output enabled.</p>
+          </div>
+        </div>
+        <div id="editServiceItemPictureOutputList" class="prepare-picture-output-list"></div>
+      </section>
+      <label id="editServiceItemAltTextField" class="field-group" hidden>
+        <span>Picture description <small>Used in the inspector and for accessibility</small></span>
+        <input id="editServiceItemAltText" class="text-input" type="text" maxlength="500" autocomplete="off">
+      </label>
+      <label id="editServiceItemFitField" class="field-group" hidden>
+        <span>Picture layout</span>
+        <select id="editServiceItemFit" class="display-dropdown">
+          <option value="fit">Fit entire picture</option>
+          <option value="fill">Fill and crop</option>
+          <option value="stretch">Stretch</option>
+        </select>
+      </label>
+      <label id="editServiceItemAttributionField" class="field-group" hidden>
+        <span>Picture credit</span>
+        <input id="editServiceItemAttribution" class="text-input" type="text" maxlength="500" autocomplete="off">
+      </label>
+      <label class="field-group">
+        <span>Operator note <small>Optional; never projected</small></span>
+        <textarea id="editServiceItemNotes" class="prepare-textarea prepare-textarea-compact" maxlength="4000"></textarea>
+      </label>
+      <p id="editServiceItemError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelEditServiceItem" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnConfirmEditServiceItem" class="btn btn-primary">Save changes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="songDocumentDialog" class="prepare-dialog prepare-dialog-song" aria-labelledby="songDocumentDialogTitle">
+    <form id="songDocumentForm">
+      <p class="section-kicker">SONG LIBRARY</p>
+      <h2 id="songDocumentDialogTitle">Create a song</h2>
+      <p class="prepare-dialog-description">Write the lyrics once, then arrange and route translations per service.</p>
+      <div class="prepare-song-fields">
+        <label class="field-group">
+          <span>Title</span>
+          <input id="songDocumentTitle" class="text-input" type="text" maxlength="200" autocomplete="off" required>
+        </label>
+        <label class="field-group">
+          <span>Language</span>
+          <input id="songDocumentLanguage" class="text-input" type="text" maxlength="35" autocomplete="off" required placeholder="en, ru, uk…">
+        </label>
+      </div>
+      <label class="field-group">
+        <span>Translated version of <small>Optional; links matching versions of the same song</small></span>
+        <select id="songDocumentTranslationOf" class="display-dropdown">
+          <option value="">Original song</option>
+        </select>
+      </label>
+      <fieldset class="prepare-song-community-sharing">
+        <legend>Community sharing</legend>
+        <p>Choose who can find this song in Heritage Community. New songs stay private unless you change this.</p>
+        <div class="prepare-song-community-fields">
+          <label class="field-group">
+            <span>Visibility</span>
+            <select id="songDocumentCommunityVisibility" class="display-dropdown" disabled>
+              <option value="private" selected>Private — Community admins only</option>
+              <option value="public">Public — Community members now</option>
+              <option value="scheduled-public">Scheduled — Community members later</option>
+            </select>
+          </label>
+          <label id="songDocumentPublishAtField" class="field-group" hidden>
+            <span>Make public on</span>
+            <input id="songDocumentPublishAt" class="text-input" type="datetime-local" disabled>
+          </label>
+        </div>
+        <div id="songDocumentCommunityState" class="prepare-song-community-state" data-kind="idle" role="status" aria-live="polite">
+          <strong>Private by default</strong>
+          <span>Connect Heritage Community in Admin Settings to sync this song.</span>
+        </div>
+        <button type="button" id="btnReviewSongCommunityConflict" class="btn btn-warning-quiet prepare-song-conflict-review" hidden>
+          Review conflict
+        </button>
+      </fieldset>
+      <fieldset class="prepare-song-attribution">
+        <legend>Song credits</legend>
+        <p>Keep the people who wrote the words, translated them, and composed the music in separate fields.</p>
+        <div class="prepare-song-attribution-grid">
+          <label class="field-group">
+            <span>Words / lyrics by</span>
+            <input id="songDocumentAuthors" class="text-input" type="text" maxlength="1000" autocomplete="off" placeholder="Comma separated">
+          </label>
+          <label class="field-group">
+            <span>Translation by</span>
+            <input id="songDocumentTranslators" class="text-input" type="text" maxlength="1000" autocomplete="off" placeholder="Comma separated">
+          </label>
+          <label class="field-group">
+            <span>Music by</span>
+            <input id="songDocumentComposers" class="text-input" type="text" maxlength="1000" autocomplete="off" placeholder="Comma separated">
+          </label>
+        </div>
+      </fieldset>
+      <label class="field-group">
+        <span>Lyrics</span>
+        <textarea id="songDocumentLyrics" class="prepare-textarea prepare-song-lyrics-editor" maxlength="500000" spellcheck="true" placeholder="^1&#10;First verse…&#10;&#10;^chorus&#10;Chorus…"></textarea>
+      </label>
+      <p class="prepare-song-syntax-help"><strong>Structure:</strong> <code>^1</code> starts verse 1, <code>^chorus</code> starts a chorus, <code>---</code> starts another slide, and <code>^^</code> projects a literal caret.</p>
+      <details class="prepare-song-credits">
+        <summary>Rights, displayed credit, and search details</summary>
+        <div class="prepare-song-credit-grid">
+          <label class="field-group">
+            <span>Tags</span>
+            <input id="songDocumentTags" class="text-input" type="text" maxlength="1000" autocomplete="off" placeholder="worship, communion…">
+          </label>
+          <label class="field-group">
+            <span>Displayed credit line <small>Optional exact wording</small></span>
+            <input id="songDocumentAttribution" class="text-input" type="text" maxlength="500" autocomplete="off">
+          </label>
+          <label class="field-group">
+            <span>License</span>
+            <input id="songDocumentLicense" class="text-input" type="text" maxlength="300" autocomplete="off">
+          </label>
+          <label class="field-group prepare-song-source-field">
+            <span>Source / hymnal / URL</span>
+            <input id="songDocumentSource" class="text-input" type="text" maxlength="500" autocomplete="off">
+          </label>
+        </div>
+      </details>
+      <section id="songDocumentValidation" class="prepare-song-validation" aria-live="polite">
+        Add a title and lyrics to preview the structure.
+      </section>
+      <p id="songDocumentError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelSongDocument" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnValidateSongDocument" class="btn btn-outline">Check song</button>
+        <button type="submit" id="btnSaveSongDocument" class="btn btn-primary">Save to library</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="songCommunityConflictDialog" class="prepare-dialog prepare-dialog-conflict" aria-labelledby="songCommunityConflictTitle">
+    <form method="dialog">
+      <p class="section-kicker">HERITAGE COMMUNITY</p>
+      <h2 id="songCommunityConflictTitle">Review song conflict</h2>
+      <p class="prepare-dialog-description">This Mac and Heritage Community both changed. Neither copy is overwritten until you explicitly choose one below.</p>
+      <div class="prepare-conflict-columns">
+        <section class="prepare-conflict-copy" aria-labelledby="songCommunityLocalHeading">
+          <h3 id="songCommunityLocalHeading">This Mac’s saved copy</h3>
+          <div id="songCommunityLocalDocuments" class="prepare-conflict-documents"></div>
+        </section>
+        <section class="prepare-conflict-copy" aria-labelledby="songCommunityRemoteHeading">
+          <h3 id="songCommunityRemoteHeading">Community copy</h3>
+          <div id="songCommunityRemoteDocuments" class="prepare-conflict-documents"></div>
+        </section>
+      </div>
+      <p id="songCommunityConflictStatus" class="prepare-conflict-status" role="status" aria-live="polite">Loading both saved copies…</p>
+      <div class="dialog-actions prepare-conflict-actions">
+        <button type="button" id="btnCloseSongCommunityConflict" class="btn btn-secondary">Close review</button>
+        <button type="button" id="btnKeepLocalSongConflict" class="btn btn-outline" disabled>Keep this Mac’s copy</button>
+        <button type="button" id="btnKeepCommunitySongConflict" class="btn btn-danger-quiet" disabled>Keep Community copy</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="addServicePictureDialog" class="prepare-dialog" aria-labelledby="addServicePictureTitle">
+    <form id="addServicePictureForm">
+      <p class="section-kicker">ADD PICTURE</p>
+      <h2 id="addServicePictureTitle">Choose a picture</h2>
+      <p class="prepare-dialog-description">Start with one picture on every output. You can set a different picture for any output after it is added.</p>
+      <label class="field-group">
+        <span>Picture description</span>
+        <input id="addServicePictureAlt" class="text-input" type="text" maxlength="500" autocomplete="off" required placeholder="Example: Church picnic at the park">
+      </label>
+      <label class="field-group">
+        <span>Credit <small>Optional</small></span>
+        <input id="addServicePictureAttribution" class="text-input" type="text" maxlength="500" autocomplete="off" placeholder="Photographer or source">
+      </label>
+      <label class="prepare-picture-customize-option">
+        <input id="customizeServicePictureOutputs" type="checkbox">
+        <span>
+          <strong>Set different pictures per output next</strong>
+          <small>Opens the simple output list after the shared picture is added.</small>
+        </span>
+      </label>
+      <p id="addServicePictureError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelServicePicture" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnConfirmServicePicture" class="btn btn-primary">Choose picture</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="startPreflightDialog" class="preflight-dialog" aria-labelledby="preflightTitle" aria-describedby="preflightDescription">
+    <form id="preflightForm">
+      <p id="preflightProgress" class="section-kicker"></p>
+      <h2 id="preflightTitle">Choose what to show</h2>
+      <p id="preflightDescription"></p>
+      <p id="preflightError" class="preflight-error" role="alert" hidden></p>
+
+      <fieldset id="preflightChoices" class="preflight-choices">
+        <legend class="sr-only">Choose what this output should show</legend>
+      </fieldset>
+
+      <section id="preflightReview" class="preflight-review" aria-label="Show plan" hidden></section>
+
+      <div class="dialog-actions preflight-actions">
+        <button type="button" id="btnCancelPreflight" class="btn btn-secondary">Cancel Start</button>
+        <button type="button" id="btnPreflightBack" class="btn btn-quiet">Back</button>
+        <button type="submit" id="btnPreflightContinue" class="btn btn-primary">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="bibleDialog" class="bible-dialog" aria-labelledby="bibleDialogTitle" aria-describedby="bibleDialogDescription">
+    <form id="bibleForm">
+      <div class="bible-dialog-heading">
+        <div>
+          <p class="section-kicker">LIVE BIBLE</p>
+          <h2 id="bibleDialogTitle">Show a Bible passage</h2>
+          <p id="bibleDialogDescription">Type a reference, check it, then choose which screens receive it.</p>
+        </div>
+        <button type="button" id="btnCloseBible" class="dialog-close-button" aria-label="Close Bible panel">×</button>
+      </div>
+
+      <div class="bible-lookup-row">
+        <label class="field-group bible-reference-field">
+          <span>Reference</span>
+          <input id="bibleReference" class="text-input" type="text" autocomplete="off" spellcheck="false" placeholder="Try John 3:16 or 1 pet 1 4" aria-describedby="bibleReferenceHelp">
+        </label>
+        <label class="field-group bible-translation-field">
+          <span>Translation</span>
+          <select id="bibleTranslation" class="display-dropdown">
+            <option value="BSB" selected>BSB</option>
+            <option value="LSV">LSV</option>
+          </select>
+        </label>
+        <button id="btnLookupBible" class="btn btn-secondary bible-lookup-button" type="submit">Find passage</button>
+      </div>
+      <p id="bibleReferenceHelp" class="bible-help">Fast shortcuts work here. Ambiguous books are never guessed.</p>
+      <p id="bibleError" class="preflight-error" role="alert" hidden></p>
+
+      <section id="bibleAmbiguity" class="bible-ambiguity" aria-labelledby="bibleAmbiguityTitle" hidden>
+        <h3 id="bibleAmbiguityTitle">Which book did you mean?</h3>
+        <p>Choose a book, then SyncShow will finish the lookup.</p>
+        <div id="bibleAmbiguityChoices" class="bible-ambiguity-choices" role="listbox" aria-label="Matching Bible books"></div>
+      </section>
+
+      <section id="biblePreview" class="bible-preview" aria-live="polite" hidden>
+        <div class="bible-preview-heading">
+          <div>
+            <p class="section-kicker">PREVIEW</p>
+            <h3 id="biblePreviewReference" tabindex="-1"></h3>
+          </div>
+          <span id="biblePreviewTranslation" class="mode-badge"></span>
+        </div>
+        <div id="biblePreviewVerses" class="bible-preview-verses"></div>
+        <p id="biblePreviewAttribution" class="bible-attribution"></p>
+      </section>
+
+      <fieldset id="bibleTargets" class="bible-targets" disabled>
+        <legend>Show on</legend>
+        <div id="bibleTargetList" class="bible-target-list"></div>
+      </fieldset>
+
+      <div class="dialog-actions bible-actions">
+        <button type="button" id="btnReturnFromBible" class="btn btn-secondary" hidden>Return to slides</button>
+        <span class="bible-action-spacer"></span>
+        <button type="button" id="btnCancelBible" class="btn btn-quiet">Close</button>
+        <button type="button" id="btnSendBibleLive" class="btn btn-primary" disabled>Send Live</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="remoteDialog" class="remote-dialog" aria-labelledby="remoteDialogTitle" aria-describedby="remoteDialogDescription">
+    <div class="remote-dialog-heading">
+      <div>
+        <p class="section-kicker">SHOW REMOTE</p>
+        <div class="remote-title-row">
+          <h2 id="remoteDialogTitle">Remote Control</h2>
+          <span id="remoteDialogBadge" class="remote-state-badge">Off</span>
+        </div>
+        <p id="remoteDialogDescription">Control only this Show from a phone on the same trusted network.</p>
+      </div>
+      <button id="btnCloseRemote" class="dialog-close-button" type="button" aria-label="Close Remote Control">×</button>
+    </div>
+
+    <p id="remoteDialogStatus" class="remote-dialog-status" role="status" aria-live="polite">Remote Control is off.</p>
+    <p id="remoteError" class="preflight-error" role="alert" hidden></p>
+
+    <section id="remoteOffView" class="remote-dialog-view" aria-labelledby="remoteOffHeading">
+      <div class="remote-intro-card">
+        <span class="remote-intro-icon" aria-hidden="true">R</span>
+        <div>
+          <h3 id="remoteOffHeading">Control this Show from a phone</h3>
+          <p>Previous, Next, jump to a cue, Show/Restore, and Clear are available. Files, screens, Bible content, and venue settings stay on this computer.</p>
+        </div>
+      </div>
+
+      <label class="field-group remote-network-field" for="remoteInterfaceSelect">
+        <span>Phone network</span>
+        <select id="remoteInterfaceSelect" class="display-dropdown" aria-describedby="remoteNetworkHelp">
+          <option value="" selected disabled>Looking for trusted networks…</option>
+        </select>
+      </label>
+      <p id="remoteNetworkHelp" class="remote-network-help">Phones must use this same Wi-Fi or wired network. SyncShow does not open Remote to the internet.</p>
+
+      <div class="remote-authority-note">
+        <strong>Local control stays in charge.</strong>
+        <span>Only this SyncShow computer can turn Remote on or off or disconnect phones.</span>
+      </div>
+
+      <div class="dialog-actions remote-dialog-actions">
+        <button id="btnRefreshRemoteInterfaces" class="btn btn-quiet" type="button">Refresh networks</button>
+        <span class="remote-action-spacer"></span>
+        <button id="btnEnableRemote" class="btn btn-primary" type="button" disabled>Turn on Remote</button>
+      </div>
+    </section>
+
+    <section id="remoteOnView" class="remote-dialog-view" aria-labelledby="remotePairHeading" hidden>
+      <div class="remote-enabled-summary">
+        <div>
+          <span class="remote-enabled-dot" aria-hidden="true"></span>
+          <strong>Remote is available</strong>
+        </div>
+        <small id="remoteNetworkSummary">Same-network phones can connect while this Show is open.</small>
+      </div>
+
+      <div id="remotePairingCard" class="remote-pairing-card">
+        <div class="remote-qr-wrap">
+          <img id="remotePairQr" alt="Scan to pair this phone with SyncShow Remote">
+        </div>
+        <div class="remote-pair-copy">
+          <p class="section-kicker">PAIR A PHONE</p>
+          <h3 id="remotePairHeading">Scan or enter the code</h3>
+          <p>Open the camera on the phone and scan this code. If scanning is unavailable, open the shown address and enter:</p>
+          <output id="remotePairCode" class="remote-pair-code" aria-label="Pairing code not ready">— — —</output>
+          <p id="remotePairExpiry" class="remote-pair-expiry" aria-live="off">A new code will appear here.</p>
+          <p id="remotePairAddress" class="remote-pair-address"></p>
+          <button id="btnRotateRemotePairing" class="btn btn-secondary btn-compact" type="button">New pair code</button>
+        </div>
+      </div>
+
+      <div id="remotePairExpired" class="remote-pair-expired" hidden>
+        <strong id="remotePairClosedTitle">Pairing code expired</strong>
+        <span id="remotePairClosedText">Connected phones still work. Create a new code only when another phone needs access.</span>
+        <button id="btnCreateRemotePairing" class="btn btn-primary btn-compact" type="button">Create new code</button>
+      </div>
+
+      <section class="remote-devices-card" aria-labelledby="remoteDevicesHeading">
+        <div>
+          <h3 id="remoteDevicesHeading">Connected phones</h3>
+          <p id="remoteDeviceSummary" role="status" aria-live="polite">No phones connected</p>
+        </div>
+        <button id="btnRevokeRemoteDevices" class="btn btn-secondary btn-compact" type="button" disabled>Disconnect all phones</button>
+      </section>
+
+      <div class="remote-trust-note">
+        <strong>Trusted-network only</strong>
+        <span>This first Remote uses the church’s local network. Do not enable it on a public or untrusted Wi-Fi network.</span>
+      </div>
+
+      <div class="dialog-actions remote-dialog-actions">
+        <button id="btnRemoteOffDialog" class="btn btn-remote-off" type="button">Remote Off</button>
+        <span class="remote-action-spacer"></span>
+        <button id="btnDoneRemote" class="btn btn-primary" type="button">Done</button>
+      </div>
+    </section>
+  </dialog>
+
+  <dialog id="advancedWarningDialog" class="warning-dialog" aria-labelledby="advancedWarningTitle" aria-describedby="advancedWarningBody">
+    <div class="dialog-icon" aria-hidden="true">!</div>
+    <h2 id="advancedWarningTitle">Do you know what you’re doing?</h2>
+    <p id="advancedWarningBody">These controls can send slides to the wrong screen or change live timing. If you are setting up the room, go ahead—your current values will be preserved.</p>
+    <div class="dialog-actions">
+      <button type="button" id="btnCancelAdvanced" class="btn btn-secondary">Keep Friendly Mode</button>
+      <button type="button" id="btnConfirmAdvanced" class="btn btn-warning">Show advanced controls</button>
+    </div>
+  </dialog>
+
+  <script src="error-messages.js"></script>
+  <script src="google-drive-oauth-state.js"></script>
+  <script src="service-output-plan.js"></script>
+  <script src="show-accessibility.js"></script>
+  <script src="prepare-controller.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

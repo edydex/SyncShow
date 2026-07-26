@@ -8,6 +8,9 @@ on:
       - 'package.json'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
@@ -27,7 +30,8 @@ jobs:
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT_VERSION"
 
-          # Skip prerelease versions on push - handled by promote-release workflow
+          # Promotion owns alpha/beta/rc/dev. Preview builds remain explicit
+          # prereleases and should proceed through this workflow unchanged.
           if [ "${{ github.event_name }}" = "push" ] && echo "$CURRENT_VERSION" | grep -qiE '[-](alpha|beta|rc|dev)'; then
             echo "Pre-release version $CURRENT_VERSION on push - deferring to promote-release workflow"
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -64,7 +68,8 @@ jobs:
 
   build-windows:
     needs: check-version
-    if: needs.check-version.outputs.version_changed == 'true'
+    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    environment: release-build
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -73,16 +78,31 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Run syntax and regression checks
+        run: npm run ci
+
+      - name: Prepare Google Drive release configuration
+        run: node scripts/google-drive-build-config.js inject
+        env:
+          SYNCSHOW_GOOGLE_CLIENT_ID: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_ID }}
+          SYNCSHOW_GOOGLE_CLIENT_SECRET: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_SECRET }}
+          SYNCSHOW_GOOGLE_API_KEY: ${{ secrets.SYNCSHOW_GOOGLE_API_KEY }}
+
       - name: Build Windows installer
         run: npm run build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Google Drive release configuration was packaged
+        run: node scripts/google-drive-build-config.js verify
+
+      - name: Remove Google Drive release configuration
+        if: always()
+        run: node scripts/google-drive-build-config.js clean
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -93,30 +113,67 @@ jobs:
 
   build-mac:
     needs: check-version
-    if: needs.check-version.outputs.version_changed == 'true'
-    runs-on: macos-latest
+    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    environment: release-build
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            file_arch: arm64
+          - arch: x64
+            runner: macos-15-intel
+            file_arch: x86_64
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build macOS installer
-        run: npm run build:mac
+      - name: Run syntax and regression checks
+        run: npm run ci
+
+      - name: Prepare Google Drive release configuration
+        run: node scripts/google-drive-build-config.js inject
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SYNCSHOW_GOOGLE_CLIENT_ID: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_ID }}
+          SYNCSHOW_GOOGLE_CLIENT_SECRET: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_SECRET }}
+          SYNCSHOW_GOOGLE_API_KEY: ${{ secrets.SYNCSHOW_GOOGLE_API_KEY }}
+
+      - name: Build macOS installer
+        run: npm run build:mac:adhoc -- --${{ matrix.arch }}
+
+      - name: Verify Google Drive release configuration was packaged
+        run: node scripts/google-drive-build-config.js verify
+
+      - name: Remove Google Drive release configuration
+        if: always()
+        run: node scripts/google-drive-build-config.js clean
+
+      - name: Verify native architecture
+        shell: bash
+        run: |
+          APP_EXECUTABLE="$(find dist -path '*/SyncShow.app/Contents/MacOS/SyncShow' -type f | head -n 1)"
+          SHARP_ADDON="$(find dist -path '*sharp-darwin-${{ matrix.arch }}*.node' -type f | head -n 1)"
+          test -n "$APP_EXECUTABLE"
+          test -n "$SHARP_ADDON"
+          file "$APP_EXECUTABLE" | grep -q '${{ matrix.file_arch }}'
+          file "$SHARP_ADDON" | grep -q '${{ matrix.file_arch }}'
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-installer
+          name: macos-installer-${{ matrix.arch }}
           path: |
             dist/*.dmg
             dist/*.zip
@@ -124,7 +181,8 @@ jobs:
 
   build-linux:
     needs: check-version
-    if: needs.check-version.outputs.version_changed == 'true'
+    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    environment: release-build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -133,16 +191,31 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Run syntax and regression checks
+        run: npm run ci
+
+      - name: Prepare Google Drive release configuration
+        run: node scripts/google-drive-build-config.js inject
+        env:
+          SYNCSHOW_GOOGLE_CLIENT_ID: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_ID }}
+          SYNCSHOW_GOOGLE_CLIENT_SECRET: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_SECRET }}
+          SYNCSHOW_GOOGLE_API_KEY: ${{ secrets.SYNCSHOW_GOOGLE_API_KEY }}
+
       - name: Build Linux packages
         run: npm run build:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Google Drive release configuration was packaged
+        run: node scripts/google-drive-build-config.js verify
+
+      - name: Remove Google Drive release configuration
+        if: always()
+        run: node scripts/google-drive-build-config.js clean
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
@@ -155,7 +228,7 @@ jobs:
 
   create-release:
     needs: [check-version, build-windows, build-mac, build-linux]
-    if: needs.check-version.outputs.version_changed == 'true'
+    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -178,7 +251,7 @@ jobs:
         id: prerelease
         run: |
           VERSION="${{ needs.check-version.outputs.version }}"
-          if echo "$VERSION" | grep -qiE '[-](alpha|beta|rc|dev)'; then
+          if echo "$VERSION" | grep -qiE '[-](alpha|beta|rc|dev|preview)'; then
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
           else
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
@@ -201,8 +274,8 @@ jobs:
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           files: |
             artifacts/windows-installer/*.exe
-            artifacts/macos-installer/*.dmg
-            artifacts/macos-installer/*.zip
+            artifacts/macos-installer-*/*.dmg
+            artifacts/macos-installer-*/*.zip
             artifacts/linux-installer/*.AppImage
             artifacts/linux-installer/*.deb
           body: |
@@ -213,10 +286,12 @@ jobs:
 
             ### Downloads
             - **Windows**: `SyncShow Setup ${{ needs.check-version.outputs.version }}.exe`
-            - **macOS**: `SyncShow-${{ needs.check-version.outputs.version }}.dmg` (Intel & Apple Silicon)
+            - **macOS Apple Silicon**: `SyncShow-${{ needs.check-version.outputs.version }}-arm64.dmg`
+            - **macOS Intel**: `SyncShow-${{ needs.check-version.outputs.version }}-x64.dmg`
             - **Linux**: `SyncShow-${{ needs.check-version.outputs.version }}.AppImage` or `.deb`
 
-            ### Requirements
-            - [LibreOffice](https://www.libreoffice.org/download/download/) must be installed for PowerPoint conversion
+            ### Presentation converter requirements
+            - **Windows:** Microsoft PowerPoint is preferred; [LibreOffice](https://www.libreoffice.org/download/download/) is the fallback.
+            - **macOS/Linux:** LibreOffice must be installed.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,6 @@
 @echo off
 echo ==========================================
-echo SyncDisplay - Quick Setup Script
+echo SyncShow - Quick Setup Script
 echo ==========================================
 echo.
 
@@ -15,27 +15,33 @@ if %ERRORLEVEL% NEQ 0 (
 echo [OK] Node.js found: 
 node --version
 
-REM Check for Python
-where python >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Python is not installed or not in PATH
-    echo Please install Python from https://www.python.org/
-    pause
-    exit /b 1
+REM Check for a supported Windows presentation converter.
+REM SyncShow prefers Microsoft PowerPoint when it is installed and falls back
+REM to LibreOffice. Python is no longer required.
+where POWERPNT.EXE >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo [OK] Microsoft PowerPoint found
+) else if exist "C:\Program Files\Microsoft Office\root\Office16\POWERPNT.EXE" (
+    echo [OK] Microsoft PowerPoint found
+) else if exist "C:\Program Files (x86)\Microsoft Office\root\Office16\POWERPNT.EXE" (
+    echo [OK] Microsoft PowerPoint found (x86)
+) else (
+    goto check_libreoffice
 )
-echo [OK] Python found:
-python --version
+goto converter_found
 
-REM Check for LibreOffice
+:check_libreoffice
 if exist "C:\Program Files\LibreOffice\program\soffice.exe" (
     echo [OK] LibreOffice found
 ) else if exist "C:\Program Files (x86)\LibreOffice\program\soffice.exe" (
     echo [OK] LibreOffice found (x86)
 ) else (
-    echo [WARNING] LibreOffice not found in default location
-    echo High-quality conversion requires LibreOffice
-    echo Download from: https://www.libreoffice.org/download/
+    echo [WARNING] Neither Microsoft PowerPoint nor LibreOffice was found
+    echo Install either PowerPoint or LibreOffice before converting presentations.
+    echo LibreOffice download: https://www.libreoffice.org/download/
 )
+
+:converter_found
 
 echo.
 echo ==========================================
@@ -44,17 +50,6 @@ echo ==========================================
 call npm install
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Failed to install Node.js dependencies
-    pause
-    exit /b 1
-)
-
-echo.
-echo ==========================================
-echo Installing Python dependencies...
-echo ==========================================
-pip install -r python\requirements.txt
-if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Failed to install Python dependencies
     pause
     exit /b 1
 )

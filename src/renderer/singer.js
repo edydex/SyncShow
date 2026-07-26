@@ -15,6 +15,18 @@ let baseFontSize = 36;
 let charLimit = 70;
 let textPadding = 4;
 let lastUpdateData = null;
+let updateVersion = 0;
+let pendingImage = null;
+let isCleared = false;
+const bibleOverlayController = window.createBibleOverlayController({
+  onReady: data => window.api.reportBibleOverlayReady(data),
+  onReveal: data => {
+    isCleared = false;
+    elements.container.classList.remove('cleared');
+    window.api.reportBibleOverlayRevealed(data);
+  },
+  onHide: data => window.api.reportBibleOverlayHidden(data)
+});
 
 // Initialize
 function init() {
@@ -28,6 +40,9 @@ function init() {
   window.api.onSingerFontSize(handleFontSize);
   window.api.onSingerCharLimit(handleCharLimit);
   window.api.onSingerTextPadding(handleTextPadding);
+  window.api.onBibleOverlayPrepare(data => bibleOverlayController.prepare(data));
+  window.api.onBibleOverlayReveal(data => bibleOverlayController.reveal(data));
+  window.api.onBibleOverlayHide(data => bibleOverlayController.hide(data));
   console.log('[Singer] Initialized');
 }
 
@@ -38,7 +53,7 @@ function handleFontSize(size) {
 
 function handleCharLimit(limit) {
   charLimit = limit;
-  if (lastUpdateData) handleUpdate(lastUpdateData);
+  if (lastUpdateData) handleUpdate(lastUpdateData, true);
 }
 
 function handleTextPadding(padding) {
@@ -58,17 +73,27 @@ function applyFontSize() {
 }
 
 function handleClear() {
+  invalidatePendingImage();
+  bibleOverlayController.hide();
+  isCleared = true;
   elements.container.classList.add('cleared');
 }
 
-function handleUpdate(data) {
+function handleUpdate(data, preserveClearedState = false) {
   if (!data) return;
+  const thisUpdateVersion = invalidatePendingImage();
   lastUpdateData = data;
+  let reportSynchronously = false;
+  let synchronousReportOk = true;
   
   const { currentSlide, currentSlideImage, nextSlideText, totalSlides } = data;
   
-  // Remove cleared state if it was set
-  elements.container.classList.remove('cleared');
+  // A real slide update restores the singer output. Setting-only rerenders
+  // preserve a prior Clear so they cannot resurrect stale content.
+  if (!preserveClearedState) {
+    isCleared = false;
+  }
+  elements.container.classList.toggle('cleared', isCleared);
   
   // Update current slide image
   if (currentSlideImage) {
@@ -76,19 +101,43 @@ function handleUpdate(data) {
     
     if (!currentImage || currentImage.src !== imageUrl) {
       const img = document.createElement('img');
-      img.src = imageUrl;
       img.alt = `Slide ${currentSlide}`;
+      // Keep the candidate image in the document while it loads. Chromium can
+      // defer detached image work for a hidden BrowserWindow, which would
+      // deadlock SyncShow's intentional first-frame-before-reveal barrier.
+      // The previous image remains visible until this hidden candidate is
+      // fully decoded.
+      img.hidden = true;
+      pendingImage = img;
       img.onload = () => {
-        elements.currentSlideContainer.innerHTML = '';
-        elements.currentSlideContainer.appendChild(img);
+        if (thisUpdateVersion !== updateVersion || pendingImage !== img) return;
+
+        pendingImage = null;
+        img.hidden = false;
+        elements.currentSlideContainer.replaceChildren(img);
         currentImage = img;
+        console.log(`[Singer] Slide ${currentSlide} image loaded; reporting frame ready`);
+        reportFrameReady(currentSlide, true);
       };
       img.onerror = () => {
+        if (thisUpdateVersion !== updateVersion || pendingImage !== img) return;
+
+        pendingImage = null;
+        currentImage = null;
         elements.currentSlideContainer.innerHTML = '<div class="waiting">Failed to load slide</div>';
+        console.error(`[Singer] Slide ${currentSlide} image failed to load: ${imageUrl}`);
+        reportFrameReady(currentSlide, false, 'Slide image could not be loaded');
       };
+      elements.currentSlideContainer.appendChild(img);
+      img.src = imageUrl;
+    } else {
+      reportSynchronously = true;
     }
   } else {
+    currentImage = null;
     elements.currentSlideContainer.innerHTML = '<div class="waiting">No slide image</div>';
+    reportSynchronously = true;
+    synchronousReportOk = false;
   }
   
   // Update next slide preview
@@ -110,6 +159,37 @@ function handleUpdate(data) {
   } else {
     elements.nextText.innerHTML = '<div class="waiting"></div>';
   }
+
+  if (reportSynchronously) {
+    reportFrameReady(
+      currentSlide,
+      synchronousReportOk,
+      synchronousReportOk ? null : 'No slide image was available'
+    );
+  }
+}
+
+function reportFrameReady(currentSlide, ok, error = null) {
+  window.api.reportOutputFrameReady({
+    kind: 'singer',
+    index: Math.max(0, currentSlide - 1),
+    ok,
+    error
+  });
+}
+
+function invalidatePendingImage() {
+  updateVersion += 1;
+
+  if (pendingImage) {
+    pendingImage.onload = null;
+    pendingImage.onerror = null;
+    pendingImage.src = '';
+    pendingImage.remove();
+    pendingImage = null;
+  }
+
+  return updateVersion;
 }
 
 function getFirstMeaningfulLine(text) {

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>SyncShow Remote</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">Skip to Show controls</a>
+
+  <div class="remote-shell">
+    <header class="app-header">
+      <div class="brand-mark" aria-hidden="true">S</div>
+      <div class="brand-copy">
+        <h1>SyncShow Remote</h1>
+        <p>Show control only</p>
+      </div>
+      <span id="connectionBadge" class="connection-badge is-waiting" role="status" aria-live="polite">Connecting</span>
+    </header>
+
+    <div id="connectionNotice" class="connection-notice" role="status" aria-live="polite" hidden>
+      <span class="connection-notice-dot" aria-hidden="true"></span>
+      <span id="connectionNoticeText">Trying to reconnect. No action will be sent until SyncShow confirms the connection.</span>
+    </div>
+
+    <main id="mainContent">
+      <section id="pairingView" class="pairing-view" aria-labelledby="pairingTitle">
+        <div class="pairing-hero">
+          <div class="pairing-icon" aria-hidden="true">R</div>
+          <p class="eyebrow">PHONE REMOTE</p>
+          <h2 id="pairingTitle">Connect to this Show</h2>
+          <p id="pairingDescription">Scan the QR code shown on the SyncShow computer, or enter its six-digit pairing code.</p>
+        </div>
+
+        <div id="ticketPairingProgress" class="pairing-progress" role="status" aria-live="polite" hidden>
+          <span class="progress-spinner" aria-hidden="true"></span>
+          <span>Pairing this phone…</span>
+        </div>
+
+        <form id="pairingForm" class="pairing-form" novalidate>
+          <label class="field-label" for="deviceName">
+            <span>Phone name</span>
+            <input id="deviceName" name="deviceName" type="text" maxlength="48" autocomplete="nickname" required>
+            <small>This name helps the local operator recognize the phone.</small>
+          </label>
+
+          <label class="field-label" for="pairCode">
+            <span>Pairing code</span>
+            <input id="pairCode" name="pairCode" class="pair-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123 456" aria-describedby="pairCodeHelp" required>
+            <small id="pairCodeHelp">The code expires quickly and works only on this local network.</small>
+          </label>
+
+          <p id="pairingError" class="inline-error" role="alert" hidden></p>
+          <button id="btnPair" class="button button-primary button-large" type="submit">Connect to Show</button>
+        </form>
+
+        <p class="trust-note"><strong>Trusted-network only.</strong> This phone must be on the same private Wi-Fi or wired network as SyncShow.</p>
+      </section>
+
+      <section id="showEndedView" class="ended-view" aria-labelledby="showEndedTitle" hidden>
+        <div class="ended-icon" aria-hidden="true">✓</div>
+        <p class="eyebrow">REMOTE ENDED</p>
+        <h2 id="showEndedTitle">Remote access has ended</h2>
+        <p id="showEndedMessage">The local operator turned Remote off or opened a different Show. Scan the new QR code on the SyncShow computer to reconnect.</p>
+        <button id="btnReturnToPairing" class="button button-secondary button-large" type="button">Enter a new code</button>
+      </section>
+
+      <section id="showView" class="show-view" aria-labelledby="showTitle" hidden>
+        <div class="show-overview">
+          <div>
+            <p class="eyebrow">CURRENT SHOW</p>
+            <h2 id="showTitle">Live control</h2>
+          </div>
+          <details id="healthDetails" class="health-details">
+            <summary>
+              <span id="healthDot" class="health-dot" aria-hidden="true"></span>
+              <span id="healthSummary">Checking outputs</span>
+            </summary>
+            <ul id="outputHealthList" class="output-health-list" aria-label="Output health"></ul>
+          </details>
+        </div>
+
+        <div id="showModeBanner" class="show-mode-banner" role="status" aria-live="polite">
+          <span id="showModeIcon" class="show-mode-icon" aria-hidden="true">●</span>
+          <span>
+            <strong id="showModeTitle">Waiting for Show state</strong>
+            <small id="showModeDescription">Controls will unlock after SyncShow responds.</small>
+          </span>
+        </div>
+
+        <p id="commandStatus" class="command-status" role="status" aria-live="polite">Ready for the local operator to enable Remote.</p>
+        <p id="commandError" class="inline-error" role="alert" hidden></p>
+
+        <section class="control-section navigation-controls" aria-labelledby="navigationHeading">
+          <div class="control-section-heading">
+            <h3 id="navigationHeading">Navigate</h3>
+            <button id="btnOpenJump" class="button button-quiet button-small" type="button" aria-haspopup="dialog" aria-controls="jumpDialog" disabled>Jump to cue</button>
+          </div>
+          <div class="navigation-grid">
+            <button id="btnPrevious" class="button button-secondary button-control" type="button" disabled>
+              <span aria-hidden="true">←</span>
+              <span>Previous</span>
+            </button>
+            <button id="btnNext" class="button button-primary button-control button-next" type="button" disabled>
+              <span>Next</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          <div class="output-action-grid" aria-label="Output visibility">
+            <button id="btnRestore" class="button button-show button-control" type="button" disabled>Show / Restore</button>
+            <button id="btnClear" class="button button-clear button-control" type="button" disabled>Clear to black</button>
+          </div>
+          <p class="local-authority-copy">The SyncShow computer stays in charge. Files, screens, and settings cannot be changed here.</p>
+        </section>
+
+        <section class="cue-stack" aria-label="Current and next cues">
+          <article id="currentCueCard" class="cue-card cue-card-current" aria-labelledby="currentCueHeading">
+            <div class="cue-card-heading">
+              <div>
+                <p id="currentCueKicker" class="eyebrow">CURRENT</p>
+                <h3 id="currentCueHeading">Waiting for cue</h3>
+              </div>
+              <span id="currentCueNumber" class="cue-number">— / —</span>
+            </div>
+            <div class="cue-image-wrap">
+              <img id="currentCueImage" alt="" hidden>
+              <div id="currentCueImageFallback" class="cue-image-fallback">Preview unavailable</div>
+            </div>
+            <p id="currentCueText" class="cue-text">SyncShow will show the current cue here.</p>
+          </article>
+
+          <article id="nextCueCard" class="cue-card cue-card-next" aria-labelledby="nextCueHeading">
+            <div class="cue-card-heading">
+              <div>
+                <p class="eyebrow">NEXT</p>
+                <h3 id="nextCueHeading">Waiting for cue</h3>
+              </div>
+              <span id="nextCueNumber" class="cue-number cue-number-muted">—</span>
+            </div>
+            <div class="next-cue-body">
+              <div class="cue-image-wrap cue-image-wrap-small">
+                <img id="nextCueImage" alt="" hidden>
+                <div id="nextCueImageFallback" class="cue-image-fallback">No preview</div>
+              </div>
+              <p id="nextCueText" class="cue-text cue-text-next">The next cue will appear here.</p>
+            </div>
+          </article>
+        </section>
+
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span class="footer-dot" aria-hidden="true"></span>
+      <span>Local network only · No cloud relay</span>
+    </footer>
+  </div>
+
+  <dialog id="jumpDialog" class="jump-dialog" aria-labelledby="jumpTitle" aria-describedby="jumpDescription">
+    <div class="jump-dialog-heading">
+      <div>
+        <p class="eyebrow">SHOW CUES</p>
+        <h2 id="jumpTitle">Jump to a cue</h2>
+        <p id="jumpDescription">Choose a visible cue. SyncShow will confirm the change before this phone updates.</p>
+      </div>
+      <button id="btnCloseJump" class="dialog-close" type="button" aria-label="Close cue list">×</button>
+    </div>
+    <div id="jumpCueList" class="jump-cue-list" role="list"></div>
+  </dialog>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

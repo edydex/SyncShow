@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "sample-service-2026-07-26",
+    "title": "Sample Service",
+    "serviceDate": "2026-07-26",
+    "preferredProfileId": "default",
+    "channels": [
+      {
+        "id": "primary",
+        "label": "Russian",
+        "language": "ru"
+      },
+      {
+        "id": "secondary",
+        "label": "English",
+        "language": "en"
+      },
+      {
+        "id": "media",
+        "label": "Singers",
+        "language": "ru"
+      }
+    ]
+  },
+  "items": [
+    {
+      "id": "opening",
+      "kind": "group",
+      "title": "Opening",
+      "groupKind": "section"
+    },
+    {
+      "id": "localized-intro",
+      "kind": "picture",
+      "title": "Welcome",
+      "parentId": "opening",
+      "slide": 1,
+      "imageIndex": 0,
+      "altText": "Welcome artwork for the service",
+      "channels": {
+        "primary": {
+          "image": "intro-rus"
+        },
+        "secondary": {
+          "image": "intro-eng"
+        },
+        "media": {
+          "image": "intro-media"
+        }
+      }
+    },
+    {
+      "id": "sample-song-item",
+      "kind": "song",
+      "title": "Sample Song",
+      "parentId": "opening",
+      "primaryChannelId": "primary",
+      "channels": {
+        "primary": {
+          "deck": "rus",
+          "song": {
+            "id": "sample-song",
+            "title": "Sample Song",
+            "language": "ru",
+            "authors": [
+              "Example Author"
+            ],
+            "license": "Confirm before live use"
+          }
+        },
+        "secondary": {
+          "deck": "eng",
+          "song": {
+            "id": "sample-song-en",
+            "title": "Sample Song",
+            "language": "en",
+            "translators": [
+              "Example Translator"
+            ],
+            "license": "Confirm before live use"
+          }
+        },
+        "media": {
+          "mode": "derive",
+          "from": "primary",
+          "maxLines": 2
+        }
+      },
+      "sections": [
+        {
+          "id": "verse-1",
+          "marker": "1",
+          "label": "Verse 1",
+          "slides": {
+            "rus": {
+              "from": 3,
+              "to": 4
+            },
+            "eng": {
+              "from": 3,
+              "to": 4
+            }
+          }
+        },
+        {
+          "id": "chorus",
+          "marker": "chorus",
+          "label": "Chorus",
+          "slides": {
+            "rus": 5,
+            "eng": 5
+          }
+        }
+      ],
+      "arrangement": [
+        "verse-1",
+        "chorus",
+        "chorus"
+      ]
+    },
+    {
+      "id": "sermon",
+      "kind": "group",
+      "title": "Sermon",
+      "groupKind": "sermon"
+    },
+    {
+      "id": "sermon-point-1",
+      "kind": "sermon",
+      "title": "First point",
+      "parentId": "sermon",
+      "presetId": "sermon-notes",
+      "channels": {
+        "primary": {
+          "deck": "rus",
+          "slides": 20,
+          "title": "First point"
+        },
+        "secondary": {
+          "deck": "eng",
+          "slides": 20,
+          "title": "First point"
+        }
+      }
+    }
+  ]
+}
