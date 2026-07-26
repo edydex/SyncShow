@@ -65,11 +65,11 @@ test('July 19 rebuild arguments keep every local input and output explicit', () 
     '--report', '/tmp/report.json'
   ]);
   assert.deepEqual(parsed, {
-    templatePath: '/tmp/template.syncshow-service',
-    catalogPath: '/tmp/catalog.syncshow-service',
-    workRoot: '/tmp/work',
-    outputPath: '/tmp/output.syncshow-service',
-    reportPath: '/tmp/report.json'
+    templatePath: path.resolve('/tmp/template.syncshow-service'),
+    catalogPath: path.resolve('/tmp/catalog.syncshow-service'),
+    workRoot: path.resolve('/tmp/work'),
+    outputPath: path.resolve('/tmp/output.syncshow-service'),
+    reportPath: path.resolve('/tmp/report.json')
   });
 });
 

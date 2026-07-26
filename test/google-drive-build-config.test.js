@@ -227,10 +227,10 @@ test('packaged app verification rejects a mismatched client secret without echoi
 });
 
 test('release workflow scopes secrets to injection and always removes generated config', async () => {
-  const workflow = await fs.readFile(
+  const workflow = (await fs.readFile(
     path.resolve(__dirname, '../.github/workflows/build.yml'),
     'utf8'
-  );
+  )).replace(/\r\n/g, '\n');
   const clientIdBindings = workflow.match(
     /SYNCSHOW_GOOGLE_CLIENT_ID:\s*\$\{\{\s*secrets\.SYNCSHOW_GOOGLE_CLIENT_ID\s*\}\}/g
   ) || [];

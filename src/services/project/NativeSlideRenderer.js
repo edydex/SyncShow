@@ -293,6 +293,16 @@ function focalGravity(focalPoint = { x: 0.5, y: 0.5 }) {
   return `${vertical}${horizontal}` || 'centre';
 }
 
+function alignedLayerLeft(canvasWidth, layerWidth, regionWidth, alignment) {
+  const boundedRegionWidth = Math.min(canvasWidth, Math.max(0, Math.round(regionWidth)));
+  const regionLeft = Math.round((canvasWidth - boundedRegionWidth) / 2);
+  if (alignment === 'left') return regionLeft;
+  if (alignment === 'right') {
+    return Math.max(regionLeft, regionLeft + boundedRegionWidth - layerWidth);
+  }
+  return Math.round((canvasWidth - layerWidth) / 2);
+}
+
 class NativeSlideRenderer {
   constructor(options = {}) {
     this.width = Number.isSafeInteger(options.width) ? options.width : 1920;
@@ -403,16 +413,22 @@ class NativeSlideRenderer {
     const preset = resolveNativeTextPreset(presetId).render;
     const composites = [];
     const hasTitle = Boolean(String(title || '').trim()) && preset.showTitle;
+    const resolutionScale = Math.min(1, this.width / 1920, this.height / 1080);
     let titleBottom = 0;
     if (hasTitle) {
+      const titleWidth = this.width * 0.82;
+      const titleAlign = preset.titleAlign || 'center';
       const titleLayer = await this._textLayer(title, {
-        width: this.width * 0.82,
+        width: titleWidth,
         maxHeight: this.height * 0.16,
         fontSize: preset.titleSize,
-        minimumFontSize: preset.titleMinimumSize,
+        minimumFontSize: Math.max(
+          14,
+          Math.round(preset.titleMinimumSize * resolutionScale)
+        ),
         foreground: preset.titleForeground || '#93b4ff',
         weight: preset.titleWeight || '650',
-        align: preset.titleAlign || 'center'
+        align: titleAlign
       });
       if (titleLayer) {
         const titleTop = preset.titleTopPercent === undefined
@@ -420,7 +436,12 @@ class NativeSlideRenderer {
           : Math.round(this.height * preset.titleTopPercent / 100);
         composites.push({
           input: titleLayer.data,
-          left: Math.round((this.width - titleLayer.info.width) / 2),
+          left: alignedLayerLeft(
+            this.width,
+            titleLayer.info.width,
+            titleWidth,
+            titleAlign
+          ),
           top: titleTop
         });
         titleBottom = titleTop + titleLayer.info.height;
@@ -440,14 +461,19 @@ class NativeSlideRenderer {
           Math.max(50, this.height - availableTop - Math.round(this.height * 0.06))
         )
       : Math.min(preset.bodyHeight, this.height * (hasTitle ? 0.66 : 0.78));
+    const bodyWidth = this.width * (preset.bodyWidthPercent || 82) / 100;
+    const bodyAlign = preset.bodyAlign || 'center';
     const bodyLayer = await this._textLayer(body || title, {
-      width: this.width * (preset.bodyWidthPercent || 82) / 100,
+      width: bodyWidth,
       maxHeight: bodyMaximumHeight,
       fontSize: preset.bodySize,
-      minimumFontSize: preset.bodyMinimumSize,
+      minimumFontSize: Math.max(
+        14,
+        Math.round(preset.bodyMinimumSize * resolutionScale)
+      ),
       foreground: preset.bodyForeground || '#f8fafc',
       weight: preset.bodyWeight,
-      align: preset.bodyAlign || 'center',
+      align: bodyAlign,
       lineSpacingPercent: preset.lineSpacingPercent,
       paragraphGap: preset.paragraphGap,
       // Imported blocks carry source-authoritative spans. When any are
@@ -462,7 +488,12 @@ class NativeSlideRenderer {
     if (bodyLayer) {
       composites.push({
         input: bodyLayer.data,
-        left: Math.round((this.width - bodyLayer.info.width) / 2),
+        left: alignedLayerLeft(
+          this.width,
+          bodyLayer.info.width,
+          bodyWidth,
+          bodyAlign
+        ),
         top: preset.bodyPosition === 'top'
           ? availableTop
           : availableTop + Math.max(0, Math.round((oldAvailableHeight - bodyLayer.info.height) / 2))
