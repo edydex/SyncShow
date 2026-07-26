@@ -6,17 +6,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const rendererDirectory = path.join(__dirname, '..', 'src', 'renderer');
-const html = fs.readFileSync(path.join(rendererDirectory, 'index.html'), 'utf8');
-const appSource = fs.readFileSync(path.join(rendererDirectory, 'app.js'), 'utf8');
-const prepareSource = fs.readFileSync(path.join(rendererDirectory, 'prepare-controller.js'), 'utf8');
-const mainSource = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
-const displayHtml = fs.readFileSync(path.join(rendererDirectory, 'display.html'), 'utf8');
-const displaySource = fs.readFileSync(path.join(rendererDirectory, 'display.js'), 'utf8');
-const nativeCueSource = fs.readFileSync(path.join(rendererDirectory, 'native-cue-renderer.js'), 'utf8');
-const singerHtml = fs.readFileSync(path.join(rendererDirectory, 'singer.html'), 'utf8');
-const singerSource = fs.readFileSync(path.join(rendererDirectory, 'singer.js'), 'utf8');
-const bibleOverlaySource = fs.readFileSync(path.join(rendererDirectory, 'bible-overlay.js'), 'utf8');
+const readSource = filePath => fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+const html = readSource(path.join(rendererDirectory, 'index.html'));
+const appSource = readSource(path.join(rendererDirectory, 'app.js'));
+const prepareSource = readSource(path.join(rendererDirectory, 'prepare-controller.js'));
+const mainSource = readSource(path.join(__dirname, '..', 'main.js'));
+const preloadSource = readSource(path.join(__dirname, '..', 'preload.js'));
+const displayHtml = readSource(path.join(rendererDirectory, 'display.html'));
+const displaySource = readSource(path.join(rendererDirectory, 'display.js'));
+const nativeCueSource = readSource(path.join(rendererDirectory, 'native-cue-renderer.js'));
+const singerHtml = readSource(path.join(rendererDirectory, 'singer.html'));
+const singerSource = readSource(path.join(rendererDirectory, 'singer.js'));
+const bibleOverlaySource = readSource(path.join(rendererDirectory, 'bible-overlay.js'));
 
 function matches(source, expression) {
   return [...source.matchAll(expression)].map(match => match[1]);
