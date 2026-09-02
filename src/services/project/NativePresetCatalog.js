@@ -12,6 +12,31 @@ const TEXT_VERTICAL_POSITIONS = Object.freeze(['center', 'top']);
 // already points at one of these stable IDs.
 const RAW_PRESETS = [
   {
+    id: 'wotbc-sermon-title', label: 'Sermon title · image', description: 'Editable title and subtitle over a darkened image.',
+    selectable: true, kinds: ['sermon', 'notice'],
+    render: { mode: 'text', background: '#000000', bodySize: 112, bodyHeight: 820, bodyMinimumSize: 48,
+      titleSize: 88, titleMinimumSize: 44, showTitle: false, bodyWeight: '700',
+      bodyWidthPercent: 90, bodyTopPercent: 10, bodyPosition: 'center', bodyAlign: 'center', lineSpacingPercent: 10 }
+  },
+  {
+    id: 'wotbc-sermon-quote', label: 'Sermon quotation', description: 'A centered thought with an optional gold heading.',
+    selectable: true, kinds: ['sermon', 'notice'],
+    render: { mode: 'text', background: '#000000', bodySize: 94, bodyHeight: 820, bodyMinimumSize: 44,
+      titleSize: 64, titleMinimumSize: 32, showTitle: true, bodyWeight: '500',
+      titleForeground: '#ffc000', titleWeight: '700', titleAlign: 'center',
+      bodyWidthPercent: 90, titleTopPercent: 4, bodyTopPercent: 18, bodyPosition: 'center',
+      bodyAlign: 'center', lineSpacingPercent: 12 }
+  },
+  {
+    id: 'wotbc-sermon-verse', label: 'Sermon Bible passage', description: 'Gold passage reference with room to emphasize the verse text.',
+    selectable: true, kinds: ['bible'],
+    render: { mode: 'text', background: '#000000', bodySize: 88, bodyHeight: 840, bodyMinimumSize: 48,
+      titleSize: 72, titleMinimumSize: 36, showTitle: true, bodyWeight: '500',
+      titleForeground: '#ffc000', titleWeight: '700', titleAlign: 'left',
+      bodyWidthPercent: 96, titleTopPercent: 2, bodyTopPercent: 15, bodyPosition: 'top',
+      bodyAlign: 'left', lineSpacingPercent: 8 }
+  },
+  {
     id: 'wotbc-song-stacked', label: 'Church song · stacked', description: 'Wide white lyrics above an orange translation.',
     selectable: true, kinds: ['song'],
     render: { mode: 'text', background: '#000000', bodySize: 98, bodyHeight: 990, bodyMinimumSize: 52,
@@ -411,7 +436,7 @@ const NATIVE_PRESET_BY_ID = freezeDeep(Object.fromEntries(
 ));
 const DEFAULT_NATIVE_TEXT_PRESET_ID = 'default-text';
 const NATIVE_PRESET_CATALOG_VERSION = 3;
-const NATIVE_RENDERER_VERSION = 7;
+const NATIVE_RENDERER_VERSION = 8;
 
 function getNativePreset(presetId) {
   return typeof presetId === 'string' ? NATIVE_PRESET_BY_ID[presetId] || null : null;

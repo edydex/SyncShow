@@ -86,7 +86,7 @@
     return value.map((candidate, index) => {
       if (!record(candidate)) throw new TypeError(`scene.bodySpans[${index}] is invalid`);
       const keys = Object.keys(candidate).sort();
-      if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale'].includes(key))) {
+      if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale', 'italic', 'underline'].includes(key))) {
         throw new TypeError(`scene.bodySpans[${index}] has an unsupported field`);
       }
       const start = integer(candidate.start, `scene.bodySpans[${index}].start`, 0, text.length);
@@ -109,7 +109,13 @@
         if (!Number.isFinite(candidate.fontScale) || candidate.fontScale < 0.5 || candidate.fontScale > 2) throw new TypeError('scene body span font scale is invalid');
         normalized.fontScale = candidate.fontScale;
       }
-      if (!normalized.foreground && !normalized.weight && !normalized.fontScale) throw new TypeError('scene body span has no style');
+      for (const key of ['italic', 'underline']) {
+        if (candidate[key] !== undefined) {
+          if (typeof candidate[key] !== 'boolean') throw new TypeError('Invalid inline text style');
+          normalized[key] = candidate[key];
+        }
+      }
+      if (!normalized.foreground && !normalized.weight && !normalized.fontScale && normalized.italic === undefined && normalized.underline === undefined) throw new TypeError('scene body span has no style');
       previousEnd = end;
       return normalized;
     });
@@ -288,6 +294,8 @@
     }
     if (raw.layout === 'text') {
       exactKeys(raw, [
+        ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
+        ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
         'background',
         'body',
         'bodySpans',
@@ -301,12 +309,15 @@
         'title'
       ], 'scene');
       const body = string(raw.body, 'scene.body', 12000, true);
+      if (raw.backgroundAssetId !== undefined && !ASSET_ID_PATTERN.test(raw.backgroundAssetId)) throw new TypeError('Invalid slide background image');
       if (body.split(/\r\n|\r|\n/).length > 240) throw new TypeError('scene.body has too many lines');
       return {
         ...common,
         title: string(raw.title, 'scene.title', 500),
         body,
         bodySpans: spans(raw.bodySpans, body),
+        ...(raw.titleSpans !== undefined ? { titleSpans: spans(raw.titleSpans, raw.title) } : {}),
+        ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: raw.backgroundAssetId } : {}),
         style: textStyle(raw.style)
       };
     }
@@ -398,6 +409,8 @@
       const element = document.createElement('span');
       if (span.foreground) element.style.color = span.foreground;
       if (span.weight) element.style.fontWeight = span.weight;
+      if (span.italic !== undefined) element.style.fontStyle = span.italic ? 'italic' : 'normal';
+      if (span.underline !== undefined) element.style.textDecoration = span.underline ? 'underline' : 'none';
       if (span.fontScale) element.style.fontSize = `${span.fontScale}em`;
       element.appendChild(document.createTextNode(rendered));
       target.appendChild(element);
@@ -463,12 +476,22 @@
     const images = [];
 
     if (scene.layout === 'text') {
+      if (scene.backgroundAssetId) {
+        const source = options.resolveAssetUrl?.(scene.backgroundAssetId);
+        if (!source) throw new Error('Slide background image is unavailable');
+        const background = document.createElement('img');
+        background.className = 'native-scene-background';
+        background.alt = '';
+        background.src = source;
+        surface.appendChild(background);
+        images.push(background);
+      }
       const style = scene.style;
       let title = null;
       if (style.showTitle && scene.title) {
         title = document.createElement('div');
         title.className = 'native-scene-title';
-        title.textContent = scene.title;
+        appendStyledText(title, scene.title, scene.titleSpans || [], false);
         title.style.color = style.titleForeground;
         title.style.fontWeight = style.titleWeight;
         title.style.textAlign = style.titleAlign;

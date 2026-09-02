@@ -36,7 +36,7 @@ function textCue(presetId, kind, title, text) {
 
 test('the built-in preset catalog is validated, immutable, and keeps original render tokens stable', () => {
   assert.equal(NATIVE_PRESET_CATALOG_VERSION, 3);
-  assert.equal(NATIVE_RENDERER_VERSION, 6);
+  assert.equal(NATIVE_RENDERER_VERSION, 8);
   assert.equal(DEFAULT_NATIVE_TEXT_PRESET_ID, 'default-text');
   assert.ok(Object.isFrozen(NATIVE_PRESETS));
   assert.ok(NATIVE_PRESETS.every(preset => Object.isFrozen(preset) && Object.isFrozen(preset.render)));
@@ -127,15 +127,15 @@ test('the built-in preset catalog is validated, immutable, and keeps original re
 test('preset choices are kind-scoped and include the focused large-text additions', () => {
   assert.deepEqual(
     listNativePresets('sermon').map(preset => preset.id),
-    ['sermon-title', 'sermon-point', 'sermon-notes']
+    ['wotbc-sermon-title', 'wotbc-sermon-quote', 'wotbc-sermon', 'sermon-title', 'sermon-point', 'sermon-notes']
   );
   assert.deepEqual(
     listNativePresets('bible').map(preset => preset.id),
-    ['scripture-text', 'scripture-large']
+    ['wotbc-sermon-verse', 'wotbc-reading', 'scripture-text', 'scripture-large']
   );
   assert.deepEqual(
     listNativePresets('song').map(preset => preset.id),
-    ['song-title', 'song-lyrics', 'song-lyrics-large']
+    ['wotbc-song-stacked', 'wotbc-song-lyrics', 'wotbc-song-title', 'song-title', 'song-lyrics', 'song-lyrics-large']
   );
   assert.equal(isNativePresetAllowed('sermon-title', 'sermon'), true);
   assert.equal(isNativePresetAllowed('sermon-title', 'notice'), false);

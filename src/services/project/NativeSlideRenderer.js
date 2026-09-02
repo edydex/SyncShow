@@ -164,7 +164,7 @@ function normalizeSafeTextSpans(value, rawSpans) {
       throw invalidTextSpans(`Compiled text span ${index + 1} must be an object.`);
     }
     const keys = Object.keys(raw).sort();
-    if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale'].includes(key))) {
+    if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale', 'italic', 'underline'].includes(key))) {
       throw invalidTextSpans(`Compiled text span ${index + 1} has an unsupported field.`);
     }
     const { start, end } = raw;
@@ -196,7 +196,13 @@ function normalizeSafeTextSpans(value, rawSpans) {
       if (!Number.isFinite(raw.fontScale) || raw.fontScale < 0.5 || raw.fontScale > 2) throw invalidTextSpans('Invalid text font scale.');
       span.fontScale = raw.fontScale;
     }
-    if (!span.foreground && !span.weight && !span.fontScale) {
+    for (const key of ['italic', 'underline']) {
+      if (raw[key] !== undefined) {
+        if (typeof raw[key] !== 'boolean') throw invalidTextSpans('Invalid inline text style.');
+        span[key] = raw[key];
+      }
+    }
+    if (!span.foreground && !span.weight && !span.fontScale && span.italic === undefined && span.underline === undefined) {
       throw invalidTextSpans(`Compiled text span ${index + 1} has no presentation style.`);
     }
     previousEnd = end;
@@ -260,11 +266,13 @@ function markupTextSpans(value, rawSpans = [], options = {}) {
     if (options.paragraphGap === true) {
       escaped = escaped.replace(/\r\n|\r|\n/g, '\n\n');
     }
-    if (foreground || weight || explicit?.fontScale) {
+    if (foreground || weight || explicit?.fontScale || explicit?.italic !== undefined || explicit?.underline !== undefined) {
       const attributes = [
         foreground ? `foreground="${foreground}"` : '',
         weight ? `weight="${weight}"` : '',
-        explicit?.fontScale ? `size="${Math.round(explicit.fontScale * 100)}%"` : ''
+        explicit?.fontScale ? `size="${Math.round(explicit.fontScale * 100)}%"` : '',
+        explicit?.italic !== undefined ? `style="${explicit.italic ? 'italic' : 'normal'}"` : '',
+        explicit?.underline !== undefined ? `underline="${explicit.underline ? 'single' : 'none'}"` : ''
       ].filter(Boolean).join(' ');
       escaped = `<span ${attributes}>${escaped}</span>`;
     }
@@ -448,6 +456,8 @@ class NativeSlideRenderer {
     title = '',
     body = '',
     bodySpans = [],
+    titleSpans = [],
+    backgroundAssetId = null,
     presetId = 'notice-text',
     onTypography = () => {}
   }) {
@@ -470,7 +480,8 @@ class NativeSlideRenderer {
         ),
         foreground: preset.titleForeground || '#93b4ff',
         weight: preset.titleWeight || '650',
-        align: titleAlign
+        align: titleAlign,
+        spans: titleSpans
       });
       if (titleLayer) {
         const titleTop = preset.titleTopPercent === undefined
@@ -544,7 +555,12 @@ class NativeSlideRenderer {
           : availableTop + Math.max(0, Math.round(((churchLayout ? bodyMaximumHeight : oldAvailableHeight) - bodyLayer.info.height) / 2))
       });
     }
-    return this._background(preset.background).composite(composites);
+    let background = this._background(preset.background);
+    if (backgroundAssetId) {
+      background = await this._renderPicture({ assetId: backgroundAssetId, fit: 'fill', focalPoint: { x: 0.5, y: 0.5 }, attribution: '' });
+      composites.unshift({ input: Buffer.from(`<svg width="${this.width}" height="${this.height}"><rect width="100%" height="100%" fill="black" opacity=".55"/></svg>`), left: 0, top: 0 });
+    }
+    return background.composite(composites);
   }
 
   async _renderSongTitleSlide({
@@ -682,7 +698,7 @@ class NativeSlideRenderer {
         error.code = 'LEGACY_DECK_REQUIRES_RENDER';
         throw error;
       }
-      if (imageBlock) {
+      if (imageBlock && imageBlock.role !== 'background') {
         pipeline = await this._renderPicture(imageBlock);
         textValue = imageBlock.altText;
       } else if (bibleBlock) {
@@ -690,6 +706,7 @@ class NativeSlideRenderer {
         pipeline = await this._renderTextSlide({
           title: bibleBlock.reference,
           body: textValue,
+          bodySpans: bibleBlock.spans || [],
           onTypography,
           presetId: cue.presetId || 'scripture-text'
         });
@@ -738,6 +755,8 @@ class NativeSlideRenderer {
                   : (localizedTitle || cue.title)),
             body: textValue || localizedTitle,
             bodySpans: textValue ? bodySpans : [],
+            titleSpans: textBlocks.find(block => block.role === 'title')?.spans || [],
+            backgroundAssetId: imageBlock?.role === 'background' ? imageBlock.assetId : null,
             onTypography,
             presetId: cue.presetId
           });

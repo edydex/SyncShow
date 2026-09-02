@@ -318,6 +318,8 @@ function normalizeNativeCueScene(raw, expected = {}) {
   }
   if (common.layout === 'text') {
     exactKeys(raw, [
+      ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
+      ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
       'background',
       'body',
       'bodySpans',
@@ -340,6 +342,8 @@ function normalizeNativeCueScene(raw, expected = {}) {
       title,
       body,
       bodySpans: normalizeSceneSpans(raw.bodySpans, body),
+      ...(raw.titleSpans !== undefined ? { titleSpans: normalizeSceneSpans(raw.titleSpans, title, 'scene.titleSpans') } : {}),
+      ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: ASSET_ID_PATTERN.test(raw.backgroundAssetId) ? raw.backgroundAssetId : fail('INVALID_NATIVE_SCENE', 'Invalid background image.') } : {}),
       style: normalizeTextStyle(raw.style)
     };
   }
@@ -496,6 +500,7 @@ function textScene(cue, channel, canvas) {
   if (bibleBlock) {
     title = bibleBlock.reference;
     body = scriptureFlowText(bibleBlock.verses);
+    bodySpans = bibleBlock.spans || [];
   } else {
     const localizedTitle = textBlocks.find(block => block.role === 'title')?.text || '';
     if (cue.kind === 'song' && localizedTitle) {
@@ -545,6 +550,8 @@ function textScene(cue, channel, canvas) {
     title,
     body,
     bodySpans,
+    ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
+    ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId } : {}),
     style: resolvedTextStyle(preset, hasTitle, cue.presetId)
   });
 }
@@ -580,7 +587,7 @@ function compileNativeCueScene(cue, channelId, options = {}) {
     return deriveNativeSingerScene(current, nextLine);
   }
   const imageBlock = channel.blocks?.find(block => block.type === 'image');
-  if (imageBlock) {
+  if (imageBlock && imageBlock.role !== 'background') {
     return normalizeNativeCueScene({
       schemaVersion: NATIVE_CUE_SCENE_SCHEMA_VERSION,
       kind: NATIVE_CUE_SCENE_KIND,
@@ -637,6 +644,7 @@ function nativeSceneSingerLine(scene) {
 
 function sceneAssetIds(scene) {
   const normalized = normalizeNativeCueScene(scene);
+  if (normalized.layout === 'text' && normalized.backgroundAssetId) return [normalized.backgroundAssetId];
   if (normalized.layout === 'picture') return [normalized.picture.assetId];
   if (normalized.layout === 'singer-current-next') return sceneAssetIds(normalized.current);
   return [];
