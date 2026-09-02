@@ -1,4 +1,5 @@
 'use strict';
+const { normalizeSermonOptions, sermonSlideBlocks } = require('./SermonPresentation');
 const { scriptureFlowText } = require('./SlideFormatting');
 
 const { normalizeSongPresentation, presentationTitleBlocks, presentationLyricBlocks } = require('./SongPresentation');
@@ -336,6 +337,7 @@ function normalizeBlock(raw, field) {
       type,
       assetId: raw.assetId,
       ...(raw.role === 'background' ? { role: 'background' } : {}),
+      ...(raw.dimOpacity !== undefined ? { dimOpacity: typeof raw.dimOpacity === 'number' && Number.isFinite(raw.dimOpacity) && raw.dimOpacity >= 0 && raw.dimOpacity <= 1 ? raw.dimOpacity : fail('INVALID_BACKGROUND_DIM', 'Background darkening must be from 0 to 1.') } : {}),
       fit,
       focalPoint: normalizeFocalPoint(raw.focalPoint, `${field}.focalPoint`),
       altText: text(raw.altText, `${field}.altText`, 500, { required: true }),
@@ -988,11 +990,12 @@ function normalizeProjectItem(raw, channelIds, now) {
   }
 
   if (raw.kind === 'sermon' || raw.kind === 'notice') {
+    const sermonOptions = normalizeSermonOptions(raw, channelIds, fail);
     if (!isRecord(raw.textByChannel)) fail('INVALID_TEXT_VARIANTS', `Item ${itemId} needs text variants.`);
     const textByChannel = {};
     for (const [channelId, value] of Object.entries(raw.textByChannel)) {
       if (!channelIds.includes(channelId)) fail('UNKNOWN_PROJECT_CHANNEL', `Item ${itemId} uses unknown channel ${channelId}.`);
-      textByChannel[channelId] = text(value, `Item ${itemId} channel ${channelId}`, 20000, { required: true, trim: false });
+      textByChannel[channelId] = text(value, `Item ${itemId} channel ${channelId}`, 20000, { required: !sermonOptions.sermonTemplate, trim: false });
     }
     if (Object.keys(textByChannel).length < 1) fail('INVALID_TEXT_VARIANTS', `Item ${itemId} needs at least one text variant.`);
     let spansByChannel;
@@ -1045,6 +1048,7 @@ function normalizeProjectItem(raw, channelIds, now) {
     return {
       ...common,
       textByChannel,
+      ...sermonOptions,
       ...(spansByChannel ? { spansByChannel } : {}),
       ...(titlesByChannel ? { titlesByChannel } : {}),
       ...(raw.titleSpansByChannel ? { titleSpansByChannel: Object.fromEntries(Object.entries(raw.titleSpansByChannel).map(([channelId, spans]) => {
@@ -1706,22 +1710,10 @@ function compileServiceProject(rawProject, options = {}) {
       const channels = {};
       for (const channelId of project.channelIds) {
         channels[channelId] = item.textByChannel[channelId]
+          || (item.sermonTemplate && Object.prototype.hasOwnProperty.call(item.textByChannel, channelId))
           ? {
               mode: 'content',
-              blocks: [
-                ...(item.backgroundAssetId ? [{ type: 'image', role: 'background', assetId: item.backgroundAssetId, fit: 'fill', focalPoint: { x: 0.5, y: 0.5 }, altText: item.title, attribution: '' }] : []),
-                ...(item.titlesByChannel?.[channelId]
-                  ? [{ type: 'text', role: 'title', text: item.titlesByChannel[channelId], ...(item.titleSpansByChannel?.[channelId] ? { spans: item.titleSpansByChannel[channelId] } : {}) }]
-                  : []),
-                {
-                  type: 'text',
-                  role: item.kind === 'sermon' ? 'body' : 'caption',
-                  text: item.textByChannel[channelId],
-                  ...(item.spansByChannel?.[channelId]
-                    ? { spans: item.spansByChannel[channelId] }
-                    : {})
-                }
-              ]
+              blocks: sermonSlideBlocks(item, channelId)
             }
           : { mode: 'hide', blocks: [] };
       }

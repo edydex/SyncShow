@@ -458,6 +458,7 @@ class NativeSlideRenderer {
     bodySpans = [],
     titleSpans = [],
     backgroundAssetId = null,
+    backgroundDimOpacity = 0.55,
     presetId = 'notice-text',
     onTypography = () => {}
   }) {
@@ -558,7 +559,8 @@ class NativeSlideRenderer {
     let background = this._background(preset.background);
     if (backgroundAssetId) {
       background = await this._renderPicture({ assetId: backgroundAssetId, fit: 'fill', focalPoint: { x: 0.5, y: 0.5 }, attribution: '' });
-      composites.unshift({ input: Buffer.from(`<svg width="${this.width}" height="${this.height}"><rect width="100%" height="100%" fill="black" opacity=".55"/></svg>`), left: 0, top: 0 });
+      const opacity = Math.max(0, Math.min(1, Number.isFinite(backgroundDimOpacity) ? backgroundDimOpacity : 0.55));
+      if (opacity) composites.unshift({ input: Buffer.from(`<svg width="${this.width}" height="${this.height}"><rect width="100%" height="100%" fill="black" opacity="${opacity}"/></svg>`), left: 0, top: 0 });
     }
     return background.composite(composites);
   }
@@ -753,10 +755,11 @@ class NativeSlideRenderer {
               : (cue.kind === 'sermon' || cue.kind === 'notice'
                   ? localizedTitle
                   : (localizedTitle || cue.title)),
-            body: textValue || localizedTitle,
+            body: textValue || (cue.kind === 'sermon' || cue.kind === 'notice' ? '' : localizedTitle),
             bodySpans: textValue ? bodySpans : [],
             titleSpans: textBlocks.find(block => block.role === 'title')?.spans || [],
             backgroundAssetId: imageBlock?.role === 'background' ? imageBlock.assetId : null,
+            backgroundDimOpacity: imageBlock?.dimOpacity ?? 0.55,
             onTypography,
             presetId: cue.presetId
           });
