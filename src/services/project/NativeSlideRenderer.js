@@ -7,6 +7,7 @@ const path = require('path');
 const { parseBibleReference } = require('../bible/BibleReferenceParser');
 const { scriptureFlowText } = require('../bible/ScriptureText');
 const { resolveNativeTextPreset } = require('./NativePresetCatalog');
+const { singerSourceCue, singerNextLine } = require('./SingerPresentation');
 const { MAX_IMAGE_PIXELS } = require('./ServiceProject');
 
 const MAX_RENDER_PIXELS = 3840 * 2160;
@@ -163,7 +164,7 @@ function normalizeSafeTextSpans(value, rawSpans) {
       throw invalidTextSpans(`Compiled text span ${index + 1} must be an object.`);
     }
     const keys = Object.keys(raw).sort();
-    if (keys.some(key => !['end', 'foreground', 'start', 'weight'].includes(key))) {
+    if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale'].includes(key))) {
       throw invalidTextSpans(`Compiled text span ${index + 1} has an unsupported field.`);
     }
     const { start, end } = raw;
@@ -191,7 +192,11 @@ function normalizeSafeTextSpans(value, rawSpans) {
       }
       span.weight = raw.weight;
     }
-    if (!span.foreground && !span.weight) {
+    if (raw.fontScale !== undefined) {
+      if (!Number.isFinite(raw.fontScale) || raw.fontScale < 0.5 || raw.fontScale > 2) throw invalidTextSpans('Invalid text font scale.');
+      span.fontScale = raw.fontScale;
+    }
+    if (!span.foreground && !span.weight && !span.fontScale) {
       throw invalidTextSpans(`Compiled text span ${index + 1} has no presentation style.`);
     }
     previousEnd = end;
@@ -255,10 +260,11 @@ function markupTextSpans(value, rawSpans = [], options = {}) {
     if (options.paragraphGap === true) {
       escaped = escaped.replace(/\r\n|\r|\n/g, '\n\n');
     }
-    if (foreground || weight) {
+    if (foreground || weight || explicit?.fontScale) {
       const attributes = [
         foreground ? `foreground="${foreground}"` : '',
-        weight ? `weight="${weight}"` : ''
+        weight ? `weight="${weight}"` : '',
+        explicit?.fontScale ? `size="${Math.round(explicit.fontScale * 100)}%"` : ''
       ].filter(Boolean).join(' ');
       escaped = `<span ${attributes}>${escaped}</span>`;
     }
@@ -723,6 +729,7 @@ class NativeSlideRenderer {
   }
 
   async renderSingerPreview(cue, sourceChannelId, nextCue = null, outputPath = null) {
+    cue = singerSourceCue(cue, sourceChannelId);
     const current = await this.renderCue(cue, sourceChannelId);
     const padding = Math.max(8, Math.round(this.width * 0.012));
     const footerHeight = Math.max(68, Math.round(this.height * 0.19));
@@ -739,7 +746,7 @@ class NativeSlideRenderer {
       .jpeg({ quality: this.jpegQuality, chromaSubsampling: '4:4:4' })
       .toBuffer();
 
-    const nextLine = meaningfulFirstLine(cueTextForChannel(nextCue, sourceChannelId));
+    const nextLine = singerNextLine(cueTextForChannel(singerSourceCue(nextCue, sourceChannelId), sourceChannelId));
     const footerText = nextLine || 'End of song';
     const nextLayer = await this._textLayer(footerText, {
       width: this.width * 0.88,

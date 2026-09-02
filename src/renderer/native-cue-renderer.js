@@ -86,7 +86,7 @@
     return value.map((candidate, index) => {
       if (!record(candidate)) throw new TypeError(`scene.bodySpans[${index}] is invalid`);
       const keys = Object.keys(candidate).sort();
-      if (keys.some(key => !['end', 'foreground', 'start', 'weight'].includes(key))) {
+      if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale'].includes(key))) {
         throw new TypeError(`scene.bodySpans[${index}] has an unsupported field`);
       }
       const start = integer(candidate.start, `scene.bodySpans[${index}].start`, 0, text.length);
@@ -105,7 +105,11 @@
         if (!WEIGHTS.has(candidate.weight)) throw new TypeError('scene body span weight is invalid');
         normalized.weight = candidate.weight;
       }
-      if (!normalized.foreground && !normalized.weight) throw new TypeError('scene body span has no style');
+      if (candidate.fontScale !== undefined) {
+        if (!Number.isFinite(candidate.fontScale) || candidate.fontScale < 0.5 || candidate.fontScale > 2) throw new TypeError('scene body span font scale is invalid');
+        normalized.fontScale = candidate.fontScale;
+      }
+      if (!normalized.foreground && !normalized.weight && !normalized.fontScale) throw new TypeError('scene body span has no style');
       previousEnd = end;
       return normalized;
     });
@@ -394,6 +398,7 @@
       const element = document.createElement('span');
       if (span.foreground) element.style.color = span.foreground;
       if (span.weight) element.style.fontWeight = span.weight;
+      if (span.fontScale) element.style.fontSize = `${span.fontScale}em`;
       element.appendChild(document.createTextNode(rendered));
       target.appendChild(element);
     };

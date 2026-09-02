@@ -1,4 +1,5 @@
 'use strict';
+const { singerSourceCue, singerNextLine } = require('../project/SingerPresentation');
 
 const {
   cueTextForChannel,
@@ -574,8 +575,8 @@ function compileNativeCueScene(cue, channelId, options = {}) {
     );
   }
   if (channel.mode === 'condensed' && channel.sourceChannelId) {
-    const current = compileNativeCueScene(cue, channel.sourceChannelId, options);
-    const nextLine = meaningfulFirstLine(cueTextForChannel(options.nextCue, channel.sourceChannelId));
+    const current = compileNativeCueScene(singerSourceCue(cue, channel.sourceChannelId), channel.sourceChannelId, options);
+    const nextLine = singerNextLine(cueTextForChannel(singerSourceCue(options.nextCue, channel.sourceChannelId), channel.sourceChannelId));
     return deriveNativeSingerScene(current, nextLine);
   }
   const imageBlock = channel.blocks?.find(block => block.type === 'image');
@@ -612,7 +613,7 @@ function deriveNativeSingerScene(scene, nextLine = '') {
     layout: 'singer-current-next',
     background: '#000000',
     current,
-    nextLine: String(nextLine || '').slice(0, 2000)
+    nextLine: singerNextLine(nextLine)
   });
 }
 

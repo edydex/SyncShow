@@ -6,13 +6,13 @@ const { parseSongDocument } = require('../src/services/project/SongDocument');
 const { compileNativeCueScene } = require('../src/services/show/NativeCueScene');
 const { NativeSlideRenderer } = require('../src/services/project/NativeSlideRenderer');
 
-function songProject() {
+function songProject(extraLines = '') {
   let project = core.createServiceProject({ id: 'church-test', title: 'Sunday', serviceDate: '2026-08-23',
     preferredProfileId:'main-sanctuary', presetPack:{id:'main-sanctuary',version:1,sha256:null},
     channels: [{ id:'english', label:'English', language:'en' }, { id:'russian',label:'Russian',language:'ru' }, { id:'media',label:'Singers',language:'ru' }] });
   const resources = {};
   for (const [channel, title, lines] of [['english','Song','English one\nEnglish two'],['russian','Песня','Первая строка\nВторая строка']]) {
-    const added = core.addSongResource(project, parseSongDocument('---\nid: song-' + channel + '\ntranslationOf: song\ntitle: ' + title + '\nlanguage: ' + (channel === 'english' ? 'en' : 'ru') + '\n---\n\n^1\n' + lines, {fileName:channel+'.md'}));
+    const added = core.addSongResource(project, parseSongDocument('---\nid: song-' + channel + '\ntranslationOf: song\ntitle: ' + title + '\nlanguage: ' + (channel === 'english' ? 'en' : 'ru') + '\n---\n\n^1\n' + lines + extraLines, {fileName:channel+'.md'}));
     project = added.project; resources[channel] = added.resourceId;
   }
   return core.addProjectItem(project, { id:'song',kind:'song',title:'Song',
@@ -36,6 +36,7 @@ test('church stacked compile, scene and raster preserve shared language order an
   assert.equal(scene.body,'Первая строка\nВторая строка\nEnglish one\nEnglish two');
   assert.equal(scene.body.slice(scene.bodySpans[0].start),'English one\nEnglish two');
   assert.equal(scene.bodySpans[0].foreground,'#ffc000');
+  assert.equal(scene.bodySpans[0].fontScale,0.96);
   assert.equal(scene.style.bodyWidthPercent,98);
   const intro = compileNativeCueScene(title,'english',{width:1920,height:1080});
   assert.equal(intro.style.subtitleForeground,'#ffc000');
@@ -51,6 +52,41 @@ test('church stacked compile, scene and raster preserve shared language order an
   const singleLyrics = single.cues[single.cueIds[1]];
   assert.equal(singleLyrics.channels.english.blocks.length,1);
   assert.notEqual(singleLyrics.channels.english.blocks[0].text,singleLyrics.channels.russian.blocks[0].text);
+});
+
+test('singer scene and raster use all primary lines, no orange translation, and one 70-character next cue', async () => {
+  const project = songProject('\nThird line\nFourth line');
+  const timeline = core.compileServiceProject(project);
+  const cue = timeline.cues[timeline.cueIds[1]];
+  const next = JSON.parse(JSON.stringify(cue));
+  next.channels.media.sourceBlocks[0].text = 'я'.repeat(80) + '\nMust not appear';
+  const singer = compileNativeCueScene(cue, 'media', {width:1920,height:1080,nextCue:next});
+  assert.equal(singer.layout, 'singer-current-next');
+  assert.equal(singer.current.body, 'Первая строка\nВторая строка\nThird line\nFourth line');
+  assert.equal(singer.current.bodySpans.length, 0);
+  assert.equal(singer.next?.text ?? singer.nextLine, 'я'.repeat(70) + '…');
+  const frame = await new NativeSlideRenderer().renderSingerPreview(cue, 'russian', next);
+  assert.equal(frame.metadata.text, singer.current.body);
+  assert.equal(frame.metadata.next?.text ?? frame.metadata.nextLine, 'я'.repeat(70) + '…');
+  const changed = JSON.parse(JSON.stringify(project));
+  changed.items.song.songPresentation.primaryChannelId = 'english';
+  changed.items.song.songPresentation.secondaryChannelId = 'russian';
+  const switched = core.compileServiceProject(changed);
+  assert.match(compileNativeCueScene(switched.cues[switched.cueIds[1]], 'media', {width:1920,height:1080}).current.body, /^English one/);
+});
+
+test('font scaling survives native/browser scene validation and rejects unsafe values', () => {
+  const fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
+  const browser = vm.createContext({window:{}});
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/renderer/native-cue-renderer.js'),'utf8'),browser);
+  const timeline = core.compileServiceProject(songProject());
+  const scene = compileNativeCueScene(timeline.cues[timeline.cueIds[1]], 'english', {width:1920,height:1080});
+  const valid = browser.window.SyncShowNativeCueRenderer.validateScene(scene);
+  assert.equal(valid.bodySpans[0].fontScale, 0.96);
+  for (const invalid of [-1, 0, 10, '96%', NaN, Infinity]) {
+    const candidate = {...scene, bodySpans: [{...scene.bodySpans[0], fontScale: invalid}]};
+    assert.throws(() => browser.window.SyncShowNativeCueRenderer.validateScene(candidate));
+  }
 });
 
 test('church readings and sermons have separate wide layouts without changing stable presets', () => {
