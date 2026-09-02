@@ -54,7 +54,7 @@ test('church stacked compile, scene and raster preserve shared language order an
   assert.notEqual(singleLyrics.channels.english.blocks[0].text,singleLyrics.channels.russian.blocks[0].text);
 });
 
-test('singer scene and raster use all primary lines, no orange translation, and one 70-character next cue', async () => {
+test('singer scene and raster keep full primary lyrics and a width-fitted first-line cue', async () => {
   const project = songProject('\nThird line\nFourth line');
   const timeline = core.compileServiceProject(project);
   const cue = timeline.cues[timeline.cueIds[1]];
@@ -64,15 +64,40 @@ test('singer scene and raster use all primary lines, no orange translation, and 
   assert.equal(singer.layout, 'singer-current-next');
   assert.equal(singer.current.body, 'Первая строка\nВторая строка\nThird line\nFourth line');
   assert.equal(singer.current.bodySpans.length, 0);
-  assert.equal(singer.next?.text ?? singer.nextLine, 'я'.repeat(70) + '…');
+  assert.equal(singer.next?.text ?? singer.nextLine, 'я'.repeat(80));
   const frame = await new NativeSlideRenderer().renderSingerPreview(cue, 'russian', next);
   assert.equal(frame.metadata.text, singer.current.body);
-  assert.equal(frame.metadata.next?.text ?? frame.metadata.nextLine, 'я'.repeat(70) + '…');
+  assert.equal(frame.metadata.next?.text ?? frame.metadata.nextLine, 'я'.repeat(80));
+  assert.ok(Math.abs(frame.singerTypography.nextFontSize - frame.singerTypography.currentFontSize) <= 0.5);
+  assert.ok(frame.singerTypography.nextWidth <= 1920 * 0.88);
+  assert.ok(frame.singerTypography.nextText.endsWith('…'));
+  assert.ok(frame.singerTypography.nextText.length < 80);
+  assert.ok(frame.singerTypography.nextHeight < frame.singerTypography.nextFontSize * 1.5);
   const changed = JSON.parse(JSON.stringify(project));
   changed.items.song.songPresentation.primaryChannelId = 'english';
   changed.items.song.songPresentation.secondaryChannelId = 'russian';
   const switched = core.compileServiceProject(changed);
   assert.match(compileNativeCueScene(switched.cues[switched.cueIds[1]], 'media', {width:1920,height:1080}).current.body, /^English one/);
+});
+
+test('singer cue fits real glyph widths without shrinking or breaking graphemes', async () => {
+  const renderer = new NativeSlideRenderer();
+  const options = { width: 800, fontSize: 80, weight: '600' };
+  const narrow = await renderer._singleLineLayer('i'.repeat(120), options);
+  const wide = await renderer._singleLineLayer('W'.repeat(120), options);
+  const widerScreen = await renderer._singleLineLayer('W'.repeat(120), { ...options, width: 1200 });
+  assert.ok(narrow.displayText.length > wide.displayText.length);
+  assert.ok(widerScreen.displayText.length > wide.displayText.length);
+  for (const layer of [narrow, wide, widerScreen]) {
+    assert.equal(layer.fontSize, 80);
+    assert.ok(layer.info.height <= 100);
+  }
+  assert.ok(narrow.info.width <= 800 && wide.info.width <= 800 && widerScreen.info.width <= 1200);
+  const combining = await renderer._singleLineLayer('e\u0301'.repeat(120), options);
+  assert.match(combining.displayText, /^(?:e\u0301)+…$/u);
+  const complete = await renderer._singleLineLayer('Short line', options);
+  assert.equal(complete.displayText, 'Short line');
+  assert.equal(await renderer._singleLineLayer('', options), null);
 });
 
 test('font scaling survives native/browser scene validation and rejects unsafe values', () => {

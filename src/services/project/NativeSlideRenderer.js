@@ -390,14 +390,47 @@ class NativeSlideRenderer {
         error.details = { width, maxHeight, fontSize: size };
         throw error;
       }
-      last = rendered;
-      if (rendered.info.height <= maxHeight) return rendered;
+      last = { ...rendered, fontSize: size, fontWeight: weight };
+      if (rendered.info.height <= maxHeight) return last;
     }
     if (last && last.info.height <= maxHeight * 1.08) return last;
     const error = new Error('This cue has more text than the selected preset can display safely.');
     error.code = 'TEXT_OVERFLOW';
     error.details = { width, maxHeight, minimumFontSize: minimum };
     throw error;
+  }
+
+  async _singleLineLayer(value, options) {
+    const text = singerNextLine(value);
+    if (!text) return null;
+    const fontSize = options.fontSize;
+    const fontWeight = options.weight || '600';
+    const measure = async (displayText) => {
+      const image = this.sharp({ text: {
+        text: `<span foreground="${options.foreground || '#f8fafc'}" weight="${fontWeight}" style="${options.italic ? 'italic' : 'normal'}">${escapePango(displayText)}</span>`,
+        font: `Noto Sans ${fontSize}`,
+        fontfile: this.fontPath,
+        rgba: true,
+        wrap: 'none'
+      } });
+      return { image, info: await image.metadata(), displayText };
+    };
+    let fitted = await measure(text);
+    if (fitted.info.width > options.width) {
+      // Font metrics, not character counts: a wide W and a narrow i consume
+      // different space. Never split a combining character or emoji sequence.
+      const characters = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text), entry => entry.segment);
+      let low = 0, high = characters.length;
+      fitted = await measure('…');
+      while (low < high) {
+        const count = Math.ceil((low + high) / 2);
+        const candidate = await measure(characters.slice(0, count).join('') + '…');
+        if (candidate.info.width <= options.width) { low = count; fitted = candidate; }
+        else high = count - 1;
+      }
+    }
+    const rendered = await fitted.image.png().toBuffer({ resolveWithObject: true });
+    return { ...rendered, fontSize, fontWeight, displayText: fitted.displayText };
   }
 
   _background(color) {
@@ -415,7 +448,8 @@ class NativeSlideRenderer {
     title = '',
     body = '',
     bodySpans = [],
-    presetId = 'notice-text'
+    presetId = 'notice-text',
+    onTypography = () => {}
   }) {
     const preset = resolveNativeTextPreset(presetId).render;
     const churchLayout = presetId.startsWith('wotbc-');
@@ -496,6 +530,7 @@ class NativeSlideRenderer {
       spans: bodySpans
     });
     if (bodyLayer) {
+      onTypography({ fontSize: bodyLayer.fontSize, fontWeight: bodyLayer.fontWeight });
       composites.push({
         input: bodyLayer.data,
         left: alignedLayerLeft(
@@ -516,7 +551,8 @@ class NativeSlideRenderer {
     title,
     subtitle = '',
     credit = '',
-    presetId = 'song-title'
+    presetId = 'song-title',
+    onTypography = () => {}
   }) {
     const composites = [];
     const logicalScale = Math.min(this.width / 1920, this.height / 1080);
@@ -541,6 +577,7 @@ class NativeSlideRenderer {
       lineSpacingPercent: 14
     });
     if (titleLayer) {
+      onTypography({ fontSize: titleLayer.fontSize, fontWeight: titleLayer.fontWeight });
       const regionTop = Math.round(this.height * 0.1);
       const regionHeight = Math.round(this.height * 0.7);
       const gap = subtitleLayer ? Math.round(this.height * 0.025) : 0;
@@ -631,6 +668,8 @@ class NativeSlideRenderer {
     const channel = cue.channels?.[channelId];
     let pipeline;
     let textValue = '';
+    let typography = null;
+    const onTypography = value => { typography = value; };
     if (!channel || channel.mode === 'hide' || channel.blocks?.some(block => block.type === 'blank')) {
       pipeline = this._background('#000000');
     } else {
@@ -651,6 +690,7 @@ class NativeSlideRenderer {
         pipeline = await this._renderTextSlide({
           title: bibleBlock.reference,
           body: textValue,
+          onTypography,
           presetId: cue.presetId || 'scripture-text'
         });
       } else {
@@ -663,6 +703,7 @@ class NativeSlideRenderer {
             title: localizedTitle,
             subtitle,
             credit,
+            onTypography,
             presetId: cue.presetId
           });
         } else {
@@ -697,6 +738,7 @@ class NativeSlideRenderer {
                   : (localizedTitle || cue.title)),
             body: textValue || localizedTitle,
             bodySpans: textValue ? bodySpans : [],
+            onTypography,
             presetId: cue.presetId
           });
         }
@@ -717,6 +759,7 @@ class NativeSlideRenderer {
     }
     return {
       info,
+      typography,
       metadata: {
         cueId: cue.id,
         title: cue.title,
@@ -748,13 +791,15 @@ class NativeSlideRenderer {
 
     const nextLine = singerNextLine(cueTextForChannel(singerSourceCue(nextCue, sourceChannelId), sourceChannelId));
     const footerText = nextLine || 'End of song';
-    const nextLayer = await this._textLayer(footerText, {
+    const currentScale = Math.min(currentWidth / this.width, currentHeight / this.height);
+    const nextFontSize = current.typography
+      ? Math.round(current.typography.fontSize * currentScale)
+      : Math.round(this.height * 0.075);
+    const nextLayer = await this._singleLineLayer(footerText, {
       width: this.width * 0.88,
-      maxHeight: footerHeight - dividerThickness - padding,
-      fontSize: Math.max(20, Math.round(this.height * 0.043)),
-      minimumFontSize: Math.max(14, Math.round(this.height * 0.026)),
+      fontSize: nextFontSize,
       foreground: nextLine ? '#f8fafc' : '#6b7280',
-      weight: nextLine ? '500' : '400'
+      weight: current.typography?.fontWeight || '600'
     });
     const dashWidth = Math.max(12, Math.round(this.width * 0.025));
     const dashGap = Math.max(8, Math.round(dashWidth * 0.62));
@@ -807,6 +852,11 @@ class NativeSlideRenderer {
         layout: 'singer-current-next',
         sourceChannelId,
         nextLine
+      },
+      singerTypography: {
+        currentFontSize: current.typography ? current.typography.fontSize * currentScale : null,
+        nextFontSize, nextText: nextLayer?.displayText || '',
+        nextWidth: nextLayer?.info.width || 0, nextHeight: nextLayer?.info.height || 0
       }
     };
   }

@@ -623,7 +623,10 @@
       currentHost.appendChild(current.element);
       const next = document.createElement('div');
       next.className = 'native-singer-next';
-      next.textContent = scene.nextLine || 'End of song';
+      const nextText = document.createElement('span');
+      nextText.className = 'native-singer-next-text';
+      next.appendChild(nextText);
+      nextText.textContent = scene.nextLine || 'End of song';
       next.classList.toggle('native-singer-end', !scene.nextLine);
       next.style.color = scene.nextLine ? '#f8fafc' : '#6b7280';
       next.style.fontWeight = scene.nextLine ? '500' : '400';
@@ -632,12 +635,15 @@
       children.push({
         relayout(scale) {
           next.style.borderTopWidth = `${Math.max(4, scene.canvas.height * 0.011 * scale)}px`;
-          fitText(
-            next,
-            Math.max(20, Math.round(scene.canvas.height * 0.043)),
-            Math.max(14, Math.round(scene.canvas.height * 0.026)),
-            scale
-          );
+          // The current scene has already fitted its text. Keep that exact
+          // on-screen typography and let CSS ellipsize the next line's prefix.
+          const primary = currentHost.querySelector('.native-scene-body')
+            || currentHost.querySelector('.native-song-title-text')
+            || currentHost.querySelector('.native-scene-title');
+          const typography = primary ? global.getComputedStyle(primary) : null;
+          nextText.style.fontSize = typography?.fontSize || `${scene.canvas.height * 0.075 * scale}px`;
+          nextText.style.fontWeight = typography?.fontWeight || '600';
+          nextText.style.fontFamily = typography?.fontFamily || 'inherit';
         }
       });
     }

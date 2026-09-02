@@ -1,14 +1,19 @@
 'use strict';
 
-// Match the existing singer window: a full single-language current slide and
-// only the first meaningful line of the next cue (70 characters by default).
-const DEFAULT_SINGER_CHAR_LIMIT = 70;
+// Keep the complete first meaningful line. Each display fits its visible
+// prefix to the available width at the current slide's actual font size.
+// This is a scene-payload safety bound, not a presentation character limit.
+const MAX_SINGER_LINE_LENGTH = 2000;
 
-function singerNextLine(value, charLimit = DEFAULT_SINGER_CHAR_LIMIT) {
-  const limit = Number.isInteger(charLimit) ? Math.max(10, Math.min(500, charLimit)) : DEFAULT_SINGER_CHAR_LIMIT;
+function singerNextLine(value) {
   const line = String(value || '').split(/\r\n|\r|\n/).map(part => part.trim()).find(Boolean) || '';
-  const characters = Array.from(line);
-  return characters.length > limit ? characters.slice(0, limit).join('') + '…' : line;
+  if (line.length <= MAX_SINGER_LINE_LENGTH) return line;
+  let bounded = '';
+  for (const character of line) {
+    if (bounded.length + character.length >= MAX_SINGER_LINE_LENGTH) break;
+    bounded += character;
+  }
+  return bounded + '…';
 }
 
 function singerSourceCue(cue, sourceChannelId) {
@@ -26,4 +31,4 @@ function singerSourceCue(cue, sourceChannelId) {
   };
 }
 
-module.exports = { DEFAULT_SINGER_CHAR_LIMIT, singerNextLine, singerSourceCue };
+module.exports = { MAX_SINGER_LINE_LENGTH, singerNextLine, singerSourceCue };
