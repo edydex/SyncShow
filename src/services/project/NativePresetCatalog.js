@@ -12,6 +12,43 @@ const TEXT_VERTICAL_POSITIONS = Object.freeze(['center', 'top']);
 // already points at one of these stable IDs.
 const RAW_PRESETS = [
   {
+    id: 'wotbc-song-stacked', label: 'Church song · stacked', description: 'Wide white lyrics above an orange translation.',
+    selectable: true, kinds: ['song'],
+    render: { mode: 'text', background: '#000000', bodySize: 98, bodyHeight: 990, bodyMinimumSize: 52,
+      titleSize: 40, titleMinimumSize: 24, showTitle: false, bodyWeight: '600',
+      bodyWidthPercent: 98, bodyTopPercent: 3, bodyPosition: 'center', lineSpacingPercent: 5 }
+  },
+  {
+    id: 'wotbc-song-lyrics', label: 'Church song · single language', description: 'Wide centered lyrics.',
+    selectable: true, kinds: ['song'],
+    render: { mode: 'text', background: '#000000', bodySize: 106, bodyHeight: 990, bodyMinimumSize: 52,
+      titleSize: 40, titleMinimumSize: 24, showTitle: false, bodyWeight: '600',
+      bodyWidthPercent: 98, bodyTopPercent: 3, bodyPosition: 'center', lineSpacingPercent: 5 }
+  },
+  {
+    id: 'wotbc-song-title', label: 'Church song title', description: 'White title, orange translation and a compact bottom-right credit.',
+    selectable: true, kinds: ['song'],
+    render: { mode: 'text', background: '#000000', bodySize: 128, bodyHeight: 900, bodyMinimumSize: 52,
+      titleSize: 128, titleMinimumSize: 52, showTitle: true, bodyWeight: '700' }
+  },
+  {
+    id: 'wotbc-reading', label: 'Church reading · wide', description: 'Flowing, left-aligned reading text using almost the full screen.',
+    selectable: true, kinds: ['bible'],
+    render: { mode: 'text', background: '#000000', bodySize: 96, bodyHeight: 980, bodyMinimumSize: 62,
+      titleSize: 34, titleMinimumSize: 24, showTitle: false, bodyWeight: '500',
+      bodyWidthPercent: 98, bodyTopPercent: 2, bodyPosition: 'top', bodyAlign: 'left', lineSpacingPercent: 8 }
+  },
+  {
+    id: 'wotbc-sermon', label: 'Church sermon', description: 'Gold heading and references with a wide, left-aligned white body.',
+    selectable: true, kinds: ['sermon', 'notice'],
+    render: { mode: 'text', background: '#000000', bodySize: 82, bodyHeight: 890, bodyMinimumSize: 42,
+      titleSize: 88, titleMinimumSize: 44, showTitle: true, bodyWeight: '500',
+      titleForeground: '#ffc000', titleWeight: '700', titleAlign: 'center',
+      bodyWidthPercent: 98, titleTopPercent: 1, bodyTopPercent: 15, bodyPosition: 'top',
+      bodyAlign: 'left', lineSpacingPercent: 8, paragraphGap: false,
+      leadingReferenceStyle: 'scripture', leadingReferenceForeground: '#ffc000', leadingReferenceWeight: '700' }
+  },
+  {
     id: 'default-text',
     label: 'Safe text',
     description: 'Compatibility fallback for an older or unavailable text preset.',

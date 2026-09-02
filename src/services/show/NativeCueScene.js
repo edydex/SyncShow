@@ -424,7 +424,8 @@ function referenceSpans(value, preset) {
   return spans;
 }
 
-function resolvedTextStyle(preset, hasTitle) {
+function resolvedTextStyle(preset, hasTitle, presetId = '') {
+  const churchLayout = presetId.startsWith('wotbc-');
   return {
     showTitle: hasTitle,
     titleSize: preset.titleSize,
@@ -432,7 +433,7 @@ function resolvedTextStyle(preset, hasTitle) {
     titleForeground: preset.titleForeground || '#93b4ff',
     titleWeight: preset.titleWeight || '650',
     titleAlign: preset.titleAlign || 'center',
-    titleWidthPercent: 82,
+    titleWidthPercent: churchLayout ? 98 : 82,
     titleTopPercent: preset.titleTopPercent === undefined ? 9 : preset.titleTopPercent,
     bodySize: preset.bodySize,
     bodyMinimumSize: preset.bodyMinimumSize,
@@ -442,7 +443,7 @@ function resolvedTextStyle(preset, hasTitle) {
     bodyWidthPercent: preset.bodyWidthPercent || 82,
     bodyHeight: preset.bodyHeight,
     bodyTopPercent: preset.bodyTopPercent === undefined ? (hasTitle ? 26 : 10) : preset.bodyTopPercent,
-    bodyRegionHeightPercent: hasTitle ? 66 : 80,
+    bodyRegionHeightPercent: churchLayout ? Math.min(90, Math.round(preset.bodyHeight / 1080 * 100)) : hasTitle ? 66 : 80,
     bodyPosition: preset.bodyPosition || 'center',
     lineSpacingPercent: preset.lineSpacingPercent === undefined ? 18 : preset.lineSpacingPercent,
     paragraphGap: preset.paragraphGap === true
@@ -462,16 +463,16 @@ function songTitleScene(cue, title, subtitle, credit, canvas) {
     subtitle,
     credit,
     style: {
-      titleSize: 128,
+      titleSize: cue.presetId === 'wotbc-song-title' ? 144 : 128,
       titleMinimumSize: 52,
       titleForeground: '#ffffff',
       titleWeight: '700',
       titleWidthPercent: 94,
       titleTopPercent: 10,
       titleRegionHeightPercent: 70,
-      subtitleSize: 92,
+      subtitleSize: cue.presetId === 'wotbc-song-title' ? 128 : 92,
       subtitleMinimumSize: 36,
-      subtitleForeground: '#ffff00',
+      subtitleForeground: cue.presetId === 'wotbc-song-title' ? '#ffc000' : '#ffff00',
       subtitleWeight: '500',
       subtitleWidthPercent: 90,
       creditSize: 56,
@@ -502,10 +503,11 @@ function textScene(cue, channel, canvas) {
       return songTitleScene(cue, localizedTitle, subtitle, credit, canvas);
     }
     const bodyParts = [];
+    const bodySeparator = cue.presetId === 'wotbc-song-stacked' ? '\n' : '\n\n';
     let bodyOffset = 0;
     for (const block of textBlocks.filter(candidate => candidate.role !== 'title')) {
       if (!block.text) continue;
-      if (bodyParts.length > 0) bodyOffset += 2;
+      if (bodyParts.length > 0) bodyOffset += bodySeparator.length;
       bodyParts.push(block.text);
       for (const span of block.spans || []) {
         bodySpans.push({
@@ -516,7 +518,7 @@ function textScene(cue, channel, canvas) {
       }
       bodyOffset += block.text.length;
     }
-    body = bodyParts.join('\n\n');
+    body = bodyParts.join(bodySeparator);
     title = cue.kind === 'song'
       ? ''
       : (cue.kind === 'sermon' || cue.kind === 'notice'
@@ -542,7 +544,7 @@ function textScene(cue, channel, canvas) {
     title,
     body,
     bodySpans,
-    style: resolvedTextStyle(preset, hasTitle)
+    style: resolvedTextStyle(preset, hasTitle, cue.presetId)
   });
 }
 

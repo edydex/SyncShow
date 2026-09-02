@@ -412,17 +412,18 @@ class NativeSlideRenderer {
     presetId = 'notice-text'
   }) {
     const preset = resolveNativeTextPreset(presetId).render;
+    const churchLayout = presetId.startsWith('wotbc-');
     const composites = [];
     const hasTitle = Boolean(String(title || '').trim()) && preset.showTitle;
     const resolutionScale = Math.min(1, this.width / 1920, this.height / 1080);
     let titleBottom = 0;
     if (hasTitle) {
-      const titleWidth = this.width * 0.82;
+      const titleWidth = this.width * (churchLayout ? 0.98 : 0.82);
       const titleAlign = preset.titleAlign || 'center';
       const titleLayer = await this._textLayer(title, {
         width: titleWidth,
         maxHeight: this.height * 0.16,
-        fontSize: preset.titleSize,
+        fontSize: churchLayout ? preset.titleSize * resolutionScale : preset.titleSize,
         minimumFontSize: Math.max(
           14,
           Math.round(preset.titleMinimumSize * resolutionScale)
@@ -454,9 +455,11 @@ class NativeSlideRenderer {
       ? oldAvailableTop
       : Math.round(this.height * preset.bodyTopPercent / 100);
     const availableTop = preset.bodyPosition === 'top' && titleBottom > 0
-      ? Math.max(configuredBodyTop, titleBottom + Math.round(this.height * 0.04))
+      ? Math.max(configuredBodyTop, titleBottom + Math.round(this.height * (churchLayout ? 0.02 : 0.04)))
       : configuredBodyTop;
-    const bodyMaximumHeight = preset.bodyPosition === 'top'
+    const bodyMaximumHeight = churchLayout
+      ? Math.min(preset.bodyHeight * resolutionScale, this.height - availableTop - this.height * 0.02)
+      : preset.bodyPosition === 'top'
       ? Math.min(
           preset.bodyHeight,
           Math.max(50, this.height - availableTop - Math.round(this.height * 0.06))
@@ -467,7 +470,7 @@ class NativeSlideRenderer {
     const bodyLayer = await this._textLayer(body || title, {
       width: bodyWidth,
       maxHeight: bodyMaximumHeight,
-      fontSize: preset.bodySize,
+      fontSize: churchLayout ? preset.bodySize * resolutionScale : preset.bodySize,
       minimumFontSize: Math.max(
         14,
         Math.round(preset.bodyMinimumSize * resolutionScale)
@@ -497,7 +500,7 @@ class NativeSlideRenderer {
         ),
         top: preset.bodyPosition === 'top'
           ? availableTop
-          : availableTop + Math.max(0, Math.round((oldAvailableHeight - bodyLayer.info.height) / 2))
+          : availableTop + Math.max(0, Math.round(((churchLayout ? bodyMaximumHeight : oldAvailableHeight) - bodyLayer.info.height) / 2))
       });
     }
     return this._background(preset.background).composite(composites);
@@ -506,14 +509,15 @@ class NativeSlideRenderer {
   async _renderSongTitleSlide({
     title,
     subtitle = '',
-    credit = ''
+    credit = '',
+    presetId = 'song-title'
   }) {
     const composites = [];
     const logicalScale = Math.min(this.width / 1920, this.height / 1080);
     const titleLayer = await this._textLayer(title, {
       width: this.width * 0.94,
       maxHeight: this.height * (subtitle ? 0.42 : 0.7),
-      fontSize: Math.round(128 * logicalScale),
+      fontSize: Math.round((presetId === 'wotbc-song-title' ? 144 : 128) * logicalScale),
       minimumFontSize: Math.round(52 * logicalScale),
       foreground: '#ffffff',
       weight: '700',
@@ -523,9 +527,9 @@ class NativeSlideRenderer {
     const subtitleLayer = await this._textLayer(subtitle, {
       width: this.width * 0.9,
       maxHeight: this.height * 0.25,
-      fontSize: Math.round(92 * logicalScale),
+      fontSize: Math.round((presetId === 'wotbc-song-title' ? 128 : 92) * logicalScale),
       minimumFontSize: Math.round(36 * logicalScale),
-      foreground: '#ffff00',
+      foreground: presetId === 'wotbc-song-title' ? '#ffc000' : '#ffff00',
       weight: '500',
       align: 'center',
       lineSpacingPercent: 14
@@ -652,17 +656,19 @@ class NativeSlideRenderer {
           pipeline = await this._renderSongTitleSlide({
             title: localizedTitle,
             subtitle,
-            credit
+            credit,
+            presetId: cue.presetId
           });
         } else {
           const bodyParts = [];
+          const bodySeparator = cue.presetId === 'wotbc-song-stacked' ? '\n' : '\n\n';
           const bodySpans = [];
           let bodyOffset = 0;
           for (const block of textBlocks.filter(
             candidate => candidate.role !== 'title' && candidate.role !== 'credit'
           )) {
             if (!block.text) continue;
-            if (bodyParts.length > 0) bodyOffset += 2;
+            if (bodyParts.length > 0) bodyOffset += bodySeparator.length;
             const blockText = String(block.text);
             bodyParts.push(blockText);
             for (const span of block.spans || []) {
@@ -674,7 +680,7 @@ class NativeSlideRenderer {
             }
             bodyOffset += blockText.length;
           }
-          textValue = bodyParts.join('\n\n');
+          textValue = bodyParts.join(bodySeparator);
           pipeline = await this._renderTextSlide({
             // Sermon/notice rundown titles are operator-facing. Only an explicit
             // per-output title block belongs on those projected slides.
