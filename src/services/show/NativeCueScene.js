@@ -7,6 +7,7 @@ const {
   splitLeadingScriptureReference
 } = require('../project/NativeSlideRenderer');
 const { resolveNativeTextPreset } = require('../project/NativePresetCatalog');
+const { scriptureFlowText } = require('../bible/ScriptureText');
 
 const NATIVE_CUE_SCENE_SCHEMA_VERSION = 2;
 const NATIVE_CUE_SCENE_KIND = 'syncshow-native-cue-scene';
@@ -492,7 +493,7 @@ function textScene(cue, channel, canvas) {
   let bodySpans = [];
   if (bibleBlock) {
     title = bibleBlock.reference;
-    body = bibleBlock.verses.map(verse => `${verse.number} ${verse.text}`).join('\n');
+    body = scriptureFlowText(bibleBlock.verses);
   } else {
     const localizedTitle = textBlocks.find(block => block.role === 'title')?.text || '';
     if (cue.kind === 'song' && localizedTitle) {

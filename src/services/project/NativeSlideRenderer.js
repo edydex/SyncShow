@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const { parseBibleReference } = require('../bible/BibleReferenceParser');
+const { scriptureFlowText } = require('../bible/ScriptureText');
 const { resolveNativeTextPreset } = require('./NativePresetCatalog');
 const { MAX_IMAGE_PIXELS } = require('./ServiceProject');
 
@@ -281,7 +282,7 @@ function cueTextForChannel(cue, channelId) {
   return (channel.blocks || []).map(block => {
     if (block.type === 'text') return block.text || '';
     if (block.type === 'bible') {
-      return (block.verses || []).map(verse => `${verse.number} ${verse.text}`).join('\n');
+      return scriptureFlowText(block.verses);
     }
     return '';
   }).filter(Boolean).join('\n\n');
@@ -636,7 +637,7 @@ class NativeSlideRenderer {
         pipeline = await this._renderPicture(imageBlock);
         textValue = imageBlock.altText;
       } else if (bibleBlock) {
-        textValue = bibleBlock.verses.map(verse => `${verse.number} ${verse.text}`).join('\n');
+        textValue = scriptureFlowText(bibleBlock.verses);
         pipeline = await this._renderTextSlide({
           title: bibleBlock.reference,
           body: textValue,
