@@ -935,7 +935,8 @@ function normalizeProjectItem(raw, channelIds, now) {
       variants[channelId] = normalizeSongVariant(variant, `Song item ${itemId} channel ${channelId}`, channelId);
     }
     if (Object.keys(variants).length < 1) fail('INVALID_SONG_VARIANTS', `Song item ${itemId} needs at least one channel variant.`);
-    if (!Array.isArray(raw.arrangement) || raw.arrangement.length < 1 || raw.arrangement.length > MAX_ARRANGEMENT_ENTRIES) {
+    if (raw.showTitle !== undefined && typeof raw.showTitle !== 'boolean') fail('INVALID_SONG_TITLE_MODE', 'Song showTitle must be a boolean.');
+    if (!Array.isArray(raw.arrangement) || raw.arrangement.length < (raw.showTitle === true ? 0 : 1) || raw.arrangement.length > MAX_ARRANGEMENT_ENTRIES) {
       fail('INVALID_ARRANGEMENT', `Song item ${itemId} needs 1 to ${MAX_ARRANGEMENT_ENTRIES} arrangement entries.`);
     }
     const arrangementIds = new Set();
@@ -962,6 +963,7 @@ function normalizeProjectItem(raw, channelIds, now) {
       ...common,
       variants,
       arrangement,
+      ...(raw.showTitle !== undefined ? { showTitle: raw.showTitle } : {}),
       ...(raw.songPresentation !== undefined
         ? { songPresentation: normalizeSongPresentation(raw.songPresentation, channelIds, variants) } : {}),
       ...(primaryChannelId ? { primaryChannelId } : {}),
@@ -1623,7 +1625,7 @@ function compileServiceProject(rawProject, options = {}) {
           blocks: presentationTitleBlocks(item, resolvedByChannel, channelId) || titleBlocks
         };
       }
-      addCue(item, 'title', {
+      if (item.showTitle !== false) addCue(item, 'title', {
         kind: 'song',
         title: item.title,
         groupPath: [...groupPath, item.title],
