@@ -1,6 +1,6 @@
 {
   "name": "sync-show",
-  "version": "1.4.0-preview.18",
+  "version": "1.4.0-preview.21",
   "description": "Synchronized configurable presentation outputs for church services",
   "main": "main.js",
   "scripts": {
@@ -10,6 +10,10 @@
     "dev:linux": "electron . --no-sandbox --dev",
     "check": "node scripts/check-js.js",
     "test": "node --test",
+    "test:live-cue-navigation-electron": "node scripts/verify-live-cue-navigation-electron.js",
+    "test:native-electron-rehearsal": "node scripts/verify-native-weekly-electron-rehearsal.js",
+    "test:community-service-electron": "node scripts/verify-community-service-electron.js",
+    "test:operational-planning-electron": "node scripts/verify-operational-planning-electron.js",
     "ci": "npm run check && npm test",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
@@ -20,6 +24,13 @@
     "build:configure-google-drive": "node scripts/google-drive-build-config.js inject",
     "build:verify-google-drive": "node scripts/google-drive-build-config.js verify",
     "build:clean-google-drive": "node scripts/google-drive-build-config.js clean",
+    "build:verify-pdf-engine": "node scripts/verify-packaged-pdf-engine.js",
+    "build:verify-sharp": "node scripts/verify-packaged-sharp.js",
+    "build:verify-package-smoke": "node scripts/verify-package-smoke.js",
+    "build:verify-service-core": "node scripts/verify-packaged-service-core.js",
+    "build:verify-app-launch": "node scripts/verify-packaged-app-launch.js",
+    "build:verify-remote-lan": "node scripts/verify-packaged-remote-lan.js",
+    "build:verify-release-legal": "node scripts/verify-release-legal.js",
     "generate-icon": "node scripts/generate-icon.js"
   },
   "keywords": [
@@ -34,6 +45,9 @@
     "email": "oles@mayo.onl"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "devDependencies": {
     "@electron/asar": "3.4.1",
     "electron": "43.2.0",
@@ -42,8 +56,10 @@
     "tslib": "^2.8.1"
   },
   "dependencies": {
+    "@syncshow/service-core": "file:packages/service-core",
+    "@napi-rs/canvas": "1.0.3",
     "jszip": "3.10.1",
-    "mupdf": "^1.27.0",
+    "pdfjs-dist": "6.2.108",
     "pptxtojson": "^1.12.0",
     "qrcode": "1.5.4",
     "sharp": "0.35.3"
@@ -60,7 +76,8 @@
   "build": {
     "appId": "com.church.syncshow",
     "productName": "SyncShow",
-    "buildVersion": "140017",
+    "buildVersion": "140021",
+    "beforePack": "scripts/beforePack.js",
     "afterPack": "scripts/afterPack.js",
     "copyright": "Copyright © 2026 Church Media Team",
     "win": {
@@ -91,6 +108,7 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "extendInfo": {
+        "NSLocalNetworkUsageDescription": "SyncShow uses your trusted local network so a phone you pair can control the active presentation.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
           "NSAllowsLocalNetworking": true
@@ -160,11 +178,15 @@
       "LICENSE.txt",
       "src/**/*",
       "!src/renderer/test-thumbnails.html",
+      "packages/service-core/**/*",
       "assets/**/*",
-      "node_modules/**/*"
+      "!assets/google-drive-config.json",
+      "node_modules/**/*",
+      "!node_modules/@img/sharp-wasm32/**"
     ],
     "asarUnpack": [
       "assets/fonts/**",
+      "node_modules/@napi-rs/**",
       "node_modules/sharp/**",
       "node_modules/@img/**"
     ],

@@ -1,0 +1,206 @@
+{
+  "fixtureVersion": 1,
+  "discoveryResource": {
+    "schemaVersion": 1,
+    "endpoint": "sermon-media",
+    "scopes": [
+      "syncshow:sermon-media:read",
+      "syncshow:sermon-media:write"
+    ],
+    "chunkSizeBytes": 8388608,
+    "maximumBytes": 1073741824,
+    "acceptedMediaTypes": [
+      "audio/mpeg",
+      "audio/mp4"
+    ],
+    "sessionTtlSeconds": 604800
+  },
+  "initRequest": {
+    "schemaVersion": 1,
+    "sermon": {
+      "syncId": "sermon:2026-08-02:romans-8",
+      "expectedSyncVersion": 7,
+      "expectedCurrentRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "recording": {
+      "id": "post-service:recording:en",
+      "kind": "audio",
+      "language": "en",
+      "mediaType": "audio/mpeg",
+      "fileName": "sermon-2026-08-02.mp3",
+      "sha256": "906b2eef2e3f5dadb7c8efd19d22d99183a3d1ba2205b4f6aa508a697d80a8a6",
+      "sizeBytes": 8388614,
+      "durationSeconds": null
+    }
+  },
+  "uploadingResponse": {
+    "schemaVersion": 1,
+    "upload": {
+      "id": "ABCDEFGHIJKLMNOPQRSTUVWX12345678",
+      "state": "uploading",
+      "sermon": {
+        "syncId": "sermon:2026-08-02:romans-8",
+        "syncVersion": 7,
+        "currentRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recording": {
+        "id": "post-service:recording:en",
+        "kind": "audio",
+        "language": "en",
+        "mediaType": "audio/mpeg",
+        "fileName": "sermon-2026-08-02.mp3",
+        "sha256": "906b2eef2e3f5dadb7c8efd19d22d99183a3d1ba2205b4f6aa508a697d80a8a6",
+        "sizeBytes": 8388614,
+        "durationSeconds": null
+      },
+      "chunkSizeBytes": 8388608,
+      "chunkCount": 2,
+      "receivedChunks": [],
+      "receivedBytes": 0,
+      "expiresAt": "2026-08-09T18:30:00.000Z",
+      "completedAt": null
+    }
+  },
+  "firstChunkResponse": {
+    "schemaVersion": 1,
+    "chunk": {
+      "index": 0,
+      "sha256": "ad97f87076920684e2ca66fc44e5d322797dc9d64706b174e51b5d0828937043",
+      "sizeBytes": 8388608,
+      "receivedAt": "2026-08-02T18:31:00.000Z"
+    },
+    "upload": {
+      "id": "ABCDEFGHIJKLMNOPQRSTUVWX12345678",
+      "state": "uploading",
+      "sermon": {
+        "syncId": "sermon:2026-08-02:romans-8",
+        "syncVersion": 7,
+        "currentRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recording": {
+        "id": "post-service:recording:en",
+        "kind": "audio",
+        "language": "en",
+        "mediaType": "audio/mpeg",
+        "fileName": "sermon-2026-08-02.mp3",
+        "sha256": "906b2eef2e3f5dadb7c8efd19d22d99183a3d1ba2205b4f6aa508a697d80a8a6",
+        "sizeBytes": 8388614,
+        "durationSeconds": null
+      },
+      "chunkSizeBytes": 8388608,
+      "chunkCount": 2,
+      "receivedChunks": [
+        0
+      ],
+      "receivedBytes": 8388608,
+      "expiresAt": "2026-08-09T18:30:00.000Z",
+      "completedAt": null
+    }
+  },
+  "secondChunk": {
+    "index": 1,
+    "sha256": "ed02457b5c41d964dbd2f2a609d63fe1bb7528dbe55e1abf5b52c249cd735797",
+    "sizeBytes": 6,
+    "contentRange": "bytes 8388608-8388613/8388614"
+  },
+  "finalizingResponse": {
+    "schemaVersion": 1,
+    "upload": {
+      "id": "ABCDEFGHIJKLMNOPQRSTUVWX12345678",
+      "state": "finalizing",
+      "sermon": {
+        "syncId": "sermon:2026-08-02:romans-8",
+        "syncVersion": 7,
+        "currentRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recording": {
+        "id": "post-service:recording:en",
+        "kind": "audio",
+        "language": "en",
+        "mediaType": "audio/mpeg",
+        "fileName": "sermon-2026-08-02.mp3",
+        "sha256": "906b2eef2e3f5dadb7c8efd19d22d99183a3d1ba2205b4f6aa508a697d80a8a6",
+        "sizeBytes": 8388614,
+        "durationSeconds": null
+      },
+      "chunkSizeBytes": 8388608,
+      "chunkCount": 2,
+      "receivedChunks": [
+        0,
+        1
+      ],
+      "receivedBytes": 8388614,
+      "expiresAt": "2026-08-09T18:30:00.000Z",
+      "completedAt": null
+    }
+  },
+  "completeResponse": {
+    "schemaVersion": 1,
+    "upload": {
+      "id": "ABCDEFGHIJKLMNOPQRSTUVWX12345678",
+      "state": "complete",
+      "sermon": {
+        "syncId": "sermon:2026-08-02:romans-8",
+        "syncVersion": 7,
+        "currentRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recording": {
+        "id": "post-service:recording:en",
+        "kind": "audio",
+        "language": "en",
+        "mediaType": "audio/mpeg",
+        "fileName": "sermon-2026-08-02.mp3",
+        "sha256": "906b2eef2e3f5dadb7c8efd19d22d99183a3d1ba2205b4f6aa508a697d80a8a6",
+        "sizeBytes": 8388614,
+        "durationSeconds": null
+      },
+      "chunkSizeBytes": 8388608,
+      "chunkCount": 2,
+      "receivedChunks": [
+        0,
+        1
+      ],
+      "receivedBytes": 8388614,
+      "expiresAt": "2026-08-09T18:30:00.000Z",
+      "completedAt": "2026-08-02T18:32:00.000Z"
+    }
+  },
+  "cancelledResponse": {
+    "schemaVersion": 1,
+    "upload": {
+      "id": "ABCDEFGHIJKLMNOPQRSTUVWX12345678",
+      "state": "cancelled",
+      "sermon": {
+        "syncId": "sermon:2026-08-02:romans-8",
+        "syncVersion": 7,
+        "currentRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recording": {
+        "id": "post-service:recording:en",
+        "kind": "audio",
+        "language": "en",
+        "mediaType": "audio/mpeg",
+        "fileName": "sermon-2026-08-02.mp3",
+        "sha256": "906b2eef2e3f5dadb7c8efd19d22d99183a3d1ba2205b4f6aa508a697d80a8a6",
+        "sizeBytes": 8388614,
+        "durationSeconds": null
+      },
+      "chunkSizeBytes": 8388608,
+      "chunkCount": 2,
+      "receivedChunks": [
+        0
+      ],
+      "receivedBytes": 8388608,
+      "expiresAt": "2026-08-09T18:30:00.000Z",
+      "completedAt": null
+    }
+  },
+  "staleError": {
+    "schemaVersion": 1,
+    "error": {
+      "code": "STALE_SERMON_BINDING",
+      "message": "The sermon or recording no longer matches this upload.",
+      "retryable": false
+    }
+  }
+}

@@ -5,9 +5,19 @@ const fs = require('fs/promises');
 const path = require('path');
 
 const { compileServiceProject, normalizeCueTimeline } = require('./ServiceProject');
+const { analyzeServiceProjectReadiness } = require('./ServiceProjectReadiness');
+const {
+  deriveServiceHandoff,
+  normalizeServiceHandoff,
+  serializeServiceHandoff
+} = require('./ServiceHandoff');
 const { NATIVE_RENDERER_VERSION } = require('./NativePresetCatalog');
-const { NativeSlideRenderer } = require('./NativeSlideRenderer');
-const { MAX_IMAGE_BYTES } = require('./ServiceProjectStore');
+const {
+  NativeSlideRenderer,
+  cueMetadataForChannel,
+  singerCueMetadata
+} = require('./NativeSlideRenderer');
+const { MAX_IMAGE_BYTES, MAX_VIDEO_BYTES } = require('./ServiceProjectStore');
 const {
   MAX_NATIVE_SCENE_BYTES,
   compileNativeCueScene,
@@ -23,17 +33,21 @@ const {
   hashFileNoFollow,
   pathIsInside,
   readFileNoFollow,
+  statIdentityMatches,
   withExclusiveFileLock
 } = require('./StorageSafety');
 
-const SHOW_PACKAGE_SCHEMA_VERSION = 2;
+const SHOW_PACKAGE_SCHEMA_VERSION = 3;
 const SHOW_PACKAGE_PATTERN = /^show-[a-f0-9]{64}$/;
 const SAFE_ROLE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const MAX_PACKAGE_CUES = 2000;
 const MAX_PACKAGE_CHANNELS = 16;
 const MAX_MANIFEST_BYTES = 8 * 1024 * 1024;
 const MAX_RASTER_ARTIFACT_BYTES = 20 * 1024 * 1024;
-const SAFE_ASSET_PATH = /^assets\/[a-f0-9]{64}\.(?:png|jpe?g|webp)$/;
+const MAX_BUNDLED_FONT_BYTES = 10 * 1024 * 1024;
+const SAFE_ASSET_PATH = /^assets\/[a-f0-9]{64}\.(?:png|jpe?g|webp|mp4|webm)$/;
+const VERIFIED_MANIFEST_SHA256 = Symbol('verifiedManifestSha256');
+const SAFE_RANDOM_UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 
 class ShowPackageError extends Error {
   constructor(code, message, details = {}) {
@@ -78,6 +92,7 @@ function roleDirectoryName(roleId) {
 }
 
 function artifactMaximumBytes(relativePath) {
+  if (/^assets\/[a-f0-9]{64}\.(?:mp4|webm)$/.test(relativePath)) return MAX_VIDEO_BYTES;
   if (SAFE_ASSET_PATH.test(relativePath)) return MAX_IMAGE_BYTES;
   if (/\/scene_\d+\.json$/.test(relativePath)) return MAX_NATIVE_SCENE_BYTES;
   if (relativePath.endsWith('.json')) return MAX_MANIFEST_BYTES;
@@ -131,7 +146,31 @@ class ShowPackagePublisher {
     if (!pathIsInside(this.rootPath, this.fontConfigCachePath)) {
       throw new TypeError('ShowPackagePublisher fontConfigCachePath must be inside rootPath');
     }
+    await this._ensurePrivateFontConfigCache();
     return this;
+  }
+
+  async _ensurePrivateFontConfigCache() {
+    const confinedCachePath = await ensureConfinedDirectory(
+      this.rootPath,
+      this.fontConfigCachePath
+    );
+    this.fontConfigCachePath = await ensurePrivateDirectory(confinedCachePath);
+
+    // assets/fonts/fonts.conf resolves its XDG cache to this literal child.
+    // Precreating it prevents Fontconfig from choosing its default 0755 mode,
+    // while the confined-directory check rejects linked or non-directory state.
+    const fontConfigDirectory = path.join(this.fontConfigCachePath, 'fontconfig');
+    const confinedFontConfigDirectory = await ensureConfinedDirectory(
+      this.fontConfigCachePath,
+      fontConfigDirectory
+    );
+    const privateFontConfigDirectory = await ensurePrivateDirectory(
+      confinedFontConfigDirectory
+    );
+    if (privateFontConfigDirectory !== fontConfigDirectory) {
+      throw new Error('ShowPackagePublisher fontconfig cache escaped its storage root');
+    }
   }
 
   _normalizeRoleMapping(project, rawMapping) {
@@ -155,13 +194,20 @@ class ShowPackagePublisher {
     return mapping;
   }
 
-  _packageIdentity(projectRead, timeline, roleMapping, renderOptions) {
+  _packageIdentity(
+    projectRead,
+    timeline,
+    serviceHandoff,
+    roleMapping,
+    renderOptions
+  ) {
     const identity = {
       schemaVersion: SHOW_PACKAGE_SCHEMA_VERSION,
       projectId: projectRead.project.id,
       projectRevisionId: projectRead.revisionId,
       projectContentHash: timeline.projectContentHash,
       timelineSha256: sha256(canonicalJson(timeline)),
+      handoffSha256: sha256(serializeServiceHandoff(serviceHandoff)),
       compilerVersion: timeline.compilerVersion,
       rendererVersion: NATIVE_RENDERER_VERSION,
       roleMapping,
@@ -171,11 +217,112 @@ class ShowPackagePublisher {
     return identity;
   }
 
+  async _currentFontSha256() {
+    try {
+      return await hashFileNoFollow(this.fontPath, MAX_BUNDLED_FONT_BYTES);
+    } catch (error) {
+      fail(
+        'SHOW_PACKAGE_FONT_INCOMPATIBLE',
+        'The bundled presentation font is unavailable or unsafe. Restore the bundled font before saving this service again.',
+        { cause: error.code || error.message }
+      );
+    }
+  }
+
+  _nextQuarantinePath(packageId, attempt = 0) {
+    const uuid = this.randomUUID();
+    if (typeof uuid !== 'string' || !SAFE_RANDOM_UUID.test(uuid)) {
+      fail(
+        'SHOW_PACKAGE_INVALID',
+        'The damaged Show package could not be assigned a safe quarantine name.'
+      );
+    }
+    const suffix = attempt > 0 ? `-${attempt}` : '';
+    return path.join(
+      this.rootPath,
+      `.quarantine-${packageId}-${uuid.toLowerCase()}${suffix}`
+    );
+  }
+
+  async _quarantineCorruptPackage(packagePath, packageId, expectedStats) {
+    let currentStats;
+    let currentRealPath;
+    try {
+      currentStats = await fs.lstat(packagePath);
+      currentRealPath = await fs.realpath(packagePath);
+    } catch (error) {
+      fail(
+        'SHOW_PACKAGE_CORRUPT',
+        'The damaged Show package changed before it could be preserved for recovery.',
+        { cause: error.code || error.message }
+      );
+    }
+    if (!currentStats.isDirectory()
+      || currentStats.isSymbolicLink()
+      || currentRealPath !== packagePath
+      || !pathIsInside(this.rootPath, currentRealPath)
+      || !statIdentityMatches(expectedStats, currentStats)) {
+      fail(
+        'SHOW_PACKAGE_INVALID',
+        'The damaged Show package path became unsafe before recovery.'
+      );
+    }
+
+    let quarantinePath = null;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const candidate = this._nextQuarantinePath(packageId, attempt);
+      try {
+        await fs.lstat(candidate);
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          quarantinePath = candidate;
+          break;
+        }
+        throw error;
+      }
+    }
+    if (!quarantinePath) {
+      fail(
+        'SHOW_PACKAGE_INVALID',
+        'The damaged Show package could not be assigned an unused quarantine path.'
+      );
+    }
+
+    try {
+      await fs.rename(packagePath, quarantinePath);
+      const quarantinedStats = await fs.lstat(quarantinePath);
+      const quarantinedRealPath = await fs.realpath(quarantinePath);
+      if (!quarantinedStats.isDirectory()
+        || quarantinedStats.isSymbolicLink()
+        || quarantinedRealPath !== quarantinePath
+        || !pathIsInside(this.rootPath, quarantinedRealPath)
+        || !statIdentityMatches(currentStats, quarantinedStats)) {
+        fail(
+          'SHOW_PACKAGE_CORRUPT',
+          'The damaged Show package changed while it was being preserved for recovery.'
+        );
+      }
+      await fsyncDirectory(this.rootPath).catch(error => {
+        if (process.platform !== 'win32') throw error;
+      });
+    } catch (error) {
+      if (error instanceof ShowPackageError) throw error;
+      fail(
+        'SHOW_PACKAGE_CORRUPT',
+        'The damaged Show package could not be preserved for recovery.',
+        { cause: error.code || error.message }
+      );
+    }
+    return quarantinePath;
+  }
+
   async _verifyManifest(packagePath, expectedPackageId = null) {
     let manifest;
+    let manifestSource;
     try {
       const { buffer } = await readFileNoFollow(path.join(packagePath, 'manifest.json'), MAX_MANIFEST_BYTES);
-      manifest = JSON.parse(buffer.toString('utf8'));
+      manifestSource = buffer.toString('utf8');
+      manifest = JSON.parse(manifestSource);
     } catch (error) {
       fail('SHOW_PACKAGE_INVALID', `The native Show package manifest is unreadable: ${error.message}`);
     }
@@ -189,6 +336,8 @@ class ShowPackagePublisher {
       || !/^[a-f0-9]{64}$/.test(manifest.projectRevisionId || '')
       || !/^[a-f0-9]{64}$/.test(manifest.projectContentHash || '')
       || !/^[a-f0-9]{64}$/.test(manifest.timelineSha256 || '')
+      || manifest.handoffPath !== 'handoff.json'
+      || !/^[a-f0-9]{64}$/.test(manifest.handoffSha256 || '')
       || manifest.compilerVersion !== 3
       || manifest.rendererVersion !== NATIVE_RENDERER_VERSION
       || !Number.isSafeInteger(manifest.cueCount)
@@ -207,7 +356,7 @@ class ShowPackagePublisher {
       || manifest.assets.length > 2000
       || !Array.isArray(manifest.artifacts)
       || manifest.artifacts.length > MAX_PACKAGE_CUES * MAX_PACKAGE_CHANNELS * 2
-        + MAX_PACKAGE_CHANNELS + manifest.assets.length + 4) {
+        + MAX_PACKAGE_CHANNELS + manifest.assets.length + 5) {
       fail('SHOW_PACKAGE_INVALID', 'The native Show package manifest is invalid.');
     }
 
@@ -239,6 +388,7 @@ class ShowPackagePublisher {
       projectRevisionId: manifest.projectRevisionId,
       projectContentHash: manifest.projectContentHash,
       timelineSha256: manifest.timelineSha256,
+      handoffSha256: manifest.handoffSha256,
       compilerVersion: manifest.compilerVersion,
       rendererVersion: manifest.rendererVersion,
       roleMapping: normalizedMapping,
@@ -248,10 +398,32 @@ class ShowPackagePublisher {
     if (`show-${sha256(canonicalJson(identity))}` !== manifest.id) {
       fail('SHOW_PACKAGE_CORRUPT', 'The native Show package identity no longer matches its contents.');
     }
+    const currentFontSha256 = await this._currentFontSha256();
+    if (currentFontSha256 !== manifest.font.sha256) {
+      fail(
+        'SHOW_PACKAGE_FONT_INCOMPATIBLE',
+        'This Show package was rendered with a different bundled font. Save & go to Load again to render a compatible package.',
+        {
+          packageFontSha256: manifest.font.sha256,
+          currentFontSha256
+        }
+      );
+    }
 
-    const expectedArtifactPaths = new Set(['timeline.json']);
+    const expectedArtifactPaths = new Set(['handoff.json', 'timeline.json']);
     const packageAssets = new Map();
     for (const asset of manifest.assets) {
+      const imageMedia = ['image/png', 'image/jpeg', 'image/webp'].includes(asset?.mediaType);
+      const videoMedia = ['video/mp4', 'video/webm'].includes(asset?.mediaType);
+      const maximumBytes = videoMedia ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+      const invalidDimensions = imageMedia && (
+        !Number.isSafeInteger(asset?.width)
+        || asset.width < 1
+        || asset.width > 32768
+        || !Number.isSafeInteger(asset?.height)
+        || asset.height < 1
+        || asset.height > 32768
+      );
       if (!isRecord(asset)
         || typeof asset.id !== 'string'
         || !/^sha256:[a-f0-9]{64}$/.test(asset.id)
@@ -259,29 +431,26 @@ class ShowPackagePublisher {
         || !SAFE_ASSET_PATH.test(asset.path)
         || asset.path !== `assets/${asset.id.slice('sha256:'.length)}.${asset.path.split('.').at(-1)}`
         || typeof asset.mediaType !== 'string'
-        || !['image/png', 'image/jpeg', 'image/webp'].includes(asset.mediaType)
+        || (!imageMedia && !videoMedia)
         || !/^[a-f0-9]{64}$/.test(asset.sha256 || '')
         || asset.id !== `sha256:${asset.sha256}`
         || !Number.isSafeInteger(asset.size)
         || asset.size < 1
-        || asset.size > MAX_IMAGE_BYTES
-        || !Number.isSafeInteger(asset.width)
-        || asset.width < 1
-        || asset.width > 32768
-        || !Number.isSafeInteger(asset.height)
-        || asset.height < 1
-        || asset.height > 32768
+        || asset.size > maximumBytes
+        || invalidDimensions
         || packageAssets.has(asset.id)) {
-        fail('SHOW_PACKAGE_INVALID', 'A Show package picture asset is invalid.');
+        fail('SHOW_PACKAGE_INVALID', 'A Show package media asset is invalid.');
       }
       const expectedExtension = {
         'image/png': ['png'],
         'image/jpeg': ['jpg', 'jpeg'],
-        'image/webp': ['webp']
+        'image/webp': ['webp'],
+        'video/mp4': ['mp4'],
+        'video/webm': ['webm']
       }[asset.mediaType];
       const extension = asset.path.split('.').at(-1);
       if (!expectedExtension.includes(extension)) {
-        fail('SHOW_PACKAGE_INVALID', 'A Show package picture asset has an inconsistent file type.');
+        fail('SHOW_PACKAGE_INVALID', 'A Show package media asset has an inconsistent file type.');
       }
       packageAssets.set(asset.id, asset);
       expectedArtifactPaths.add(asset.path);
@@ -375,6 +544,45 @@ class ShowPackagePublisher {
       fail('SHOW_PACKAGE_CORRUPT', 'The Show timeline does not match its package manifest.');
     }
 
+    let serviceHandoff;
+    let handoffSource;
+    try {
+      const { buffer } = await readFileNoFollow(
+        path.join(packagePath, manifest.handoffPath),
+        MAX_MANIFEST_BYTES
+      );
+      handoffSource = buffer.toString('utf8');
+      serviceHandoff = normalizeServiceHandoff(JSON.parse(handoffSource));
+    } catch (error) {
+      fail('SHOW_PACKAGE_CORRUPT', `The service handoff is invalid: ${error.message}`);
+    }
+    if (serializeServiceHandoff(serviceHandoff) !== handoffSource
+      || sha256(handoffSource) !== manifest.handoffSha256
+      || serviceHandoff.project.id !== manifest.projectId
+      || serviceHandoff.project.revisionId !== manifest.projectRevisionId
+      || serviceHandoff.project.revision !== manifest.projectRevision
+      || serviceHandoff.project.contentHash !== manifest.projectContentHash
+      || serviceHandoff.project.title !== timeline.title
+      || serviceHandoff.project.serviceDate !== timeline.serviceDate
+      || !sameArray(serviceHandoff.cueIds, manifest.cueIds)
+      || serviceHandoff.cueIds.some(cueId => {
+        const handoffCue = serviceHandoff.cues[cueId];
+        const timelineCue = timeline.cues[cueId];
+        return !timelineCue
+          || handoffCue.id !== timelineCue.id
+          || handoffCue.itemId !== timelineCue.itemId
+          || handoffCue.title !== timelineCue.title
+          || handoffCue.kind !== timelineCue.kind
+          || !sameArray(handoffCue.groupPath, timelineCue.groupPath)
+          || handoffCue.operatorNotes !== timelineCue.operatorNotes;
+      })) {
+      fail(
+        'SHOW_PACKAGE_CORRUPT',
+        'The service handoff does not match its package manifest and timeline.'
+      );
+    }
+    manifest.serviceHandoff = serviceHandoff;
+
     for (const channel of manifest.channels) {
       let metadata;
       try {
@@ -409,6 +617,24 @@ class ShowPackagePublisher {
           || typeof slide.firstLine !== 'string'
           || slide.firstLine.length > 2000) {
           fail('SHOW_PACKAGE_CORRUPT', `Slide metadata ${index + 1} for ${channel.roleId} is invalid.`);
+        }
+        const cueId = manifest.cueIds[index];
+        const cue = timeline.cues[cueId];
+        const projectedChannel = cue?.channels?.[channel.channelId];
+        const nextCueId = manifest.cueIds[index + 1];
+        const expectedMetadata = projectedChannel?.mode === 'condensed'
+          && projectedChannel.sourceChannelId
+          ? singerCueMetadata(
+              cue,
+              projectedChannel.sourceChannelId,
+              nextCueId ? timeline.cues[nextCueId] : null
+            )
+          : cueMetadataForChannel(cue, channel.channelId);
+        if (canonicalJson(slide) !== canonicalJson(expectedMetadata)) {
+          fail(
+            'SHOW_PACKAGE_CORRUPT',
+            `Slide metadata ${index + 1} for ${channel.roleId} no longer matches the Show timeline.`
+          );
         }
       }
       const scenes = [];
@@ -461,6 +687,12 @@ class ShowPackagePublisher {
       || [...packageAssets.keys()].some(assetId => !referencedAssetIds.has(assetId))) {
       fail('SHOW_PACKAGE_INVALID', 'The Show package contains an unreferenced picture asset.');
     }
+    Object.defineProperty(manifest, VERIFIED_MANIFEST_SHA256, {
+      configurable: false,
+      enumerable: false,
+      value: sha256(manifestSource),
+      writable: false
+    });
     return manifest;
   }
 
@@ -476,6 +708,7 @@ class ShowPackagePublisher {
         projectId: manifest.projectId,
         projectRevisionId: manifest.projectRevisionId,
         showPackageId: manifest.id,
+        serviceHandoff: manifest.serviceHandoff,
         cacheDir,
         slideCount: manifest.cueCount,
         metadata: channel.metadata,
@@ -486,7 +719,82 @@ class ShowPackagePublisher {
         ]))
       };
     }
-    return { manifest, packagePath, presentations };
+    return {
+      manifest,
+      manifestSha256: manifest[VERIFIED_MANIFEST_SHA256],
+      packagePath,
+      presentations,
+      serviceHandoff: manifest.serviceHandoff
+    };
+  }
+
+  async open(packageId) {
+    await this.initialize();
+    if (typeof packageId !== 'string' || !SHOW_PACKAGE_PATTERN.test(packageId)) {
+      fail(
+        'INVALID_SHOW_PACKAGE_ID',
+        'Choose an exact saved Show package before opening it.'
+      );
+    }
+    const packagePath = path.resolve(this.rootPath, packageId);
+    if (!pathIsInside(this.rootPath, packagePath)) {
+      fail('INVALID_SHOW_PACKAGE_ID', 'The Show package id escaped its storage root.');
+    }
+
+    let before;
+    let beforeRealPath;
+    try {
+      before = await fs.lstat(packagePath);
+      if (!before.isDirectory() || before.isSymbolicLink()) {
+        fail(
+          'SHOW_PACKAGE_INVALID',
+          'The saved Show package is not a safe directory.'
+        );
+      }
+      beforeRealPath = await fs.realpath(packagePath);
+    } catch (error) {
+      if (error instanceof ShowPackageError) throw error;
+      if (error.code === 'ENOENT') {
+        fail(
+          'SHOW_PACKAGE_NOT_FOUND',
+          'The selected Show package is no longer available.'
+        );
+      }
+      fail(
+        'SHOW_PACKAGE_INVALID',
+        'The saved Show package could not be inspected safely.',
+        { cause: error.code || error.message }
+      );
+    }
+    if (beforeRealPath !== packagePath
+      || !pathIsInside(this.rootPath, beforeRealPath)) {
+      fail('SHOW_PACKAGE_INVALID', 'The saved Show package escaped its storage root.');
+    }
+
+    const manifest = await this._verifyManifest(packagePath, packageId);
+
+    let after;
+    let afterRealPath;
+    try {
+      after = await fs.lstat(packagePath);
+      afterRealPath = await fs.realpath(packagePath);
+    } catch (error) {
+      fail(
+        'SHOW_PACKAGE_CORRUPT',
+        'The saved Show package changed while it was opening.',
+        { cause: error.code || error.message }
+      );
+    }
+    if (!after.isDirectory()
+      || after.isSymbolicLink()
+      || beforeRealPath !== afterRealPath
+      || !statIdentityMatches(before, after)) {
+      fail(
+        'SHOW_PACKAGE_CORRUPT',
+        'The saved Show package changed while it was opening.'
+      );
+    }
+    return this._resultFromManifest(packagePath, manifest);
   }
 
   async publish(options = {}) {
@@ -502,6 +810,15 @@ class ShowPackagePublisher {
     if (timeline.cueIds.length > MAX_PACKAGE_CUES) {
       fail('TOO_MANY_CUES', `A native Show package can contain at most ${MAX_PACKAGE_CUES} cues.`);
     }
+    const readiness = analyzeServiceProjectReadiness(projectRead.project, {
+      waivers: projectRead.project.planning?.readinessWaivers || []
+    });
+    const serviceHandoff = deriveServiceHandoff({
+      project: projectRead.project,
+      revisionId: projectRead.revisionId,
+      timeline,
+      readiness
+    });
     const roleMapping = this._normalizeRoleMapping(projectRead.project, options.roleMapping);
     const renderOptions = {
       width: Number.isSafeInteger(options.width) ? options.width : 1920,
@@ -520,22 +837,42 @@ class ShowPackagePublisher {
     if (renderOptions.jpegQuality < 70 || renderOptions.jpegQuality > 100) {
       fail('INVALID_RENDER_OPTIONS', 'JPEG quality must be from 70 to 100.');
     }
-    const fontSha256 = await hashFileNoFollow(this.fontPath, 10 * 1024 * 1024);
-    const identity = this._packageIdentity(projectRead, timeline, roleMapping, renderOptions);
+    const fontSha256 = await this._currentFontSha256();
+    const identity = this._packageIdentity(
+      projectRead,
+      timeline,
+      serviceHandoff,
+      roleMapping,
+      renderOptions
+    );
     identity.fontSha256 = fontSha256;
     const packageId = `show-${sha256(canonicalJson(identity))}`;
     const packagePath = path.join(this.rootPath, packageId);
     const lockPath = path.join(this.rootPath, `.publish-${packageId}.lock`);
 
     return withExclusiveFileLock(lockPath, async () => {
+      let existingPackageStats = null;
       try {
-        const stats = await fs.lstat(packagePath);
-        if (!stats.isDirectory() || stats.isSymbolicLink()) fail('SHOW_PACKAGE_INVALID', 'The existing Show package path is unsafe.');
+        existingPackageStats = await fs.lstat(packagePath);
+        if (!existingPackageStats.isDirectory() || existingPackageStats.isSymbolicLink()) {
+          fail('SHOW_PACKAGE_INVALID', 'The existing Show package path is unsafe.');
+        }
+        const existingRealPath = await fs.realpath(packagePath);
+        if (existingRealPath !== packagePath || !pathIsInside(this.rootPath, existingRealPath)) {
+          fail('SHOW_PACKAGE_INVALID', 'The existing Show package path escaped its storage root.');
+        }
         const manifest = await this._verifyManifest(packagePath, packageId);
         return this._resultFromManifest(packagePath, manifest);
       } catch (error) {
-        if (error.code !== 'ENOENT') {
-          if (error instanceof ShowPackageError) throw error;
+        if (error.code === 'ENOENT' && !existingPackageStats) {
+          // No exact semantic package exists yet; render it below.
+        } else if (error instanceof ShowPackageError && existingPackageStats) {
+          await this._quarantineCorruptPackage(
+            packagePath,
+            packageId,
+            existingPackageStats
+          );
+        } else {
           throw error;
         }
       }
@@ -544,7 +881,9 @@ class ShowPackagePublisher {
       await ensureConfinedDirectory(this.rootPath, stagingPath);
       let published = false;
       try {
-        this.fontConfigCachePath = await ensureConfinedDirectory(this.rootPath, this.fontConfigCachePath);
+        // Recheck immediately before native rendering to narrow the window in
+        // which a same-user process could replace managed cache state.
+        await this._ensurePrivateFontConfigCache();
         const artifacts = [];
         const channels = [];
         const referencedAssetIds = new Set();
@@ -663,14 +1002,15 @@ class ShowPackagePublisher {
               assetId
             );
             const asset = resolved.asset;
-            if (asset.id !== assetId || asset.kind !== 'image') {
-              fail('SHOW_PACKAGE_INVALID', 'A native scene refers to an invalid project picture.');
+            if (asset.id !== assetId || !['image', 'video'].includes(asset.kind)) {
+              fail('SHOW_PACKAGE_INVALID', 'A native scene refers to invalid project media.');
             }
             const relativePath = `assets/${asset.storedName}`;
             const targetPath = path.join(stagingPath, relativePath);
-            const { buffer } = await readFileNoFollow(resolved.assetPath, MAX_IMAGE_BYTES);
+            const maximumBytes = asset.kind === 'video' ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+            const { buffer } = await readFileNoFollow(resolved.assetPath, maximumBytes);
             await atomicWriteFile(targetPath, buffer, {
-              maximumBytes: MAX_IMAGE_BYTES,
+              maximumBytes,
               mode: 0o600,
               rootPath: stagingPath
             });
@@ -680,13 +1020,14 @@ class ShowPackagePublisher {
               mediaType: asset.mediaType,
               sha256: asset.sha256,
               size: asset.size,
-              width: asset.width,
-              height: asset.height
+              ...(asset.kind === 'image'
+                ? { width: asset.width, height: asset.height }
+                : {})
             });
             artifacts.push({
               path: relativePath,
               size: asset.size,
-              sha256: await hashFileNoFollow(targetPath, MAX_IMAGE_BYTES)
+              sha256: await hashFileNoFollow(targetPath, maximumBytes)
             });
           }
         }
@@ -703,6 +1044,18 @@ class ShowPackagePublisher {
           size: timelineStats.size,
           sha256: await hashFileNoFollow(timelinePath, MAX_MANIFEST_BYTES)
         });
+        const handoffPath = path.join(stagingPath, 'handoff.json');
+        await atomicWriteFile(handoffPath, serializeServiceHandoff(serviceHandoff), {
+          maximumBytes: MAX_MANIFEST_BYTES,
+          mode: 0o600,
+          rootPath: stagingPath
+        });
+        const handoffStats = await fs.stat(handoffPath);
+        artifacts.push({
+          path: 'handoff.json',
+          size: handoffStats.size,
+          sha256: await hashFileNoFollow(handoffPath, MAX_MANIFEST_BYTES)
+        });
         artifacts.sort((a, b) => a.path.localeCompare(b.path));
         const manifest = {
           schemaVersion: SHOW_PACKAGE_SCHEMA_VERSION,
@@ -713,6 +1066,8 @@ class ShowPackagePublisher {
           projectRevision: projectRead.project.revision,
           projectContentHash: timeline.projectContentHash,
           timelineSha256: identity.timelineSha256,
+          handoffPath: 'handoff.json',
+          handoffSha256: identity.handoffSha256,
           compilerVersion: timeline.compilerVersion,
           rendererVersion: NATIVE_RENDERER_VERSION,
           createdAt: this.clock().toISOString(),

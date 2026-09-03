@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "review": {
+    "scope": "public-link",
+    "basis": "direct-permission",
+    "evidence": "Written permission for anonymous web display.",
+    "validUntil": "2026-08-31",
+    "validThrough": "2026-09-01T06:59:59.999Z",
+    "reviewedAt": "2026-07-28T19:00:00.000Z",
+    "familyRevision": "31a348ab72148920ed96e74408d63edcb1d45c523f130cc603a670261b11e650"
+  },
+  "reviewRevision": "50621b8ffc88d2fae202a2d610508ee95f49b5634df6aa397acba39d701f37e0"
+}

@@ -9,14 +9,37 @@ const {
   readFileNoFollow
 } = require('../project/StorageSafety');
 
-const CONNECTION_SCHEMA_VERSION = 1;
+const LEGACY_CONNECTION_SCHEMA_VERSION = 1;
+const RESOURCE_SCOPE_CONNECTION_SCHEMA_VERSION = 2;
+const EFFECTIVE_SCOPE_CONNECTION_SCHEMA_VERSION = 3;
+const PRE_SERVICE_DOCUMENT_CONNECTION_SCHEMA_VERSION = 4;
+const CONNECTION_SCHEMA_VERSION = 5;
 const MAX_STORE_BYTES = 2 * 1024 * 1024;
 const MAX_CONNECTIONS = 64;
+const DEFAULT_SECURE_STORAGE_TIMEOUT_MS = 3000;
 const CONNECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,99}$/;
 const SERVER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
 const EMAIL_PATTERN = /^[^\s@]{1,128}@[^\s@]{1,190}$/;
-const KNOWN_SCOPES = new Set(['syncshow:songs:read', 'syncshow:songs:write']);
+const SONG_SCOPES = new Set(['syncshow:songs:read', 'syncshow:songs:write']);
+const PRE_PUBLIC_LINK_SCOPES = new Set([
+  ...SONG_SCOPES,
+  'syncshow:sermons:read',
+  'syncshow:sermons:write',
+  'syncshow:sermon-sources:read',
+  'syncshow:sermon-sources:write'
+]);
+const KNOWN_SCOPES = new Set([
+  ...PRE_PUBLIC_LINK_SCOPES,
+  'syncshow:song-public-links:read',
+  'syncshow:song-public-links:write',
+  'syncshow:sermon-publications:read',
+  'syncshow:sermon-media:read',
+  'syncshow:sermon-media:write',
+  'syncshow:service-plans:read',
+  'syncshow:service-documents:read',
+  'syncshow:service-documents:write'
+]);
 
 class CommunityConnectionStoreError extends Error {
   constructor(code, message, { cause = null } = {}) {
@@ -98,16 +121,92 @@ function normalizeServerUrl(value, label, { api = false } = {}) {
   return url.toString();
 }
 
-function normalizeScopes(value) {
-  if (!Array.isArray(value) || value.length < 1 || value.length > KNOWN_SCOPES.size) {
+function normalizeScopes(value, {
+  legacySongsOnly = false,
+  allowEmpty = false,
+  allowPublicLinks = true,
+  allowServiceDocuments = true
+} = {}) {
+  const baselineScopes = legacySongsOnly
+    ? SONG_SCOPES
+    : allowPublicLinks
+      ? KNOWN_SCOPES
+      : PRE_PUBLIC_LINK_SCOPES;
+  const allowedScopes = allowServiceDocuments
+    ? baselineScopes
+    : new Set([...baselineScopes].filter(scope =>
+        !scope.startsWith('syncshow:service-documents:')));
+  if (!Array.isArray(value)
+    || (!allowEmpty && value.length < 1)
+    || value.length > allowedScopes.size) {
     fail('INVALID_CONNECTION', 'Community access scopes are invalid.');
   }
   const scopes = [...new Set(value)];
-  if (scopes.some(scope => !KNOWN_SCOPES.has(scope))) {
+  if (scopes.some(scope => typeof scope !== 'string' || !allowedScopes.has(scope))) {
     fail('INVALID_CONNECTION', 'Community access scopes are invalid.');
   }
   if (scopes.includes('syncshow:songs:write') && !scopes.includes('syncshow:songs:read')) {
     fail('INVALID_CONNECTION', 'Song write access also requires song read access.');
+  }
+  if (scopes.includes('syncshow:sermons:write')
+    && !scopes.includes('syncshow:sermons:read')) {
+    fail('INVALID_CONNECTION', 'Sermon write access also requires sermon read access.');
+  }
+  if (scopes.includes('syncshow:sermon-sources:read')
+    && !scopes.includes('syncshow:sermons:read')) {
+    fail('INVALID_CONNECTION', 'Sermon source access also requires sermon read access.');
+  }
+  if (scopes.includes('syncshow:sermon-sources:write')
+    && (!scopes.includes('syncshow:sermon-sources:read')
+      || !scopes.includes('syncshow:sermons:write'))) {
+    fail(
+      'INVALID_CONNECTION',
+      'Sermon source write access requires source read and sermon write access.'
+    );
+  }
+  if (scopes.includes('syncshow:sermon-publications:read')
+    && !scopes.includes('syncshow:sermons:read')) {
+    fail(
+      'INVALID_CONNECTION',
+      'Sermon publication read access also requires sermon read access.'
+    );
+  }
+  if (scopes.includes('syncshow:sermon-media:read')
+    && !scopes.includes('syncshow:sermons:read')) {
+    fail(
+      'INVALID_CONNECTION',
+      'Sermon media read access also requires sermon read access.'
+    );
+  }
+  if (scopes.includes('syncshow:sermon-media:write')
+    && (!scopes.includes('syncshow:sermon-media:read')
+      || !scopes.includes('syncshow:sermons:read'))) {
+    fail(
+      'INVALID_CONNECTION',
+      'Sermon media write access requires media read and sermon read access.'
+    );
+  }
+  if (scopes.includes('syncshow:song-public-links:read')
+    && !scopes.includes('syncshow:songs:read')) {
+    fail(
+      'INVALID_CONNECTION',
+      'Song public-link read access also requires song read access.'
+    );
+  }
+  if (scopes.includes('syncshow:song-public-links:write')
+    && (!scopes.includes('syncshow:song-public-links:read')
+      || !scopes.includes('syncshow:songs:read'))) {
+    fail(
+      'INVALID_CONNECTION',
+      'Song public-link write access requires public-link read and song read access.'
+    );
+  }
+  if (scopes.includes('syncshow:service-documents:write')
+    && !scopes.includes('syncshow:service-documents:read')) {
+    fail(
+      'INVALID_CONNECTION',
+      'Service-document write access also requires service-document read access.'
+    );
   }
   return scopes.sort();
 }
@@ -144,7 +243,9 @@ function normalizeSecret(value) {
   return { format: 'electron-safe-storage-v1', ciphertext };
 }
 
-function normalizeRecord(value) {
+function normalizeRecord(value, {
+  schemaVersion = CONNECTION_SCHEMA_VERSION
+} = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     fail('CORRUPT_STORE', 'Saved community connection is invalid.');
   }
@@ -153,6 +254,25 @@ function normalizeRecord(value) {
   if (new URL(baseUrl).origin !== new URL(apiBaseUrl).origin) {
     fail('CORRUPT_STORE', 'Saved community API origin does not match its server.');
   }
+  const scopes = normalizeScopes(value.scopes, {
+    legacySongsOnly: schemaVersion === LEGACY_CONNECTION_SCHEMA_VERSION,
+    allowPublicLinks:
+      schemaVersion >= PRE_SERVICE_DOCUMENT_CONNECTION_SCHEMA_VERSION,
+    allowServiceDocuments: schemaVersion >= CONNECTION_SCHEMA_VERSION
+  });
+  // Schema v1 and v2 predate a separately persisted capability advertisement.
+  // Their exact grant is the only safe baseline until main refreshes discovery.
+  const advertisedScopes = schemaVersion < PRE_SERVICE_DOCUMENT_CONNECTION_SCHEMA_VERSION
+    ? (schemaVersion < EFFECTIVE_SCOPE_CONNECTION_SCHEMA_VERSION
+      ? [...scopes]
+      : normalizeScopes(value.advertisedScopes, {
+        allowEmpty: true,
+        allowPublicLinks: false
+      }))
+    : normalizeScopes(value.advertisedScopes, {
+        allowEmpty: true,
+        allowServiceDocuments: schemaVersion >= CONNECTION_SCHEMA_VERSION
+      });
   return {
     id: boundedText(value.id, 'Connection ID', 100, {
       required: true,
@@ -168,7 +288,8 @@ function normalizeRecord(value) {
     baseUrl,
     apiBaseUrl,
     account: normalizeAccount(value.account),
-    scopes: normalizeScopes(value.scopes),
+    scopes,
+    advertisedScopes,
     expiresAt: normalizeTimestamp(value.expiresAt, 'Access expiration time', { required: true }),
     createdAt: normalizeTimestamp(value.createdAt, 'Connection creation time', { required: true }),
     updatedAt: normalizeTimestamp(value.updatedAt, 'Connection update time', { required: true }),
@@ -177,15 +298,39 @@ function normalizeRecord(value) {
 }
 
 function sanitize(record) {
+  const advertisedScopes = new Set(record.advertisedScopes);
+  const effectiveScopes = record.scopes.filter(scope => advertisedScopes.has(scope));
   return Object.freeze({
     id: record.id,
     serverId: record.serverId,
     serverName: record.serverName,
     baseUrl: record.baseUrl,
+    apiBaseUrl: record.apiBaseUrl,
     account: Object.freeze({ ...record.account }),
     scopes: Object.freeze([...record.scopes]),
-    canReadSongs: record.scopes.includes('syncshow:songs:read'),
-    canWriteSongs: record.scopes.includes('syncshow:songs:write'),
+    advertisedScopes: Object.freeze([...record.advertisedScopes]),
+    effectiveScopes: Object.freeze(effectiveScopes),
+    canReadSongs: effectiveScopes.includes('syncshow:songs:read'),
+    canWriteSongs: effectiveScopes.includes('syncshow:songs:write'),
+    canReadSongPublicLinks:
+      effectiveScopes.includes('syncshow:song-public-links:read'),
+    canWriteSongPublicLinks:
+      effectiveScopes.includes('syncshow:song-public-links:write'),
+    canReadSermons: effectiveScopes.includes('syncshow:sermons:read'),
+    canWriteSermons: effectiveScopes.includes('syncshow:sermons:write'),
+    canReadSermonPublications:
+      effectiveScopes.includes('syncshow:sermon-publications:read'),
+    canReadSermonMedia:
+      effectiveScopes.includes('syncshow:sermon-media:read'),
+    canWriteSermonMedia:
+      effectiveScopes.includes('syncshow:sermon-media:write'),
+    canReadSermonSources: effectiveScopes.includes('syncshow:sermon-sources:read'),
+    canWriteSermonSources: effectiveScopes.includes('syncshow:sermon-sources:write'),
+    canReadServicePlans: effectiveScopes.includes('syncshow:service-plans:read'),
+    canReadServiceDocuments:
+      effectiveScopes.includes('syncshow:service-documents:read'),
+    canWriteServiceDocuments:
+      effectiveScopes.includes('syncshow:service-documents:write'),
     expiresAt: record.expiresAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt
@@ -218,7 +363,10 @@ class CommunityConnectionStore {
     platform = process.platform,
     now = () => new Date(),
     randomUUID = crypto.randomUUID,
-    maximumConnections = MAX_CONNECTIONS
+    maximumConnections = MAX_CONNECTIONS,
+    secureStorageTimeoutMs = DEFAULT_SECURE_STORAGE_TIMEOUT_MS,
+    setTimeoutImpl = setTimeout,
+    clearTimeoutImpl = clearTimeout
   } = {}) {
     if (typeof storageRoot !== 'string' || !path.isAbsolute(storageRoot)) {
       throw new TypeError('Community connection storage root must be absolute');
@@ -241,13 +389,21 @@ class CommunityConnectionStore {
     if (!['darwin', 'linux', 'win32'].includes(platform)) {
       throw new TypeError('Community connection store platform is invalid');
     }
-    if (typeof now !== 'function' || typeof randomUUID !== 'function') {
+    if (typeof now !== 'function'
+      || typeof randomUUID !== 'function'
+      || typeof setTimeoutImpl !== 'function'
+      || typeof clearTimeoutImpl !== 'function') {
       throw new TypeError('Community connection store dependencies are invalid');
     }
     if (!Number.isSafeInteger(maximumConnections)
       || maximumConnections < 1
       || maximumConnections > MAX_CONNECTIONS) {
       throw new TypeError(`Community connection limit must be between 1 and ${MAX_CONNECTIONS}`);
+    }
+    if (!Number.isSafeInteger(secureStorageTimeoutMs)
+      || secureStorageTimeoutMs < 100
+      || secureStorageTimeoutMs > 30000) {
+      throw new TypeError('Community secure-storage timeout must be between 100ms and 30 seconds');
     }
     this.storageRoot = path.resolve(storageRoot);
     this.storePath = path.join(this.storageRoot, 'connections.json');
@@ -258,6 +414,9 @@ class CommunityConnectionStore {
     this.now = now;
     this.randomUUID = randomUUID;
     this.maximumConnections = maximumConnections;
+    this.secureStorageTimeoutMs = secureStorageTimeoutMs;
+    this.setTimeout = setTimeoutImpl;
+    this.clearTimeout = clearTimeoutImpl;
     this.writeQueue = Promise.resolve();
   }
 
@@ -275,6 +434,25 @@ class CommunityConnectionStore {
     return 'Secure credential storage is unavailable. Unlock the system credential store, then reopen SyncShow.';
   }
 
+  async _boundedAsyncStorageOperation(operation) {
+    let timer = null;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(operation),
+        new Promise((_, reject) => {
+          timer = this.setTimeout(() => {
+            const error = new Error('Secure credential storage timed out.');
+            error.code = 'SECURE_STORAGE_TIMEOUT';
+            reject(error);
+          }, this.secureStorageTimeoutMs);
+          timer?.unref?.();
+        })
+      ]);
+    } finally {
+      if (timer !== null) this.clearTimeout(timer);
+    }
+  }
+
   async _storageMode() {
     if (this.platform === 'linux'
       && typeof this.safeStorage.getSelectedStorageBackend === 'function'
@@ -286,9 +464,19 @@ class CommunityConnectionStore {
     }
     if (this.asynchronous) {
       try {
-        if (await this.safeStorage.isAsyncEncryptionAvailable()) return 'async';
+        if (await this._boundedAsyncStorageOperation(
+          () => this.safeStorage.isAsyncEncryptionAvailable()
+        )) {
+          return 'async';
+        }
       } catch (_error) {
-        // A complete synchronous secure provider may still be available.
+        // Non-macOS may still use its complete synchronous secure provider.
+      }
+      // Electron 43's macOS synchronous and asynchronous providers can both
+      // block in Keychain. Once the bounded async contract exists, fail closed
+      // instead of moving the hang onto the main thread through the sync API.
+      if (this.platform === 'darwin') {
+        fail('SECURE_STORAGE_UNAVAILABLE', this._unavailableMessage());
       }
     }
     if (this.synchronous) {
@@ -308,7 +496,9 @@ class CommunityConnectionStore {
     try {
       const plaintext = JSON.stringify(normalized);
       encrypted = selectedMode === 'async'
-        ? await this.safeStorage.encryptStringAsync(plaintext)
+        ? await this._boundedAsyncStorageOperation(
+          () => this.safeStorage.encryptStringAsync(plaintext)
+        )
         : this.safeStorage.encryptString(plaintext);
     } catch (error) {
       fail('ENCRYPTION_FAILED', 'Community credentials could not be encrypted.', error?.code || error?.name);
@@ -327,7 +517,9 @@ class CommunityConnectionStore {
     try {
       const ciphertext = Buffer.from(secret.ciphertext, 'base64');
       const decrypted = selectedMode === 'async'
-        ? await this.safeStorage.decryptStringAsync(ciphertext)
+        ? await this._boundedAsyncStorageOperation(
+          () => this.safeStorage.decryptStringAsync(ciphertext)
+        )
         : this.safeStorage.decryptString(ciphertext);
       const plaintext = selectedMode === 'async' ? decrypted?.result : decrypted;
       return normalizeTokenBundle(JSON.parse(plaintext));
@@ -372,12 +564,20 @@ class CommunityConnectionStore {
       fail('CORRUPT_STORE', 'Saved community connections are corrupt.');
     }
     if (!payload
-      || payload.schemaVersion !== CONNECTION_SCHEMA_VERSION
+      || ![
+        LEGACY_CONNECTION_SCHEMA_VERSION,
+        RESOURCE_SCOPE_CONNECTION_SCHEMA_VERSION,
+        EFFECTIVE_SCOPE_CONNECTION_SCHEMA_VERSION,
+        PRE_SERVICE_DOCUMENT_CONNECTION_SCHEMA_VERSION,
+        CONNECTION_SCHEMA_VERSION
+      ].includes(payload.schemaVersion)
       || !Array.isArray(payload.connections)
       || payload.connections.length > this.maximumConnections) {
       fail('CORRUPT_STORE', 'Saved community connections are corrupt.');
     }
-    const records = payload.connections.map(normalizeRecord);
+    const records = payload.connections.map(record => normalizeRecord(record, {
+      schemaVersion: payload.schemaVersion
+    }));
     if (new Set(records.map(record => record.id)).size !== records.length) {
       fail('CORRUPT_STORE', 'Saved community connection IDs conflict.');
     }
@@ -441,6 +641,9 @@ class CommunityConnectionStore {
         apiBaseUrl,
         account: input.account,
         scopes: input.scopes,
+        advertisedScopes: input.advertisedScopes === undefined
+          ? input.scopes
+          : input.advertisedScopes,
         expiresAt: input.expiresAt,
         createdAt: previous?.createdAt || now,
         updatedAt: now,
@@ -473,6 +676,34 @@ class CommunityConnectionStore {
       apiBaseUrl: record.apiBaseUrl,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken
+    });
+  }
+
+  updateAdvertisedScopes(connectionId, input = {}) {
+    const id = this._connectionId(connectionId);
+    return this._serialize(async () => {
+      const records = await this._readRecords();
+      const index = records.findIndex(record => record.id === id);
+      if (index < 0) fail('CONNECTION_NOT_FOUND', 'Community connection was not found.');
+      const record = records[index];
+      if (input.expectedUpdatedAt && normalizeTimestamp(
+        input.expectedUpdatedAt,
+        'Expected update time',
+        { required: true }
+      ) !== record.updatedAt) {
+        fail('CONNECTION_CONFLICT', 'Community capabilities changed since they were opened.');
+      }
+      const advertisedScopes = normalizeScopes(input.advertisedScopes, {
+        allowEmpty: true
+      });
+      if (JSON.stringify(advertisedScopes) === JSON.stringify(record.advertisedScopes)) {
+        return sanitize(record);
+      }
+      record.advertisedScopes = advertisedScopes;
+      record.updatedAt = this._timestamp();
+      records[index] = normalizeRecord(record);
+      await this._writeRecords(records);
+      return sanitize(records[index]);
     });
   }
 
@@ -523,6 +754,10 @@ module.exports = {
   CommunityConnectionStore,
   CommunityConnectionStoreError,
   CONNECTION_SCHEMA_VERSION,
+  EFFECTIVE_SCOPE_CONNECTION_SCHEMA_VERSION,
+  LEGACY_CONNECTION_SCHEMA_VERSION,
+  PRE_SERVICE_DOCUMENT_CONNECTION_SCHEMA_VERSION,
+  RESOURCE_SCOPE_CONNECTION_SCHEMA_VERSION,
   KNOWN_SCOPES,
   normalizeServerUrl
 };

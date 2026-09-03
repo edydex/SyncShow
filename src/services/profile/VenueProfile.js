@@ -1,6 +1,6 @@
 'use strict';
 
-const CURRENT_PROFILE_SCHEMA_VERSION = 1;
+const CURRENT_PROFILE_SCHEMA_VERSION = 2;
 
 const INPUT_KINDS = Object.freeze(['deck', 'native-cue']);
 const INPUT_REQUIREMENTS = Object.freeze([
@@ -28,6 +28,10 @@ const STALENESS_POLICIES = Object.freeze([
   'warn',
   'block',
   'ignore'
+]);
+const SHOW_CONTROL_MODES = Object.freeze([
+  'full',
+  'volunteer'
 ]);
 
 // These are the same limits enforced by ServiceSetResolver at scan time. Keep
@@ -483,11 +487,23 @@ function defaultInputRoles() {
     },
     {
       id: 'media',
-      label: 'Singers Screen (Media)',
+      label: 'Stage-Facing Screen (Media)',
       kind: 'deck',
       filenameMatchers: ['media', 'singer', 'stage']
     }
   ];
+}
+
+function upgradeKnownDefaultLabels(inputRoles, outputs) {
+  const upgradedRoles = inputRoles.map(role =>
+    role.id === 'media' && role.label === 'Singers Screen (Media)'
+      ? { ...role, label: 'Stage-Facing Screen (Media)' }
+      : role);
+  const upgradedOutputs = outputs.map(output =>
+    output.id === 'singer' && output.name === 'Singers Screen'
+      ? { ...output, name: 'Stage-Facing Screen' }
+      : output);
+  return { inputRoles: upgradedRoles, outputs: upgradedOutputs };
 }
 
 function upgradeKnownDefaultMatchers(inputRoles) {
@@ -603,7 +619,7 @@ function defaultOutputs(settings, singerSourceRoleId) {
     },
     {
       id: 'singer',
-      name: outputNames.singer || 'Singers Screen',
+      name: outputNames.singer || 'Stage-Facing Screen',
       enabled: getLegacyOutputEnabled(settings, 'singer'),
       kind: 'singer',
       expectedRoleId: 'media',
@@ -679,6 +695,12 @@ function normalizePreferences(rawProfile, inputRoleIds) {
       )
     },
     operator: {
+      showControlMode: enumOr(
+        firstDefined(operator.showControlMode, rawProfile.showControlMode),
+        'full',
+        SHOW_CONTROL_MODES,
+        'operator.showControlMode'
+      ),
       advancedWarningAcknowledged: booleanOr(
         firstDefined(operator.advancedWarningAcknowledged, rawProfile.advancedWarningAcknowledged),
         false,
@@ -716,7 +738,7 @@ function assertKnownSchemaVersion(value) {
 }
 
 /**
- * Normalize an unversioned/v1 profile into the canonical mutable v1 shape.
+ * Normalize an unversioned/v1/v2 profile into the canonical mutable v2 shape.
  * Explicit array order is preserved; labels may change without changing IDs.
  */
 function normalizeVenueProfile(rawProfile, options = {}) {
@@ -734,13 +756,14 @@ function normalizeVenueProfile(rawProfile, options = {}) {
   const rawInputRoles = rawProfile.inputRoles === undefined
     ? defaultInputRoles()
     : rawProfile.inputRoles;
-  const inputRoles = upgradeKnownDefaultMatchers(normalizeInputRoles(rawInputRoles));
+  let inputRoles = upgradeKnownDefaultMatchers(normalizeInputRoles(rawInputRoles));
   const inputRoleIds = new Set(inputRoles.map(role => role.id));
   const preferences = normalizePreferences(rawProfile, inputRoleIds);
   const rawOutputs = rawProfile.outputs === undefined
     ? defaultOutputs(rawProfile, preferences.singer.fallbackSourceRoleId)
     : rawProfile.outputs;
-  const outputs = normalizeOutputs(rawOutputs, inputRoles, rawProfile.previewOutputIds);
+  let outputs = normalizeOutputs(rawOutputs, inputRoles, rawProfile.previewOutputIds);
+  ({ inputRoles, outputs } = upgradeKnownDefaultLabels(inputRoles, outputs));
   const localServiceFolder = optionalString(rawProfile.localServiceFolder, 'localServiceFolder');
   const rawDriveConnectionId = optionalString(rawProfile.driveConnectionId, 'driveConnectionId');
   const driveConnectionId = rawDriveConnectionId === null
@@ -1019,6 +1042,12 @@ function validateVenueProfile(profile) {
   if (!isRecord(profile.transition) || !isRecord(profile.singer) || !isRecord(profile.operator)) {
     fail('INVALID_PROFILE_PREFERENCES', 'Profile preference groups are missing.');
   }
+  if (!SHOW_CONTROL_MODES.includes(profile.operator.showControlMode)) {
+    fail(
+      'INVALID_SHOW_CONTROL_MODE',
+      'operator.showControlMode must be full or volunteer.'
+    );
+  }
   if (profile.singer.fallbackSourceRoleId !== null && !roleIds.has(profile.singer.fallbackSourceRoleId)) {
     fail('UNKNOWN_SINGER_SOURCE_ROLE', 'Singer fallback source role does not exist.', {
       roleId: profile.singer.fallbackSourceRoleId
@@ -1034,7 +1063,7 @@ function validateVenueProfile(profile) {
   return true;
 }
 
-/** Convert the settings.json contract used through v1.4 preview into Profile v1. */
+/** Convert the settings.json contract used through v1.4 preview into Profile v2. */
 function migrateLegacySettingsToVenueProfile(settings = {}, options = {}) {
   if (!isRecord(settings)) {
     fail('INVALID_LEGACY_SETTINGS', 'Legacy settings must be an object.');
@@ -1078,6 +1107,7 @@ function migrateLegacySettingsToVenueProfile(settings = {}, options = {}) {
       textPaddingPx: settings.singerTextPadding
     },
     operator: {
+      showControlMode: 'full',
       advancedWarningAcknowledged: settings.advancedWarningAcknowledged,
       thumbnailZoomPercent: settings.thumbnailZoom,
       previewOpenOutputIds
@@ -1086,7 +1116,7 @@ function migrateLegacySettingsToVenueProfile(settings = {}, options = {}) {
 }
 
 /**
- * Migrate legacy settings, an unversioned profile, or a persisted profile to v1.
+ * Migrate legacy settings, an unversioned profile, or a persisted profile to v2.
  * Future schema versions are rejected instead of being silently downgraded.
  */
 function migrateVenueProfile(value = {}, options = {}) {
@@ -1136,6 +1166,7 @@ module.exports = {
   OUTPUT_MODES,
   OUTPUT_RENDERERS,
   SERVICE_DATE_ORDERS,
+  SHOW_CONTROL_MODES,
   STALENESS_POLICIES,
   VenueProfileError,
   createStableId,

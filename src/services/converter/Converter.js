@@ -3,7 +3,7 @@
  *
  * Coordinates the full conversion pipeline:
  * 1. PPTX -> PDF (via PowerPoint or LibreOffice)
- * 2. PDF -> JPEG (via MuPDF + sharp)
+ * 2. PDF -> JPEG (via the shared PDF.js engine + sharp)
  * 3. Thumbnail generation (via sharp)
  * 4. Text extraction (via pptxtojson)
  * 5. Metadata generation
@@ -20,12 +20,18 @@ const LibreOfficeStrategy = require('./strategies/LibreOfficeStrategy');
 const PdfToImageConverter = require('./PdfToImageConverter');
 const ThumbnailGenerator = require('./ThumbnailGenerator');
 const TextExtractor = require('./TextExtractor');
+const { normalizePdfRendererProvenance } = require('../pdf/PdfEngine');
 const { normalizeCacheRestoreContext } = require('../show/CacheRestoreResolver');
+const {
+  readFileNoFollow,
+  statIdentityMatches
+} = require('../project/StorageSafety');
 
 // Converter instances are short-lived, but multiple instances can still target
 // the same language cache. Serialize only the final directory swap; the costly
 // rendering work can continue in parallel in isolated staging directories.
 const publicationQueues = new Map();
+const MAX_CONVERSION_METADATA_BYTES = 32 * 1024 * 1024;
 
 async function withPublicationLock(outputDir, operation) {
   const key = path.resolve(outputDir);
@@ -117,6 +123,7 @@ class Converter extends EventEmitter {
           'PPTX to PDF conversion failed with both PowerPoint and LibreOffice. ' +
           `PowerPoint: ${powerPointError.message} LibreOffice: ${libreOfficeError.message}`
         );
+        error.code = 'PRESENTATION_CONVERSION_FALLBACK_FAILED';
         error.cause = libreOfficeError;
         error.powerPointError = powerPointError;
         throw error;
@@ -164,13 +171,30 @@ class Converter extends EventEmitter {
    * and numbered contiguously, and metadata must agree with the artifacts.
    */
   async _validateGeneration(generationDir, expectedSlideCount = null) {
-    const metadataPath = path.join(generationDir, 'metadata.json');
+    const generationPath = path.resolve(generationDir);
+    const metadataPath = path.join(generationPath, 'metadata.json');
+    let generationBefore;
+    let realGenerationPath;
     let metadata;
 
     try {
-      metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
+      generationBefore = await fs.lstat(generationPath);
+      realGenerationPath = await fs.realpath(generationPath);
+      if (!generationBefore.isDirectory()
+        || generationBefore.isSymbolicLink()) {
+        throw new Error('The conversion generation is not a safe directory.');
+      }
+      const metadataRead = await readFileNoFollow(
+        metadataPath,
+        MAX_CONVERSION_METADATA_BYTES
+      );
+      if (path.dirname(metadataRead.realPath) !== realGenerationPath
+        || path.basename(metadataRead.realPath) !== 'metadata.json') {
+        throw new Error('Conversion metadata escaped its generation.');
+      }
+      metadata = JSON.parse(metadataRead.buffer.toString('utf8'));
     } catch (error) {
-      throw new Error(`Invalid conversion metadata in ${generationDir}: ${error.message}`);
+      throw new Error(`Invalid conversion metadata in ${generationPath}: ${error.message}`);
     }
 
     const slideCount = expectedSlideCount === null
@@ -196,9 +220,18 @@ class Converter extends EventEmitter {
 
     // Provenance is optional for caches created by older SyncShow versions,
     // but once present it is part of the validated generation contract.
+    if (Object.prototype.hasOwnProperty.call(metadata, 'pdfRenderer')) {
+      try {
+        normalizePdfRendererProvenance(metadata.pdfRenderer);
+      } catch (error) {
+        throw new Error(
+          `Invalid PDF renderer provenance in ${generationDir}: ${error.message}`
+        );
+      }
+    }
     normalizeCacheRestoreContext(metadata.restoreContext);
 
-    const files = await fs.readdir(generationDir);
+    const files = await fs.readdir(generationPath);
     const actualSlides = files
       .filter(file => /^slide_\d+\.jpg$/.test(file))
       .sort();
@@ -245,12 +278,23 @@ class Converter extends EventEmitter {
 
     await Promise.all(
       [...expectedSlides, ...expectedThumbnails].map(async file => {
-        const stats = await fs.stat(path.join(generationDir, file));
-        if (!stats.isFile() || stats.size < 1) {
+        const stats = await fs.lstat(path.join(generationPath, file));
+        if (!stats.isFile() || stats.isSymbolicLink() || stats.size < 1) {
           throw new Error(`Conversion artifact is empty or not a file: ${file}`);
         }
       })
     );
+
+    const generationAfter = await fs.lstat(generationPath);
+    const realGenerationAfter = await fs.realpath(generationPath);
+    if (!generationAfter.isDirectory()
+      || generationAfter.isSymbolicLink()
+      || !statIdentityMatches(generationBefore, generationAfter)
+      || realGenerationAfter !== realGenerationPath) {
+      throw new Error(
+        `Conversion generation changed during validation: ${generationPath}`
+      );
+    }
 
     return metadata;
   }
@@ -404,6 +448,7 @@ class Converter extends EventEmitter {
     const stagingDir = await fs.mkdtemp(`${activeDir}.staging-`);
     let pdfResult = null;
     let slideCount;
+    let pdfRenderer;
     let metadata;
 
     try {
@@ -423,7 +468,11 @@ class Converter extends EventEmitter {
         const mappedPercent = 20 + (progress.percent * 0.5);
         this.emit('progress', { percent: mappedPercent, stage: 'rendering-slides' });
       });
-      ({ slideCount } = await pdfConverter.convert(pdfResult.pdfPath, stagingDir));
+      ({ slideCount, pdfRenderer } = await pdfConverter.convert(
+        pdfResult.pdfPath,
+        stagingDir
+      ));
+      pdfRenderer = normalizePdfRendererProvenance(pdfRenderer);
 
       // The PDF is not part of a cache generation. Remove it before validation
       // and publication, including LibreOffice's temporary output directory.
@@ -449,6 +498,7 @@ class Converter extends EventEmitter {
         slideCount,
         generatedAt: new Date().toISOString(),
         convertedAt: new Date().toISOString(),
+        pdfRenderer,
         restoreContext: normalizedRestoreContext,
         slides
       };

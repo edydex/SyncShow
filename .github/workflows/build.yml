@@ -96,9 +96,17 @@ jobs:
 
       - name: Build Windows installer
         run: npm run build:win
+        env:
+          SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG: '1'
+
+      - name: Verify packaged PDF engine
+        run: npm run build:verify-pdf-engine
 
       - name: Verify Google Drive release configuration was packaged
         run: node scripts/google-drive-build-config.js verify
+
+      - name: Enforce public-release legal materials
+        run: npm run build:verify-release-legal
 
       - name: Remove Google Drive release configuration
         if: always()
@@ -152,23 +160,34 @@ jobs:
 
       - name: Build macOS installer
         run: npm run build:mac:adhoc -- --${{ matrix.arch }}
+        env:
+          SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG: '1'
+
+      - name: Verify packaged PDF engine
+        run: npm run build:verify-pdf-engine
 
       - name: Verify Google Drive release configuration was packaged
         run: node scripts/google-drive-build-config.js verify
-
-      - name: Remove Google Drive release configuration
-        if: always()
-        run: node scripts/google-drive-build-config.js clean
 
       - name: Verify native architecture
         shell: bash
         run: |
           APP_EXECUTABLE="$(find dist -path '*/SyncShow.app/Contents/MacOS/SyncShow' -type f | head -n 1)"
           SHARP_ADDON="$(find dist -path '*sharp-darwin-${{ matrix.arch }}*.node' -type f | head -n 1)"
+          CANVAS_ADDON="$(find dist -path '*canvas-darwin-${{ matrix.arch }}*.node' -type f | head -n 1)"
           test -n "$APP_EXECUTABLE"
           test -n "$SHARP_ADDON"
+          test -n "$CANVAS_ADDON"
           file "$APP_EXECUTABLE" | grep -q '${{ matrix.file_arch }}'
           file "$SHARP_ADDON" | grep -q '${{ matrix.file_arch }}'
+          file "$CANVAS_ADDON" | grep -q '${{ matrix.file_arch }}'
+
+      - name: Enforce public-release legal materials
+        run: npm run build:verify-release-legal
+
+      - name: Remove Google Drive release configuration
+        if: always()
+        run: node scripts/google-drive-build-config.js clean
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -209,9 +228,17 @@ jobs:
 
       - name: Build Linux packages
         run: npm run build:linux
+        env:
+          SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG: '1'
+
+      - name: Verify packaged PDF engine
+        run: npm run build:verify-pdf-engine
 
       - name: Verify Google Drive release configuration was packaged
         run: node scripts/google-drive-build-config.js verify
+
+      - name: Enforce public-release legal materials
+        run: npm run build:verify-release-legal
 
       - name: Remove Google Drive release configuration
         if: always()

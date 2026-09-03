@@ -57,13 +57,49 @@
           <div class="prepare-primary-actions">
             <button type="button" id="btnImportServiceProject" class="btn btn-quiet">Import service</button>
             <button type="button" id="btnNewServiceProject" class="btn btn-secondary">New service</button>
+            <button type="button" id="btnPlanNextService" class="btn btn-secondary" disabled>Plan next service…</button>
             <button type="button" id="btnPublishServiceProject" class="btn btn-primary" disabled>Save &amp; go to Load</button>
           </div>
         </div>
 
+        <aside id="prepareCurrentServiceCompanion" class="prepare-current-service-card" hidden aria-labelledby="prepareCurrentServiceCompanionHeading">
+          <div class="prepare-current-service-copy">
+            <p class="section-kicker">CURRENT POWERPOINT SERVICE</p>
+            <h3 id="prepareCurrentServiceCompanionHeading">Service follow-up</h3>
+            <p id="prepareCurrentServiceCompanionMeta" class="prepare-pane-subtitle"></p>
+            <p id="prepareCurrentServiceCompanionFiles" class="prepare-current-service-files"></p>
+            <p id="prepareCurrentServicePlanHandoffHint" class="prepare-current-service-plan-handoff-hint" hidden></p>
+            <p class="prepare-current-service-safety">The original presentations remain untouched and stay the current Show source. A native draft copies the exact rendered slides already on this computer; replace only ranges you review.</p>
+          </div>
+          <div class="prepare-current-service-actions">
+            <button type="button" id="btnUseCommunitySermonWithCurrentService" class="btn btn-primary" hidden disabled>Use this sermon with the current PowerPoint Show</button>
+            <button type="button" id="btnCreateCurrentServiceNativeDraft" class="btn btn-primary">Create native draft…</button>
+            <button type="button" id="btnReviewCurrentServiceSongs" class="btn btn-outline">Review songs from this service…</button>
+            <button type="button" id="btnOpenCurrentServiceCompanion" class="btn btn-secondary">Start sermon handoff</button>
+          </div>
+        </aside>
+
         <p id="prepareNotice" class="prepare-notice" role="status" aria-live="polite">
           Choose a service project to begin.
         </p>
+
+        <aside id="prepareSharedServices" class="prepare-community-plans-card" aria-labelledby="prepareSharedServicesHeading">
+          <div>
+            <p class="section-kicker">HERITAGE COMMUNITY</p>
+            <h3 id="prepareSharedServicesHeading">Shared services</h3>
+            <p id="prepareSharedServicesStatus" class="prepare-pane-subtitle" role="status" aria-live="polite">Checking this computer’s Community access…</p>
+          </div>
+          <button type="button" id="btnBrowseSharedServices" class="btn btn-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog" disabled>Open shared service…</button>
+        </aside>
+
+        <aside id="prepareCommunityPlans" class="prepare-community-plans-card" aria-labelledby="prepareCommunityPlansHeading" hidden>
+          <div>
+            <p class="section-kicker">HERITAGE COMMUNITY</p>
+            <h3 id="prepareCommunityPlansHeading">Shared service plans</h3>
+            <p id="prepareCommunityPlansStatus" class="prepare-pane-subtitle" role="status" aria-live="polite">Checking this computer’s Community access…</p>
+          </div>
+          <button type="button" id="btnBrowseCommunityPlans" class="btn btn-secondary" aria-haspopup="dialog" aria-controls="communityServicePlansDialog" disabled>Browse plans…</button>
+        </aside>
 
         <div class="prepare-workspace">
           <aside class="prepare-column prepare-projects-pane" aria-labelledby="prepareProjectsHeading">
@@ -96,6 +132,108 @@
               </div>
             </div>
 
+            <section id="preparePlanningPanel" class="prepare-planning-panel" aria-labelledby="preparePlanningHeading" hidden>
+              <div class="prepare-planning-summary">
+                <div>
+                  <p class="section-kicker">SERVICE PLAN</p>
+                  <h4 id="preparePlanningHeading">Planning</h4>
+                  <p id="preparePlanningSchedule" class="prepare-pane-subtitle"></p>
+                </div>
+                <span id="preparePlanningBadge" class="prepare-planning-badge">Planning</span>
+              </div>
+              <p id="preparePlanningNotes" class="prepare-planning-notes" hidden></p>
+              <div id="preparePlanningOperationalSummary" class="prepare-planning-operational-summary" hidden>
+                <section id="prepareRunSheetOverview" class="prepare-run-sheet-overview" aria-labelledby="prepareRunSheetHeading">
+                  <div class="prepare-operational-summary-heading">
+                    <div>
+                      <p class="section-kicker">RUN SHEET</p>
+                      <h5 id="prepareRunSheetHeading">Planned service time</h5>
+                    </div>
+                    <span id="prepareRunSheetBadge" class="prepare-operational-summary-badge">Untimed</span>
+                  </div>
+                  <p id="prepareRunSheetSummary" class="prepare-operational-summary-copy" role="status" aria-live="polite">Add service items, then schedule the ones that should contribute to the planned finish time.</p>
+                  <dl class="prepare-run-sheet-facts">
+                    <div>
+                      <dt>Planned time</dt>
+                      <dd id="prepareRunSheetDuration">Not set</dd>
+                    </div>
+                    <div>
+                      <dt>Expected finish</dt>
+                      <dd id="prepareRunSheetFinish">Unknown</dd>
+                    </div>
+                  </dl>
+                </section>
+                <section id="prepareServingTeamOverview" class="prepare-serving-team-overview" aria-labelledby="prepareServingTeamHeading">
+                  <div class="prepare-operational-summary-heading">
+                    <div>
+                      <p class="section-kicker">SERVING TEAM</p>
+                      <h5 id="prepareServingTeamHeading">People and responsibilities</h5>
+                    </div>
+                    <span id="prepareServingTeamBadge" class="prepare-operational-summary-badge">0 assigned</span>
+                  </div>
+                  <p id="prepareServingTeamSummary" class="prepare-operational-summary-copy" role="status" aria-live="polite">No responsible people are assigned to this service yet.</p>
+                  <button type="button" id="btnManageServingTeam" class="btn btn-outline btn-compact" aria-haspopup="dialog" aria-controls="manageServingTeamDialog" disabled>Manage serving team…</button>
+                </section>
+              </div>
+              <aside id="preparePlanningOrigin" class="prepare-planning-origin" aria-labelledby="preparePlanningOriginHeading" hidden>
+                <div class="prepare-planning-origin-heading">
+                  <div>
+                    <p class="section-kicker">COMMUNITY ORIGIN</p>
+                    <h5 id="preparePlanningOriginHeading">Imported service plan</h5>
+                  </div>
+                  <span class="prepare-planning-origin-badge">Offline local copy</span>
+                </div>
+                <p class="prepare-planning-origin-copy">This saved service stays available offline. Opening it does not require a Community connection, and SyncShow does not refresh it in the background.</p>
+                <dl class="prepare-planning-origin-details">
+                  <div>
+                    <dt>Plan identity</dt>
+                    <dd><code id="preparePlanningOriginPlan"></code></dd>
+                  </div>
+                  <div>
+                    <dt>Server identity</dt>
+                    <dd><code id="preparePlanningOriginServer"></code></dd>
+                  </div>
+                  <div>
+                    <dt>Plan revision</dt>
+                    <dd><code id="preparePlanningOriginRevision"></code></dd>
+                  </div>
+                  <div>
+                    <dt>Imported</dt>
+                    <dd><time id="preparePlanningOriginImported"></time></dd>
+                  </div>
+                </dl>
+                <div class="prepare-planning-origin-check">
+                  <button type="button" id="btnCheckCommunityPlanRevision" class="btn btn-outline btn-compact" aria-haspopup="dialog" aria-controls="communityServicePlansDialog" aria-describedby="preparePlanningOriginRevisionStatus" disabled>Check Community revision…</button>
+                  <p id="preparePlanningOriginRevisionStatus" class="prepare-planning-origin-check-status" role="status" aria-live="polite" tabindex="-1">Not checked in this session. The saved local service remains available offline.</p>
+                </div>
+              </aside>
+              <section id="prepareServiceReadiness" class="prepare-service-readiness" aria-labelledby="prepareServiceReadinessHeading">
+                <div class="prepare-service-readiness-heading">
+                  <div>
+                    <p class="section-kicker">WEEKLY CHECK</p>
+                    <h5 id="prepareServiceReadinessHeading">Review before Ready</h5>
+                  </div>
+                  <span id="prepareServiceReadinessBadge" class="prepare-service-readiness-badge">Checking</span>
+                </div>
+                <p id="prepareServiceReadinessSummary" class="prepare-service-readiness-summary" role="status" aria-live="polite">Open this exact service to check its content.</p>
+                <ul id="prepareServiceReadinessChecks" class="prepare-service-readiness-checks" aria-label="Service readiness checks"></ul>
+                <div class="prepare-service-readiness-actions">
+                  <div id="prepareWeeklySetupNext" class="prepare-weekly-setup-next" hidden>
+                    <button type="button" id="btnContinueWeeklySetup" class="btn btn-primary btn-compact" aria-describedby="prepareWeeklySetupHelp prepareWeeklySetupStatus" disabled>Continue setup</button>
+                    <small id="prepareWeeklySetupHelp">SyncShow will open the first unresolved weekly check for this exact saved service revision.</small>
+                    <p id="prepareWeeklySetupStatus" class="prepare-weekly-setup-status" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">Open an exact service to find the next setup step.</p>
+                  </div>
+                  <button type="button" id="btnReviewServiceReadiness" class="btn btn-outline btn-compact" aria-haspopup="dialog" aria-controls="serviceReadinessDialog">Review plan &amp; exceptions</button>
+                </div>
+              </section>
+              <p class="prepare-planning-help">Ready means the exact order, content, and any stated exceptions have been reviewed. Save &amp; go to Load remains a separate step.</p>
+              <div id="preparePlanningStatusActions" class="prepare-planning-status-actions" role="group" aria-label="Service planning status">
+                <button type="button" class="btn btn-quiet btn-compact" data-service-planning-status="planning">Planning</button>
+                <button type="button" class="btn btn-quiet btn-compact" data-service-planning-status="ready" aria-haspopup="dialog" aria-controls="serviceReadinessDialog">Ready</button>
+                <button type="button" class="btn btn-quiet btn-compact" data-service-planning-status="completed">Completed</button>
+                <button type="button" class="btn btn-quiet btn-compact" data-service-planning-status="needs-follow-up">Needs follow-up</button>
+              </div>
+            </section>
             <div id="prepareRundownEmpty" class="prepare-empty-state">
               <span class="prepare-empty-icon" aria-hidden="true">＋</span>
               <h4>Start with what you have</h4>
@@ -113,6 +251,30 @@
                 </div>
               </div>
               <p id="prepareInspectorSummary" class="prepare-pane-subtitle">Select an item in the rundown to see its details.</p>
+              <section id="prepareInspectorSermonReading" class="prepare-inspector-sermon-reading" aria-labelledby="prepareInspectorSermonReadingHeading" aria-describedby="prepareInspectorSermonReadingStatus" hidden>
+                <div class="prepare-inspector-sermon-reading-heading">
+                  <div>
+                    <p class="section-kicker">READING LINK</p>
+                    <h4 id="prepareInspectorSermonReadingHeading">Linked to an exact sermon</h4>
+                  </div>
+                  <span id="prepareInspectorSermonReadingBadge" class="prepare-inspector-sermon-reading-badge">Exact packet</span>
+                </div>
+                <dl class="prepare-inspector-sermon-reading-details">
+                  <div>
+                    <dt>Sermon</dt>
+                    <dd id="prepareInspectorSermonReadingSermon">Untitled sermon</dd>
+                  </div>
+                  <div>
+                    <dt>Confirmed primary passage</dt>
+                    <dd id="prepareInspectorSermonReadingPassage">Primary passage unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Selected cue</dt>
+                    <dd id="prepareInspectorSermonReadingCue">Bible passage</dd>
+                  </div>
+                </dl>
+                <p id="prepareInspectorSermonReadingStatus" class="prepare-inspector-sermon-reading-status" role="status" aria-live="polite">This cue stays tied to the exact reviewed sermon packet saved with this service.</p>
+              </section>
               <div id="prepareInspectorActions" class="prepare-inspector-actions" hidden>
                 <button type="button" id="btnEditPrepareItem" class="btn btn-outline btn-compact">Edit</button>
                 <button type="button" id="btnDuplicatePrepareItem" class="btn btn-quiet btn-compact">Duplicate</button>
@@ -146,6 +308,169 @@
                 <span id="preparePreviewPosition">0 of 0</span>
                 <button type="button" id="btnNextPreparePreview" class="btn btn-quiet btn-compact" disabled>Next</button>
               </div>
+            </section>
+
+            <section id="prepareSermonInspector" class="prepare-sermon-inspector" aria-labelledby="prepareSermonInspectorHeading" hidden>
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">SERMON SOURCE</p>
+                  <h3 id="prepareSermonInspectorHeading">Link the selected sermon item</h3>
+                </div>
+              </div>
+              <p id="prepareSermonInspectorMeta" class="prepare-pane-subtitle">Choose a reviewed sermon packet and pin its exact revision to this service item.</p>
+              <p id="prepareSermonLinkedState" class="prepare-sermon-linked-state" aria-live="polite">No sermon source linked.</p>
+              <div class="prepare-sermon-library-tools">
+                <label for="prepareSermonSearch">
+                  <span>Find sermon packet</span>
+                  <input id="prepareSermonSearch" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="Title, speaker, date, or passage">
+                </label>
+                <button type="button" id="btnLoadMoreSermons" class="btn btn-quiet btn-compact" hidden>Load more</button>
+              </div>
+              <div class="prepare-sermon-link-controls">
+                <label for="prepareSermonSource">
+                  <span>Source sermon</span>
+                  <select id="prepareSermonSource" class="display-dropdown" disabled>
+                    <option value="">Choose a sermon packet…</option>
+                  </select>
+                </label>
+                <label for="prepareSermonSection">
+                  <span>Outline section</span>
+                  <select id="prepareSermonSection" class="display-dropdown" disabled>
+                    <option value="">Whole sermon</option>
+                  </select>
+                </label>
+                <div class="prepare-sermon-actions">
+                  <button type="button" id="btnLinkSermonSource" class="btn btn-outline btn-compact" disabled>Link exact revision</button>
+                  <button type="button" id="btnCreateSermonPacket" class="btn btn-quiet btn-compact" disabled>Create packet</button>
+                  <button type="button" id="btnAttachSermonSource" class="btn btn-quiet btn-compact" aria-describedby="prepareSermonSourceStatus" disabled>Add sermon material</button>
+                  <button type="button" id="btnReviewLinkedSermonServiceSources" class="btn btn-outline btn-compact" aria-describedby="prepareSermonSourceStatus" disabled>Review service files</button>
+                  <button type="button" id="btnReviewSermonSource" class="btn btn-quiet btn-compact" aria-describedby="prepareSermonSourceStatus" disabled>Review source</button>
+                  <button type="button" id="btnReviewSermonBody" class="btn btn-quiet btn-compact" aria-describedby="prepareSermonSourceStatus" disabled>Review sermon text</button>
+                  <button type="button" id="btnBuildNativeSermonSlides" class="btn btn-outline btn-compact" aria-describedby="prepareSermonSourceStatus" disabled>Build slides from sermon text</button>
+                  <button type="button" id="btnBuildSermonSlides" class="btn btn-quiet btn-compact" aria-describedby="prepareSermonSourceStatus" hidden disabled>Legacy: import PowerPoint slide notes</button>
+                </div>
+              </div>
+              <p id="prepareSermonSourceStatus" class="prepare-sermon-source-status" role="status" aria-live="polite">Sermon packets stay immutable once a service links them.</p>
+              <section id="prepareSermonServices" class="prepare-sermon-services" aria-labelledby="prepareSermonServicesHeading">
+                <div class="prepare-sermon-services-heading">
+                  <div>
+                    <p class="section-kicker">LOCAL HISTORY</p>
+                    <h4 id="prepareSermonServicesHeading">Used in services</h4>
+                  </div>
+                  <button type="button" id="btnLoadMoreSermonServices" class="btn btn-quiet btn-compact" hidden disabled>Load more</button>
+                </div>
+                <p id="prepareSermonServicesStatus" class="prepare-sermon-services-status" role="status" aria-live="polite">Choose an exact sermon packet to find its saved services.</p>
+                <ul id="prepareSermonServicesList" class="prepare-sermon-services-list" aria-label="Saved services using this sermon"></ul>
+              </section>
+              <section id="prepareSermonReferenceSection" class="prepare-sermon-references" aria-labelledby="prepareSermonReferenceHeading">
+                <div class="prepare-sermon-references-heading">
+                  <div>
+                    <p class="section-kicker">SERMON RECORD</p>
+                    <h4 id="prepareSermonReferenceHeading">Scripture references</h4>
+                  </div>
+                  <span id="prepareSermonReferenceBadge" class="prepare-sermon-reference-badge">Not reviewed</span>
+                </div>
+                <p id="prepareSermonReferenceStatus" class="prepare-sermon-reference-status" role="status" aria-live="polite" aria-atomic="true">Link an exact sermon packet to review its primary and mentioned passages.</p>
+                <ol id="prepareSermonReferenceList" class="prepare-sermon-reference-list" aria-label="Scripture references in sermon order" aria-describedby="prepareSermonReferenceStatus"></ol>
+                <button type="button" id="prepareSermonReferenceReviewButton" class="btn btn-outline btn-compact" aria-haspopup="dialog" aria-controls="reviewSermonReferenceDialog" aria-describedby="prepareSermonReferenceStatus" disabled>Review references…</button>
+              </section>
+              <section class="prepare-sermon-reading" aria-labelledby="prepareSermonReadingHeading">
+                <div>
+                  <p class="section-kicker">BEFORE THE SERMON</p>
+                  <h4 id="prepareSermonReadingHeading">Congregational Scripture reading</h4>
+                </div>
+                <div class="prepare-sermon-reading-controls">
+                  <label for="prepareSermonReadingReference">
+                    <span>Confirmed primary passage</span>
+                    <select id="prepareSermonReadingReference" class="display-dropdown" disabled>
+                      <option value="">Link a sermon packet first</option>
+                    </select>
+                  </label>
+                  <fieldset id="prepareSermonReadingOutputTreatments" class="prepare-sermon-reading-output-treatments" hidden>
+                    <legend>Output treatments</legend>
+                    <p>Choose BSB, LSV, or Hidden for every output. Output names never decide the translation.</p>
+                    <div id="prepareSermonReadingOutputs" class="prepare-song-output-list" aria-label="Congregational reading treatment for every output"></div>
+                  </fieldset>
+                  <button type="button" id="btnAddSermonReading" class="btn btn-outline btn-compact" aria-describedby="prepareSermonReadingStatus" disabled>Add before sermon</button>
+                </div>
+                <p id="prepareSermonReadingStatus" class="prepare-sermon-reading-status" role="status" aria-live="polite">Link an exact sermon packet to use its reviewed primary passage.</p>
+              </section>
+              <section id="prepareSermonPostService" class="prepare-sermon-post-service" aria-labelledby="prepareSermonPostServiceHeading">
+                <div class="prepare-sermon-post-service-heading">
+                  <div>
+                    <p class="section-kicker">AFTER THE SERVICE</p>
+                    <h4 id="prepareSermonPostServiceHeading">Sermon revisit handoff</h4>
+                  </div>
+                  <span id="prepareSermonPostServiceBadge" class="prepare-sermon-post-service-badge">Waiting</span>
+                </div>
+                <dl class="prepare-sermon-post-service-states">
+                  <div>
+                    <dt>Sermon page</dt>
+                    <dd id="prepareSermonPostServicePageState">Waiting</dd>
+                  </div>
+                  <div>
+                    <dt>Recording</dt>
+                    <dd>
+                      <span id="prepareSermonPostServiceRecordingState">Waiting</span>
+                      <small id="prepareSermonPostServiceRecordingDetail" class="prepare-sermon-post-service-recording-detail" hidden></small>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Reviewed sermon text</dt>
+                    <dd id="prepareSermonPostServiceBodyState">Waiting</dd>
+                  </div>
+                  <div>
+                    <dt>External notes / transcript</dt>
+                    <dd id="prepareSermonPostServiceTextState">Waiting</dd>
+                  </div>
+                </dl>
+                <p id="prepareSermonPostServiceStatus" class="prepare-sermon-post-service-status" role="status" aria-live="polite">Link an exact sermon packet before adding post-service links.</p>
+                <p id="prepareSermonPostServiceAudience" class="prepare-sermon-post-service-audience">Audience remains Private. Ready does not change the audience.</p>
+                <p id="prepareSermonPostServiceRecordingPrivacy" class="prepare-sermon-post-service-privacy">A chosen recording is copied into SyncShow’s private local storage on this computer. Its bytes and local path are not uploaded, published, or sent to Community by choosing or reviewing it. Nothing uploads in the background: only the separate explicit private-upload action below may send its verified bytes to a compatible Community server, and that action still does not publish the sermon. The verified filename, type, hash, and size are saved in the sermon record and may later sync to Community. Automatic recording cleanup is not available yet.</p>
+                <p class="prepare-sermon-post-service-meaning">Ready means this reviewed record can be saved to Community. It does not publish the sermon or make it public.</p>
+                <div id="prepareSermonManagedUpload" class="prepare-sermon-managed-upload" data-kind="waiting" role="region" aria-labelledby="prepareSermonManagedUploadHeading">
+                  <div class="prepare-sermon-managed-upload-heading">
+                    <h5 id="prepareSermonManagedUploadHeading">Private Community recording</h5>
+                    <span id="prepareSermonManagedUploadBadge" class="prepare-sermon-managed-upload-badge">Waiting</span>
+                  </div>
+                  <p id="prepareSermonManagedUploadStatus" class="prepare-sermon-managed-upload-status" role="status" aria-live="polite">Choose and verify an MP3 or M4A recording to check managed upload.</p>
+                  <progress id="prepareSermonManagedUploadProgress" class="prepare-sermon-managed-upload-progress" max="100" value="0" hidden>0%</progress>
+                  <div class="prepare-sermon-managed-upload-actions">
+                    <button type="button" id="btnEnableSermonManagedUpload" class="btn btn-outline btn-compact" disabled>Enable private upload…</button>
+                    <button type="button" id="btnUploadSermonManagedRecording" class="btn btn-outline btn-compact" disabled>Upload private recording to Community</button>
+                    <button type="button" id="btnResumeSermonManagedRecording" class="btn btn-quiet btn-compact" hidden disabled>Resume private upload</button>
+                    <button type="button" id="btnCancelSermonManagedRecording" class="btn btn-quiet btn-compact" hidden disabled>Cancel upload</button>
+                  </div>
+                  <p class="prepare-sermon-managed-upload-help">Upload starts only when you click the button. Completion stores the verified recording privately in Community; it never publishes the sermon or creates a public URL. A Community manager must separately review and publish it.</p>
+                </div>
+                <div class="prepare-sermon-post-service-actions">
+                  <button type="button" id="btnChooseSermonRecording" class="btn btn-outline btn-compact" aria-describedby="prepareSermonPostServiceStatus prepareSermonPostServiceRecordingPrivacy prepareSermonPostServiceRecordingDetail" disabled>Choose recording file…</button>
+                  <button type="button" id="btnPlaySermonRecording" class="btn btn-quiet btn-compact" aria-describedby="prepareSermonPostServiceStatus prepareSermonPostServiceRecordingPrivacy prepareSermonPostServiceRecordingDetail" disabled>Review local recording</button>
+                  <button type="button" id="btnReviewSermonPostService" class="btn btn-outline btn-compact" aria-describedby="prepareSermonPostServiceStatus" disabled>Review post-service links</button>
+                  <button type="button" id="btnMarkSermonPostServiceReady" class="btn btn-quiet btn-compact" aria-describedby="prepareSermonPostServiceStatus" disabled>Mark ready for Community</button>
+                </div>
+              </section>
+              <section id="prepareSermonCommunity" class="prepare-sermon-community" aria-labelledby="prepareSermonCommunityHeading">
+                <div class="prepare-sermon-community-heading">
+                  <div>
+                    <p class="section-kicker">HERITAGE COMMUNITY</p>
+                    <h4 id="prepareSermonCommunityHeading">Share this sermon record</h4>
+                  </div>
+                  <span id="prepareSermonCommunityBadge" class="prepare-sermon-community-badge">Checking…</span>
+                </div>
+                <p id="prepareSermonCommunityStatus" class="prepare-sermon-community-status" role="status" aria-live="polite">Link an exact local sermon revision to check its Community status.</p>
+                <p id="prepareSermonCommunityPublicationStatus" class="prepare-sermon-community-publication-status" role="status" aria-live="polite">Public sermon: Link an exact local sermon revision to check its admin-managed publication status.</p>
+                <p id="prepareSermonCommunityLiveStatus" class="prepare-sermon-community-publication-status" role="status" aria-live="polite" hidden>Live verification: Not checked from this computer.</p>
+                <p class="prepare-sermon-community-publication-help">Community admin owns Publish and Withdraw. After this exact Ready (or currently Published) revision is saved, Continue in Community opens that sermon in the manager review queue; it does not publish or withdraw anything. Draft sermons stay in SyncShow until they are marked Ready. Manager changes do not arrive live on this card, so return here and refresh the publication status after either action. Synced does not mean published. Current edits do not silently republish or replace an older live revision.</p>
+                <p class="prepare-sermon-community-privacy">This action shares the reviewed sermon record only. Attached PDF, PowerPoint, and other private source files stay on this computer and are not uploaded.</p>
+                <div class="prepare-sermon-community-actions">
+                  <button type="button" id="btnPushCommunitySermon" class="btn btn-outline btn-compact" hidden disabled>Save sermon to Community</button>
+                  <button type="button" id="btnOpenCommunitySermonPublicationManager" class="btn btn-outline btn-compact" aria-describedby="prepareSermonCommunityStatus prepareSermonCommunityPublicationStatus" hidden disabled>Continue in Community</button>
+                  <button type="button" id="btnRefreshCommunitySermonPublication" class="btn btn-quiet btn-compact" aria-describedby="prepareSermonCommunityStatus prepareSermonCommunityPublicationStatus" hidden disabled>Refresh publication status</button>
+                  <button type="button" id="btnVerifyCommunitySermonPublication" class="btn btn-quiet btn-compact" aria-describedby="prepareSermonCommunityPublicationStatus prepareSermonCommunityLiveStatus" hidden disabled>Verify live sermon</button>
+                  <button type="button" id="btnReviewCommunitySermonConflict" class="btn btn-warning-quiet btn-compact" aria-describedby="prepareSermonCommunityStatus" hidden disabled>Review conflict</button>
+                </div>
+              </section>
             </section>
 
             <section id="prepareSongInspector" class="prepare-song-inspector" aria-labelledby="prepareSongInspectorHeading" hidden>
@@ -195,8 +520,15 @@
                   <section class="prepare-editor-section" aria-labelledby="prepareSongOutputsHeading">
                     <div class="prepare-editor-heading">
                       <div>
-                        <h4 id="prepareSongOutputsHeading">Change an output translation</h4>
-                        <p>The current mapping remains visible above. Override it here when this service needs something different.</p>
+                        <h4 id="prepareSongOutputsHeading">Output treatments</h4>
+                        <p>Choose what every screen receives. Output names never decide behavior.</p>
+                      </div>
+                    </div>
+                    <div id="prepareSongOutputTreatments" class="prepare-song-output-list" aria-label="Song treatment for every output"></div>
+                    <div class="prepare-editor-heading prepare-editor-subheading">
+                      <div>
+                        <h4>Pin an exact saved version</h4>
+                        <p>Use a separately saved language version on one output for this service.</p>
                       </div>
                     </div>
                     <div class="prepare-song-link-controls">
@@ -214,16 +546,6 @@
                       </label>
                       <button type="button" id="btnLinkSongTranslation" class="btn btn-outline btn-compact" disabled>Link</button>
                     </div>
-                    <template id="prepareSongOutputTranslationTemplate">
-                      <div class="prepare-song-output-row">
-                        <span class="prepare-song-output-name" data-song-output-name>Output</span>
-                        <label>
-                          <span class="sr-only">Translation for this output</span>
-                          <select class="display-dropdown" data-song-output-translation disabled></select>
-                        </label>
-                        <button type="button" class="btn btn-quiet btn-compact" data-song-output-reset disabled>Use normal</button>
-                      </div>
-                    </template>
                   </section>
                 </div>
               </details>
@@ -243,7 +565,13 @@
                 <button type="button" id="btnAddServicePicture" class="prepare-add-button" disabled>
                   <span aria-hidden="true">▧</span><strong>Picture</strong><small>PNG, JPEG, or WebP</small>
                 </button>
-                <button type="button" id="btnAddServiceGroup" class="prepare-add-button prepare-add-button-wide" disabled>
+                <button type="button" id="btnAddServiceVideo" class="prepare-add-button" disabled>
+                  <span aria-hidden="true">▶</span><strong>Video</strong><small>MP4 or WebM</small>
+                </button>
+                <button type="button" id="btnAddServiceSermon" class="prepare-add-button" disabled>
+                  <span aria-hidden="true">S</span><strong>Sermon</strong><small>Packet, text, slides, reading</small>
+                </button>
+                <button type="button" id="btnAddServiceGroup" class="prepare-add-button" disabled>
                   <span aria-hidden="true">§</span><strong>Section</strong><small>Group songs, sermon notes, and pictures</small>
                 </button>
               </div>
@@ -265,7 +593,7 @@
                     <input id="prepareBibleReference" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="John 3:16 or 1 pet 1 4" disabled>
                   </label>
                   <label for="prepareBibleTranslation">
-                    <span>Translation</span>
+                    <span>Preview &amp; default</span>
                     <select id="prepareBibleTranslation" class="display-dropdown" disabled>
                       <option value="BSB" selected>BSB</option>
                       <option value="LSV">LSV</option>
@@ -284,6 +612,12 @@
                 <section id="prepareBibleResult" class="prepare-bible-response prepare-bible-results" aria-labelledby="prepareBiblePreviewReference" hidden>
                   <h4 id="prepareBiblePreviewReference">Passage preview</h4>
                   <p id="prepareBiblePreviewText"></p>
+                </section>
+
+                <section id="prepareBibleOutputTreatments" class="prepare-bible-response prepare-bible-output-treatments" aria-labelledby="prepareBibleOutputsHeading" hidden>
+                  <h4 id="prepareBibleOutputsHeading">Output treatments</h4>
+                  <p class="prepare-pane-subtitle">Choose a translation or hide the passage on every output. SyncShow resolves each translation from the canonical Bible source when you add it.</p>
+                  <div id="prepareBibleOutputs" class="prepare-song-output-list" aria-label="Bible treatment for every output"></div>
                 </section>
 
                 <div class="prepare-bible-actions">
@@ -329,10 +663,32 @@
               <h2 id="loadHeading">Today’s slideshows</h2>
               <p>Synced files load automatically. If something is missing, choose it on its card.</p>
             </div>
-            <span id="loadAutoStatus" class="load-auto-status" role="status" aria-live="polite">
-              Checking automatic loading…
-            </span>
+            <div class="load-intro-actions">
+              <button type="button" id="btnOpenCommunityServiceFromLoad" class="btn btn-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog">
+                Open Community service…
+              </button>
+              <span id="loadAutoStatus" class="load-auto-status" role="status" aria-live="polite">
+                Checking automatic loading…
+              </span>
+            </div>
           </div>
+
+        <section id="loadServiceHandoff" class="load-service-handoff" aria-labelledby="loadServiceHandoffTitle" hidden>
+          <div class="load-service-handoff-heading">
+            <div>
+              <p class="section-kicker">REVIEWED SERVICE</p>
+              <h3 id="loadServiceHandoffTitle">Prepared native service</h3>
+              <p id="loadServiceHandoffSchedule" class="load-service-handoff-schedule"></p>
+            </div>
+            <span id="loadServiceHandoffBadge" class="load-service-handoff-badge">Exact revision</span>
+          </div>
+          <p id="loadServiceHandoffNotes" class="load-service-handoff-notes"></p>
+          <div class="load-service-handoff-operational-summary">
+            <p id="loadServiceHandoffRunSheet" class="load-service-handoff-run-sheet" hidden></p>
+            <p id="loadServiceHandoffTeam" class="load-service-handoff-team" hidden></p>
+          </div>
+          <p id="loadServiceHandoffReview" class="load-service-handoff-review"></p>
+        </section>
 
         <div class="setup-grid" id="inputCards" aria-label="Service slideshow inputs"></div>
 
@@ -354,7 +710,7 @@
               <div>
                 <p class="section-kicker">ADMIN SETTINGS</p>
                 <h2 id="adminSettingsHeading">Church connections and venue setup</h2>
-                <p>Configure Community, automatic loading, slideshow names, output screens, and venue behavior here.</p>
+                <p>Configure Community, automatic loading, private sermon storage, slideshow names, output screens, and venue behavior here.</p>
               </div>
               <button type="button" id="btnCloseAdminSettings" class="btn btn-secondary">Done</button>
             </header>
@@ -463,11 +819,11 @@
                 <div class="settings-section-heading community-settings-heading">
                   <div>
                     <p class="section-kicker">HERITAGE COMMUNITY</p>
-                    <h3 id="communityConnectionHeading">Shared song library</h3>
+                    <h3 id="communityConnectionHeading">Shared Community library</h3>
                   </div>
                   <span id="communityConnectionBadge" class="service-state-badge">Checking…</span>
                 </div>
-                <p class="community-settings-intro">Connect this computer to your church’s Heritage Community server. Songs stay available locally and can be kept private, shared now, or scheduled to appear later.</p>
+                <p class="community-settings-intro">Connect this computer to your church’s Heritage Community server. Songs stay available locally and can be kept private, shared now, or scheduled to appear later. Sermon records are pulled separately and are shared only when an operator explicitly saves one from Prepare.</p>
                 <form id="communityConnectionForm" class="community-connection-form">
                   <label class="field-group">
                     <span>Community server</span>
@@ -488,7 +844,7 @@
                   <span class="community-status-dot" aria-hidden="true"></span>
                   <span class="community-status-copy">
                     <strong id="communityConnectionStatusTitle">Checking Community connection…</strong>
-                    <small id="communityConnectionStatusDetail">Song sync is unavailable until the connection check finishes.</small>
+                    <small id="communityConnectionStatusDetail">Library sync is unavailable until the connection check finishes.</small>
                   </span>
                 </div>
                 <div id="communityApprovalRecovery" class="community-approval-recovery" hidden>
@@ -510,6 +866,61 @@
                   </div>
                   <button type="button" id="btnSyncCommunitySongs" class="btn btn-outline" disabled>Sync songs now</button>
                 </div>
+                <div class="community-sync-row">
+                  <div>
+                    <strong>Sermon sync</strong>
+                    <p id="communityLastSermonSyncSummary">Pull Community sermon updates to this computer. Saving a local sermon remains an explicit action in Prepare.</p>
+                  </div>
+                  <button type="button" id="btnSyncCommunitySermons" class="btn btn-outline" disabled>Sync sermons now</button>
+                </div>
+                <div class="community-sync-row community-capability-row">
+                  <div>
+                    <strong>Public song links</strong>
+                    <p id="communitySongPublicLinkSummary">Public links use a separate approval and exact-family review. Create and revoke them from a saved song in Prepare.</p>
+                  </div>
+                  <span id="communitySongPublicLinkBadge" class="service-state-badge">Not approved</span>
+                </div>
+              </section>
+
+              <section id="sermonStorageSection" class="settings-section sermon-storage-section" aria-labelledby="sermonStorageHeading">
+                <div class="settings-section-heading sermon-storage-heading">
+                  <div>
+                    <p class="section-kicker">PRIVATE SERMON STORAGE</p>
+                    <h3 id="sermonStorageHeading">Original sermon documents</h3>
+                  </div>
+                  <span id="sermonStorageBadge" class="service-state-badge">Not checked</span>
+                </div>
+                <p class="sermon-storage-intro">SyncShow keeps imported sermon manuscripts and slide notes private on this computer. A source remains protected while any saved sermon version, service-plan revision, or reviewed extraction still refers to it.</p>
+                <div id="sermonStorageStatus" class="sermon-storage-status" data-kind="idle" role="status" aria-live="polite">
+                  <span class="sermon-storage-status-mark" aria-hidden="true">⌁</span>
+                  <span>
+                    <strong id="sermonStorageStatusTitle">Storage has not been checked</strong>
+                    <small id="sermonStorageStatusDetail">Run a read-only check to count protected files and files no longer referenced.</small>
+                  </span>
+                </div>
+                <dl id="sermonStorageSummary" class="sermon-storage-summary" hidden>
+                  <div>
+                    <dt>Private source files</dt>
+                    <dd id="sermonStorageTotal">—</dd>
+                  </div>
+                  <div>
+                    <dt>Protected by saved history</dt>
+                    <dd id="sermonStorageProtected">—</dd>
+                  </div>
+                  <div>
+                    <dt>Waiting through retention</dt>
+                    <dd id="sermonStorageWaiting">—</dd>
+                  </div>
+                  <div>
+                    <dt>Eligible after 90 days</dt>
+                    <dd id="sermonStorageEligible">—</dd>
+                  </div>
+                </dl>
+                <div class="sermon-storage-actions">
+                  <button type="button" id="btnCheckSermonStorage" class="btn btn-outline">Check private sermon storage</button>
+                  <button type="button" id="btnScheduleSermonStorageCleanup" class="btn btn-danger-quiet" hidden>Remove after restart</button>
+                </div>
+                <p id="sermonStorageActionStatus" class="settings-note" role="status" aria-live="polite">The check never removes files. Unreferenced files must remain continuously unreferenced for at least 90 days before removal can be offered.</p>
               </section>
 
               <section class="settings-section display-tools-section" aria-labelledby="displayToolsHeading">
@@ -588,6 +999,14 @@
                       <option value="dmy">Day / month / year</option>
                     </select>
                   </label>
+                  <label class="field-group">
+                    <span>Show handoff controls</span>
+                    <select id="profileShowControlMode" class="display-dropdown">
+                      <option value="full">Full controls</option>
+                      <option value="volunteer">Volunteer — advance only</option>
+                    </select>
+                    <small>Volunteer mode keeps Next and emergency Clear available. Other live changes require a short operator unlock.</small>
+                  </label>
                 </div>
                 <datalist id="commonTimeZones">
                   <option value="America/Los_Angeles"></option>
@@ -635,7 +1054,7 @@
                 <div class="settings-section-heading">
                   <div>
                     <p class="section-kicker">ADVANCED</p>
-                    <h3 id="technicalSettingsHeading">Timing &amp; Singers Screen text</h3>
+                    <h3 id="technicalSettingsHeading">Timing &amp; Stage-Facing Screen text</h3>
                   </div>
                   <p>Venue-specific tuning. Test changes before a service.</p>
                 </div>
@@ -719,6 +1138,16 @@
             <h2>Show</h2>
           </div>
 
+          <section id="volunteerControlBar" class="volunteer-control-bar" aria-labelledby="volunteerControlTitle" hidden>
+            <span class="volunteer-control-icon" aria-hidden="true">✓</span>
+            <span class="volunteer-control-copy">
+              <strong id="volunteerControlTitle">Volunteer controls</strong>
+              <small id="volunteerControlDetail">Advance with Right arrow or Space. Clear stays available for emergencies.</small>
+            </span>
+            <button id="btnUnlockVolunteerControls" class="btn btn-outline btn-compact" type="button">Unlock controls…</button>
+            <button id="btnLockVolunteerControls" class="btn btn-quiet btn-compact" type="button" hidden>Relock</button>
+          </section>
+
           <div id="showOutputState" class="show-output-state" data-phase="idle" role="status" aria-live="polite">
             <span class="show-output-state-dot" aria-hidden="true"></span>
             <span class="show-output-state-copy">
@@ -732,6 +1161,18 @@
             <span class="divider">/</span>
             <span id="totalSlides">--</span>
           </div>
+
+          <section id="showCueContext" class="show-cue-context" aria-labelledby="showCueContextTitle">
+            <p class="section-kicker">RUN SHEET</p>
+            <p id="showCueContextPath" class="show-cue-context-path">Current cue</p>
+            <h3 id="showCueContextTitle">Waiting for the service</h3>
+            <p id="showCueContextMeta" class="show-cue-context-meta" hidden></p>
+            <p id="showCueContextNote" class="show-cue-context-note" hidden></p>
+            <div class="show-cue-context-next">
+              <span>Next</span>
+              <strong id="showCueContextNext">—</strong>
+            </div>
+          </section>
 
           <div class="nav-box">
             <button id="btnPrevSlide" class="nav-btn-full" title="Previous slide (Left arrow)">
@@ -801,6 +1242,164 @@
     </footer>
   </div>
 
+  <dialog id="sharedServicesDialog" class="prepare-dialog prepare-dialog-wide community-service-plans-dialog shared-services-dialog" aria-labelledby="sharedServicesTitle" aria-describedby="sharedServicesDescription">
+    <div class="prepare-dialog-heading">
+      <div>
+        <p class="section-kicker">HERITAGE COMMUNITY</p>
+        <h2 id="sharedServicesTitle">Open the church’s shared service</h2>
+        <p id="sharedServicesDescription">Community and SyncShow edit the same service. A local copy remains available for offline preparation and Show; concurrent edits are reviewed before either copy is replaced.</p>
+      </div>
+      <button type="button" id="btnCloseSharedServices" class="btn btn-quiet">Close</button>
+    </div>
+    <p id="sharedServicesNotice" class="prepare-dialog-status" role="status" aria-live="polite" tabindex="-1"></p>
+    <div class="community-service-plans-layout">
+      <section class="community-service-plans-list-pane" aria-labelledby="sharedServicesListHeading">
+        <div class="prepare-pane-heading">
+          <h3 id="sharedServicesListHeading">Services</h3>
+          <button type="button" id="btnRefreshSharedServices" class="btn btn-quiet btn-compact">Refresh</button>
+        </div>
+        <div id="sharedServicesList" class="prepare-list" role="list" aria-live="polite"></div>
+        <button type="button" id="btnLoadMoreSharedServices" class="btn btn-quiet btn-compact" hidden>Load more</button>
+      </section>
+      <section class="community-service-plan-detail" aria-labelledby="sharedServiceDetailHeading">
+        <div id="sharedServiceDetailEmpty" class="prepare-empty-state">
+          <h3 id="sharedServiceDetailHeading">Choose a service</h3>
+          <p>Opening downloads the exact Community revision. It does not publish anything or change the service currently in Load or Show.</p>
+        </div>
+        <div id="sharedServiceConflict" hidden>
+          <p class="section-kicker">CHANGE REVIEW</p>
+          <h3 id="sharedServiceConflictTitle">Both copies changed</h3>
+          <p id="sharedServiceConflictDescription" class="community-service-plan-review-state" data-kind="warning"></p>
+          <dl class="shared-service-conflict-versions">
+            <div><dt>This computer</dt><dd id="sharedServiceConflictLocal"></dd></div>
+            <div><dt>Community</dt><dd id="sharedServiceConflictRemote"></dd></div>
+          </dl>
+          <p class="prepare-pane-subtitle">Nothing has been overwritten. Choose one copy only after reviewing which changes should continue.</p>
+          <div class="dialog-actions">
+            <button type="button" id="btnUseCommunityService" class="btn btn-secondary">Use Community copy</button>
+            <button type="button" id="btnKeepLocalService" class="btn btn-primary">Keep this computer’s copy</button>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="dialog-actions shared-services-footer-actions">
+      <button type="button" id="btnRetrySharedServices" class="btn btn-secondary">Retry offline saves</button>
+    </div>
+  </dialog>
+
+  <dialog id="communityServicePlansDialog" class="prepare-dialog prepare-dialog-wide community-service-plans-dialog" aria-labelledby="communityServicePlansTitle" aria-describedby="communityServicePlansDescription">
+    <div class="prepare-dialog-heading">
+      <div>
+        <p class="section-kicker">HERITAGE COMMUNITY</p>
+        <h2 id="communityServicePlansTitle">Check a shared service plan revision</h2>
+        <p id="communityServicePlansDescription">Check the exact Community revision and every local resource before creating or reconciling a Planning project. Reconciliation preserves local work when it can, keeps the prior local revision in history, and never changes current Load or Show.</p>
+      </div>
+      <button type="button" id="btnCloseCommunityServicePlans" class="btn btn-quiet">Close</button>
+    </div>
+    <p id="communityServicePlansNotice" class="prepare-dialog-status" role="status" aria-live="polite" tabindex="-1"></p>
+    <div class="community-service-plans-layout">
+      <section class="community-service-plans-list-pane" aria-labelledby="communityServicePlansListHeading">
+        <div class="prepare-pane-heading">
+          <h3 id="communityServicePlansListHeading">Available plans</h3>
+          <button type="button" id="btnRefreshCommunityServicePlans" class="btn btn-quiet btn-compact">Refresh</button>
+        </div>
+        <div id="communityServicePlansList" class="prepare-list" role="list" aria-live="polite"></div>
+        <button type="button" id="btnLoadMoreCommunityServicePlans" class="btn btn-quiet btn-compact" hidden>Load more</button>
+      </section>
+      <section class="community-service-plan-detail" aria-label="Selected Community service plan">
+        <div id="communityServicePlanDetailEmpty" class="prepare-empty-state">
+          <h3 id="communityServicePlanDetailHeading">Choose a plan</h3>
+          <p>SyncShow will check the plan’s exact song, sermon, and Scripture revisions against this computer.</p>
+        </div>
+        <div id="communityServicePlanDetailContent" hidden>
+          <div class="community-service-plan-title-row">
+            <div>
+              <h3 id="communityServicePlanTitle">Service plan</h3>
+              <p id="communityServicePlanMeta" class="prepare-pane-subtitle"></p>
+            </div>
+            <span id="communityServicePlanLifecycle" class="prepare-planning-badge">Draft</span>
+          </div>
+          <p id="communityServicePlanReviewState" class="community-service-plan-review-state" tabindex="-1"></p>
+          <p id="communityServicePlanTeamNotes" class="community-service-plan-notes" hidden></p>
+          <h4>Service order</h4>
+          <ol id="communityServicePlanEntries" class="community-service-plan-entries"></ol>
+          <section id="communityServicePlanBlockersSection" class="community-service-plan-findings" hidden>
+            <h4 id="communityServicePlanBlockersHeading">Import blockers</h4>
+            <ul id="communityServicePlanBlockers"></ul>
+          </section>
+          <section id="communityServicePlanPreparationSection" class="community-service-plan-findings" hidden>
+            <h4>Prepare required plan items</h4>
+            <p id="communityServicePlanPreparationDescription">Bring the exact referenced Community songs and sermons that are missing from this computer or older than the versions this plan requires into the local libraries, then fetch and check the current plan again. This does not import a service or change Load or Show.</p>
+            <button type="button" id="btnPrepareCommunityServicePlan" class="btn btn-secondary" aria-describedby="communityServicePlanPreparationDescription">Prepare required plan items</button>
+            <button type="button" id="btnCancelCommunityServicePlanPreparation" class="btn btn-quiet" aria-describedby="communityServicePlanPreparationDescription" hidden>Stop preparation</button>
+          </section>
+          <section id="communityServicePlanDiffSection" class="community-service-plan-findings community-service-plan-reconciliation" hidden>
+            <h4>Reconcile newer Community revision</h4>
+            <p id="communityServicePlanReconciliationSummary" class="community-service-plan-reconciliation-summary"></p>
+            <p id="communityServicePlanReconciliationMode" class="community-service-plan-reconciliation-mode"></p>
+            <h5>Community revision overview</h5>
+            <p id="communityServicePlanDiffSummary"></p>
+            <ul id="communityServicePlanDiff"></ul>
+            <div id="communityServicePlanConflicts" class="community-service-plan-conflicts"></div>
+            <p id="communityServicePlanDecisionStatus" class="community-service-plan-decision-status" role="status" aria-live="polite"></p>
+          </section>
+          <label id="communityServicePlanConfirmationLabel" class="community-service-plan-confirmation" hidden>
+            <input id="communityServicePlanConfirmed" type="checkbox" disabled>
+            <span id="communityServicePlanConfirmationText">I reviewed this exact plan and want to create its local Planning project.</span>
+          </label>
+          <button type="button" id="btnImportCommunityServicePlan" class="btn btn-primary" hidden disabled>Import &amp; open Planning project</button>
+        </div>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="planLinkedPowerPointHandoffDialog" class="prepare-dialog prepare-dialog-wide plan-linked-powerpoint-handoff-dialog" aria-labelledby="planLinkedPowerPointHandoffTitle" aria-describedby="planLinkedPowerPointHandoffDescription">
+    <form id="planLinkedPowerPointHandoffForm">
+      <p class="section-kicker">COMMUNITY SERMON + POWERPOINT SHOW</p>
+      <h2 id="planLinkedPowerPointHandoffTitle">Use this exact sermon with the current Show?</h2>
+      <p id="planLinkedPowerPointHandoffDescription" class="prepare-dialog-description">SyncShow will link the sermon already pinned by this imported Community plan to the exact verified PowerPoint service. It will not create another sermon, modify the presentations, publish anything, or contact Community.</p>
+      <section class="prepare-sermon-reference-preview" aria-labelledby="planLinkedPowerPointHandoffSermonHeading">
+        <strong id="planLinkedPowerPointHandoffSermonHeading">Exact Community sermon</strong>
+        <p id="planLinkedPowerPointHandoffSermon">Reviewing the selected sermon…</p>
+      </section>
+      <section class="prepare-sermon-reference-preview" aria-labelledby="planLinkedPowerPointHandoffServiceHeading">
+        <strong id="planLinkedPowerPointHandoffServiceHeading">Exact PowerPoint service</strong>
+        <p id="planLinkedPowerPointHandoffService">Reviewing the loaded files…</p>
+        <ul id="planLinkedPowerPointHandoffRoles" class="prepare-linked-sermon-source-list" aria-label="Verified PowerPoint roles and files"></ul>
+      </section>
+      <label class="prepare-sermon-body-confirmation" for="planLinkedPowerPointHandoffConfirmed">
+        <input id="planLinkedPowerPointHandoffConfirmed" type="checkbox">
+        <span>
+          <strong>I reviewed this exact Community sermon and every current PowerPoint role.</strong>
+          <small>The same stable sermon identity will be used for post-service links and Community updates.</small>
+        </span>
+      </label>
+      <p id="planLinkedPowerPointHandoffError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelPlanLinkedPowerPointHandoff" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnCommitPlanLinkedPowerPointHandoff" class="btn btn-primary" disabled>Link sermon &amp; open follow-up</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="showHandoffDialog" class="warning-dialog show-handoff-dialog" aria-labelledby="showHandoffTitle" aria-describedby="showHandoffDescription">
+    <div class="dialog-icon show-handoff-icon" aria-hidden="true">✓</div>
+    <p class="section-kicker">SERVICE HANDOFF</p>
+    <h2 id="showHandoffTitle" tabindex="-1">The outputs are safely stopped</h2>
+    <p id="showHandoffDescription" aria-live="polite">Complete this exact reviewed service and open its sermon handoff, choose follow-up, or open the handoff without changing status. Nothing here publishes to Community.</p>
+    <div class="show-handoff-summary">
+      <strong id="showHandoffServiceTitle">Prepared service</strong>
+      <span id="showHandoffServiceMeta"></span>
+    </div>
+    <p id="showHandoffError" class="preflight-error" role="alert" hidden></p>
+    <div class="show-handoff-actions">
+      <button type="button" id="btnShowHandoffCompleted" class="btn btn-primary">Complete &amp; open sermon handoff</button>
+      <button type="button" id="btnShowHandoffFollowUp" class="btn btn-secondary">Needs follow-up</button>
+      <button type="button" id="btnOpenShowSermonHandoff" class="btn btn-outline" aria-controls="preparePanel">Open sermon handoff</button>
+      <button type="button" id="btnCloseShowHandoff" class="btn btn-quiet">Keep current status</button>
+    </div>
+  </dialog>
+
   <dialog id="driveOAuthDialog" class="warning-dialog drive-oauth-dialog" aria-labelledby="driveOAuthTitle" aria-describedby="driveOAuthDescription">
     <div class="dialog-icon drive-oauth-icon" aria-hidden="true">G</div>
     <p class="section-kicker">PRIVATE GOOGLE DRIVE</p>
@@ -817,23 +1416,652 @@
     </div>
   </dialog>
 
+  <dialog id="createSermonPacketDialog" class="prepare-dialog" aria-labelledby="createSermonPacketTitle" aria-describedby="createSermonPacketDescription">
+    <form id="createSermonPacketForm">
+      <p class="section-kicker">NEW SERMON PACKET</p>
+      <h2 id="createSermonPacketTitle">Start the sermon record</h2>
+      <p id="createSermonPacketDescription" class="prepare-dialog-description">Confirm the sermon identity and primary passage. SyncShow will link this service to the exact saved revision.</p>
+      <label class="field-group">
+        <span>Sermon title</span>
+        <input id="createSermonPacketName" class="text-input" type="text" maxlength="300" autocomplete="off" required placeholder="The Prayer That Transforms the Church">
+      </label>
+      <label class="field-group">
+        <span>Speaker</span>
+        <input id="createSermonPacketSpeaker" class="text-input" type="text" maxlength="200" autocomplete="off" required placeholder="Pastor name">
+      </label>
+      <label class="field-group">
+        <span>Title language <small>BCP-47 code</small></span>
+        <input id="createSermonPacketLanguage" class="text-input" type="text" maxlength="35" autocomplete="off" required value="en" placeholder="en">
+      </label>
+      <label class="field-group">
+        <span>Manuscript languages <small>optional BCP-47 tags, comma-separated; blank means undetermined</small></span>
+        <input id="createSermonPacketManuscriptLanguages" class="text-input" type="text" maxlength="120" autocomplete="off" placeholder="en, ru">
+      </label>
+      <div class="prepare-sermon-reference-row">
+        <label class="field-group" for="createSermonPacketReference">
+          <span>Primary sermon passage</span>
+          <input id="createSermonPacketReference" class="text-input" type="text" maxlength="160" autocomplete="off" required placeholder="Ephesians 3:14-21">
+        </label>
+        <button type="button" id="btnFindSermonPacketReference" class="btn btn-outline btn-compact">Find</button>
+      </div>
+      <p id="createSermonPacketReferenceStatus" class="prepare-dialog-description" role="status" aria-live="polite">Enter the passage preached before creating the packet.</p>
+      <div id="createSermonPacketReferenceChoices" class="prepare-bible-choices" role="group" aria-label="Possible Bible books" hidden></div>
+      <div id="createSermonPacketReferencePreview" class="prepare-sermon-reference-preview" hidden>
+        <strong id="createSermonPacketReferenceHeading">Passage preview</strong>
+        <p id="createSermonPacketReferenceText"></p>
+      </div>
+      <label class="prepare-sermon-metadata-option">
+        <input id="createSermonPacketAddReading" type="checkbox">
+        <span>
+          <strong>Insert a native Bible reading immediately before the sermon</strong>
+          <small>Leave this off when the service already includes the congregational reading. When selected, SyncShow splits longer readings into consecutive, readable cues linked to this exact sermon revision.</small>
+        </span>
+      </label>
+      <fieldset id="createSermonPacketReadingOutputTreatments" class="prepare-sermon-reading-output-treatments prepare-sermon-packet-reading-output-treatments" aria-describedby="createSermonPacketReadingOutputStatus" hidden>
+        <legend>Reading output treatments</legend>
+        <p>Choose BSB, LSV, or Hidden for every output. SyncShow resolves each visible translation from its canonical Bible source when the packet is created.</p>
+        <div id="createSermonPacketReadingOutputs" class="prepare-song-output-list" aria-label="New sermon reading treatment for every output"></div>
+        <p id="createSermonPacketReadingOutputStatus" class="prepare-sermon-reading-status" role="status" aria-live="polite">The reading will start in BSB on every output.</p>
+      </fieldset>
+      <section class="prepare-sermon-reference-preview" aria-labelledby="createSermonPacketSourcesTitle">
+        <strong id="createSermonPacketSourcesTitle">Current service files</strong>
+        <p id="createSermonPacketSourcesStatus" role="status" aria-live="polite">Optional: review the exact currently loaded service set, then copy its sermon manuscript and related deck sources. Files are copied, never moved, and slide wording is not changed.</p>
+        <ul id="createSermonPacketSources" class="prepare-bible-choices" aria-label="Reviewed sermon packet sources" hidden></ul>
+        <button type="button" id="btnReviewServiceSermonPacket" class="btn btn-outline">Review current service files…</button>
+      </section>
+      <p id="createSermonPacketError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelCreateSermonPacket" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnConfirmCreateSermonPacket" class="btn btn-primary" disabled>Create &amp; link</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="linkedSermonServiceSourcesDialog" class="prepare-dialog prepare-dialog-wide linked-sermon-service-sources-dialog" aria-labelledby="linkedSermonServiceSourcesTitle" aria-describedby="linkedSermonServiceSourcesDescription">
+    <form id="linkedSermonServiceSourcesForm">
+      <p class="section-kicker">WEEKLY SERMON FILES</p>
+      <h2 id="linkedSermonServiceSourcesTitle">Attach the current service files</h2>
+      <p id="linkedSermonServiceSourcesDescription" class="prepare-dialog-description">Review the exact loaded presentation set and choose this week’s pastor manuscript. SyncShow will add only compatible missing private sources to the sermon already linked here; it will not create another sermon, change the reading, build slides, or contact Community.</p>
+      <section class="prepare-sermon-reference-preview" aria-labelledby="linkedSermonServiceSourcesSermonHeading">
+        <strong id="linkedSermonServiceSourcesSermonHeading">Exact linked sermon</strong>
+        <p id="linkedSermonServiceSourcesSermonSummary">Choose a linked sermon group to begin.</p>
+      </section>
+      <label class="field-group" for="linkedSermonServiceSourcesLanguages">
+        <span>Manuscript languages <small>BCP-47 tags, comma-separated</small></span>
+        <input id="linkedSermonServiceSourcesLanguages" class="text-input" type="text" maxlength="120" autocomplete="off" placeholder="en, ru" aria-describedby="linkedSermonServiceSourcesLanguageHelp linkedSermonServiceSourcesError" required>
+        <small id="linkedSermonServiceSourcesLanguageHelp">Presentation language labels are filename hints only. You will still choose every output mapping when building sermon slides.</small>
+      </label>
+      <button type="button" id="btnProposeLinkedSermonServiceSources" class="btn btn-outline" aria-controls="linkedSermonServiceSourcesList linkedSermonServiceSourcesConfirmationField" aria-describedby="linkedSermonServiceSourcesStatus linkedSermonServiceSourcesError">Choose manuscript &amp; review files…</button>
+      <p id="linkedSermonServiceSourcesStatus" class="prepare-sermon-review-status" role="status" aria-live="polite">Nothing has been copied. Load the exact service set first, then choose the pastor manuscript.</p>
+      <ul id="linkedSermonServiceSourcesList" class="prepare-linked-sermon-source-list" aria-label="Reviewed current-service sermon sources" tabindex="0" hidden></ul>
+      <label id="linkedSermonServiceSourcesConfirmationField" class="prepare-sermon-body-confirmation" for="linkedSermonServiceSourcesConfirmed" hidden>
+        <input id="linkedSermonServiceSourcesConfirmed" type="checkbox">
+        <span>
+          <strong>I reviewed every filename, role, language hint, SHA-256 prefix, and add or reuse decision.</strong>
+          <small>Files are copied, never moved. Compatible existing sources keep their reviewed metadata.</small>
+        </span>
+      </label>
+      <p id="linkedSermonServiceSourcesError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelLinkedSermonServiceSources" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnCommitLinkedSermonServiceSources" class="btn btn-primary" disabled>Attach reviewed files</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="attachSermonSourceDialog" class="prepare-dialog prepare-dialog-wide prepare-sermon-material-dialog" aria-labelledby="attachSermonSourceTitle" aria-describedby="attachSermonSourceDescription">
+    <form id="attachSermonSourceForm">
+      <p class="section-kicker">WEEKLY SERMON MATERIAL</p>
+      <h2 id="attachSermonSourceTitle">Add the pastor’s reviewed material</h2>
+      <p id="attachSermonSourceDescription" class="prepare-dialog-description">Paste the writeup, the text intended for sermon slides, or both. SyncShow preserves the exact wording as private canonical sermon text; nothing is summarized, published, or sent to Community.</p>
+      <section class="prepare-sermon-material-section" aria-labelledby="attachSermonTextTitle">
+        <div class="prepare-sermon-material-heading">
+          <div>
+            <p class="section-kicker">NATIVE WORKFLOW</p>
+            <h3 id="attachSermonTextTitle">Paste reviewed text</h3>
+          </div>
+          <span class="prepare-sermon-material-badge">Recommended</span>
+        </div>
+        <label class="field-group">
+          <span>Content language <small>BCP-47 tag such as en or ru</small></span>
+          <input id="attachSermonTextLanguage" class="text-input" type="text" maxlength="35" autocomplete="off" required value="en" placeholder="en">
+        </label>
+        <div class="prepare-sermon-material-grid">
+          <label class="field-group">
+            <span>Pastor manuscript / writeup <small>Optional when slide notes are pasted</small></span>
+            <textarea id="attachSermonManuscriptText" class="prepare-textarea prepare-sermon-material-text" maxlength="1048576" rows="12" spellcheck="true" placeholder="Paste the pastor’s complete sermon writeup here."></textarea>
+          </label>
+          <label class="field-group">
+            <span>Sermon slide notes <small>Optional when the manuscript is pasted</small></span>
+            <textarea id="attachSermonSlideNotesText" class="prepare-textarea prepare-sermon-material-text" maxlength="1048576" rows="12" spellcheck="true" placeholder="Paste the exact text intended for native sermon slides here."></textarea>
+          </label>
+        </div>
+        <p id="attachSermonTextMeta" class="prepare-dialog-description" role="status" aria-live="polite">Paste at least one reviewed source. Line breaks are preserved.</p>
+        <label class="prepare-sermon-body-confirmation" for="attachSermonTextConfirmed">
+          <input id="attachSermonTextConfirmed" type="checkbox">
+          <span>
+            <strong>I reviewed the complete pasted text and its language.</strong>
+            <small>Save exactly this wording with the linked sermon. Existing pasted text of the same role and language will be replaced in a new private revision; original attached files remain unchanged.</small>
+          </span>
+        </label>
+        <button type="button" id="btnSaveSermonText" class="btn btn-primary" disabled>Save reviewed text</button>
+      </section>
+      <section class="prepare-sermon-material-section prepare-sermon-material-file" aria-labelledby="attachSermonFileTitle">
+        <div class="prepare-sermon-material-heading">
+          <div>
+            <p class="section-kicker">ORIGINAL FILE</p>
+            <h3 id="attachSermonFileTitle">Preserve a source file instead</h3>
+          </div>
+          <span class="prepare-sermon-material-badge" data-kind="secondary">Optional</span>
+        </div>
+        <p class="prepare-dialog-description">Use this for the pastor’s original PDF, DOCX, text file, or legacy slide-note deck. The file picker copies the verified source into private storage and never moves the original.</p>
+        <div class="prepare-sermon-material-file-grid">
+          <label class="field-group">
+            <span>Source kind</span>
+            <select id="attachSermonSourceKind" class="display-dropdown">
+              <option value="manuscript">Pastor manuscript</option>
+              <option value="slide-notes">Sermon slides or slide notes</option>
+              <option value="transcript">Transcript</option>
+              <option value="other">Other reviewed source</option>
+            </select>
+          </label>
+          <label class="field-group">
+            <span>Source languages <small>BCP-47 codes, separated by commas</small></span>
+            <input id="attachSermonSourceLanguage" class="text-input" type="text" maxlength="160" autocomplete="off" required value="en" placeholder="en, ru">
+          </label>
+          <label class="field-group">
+            <span>Provided by <small>Optional</small></span>
+            <input id="attachSermonSourceProvidedBy" class="text-input" type="text" maxlength="200" autocomplete="off" placeholder="Pastor name">
+          </label>
+        </div>
+        <label class="prepare-sermon-metadata-option">
+          <input id="attachSermonSourceUpdateMetadata" type="checkbox">
+          <span>
+            <strong>Update an existing record for the same file</strong>
+            <small>Off by default. Turn this on only to replace its reviewed kind, languages, and provider; ordinary restoration keeps the original record unchanged.</small>
+          </span>
+        </label>
+      </section>
+      <p id="attachSermonSourceError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelAttachSermonSource" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnConfirmAttachSermonSource" class="btn btn-outline">Choose original file…</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sermonPostServiceDialog" class="prepare-dialog" aria-labelledby="sermonPostServiceTitle" aria-describedby="sermonPostServiceDescription">
+    <form id="sermonPostServiceForm">
+      <p class="section-kicker">AFTER THE SERVICE</p>
+      <h2 id="sermonPostServiceTitle">Review post-service sermon links</h2>
+      <p id="sermonPostServiceDescription" class="prepare-dialog-description">Add durable HTTPS links for the sermon and recording. If complete sermon text was already reviewed in SyncShow, an external notes link is optional. Adding a recording URL keeps any recording already preserved in SyncShow’s private local storage. Nothing is uploaded, published, or sent to Community by this form.</p>
+      <label class="field-group" for="sermonPostServiceCanonicalUrl">
+        <span>Canonical sermon page</span>
+        <input id="sermonPostServiceCanonicalUrl" class="text-input" type="url" inputmode="url" maxlength="2048" autocomplete="off" aria-describedby="sermonPostServiceCanonicalHelp" placeholder="https://church.example/sermons/sermon-title">
+      </label>
+      <p id="sermonPostServiceCanonicalHelp" class="prepare-dialog-description">The stable page people should revisit. Recording or notes can supply the revisit link while the page is waiting.</p>
+      <fieldset class="prepare-sermon-post-service-fieldset">
+        <legend>Recording</legend>
+        <div class="prepare-sermon-post-service-grid">
+          <label for="sermonPostServiceRecordingKind">
+            <span>Type</span>
+            <select id="sermonPostServiceRecordingKind" class="display-dropdown">
+              <option value="audio">Audio</option>
+              <option value="video">Video</option>
+            </select>
+          </label>
+          <label for="sermonPostServiceRecordingStatus">
+            <span>State</span>
+            <select id="sermonPostServiceRecordingStatus" class="display-dropdown">
+              <option value="pending">Waiting</option>
+              <option value="ready">Available</option>
+            </select>
+          </label>
+        </div>
+        <label class="field-group" for="sermonPostServiceRecordingUrl">
+          <span>Recording URL</span>
+          <input id="sermonPostServiceRecordingUrl" class="text-input" type="url" inputmode="url" maxlength="2048" autocomplete="off" aria-describedby="sermonPostServiceAvailabilityHelp" placeholder="https://media.example/sermon.mp3">
+        </label>
+      </fieldset>
+      <fieldset class="prepare-sermon-post-service-fieldset">
+        <legend>External notes or transcript</legend>
+        <div class="prepare-sermon-post-service-grid">
+          <label for="sermonPostServiceTextKind">
+            <span>Type</span>
+            <select id="sermonPostServiceTextKind" class="display-dropdown">
+              <option value="document">Sermon notes</option>
+              <option value="transcript">Transcript</option>
+            </select>
+          </label>
+          <label for="sermonPostServiceTextStatus">
+            <span>State</span>
+            <select id="sermonPostServiceTextStatus" class="display-dropdown">
+              <option value="pending">Waiting</option>
+              <option value="ready">Available</option>
+            </select>
+          </label>
+        </div>
+        <label class="field-group" for="sermonPostServiceTextUrl">
+          <span>Document URL</span>
+          <input id="sermonPostServiceTextUrl" class="text-input" type="url" inputmode="url" maxlength="2048" autocomplete="off" aria-describedby="sermonPostServiceAvailabilityHelp" placeholder="https://church.example/sermons/sermon-notes.pdf">
+        </label>
+      </fieldset>
+      <p id="sermonPostServiceAvailabilityHelp" class="prepare-dialog-description">Available means an operator reviewed a stable public HTTPS link with no sign-in details, query string, fragment, IP/private host, or nonstandard port; a recording must identify a file rather than a directory. SyncShow does not test whether the website is reachable. A temporary or signed link may be saved only while this record remains Draft and will not count as Ready for Community. Leaving a Waiting recording URL blank keeps any locally preserved recording; it does not erase or upload that private file. Reviewed canonical sermon text can supply the revisit content without this external document link.</p>
+      <p id="sermonPostServiceDialogAudience" class="prepare-dialog-description">Audience remains Private.</p>
+      <p id="sermonPostServiceInheritedWarning" class="prepare-dialog-description" hidden></p>
+      <p id="sermonPostServiceError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelSermonPostService" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnSaveSermonPostService" class="btn btn-primary">Save reviewed links</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="reviewSermonReferenceDialog" class="prepare-dialog prepare-dialog-wide prepare-sermon-reference-dialog" aria-labelledby="reviewSermonReferenceTitle" aria-describedby="reviewSermonReferenceDescription">
+    <form id="reviewSermonReferenceForm">
+      <p class="section-kicker">REVIEW SCRIPTURE</p>
+      <h2 id="reviewSermonReferenceTitle">Review sermon references</h2>
+      <p id="reviewSermonReferenceDescription" class="prepare-dialog-description">Review each full canonical passage before confirming it. Extracted citations remain suggestions until you explicitly confirm them here.</p>
+      <p id="reviewSermonReferenceContext" class="prepare-sermon-reference-context">Choose an exact linked sermon packet to begin.</p>
+      <p id="reviewSermonReferenceStatus" class="prepare-sermon-reference-dialog-status" role="status" aria-live="polite" aria-atomic="true">No reference changes are staged.</p>
+
+      <div id="reviewSermonReferenceEditor" class="prepare-sermon-reference-editor">
+        <section class="prepare-sermon-reference-panel" aria-labelledby="reviewSermonReferenceRowsHeading">
+          <div class="prepare-sermon-reference-panel-heading">
+            <div>
+              <h3 id="reviewSermonReferenceRowsHeading">References in sermon order</h3>
+              <p id="reviewSermonReferenceRowsHelp">Suggested references need a full passage preview and a separate confirmation. Use each row’s Move earlier and Move later buttons to change the order.</p>
+            </div>
+          </div>
+          <ol id="reviewSermonReferenceRows" class="prepare-sermon-reference-editor-rows" aria-describedby="reviewSermonReferenceRowsHelp"></ol>
+          <p id="reviewSermonReferenceRowsEmpty" class="prepare-sermon-reference-empty">No Scripture references are in this sermon yet.</p>
+        </section>
+
+        <section id="reviewSermonReferenceAdd" class="prepare-sermon-reference-panel prepare-sermon-reference-add" aria-labelledby="reviewSermonReferenceAddHeading">
+          <div class="prepare-sermon-reference-panel-heading">
+            <div>
+              <h3 id="reviewSermonReferenceAddHeading">Add a reviewed reference</h3>
+              <p>Enter the passage as a person would cite it. Finding a passage only prepares a preview; it does not confirm or save the reference.</p>
+            </div>
+          </div>
+          <div class="prepare-sermon-reference-draft-grid">
+            <label class="field-group" for="reviewSermonReferenceDraftQuery">
+              <span>Bible reference</span>
+              <input id="reviewSermonReferenceDraftQuery" class="text-input" type="text" maxlength="160" autocomplete="off" aria-describedby="reviewSermonReferenceDraftStatus" placeholder="Ephesians 3:14-21">
+            </label>
+            <label class="field-group" for="reviewSermonReferenceDraftRole">
+              <span>Role in sermon</span>
+              <select id="reviewSermonReferenceDraftRole" class="display-dropdown">
+                <option value="mentioned">Mentioned passage</option>
+                <option value="primary">Primary passage</option>
+              </select>
+            </label>
+            <button type="button" id="reviewSermonReferenceFindButton" class="btn btn-outline" aria-controls="reviewSermonReferenceDraftChoices reviewSermonReferenceDraftPreview" aria-describedby="reviewSermonReferenceDraftStatus" disabled>Find passage</button>
+          </div>
+          <p id="reviewSermonReferenceDraftStatus" class="prepare-sermon-reference-draft-status" role="status" aria-live="polite" aria-atomic="true">Enter a Bible reference to preview its canonical passage.</p>
+          <div id="reviewSermonReferenceDraftChoices" class="prepare-bible-choices" role="group" aria-label="Possible Bible books" hidden></div>
+          <section id="reviewSermonReferenceDraftPreview" class="prepare-sermon-reference-draft-preview" aria-labelledby="reviewSermonReferenceDraftPreviewHeading" hidden>
+            <div>
+              <strong id="reviewSermonReferenceDraftPreviewHeading">Canonical passage preview</strong>
+              <p id="reviewSermonReferenceDraftPreviewText"></p>
+            </div>
+            <button type="button" id="reviewSermonReferenceConfirmDraftButton" class="btn btn-outline" aria-describedby="reviewSermonReferenceDraftStatus" disabled>Add confirmed reference</button>
+          </section>
+        </section>
+      </div>
+
+      <section id="reviewSermonReferenceProposal" class="prepare-sermon-reference-proposal" aria-labelledby="reviewSermonReferenceProposalHeading" hidden>
+        <div class="prepare-sermon-reference-panel-heading">
+          <div>
+            <h3 id="reviewSermonReferenceProposalHeading">Review canonical changes</h3>
+            <p>Review each listed addition, change, removal, outline link, role, and order change below. Read every complete preview shown for a new or newly confirmed passage. Nothing is saved until you provide the full confirmation and choose Save confirmed references.</p>
+          </div>
+        </div>
+        <p id="reviewSermonReferenceProposalStatus" class="prepare-sermon-reference-proposal-status" role="status" aria-live="polite" aria-atomic="true">Canonical changes are ready for human review.</p>
+        <ol id="reviewSermonReferenceProposalRows" class="prepare-sermon-reference-proposal-rows" aria-label="Canonical Scripture reference changes"></ol>
+        <label class="prepare-sermon-reference-full-confirmation">
+          <input id="reviewSermonReferenceFullConfirmation" type="checkbox" aria-describedby="reviewSermonReferenceFullConfirmationHelp">
+          <span>
+            <strong>I reviewed every listed addition, change, removal, outline link, role, and order change above.</strong>
+            <small id="reviewSermonReferenceFullConfirmationHelp">This human confirmation is separate from importing or checking an extractor suggestion.</small>
+          </span>
+        </label>
+      </section>
+
+      <p id="reviewSermonReferenceError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions prepare-sermon-reference-dialog-actions">
+        <button type="button" id="reviewSermonReferenceCloseButton" class="btn btn-secondary">Close</button>
+        <button type="button" id="reviewSermonReferenceEditAgainButton" class="btn btn-secondary" aria-controls="reviewSermonReferenceEditor reviewSermonReferenceProposal" hidden>Edit again</button>
+        <button type="submit" id="reviewSermonReferenceReviewSaveButton" class="btn btn-primary" aria-describedby="reviewSermonReferenceStatus" disabled>Review &amp; save…</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="reviewSermonExtractionDialog" class="prepare-dialog prepare-dialog-wide prepare-sermon-review-dialog" aria-labelledby="reviewSermonExtractionTitle" aria-describedby="reviewSermonExtractionDescription">
+    <form id="reviewSermonExtractionForm">
+      <p class="section-kicker">REVIEW SOURCE</p>
+      <h2 id="reviewSermonExtractionTitle">Review sermon suggestions</h2>
+      <p id="reviewSermonExtractionDescription" class="prepare-dialog-description">Choose one attached source and extract review suggestions. Checked Scripture citations import as Needs review; only the separate Scripture-reference review can confirm them.</p>
+      <div class="prepare-sermon-review-source-row">
+        <label class="field-group" for="reviewSermonExtractionSource">
+          <span>Attached source</span>
+          <select id="reviewSermonExtractionSource" class="display-dropdown" required>
+            <option value="">Choose an attached source…</option>
+          </select>
+        </label>
+        <button type="button" id="btnProposeSermonExtraction" class="btn btn-outline" disabled>Extract suggestions</button>
+      </div>
+      <p id="reviewSermonExtractionStatus" class="prepare-sermon-review-status" role="status" aria-live="polite">Choose an attached source to begin. Nothing will be changed.</p>
+      <section id="reviewSermonExtractionResults" class="prepare-sermon-review-results" aria-label="Extracted sermon suggestions" hidden>
+        <div class="prepare-sermon-review-preview">
+          <h3>Extracted source preview</h3>
+          <p id="reviewSermonExtractionSourceSummary"></p>
+          <p id="reviewSermonExtractionPreviewMeta"></p>
+          <p id="reviewSermonExtractionPersistence" class="prepare-sermon-review-persistence" hidden></p>
+          <pre id="reviewSermonExtractionPreview"></pre>
+        </div>
+        <section class="prepare-sermon-suggestion-section" aria-labelledby="reviewSermonExtractionOutlineHeading">
+          <div>
+            <h3 id="reviewSermonExtractionOutlineHeading">Outline suggestions</h3>
+            <p>Unchecked by default. Select only reviewed sections; choosing a child also chooses its proposed parents.</p>
+          </div>
+          <div id="reviewSermonExtractionOutline" class="prepare-sermon-suggestion-list" role="list"></div>
+        </section>
+        <section class="prepare-sermon-suggestion-section" aria-labelledby="reviewSermonExtractionReferencesHeading">
+          <div>
+            <h3 id="reviewSermonExtractionReferencesHeading">Scripture-reference suggestions</h3>
+            <p>Unchecked by default. Import citations that deserve human review. Importing does not confirm them or expose them in Community passage links.</p>
+          </div>
+          <div id="reviewSermonExtractionReferences" class="prepare-sermon-suggestion-list" role="list"></div>
+        </section>
+      </section>
+      <p id="reviewSermonExtractionError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelSermonExtraction" class="btn btn-secondary">Close review</button>
+        <button type="submit" id="btnApplySermonExtraction" class="btn btn-primary" disabled>Import checked suggestions</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="reviewSermonBodyDialog" class="prepare-dialog prepare-dialog-wide prepare-sermon-body-dialog" aria-labelledby="reviewSermonBodyTitle" aria-describedby="reviewSermonBodyDescription">
+    <form id="reviewSermonBodyForm">
+      <p class="section-kicker">REVIEW SERMON TEXT</p>
+      <h2 id="reviewSermonBodyTitle">Review complete sermon text</h2>
+      <p id="reviewSermonBodyDescription" class="prepare-dialog-description">Choose an attached manuscript or transcript, then load its complete extracted text for human review. Loading changes nothing.</p>
+      <div class="prepare-sermon-review-source-row">
+        <label class="field-group" for="reviewSermonBodySource">
+          <span>Manuscript or transcript</span>
+          <select id="reviewSermonBodySource" class="display-dropdown" required>
+            <option value="">Choose an eligible attached source…</option>
+          </select>
+        </label>
+        <button type="button" id="btnProposeSermonBody" class="btn btn-outline" disabled>Load complete text</button>
+      </div>
+      <p id="reviewSermonBodyStatus" class="prepare-sermon-review-status" role="status" aria-live="polite">Choose an eligible source. Nothing will be changed.</p>
+      <section id="reviewSermonBodyResults" class="prepare-sermon-body-results" aria-label="Complete reviewed sermon text" hidden>
+        <div class="prepare-sermon-body-summary" aria-label="Exact sermon and source summary">
+          <h3>Sermon and private source</h3>
+          <p id="reviewSermonBodySermonSummary"></p>
+          <p id="reviewSermonBodySourceSummary"></p>
+        </div>
+        <p id="reviewSermonBodyPublicationNotice" class="prepare-sermon-body-notice"></p>
+        <label class="field-group" for="reviewSermonBodyLanguage">
+          <span>Reviewed text language</span>
+          <input id="reviewSermonBodyLanguage" class="text-input" type="text" maxlength="35" autocomplete="off" required aria-describedby="reviewSermonBodyLanguageHelp reviewSermonBodyFieldError">
+          <small id="reviewSermonBodyLanguageHelp">Use a language tag such as en or ru. Use mul when one body entry contains multiple languages.</small>
+        </label>
+        <label class="field-group" for="reviewSermonBodyText">
+          <span>Complete reviewed sermon text</span>
+          <textarea id="reviewSermonBodyText" class="prepare-textarea prepare-sermon-body-text" maxlength="1048576" spellcheck="true" required aria-describedby="reviewSermonBodyTextMeta reviewSermonBodyFieldError"></textarea>
+          <small id="reviewSermonBodyTextMeta" role="status" aria-live="polite">No complete text loaded.</small>
+        </label>
+        <p id="reviewSermonBodyFieldError" class="preflight-error" role="alert" hidden></p>
+        <label class="prepare-sermon-body-confirmation" for="reviewSermonBodyConfirmed">
+          <input id="reviewSermonBodyConfirmed" type="checkbox">
+          <span>
+            <strong>I reviewed this complete text and its language.</strong>
+            <small>Save only after checking the full manuscript or transcript, not just a preview.</small>
+          </span>
+        </label>
+      </section>
+      <p id="reviewSermonBodyError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelSermonBody" class="btn btn-secondary">Close review</button>
+        <button type="submit" id="btnApplySermonBody" class="btn btn-primary" disabled>Save reviewed sermon text</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="buildNativeSermonSlidesDialog" class="prepare-dialog prepare-dialog-wide prepare-sermon-cue-dialog" aria-labelledby="buildNativeSermonSlidesTitle" aria-describedby="buildNativeSermonSlidesDescription">
+    <form id="buildNativeSermonSlidesForm">
+      <p class="section-kicker">NATIVE SERMON SLIDES</p>
+      <h2 id="buildNativeSermonSlidesTitle">Place reviewed sermon text on slides</h2>
+      <p id="buildNativeSermonSlidesDescription" class="prepare-dialog-description">Map every output to one exact canonical sermon body entry or Hidden. Then choose Exact paragraph, human-authored Condensed service text, or Hidden for every output in every used row. SyncShow never generates condensed wording or guesses by language or position. Reviewing changes nothing, and the sermon record stays unchanged.</p>
+      <fieldset class="prepare-sermon-cue-mapping-fieldset" aria-describedby="buildNativeSermonSlidesMappingHelp">
+        <legend>Exact output mapping</legend>
+        <p id="buildNativeSermonSlidesMappingHelp">Every output requires a deliberate choice. Hidden outputs receive no text.</p>
+        <div id="buildNativeSermonSlidesMapping" class="prepare-sermon-cue-mapping" role="group" aria-label="Canonical body entry for every output"></div>
+      </fieldset>
+      <div class="prepare-sermon-cue-propose-row">
+        <p id="buildNativeSermonSlidesStatus" class="prepare-sermon-review-status" role="status" aria-live="polite">Choose an exact entry or Hidden for every output. Nothing will be changed.</p>
+        <button type="button" id="btnProposeNativeSermonSlides" class="btn btn-outline" disabled>Review canonical paragraphs</button>
+      </div>
+      <section id="buildNativeSermonSlidesProposal" class="prepare-sermon-cue-proposal" aria-label="Canonical sermon paragraph review" hidden>
+        <div class="prepare-sermon-cue-review-heading">
+          <div>
+            <h3>Choose Exact, Condensed, or Hidden for every output</h3>
+            <p id="buildNativeSermonSlidesSummary"></p>
+          </div>
+          <button type="button" id="btnSkipAllNativeSermonParagraphs" class="btn btn-quiet btn-compact">Skip all</button>
+        </div>
+        <div id="buildNativeSermonSlidesConveniences" class="prepare-sermon-cue-mapping" aria-label="Deliberate per-output placement shortcuts"></div>
+        <label id="buildNativeSermonSlidesPlacementField" class="field-group" for="buildNativeSermonSlidesPlacement">
+          <span>Reviewed block placement</span>
+          <select id="buildNativeSermonSlidesPlacement" class="display-dropdown">
+            <option value="">Choose where the reviewed rows belong…</option>
+          </select>
+          <small>Inserted and updated rows become one ordered block. Untouched children keep their content, identity, hierarchy, and relative order.</small>
+        </label>
+        <p class="prepare-sermon-cue-review-help">Every row and output starts Hidden. “Place this output in order” deliberately selects Exact paragraphs only for that mapped output; you can still change every decision. Condensed text is always written or explicitly copied by the operator—SyncShow never generates it. Update never chooses a target for you. Every unused canonical paragraph is sent as an explicit Skip decision.</p>
+        <div id="buildNativeSermonSlidesRows" class="prepare-sermon-cue-rows" role="list" aria-label="Native sermon slide decisions"></div>
+        <label class="prepare-sermon-body-confirmation prepare-sermon-cue-confirmation" for="buildNativeSermonSlidesConfirmed">
+          <input id="buildNativeSermonSlidesConfirmed" type="checkbox">
+          <span>
+            <strong>I reviewed every output mapping, row, target, placement, Exact paragraph, Condensed text, Hidden decision, and explicit skip.</strong>
+            <small>Condensed wording changes only native projected service cues. It does not edit the canonical sermon, Community, source files, or the song library.</small>
+          </span>
+        </label>
+      </section>
+      <p id="buildNativeSermonSlidesError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelNativeSermonSlides" class="btn btn-secondary">Close review</button>
+        <button type="submit" id="btnApplyNativeSermonSlides" class="btn btn-primary" disabled>Apply reviewed native slides</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="buildSermonSlidesDialog" class="prepare-dialog prepare-dialog-wide prepare-sermon-cue-dialog" aria-labelledby="buildSermonSlidesTitle" aria-describedby="buildSermonSlidesDescription">
+    <form id="buildSermonSlidesForm">
+      <p class="section-kicker">LEGACY / FALLBACK</p>
+      <h2 id="buildSermonSlidesTitle">Import PowerPoint slide notes</h2>
+      <p id="buildSermonSlidesDescription" class="prepare-dialog-description">Choose the exact slide-note source for each output. File names and languages are hints only, never automatic matches. Existing cues are never selected or changed automatically. Reviewing changes nothing.</p>
+      <fieldset class="prepare-sermon-cue-mapping-fieldset" aria-describedby="buildSermonSlidesMappingHelp">
+        <legend>Source mapping</legend>
+        <p id="buildSermonSlidesMappingHelp">Map at least one output. A blank output stays hidden in inserted cues and remains untouched in updated cues.</p>
+        <div id="buildSermonSlidesMapping" class="prepare-sermon-cue-mapping" role="group" aria-label="Slide-note source for each output"></div>
+      </fieldset>
+      <div class="prepare-sermon-cue-propose-row">
+        <p id="buildSermonSlidesMappingStatus" class="prepare-sermon-review-status" role="status" aria-live="polite">Choose at least one explicit output-to-source mapping. Nothing will be changed.</p>
+        <button type="button" id="btnProposeSermonCueReconciliation" class="btn btn-outline" disabled>Review mapped sources</button>
+      </div>
+      <section id="buildSermonSlidesProposal" class="prepare-sermon-cue-proposal" aria-label="Bounded sermon slide proposal" hidden>
+        <div class="prepare-sermon-cue-review-heading">
+          <div>
+            <h3>Review every proposed row</h3>
+            <p id="buildSermonSlidesProposalSummary"></p>
+          </div>
+          <button type="button" id="btnUseAllSuggestedSermonRows" class="btn btn-quiet btn-compact">Use all suggested rows</button>
+        </div>
+        <label id="buildSermonSlidesPlacementField" class="field-group" for="buildSermonSlidesPlacement">
+          <span>Reviewed block placement</span>
+          <select id="buildSermonSlidesPlacement" class="display-dropdown">
+            <option value="">Choose where the reviewed rows belong…</option>
+          </select>
+          <small>Rows marked Insert or Update become one ordered block among this selected group’s direct children. Nested groups and every untouched child keep their identity, content, hierarchy, and relative order.</small>
+        </label>
+        <p class="prepare-sermon-cue-review-help">Every row defaults to Skip. Insert creates a new cue. Update requires choosing one eligible existing direct sermon cue in this selected group and never chooses one for you. It preserves that cue’s title, preset, operator notes, creation time, and unmapped output text, titles, and spans. Choosing the target starts from its current direct outline override; a blank override inherits the selected group’s effective section and does not necessarily mean the whole sermon. Reviewed mapped output text replaces the old text, stale mapped output titles are cleared, and an unpaired mapped output is cleared. Exact source text is read-only here.</p>
+        <div id="buildSermonSlidesRows" class="prepare-sermon-cue-rows" role="list" aria-label="Sermon slide row decisions"></div>
+        <label class="prepare-sermon-body-confirmation prepare-sermon-cue-confirmation" for="buildSermonSlidesConfirmed">
+          <input id="buildSermonSlidesConfirmed" type="checkbox">
+          <span>
+            <strong>I reviewed every row, target, block placement, output pairing, exact text, and outline section.</strong>
+            <small>No untouched item will be deleted or rewritten. Inserted and updated rows will appear in the reviewed order.</small>
+          </span>
+        </label>
+      </section>
+      <p id="buildSermonSlidesError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelBuildSermonSlides" class="btn btn-secondary">Close review</button>
+        <button type="submit" id="btnApplySermonCueReconciliation" class="btn btn-primary" disabled>Apply reviewed sermon slides</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="newServiceProjectDialog" class="prepare-dialog" aria-labelledby="newServiceProjectTitle">
     <form id="newServiceProjectForm">
       <p class="section-kicker">NEW SERVICE</p>
       <h2 id="newServiceProjectTitle">Create a service project</h2>
-      <p class="prepare-dialog-description">Give volunteers a clear name and date. You can add songs and slides next.</p>
+      <p class="prepare-dialog-description">Give volunteers a clear name, date, and local start time. The new service opens in Planning so its order and weekly checks can be reviewed before Ready.</p>
       <label class="field-group">
         <span>Service name</span>
         <input id="newServiceProjectName" class="text-input" type="text" maxlength="200" autocomplete="off" required value="Sunday Service">
       </label>
+      <div class="prepare-dialog-field-grid">
+        <label class="field-group">
+          <span>Service date</span>
+          <input id="newServiceProjectDate" class="text-input" type="date" required>
+        </label>
+        <label class="field-group">
+          <span>Start time</span>
+          <input id="newServiceProjectStartTime" class="text-input" type="time" required value="10:30">
+        </label>
+      </div>
       <label class="field-group">
-        <span>Service date</span>
-        <input id="newServiceProjectDate" class="text-input" type="date" required>
+        <span>Team notes <small>(optional)</small></span>
+        <textarea id="newServiceProjectTeamNotes" class="prepare-textarea" maxlength="4000" placeholder="Example: Communion this week; sound check at 9:45."></textarea>
       </label>
       <p id="newServiceProjectError" class="preflight-error" role="alert" hidden></p>
       <div class="dialog-actions">
         <button type="button" id="btnCancelNewServiceProject" class="btn btn-secondary">Cancel</button>
         <button type="submit" id="btnCreateServiceProject" class="btn btn-primary">Create service</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="planNextServiceDialog" class="prepare-dialog" aria-labelledby="planNextServiceTitle">
+    <form id="planNextServiceForm">
+      <p class="section-kicker">PLAN NEXT SERVICE</p>
+      <h2 id="planNextServiceTitle">Start from this service</h2>
+      <p class="prepare-dialog-description">The service order, songs, notices, and pictures carry forward. Last week’s sermon slides, sermon reading, private sermon packet, links, and unused files are cleared.</p>
+      <label class="field-group">
+        <span>Service name</span>
+        <input id="planNextServiceName" class="text-input" type="text" maxlength="200" autocomplete="off" required>
+      </label>
+      <div class="prepare-dialog-field-grid">
+        <label class="field-group">
+          <span>Service date</span>
+          <input id="planNextServiceDate" class="text-input" type="date" required>
+        </label>
+        <label class="field-group">
+          <span>Start time</span>
+          <input id="planNextServiceStartTime" class="text-input" type="time" required value="10:30">
+        </label>
+      </div>
+      <label class="field-group">
+        <span>Team notes <small>(optional)</small></span>
+        <textarea id="planNextServiceTeamNotes" class="prepare-textarea" maxlength="4000" placeholder="Example: Communion this week; sound check at 9:45."></textarea>
+      </label>
+      <p class="prepare-dialog-description">This records the exact saved revision used as the template. “Ready” remains a separate review decision after you check the new plan.</p>
+      <p id="planNextServiceError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelPlanNextService" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnCreateNextServicePlan" class="btn btn-primary">Create next plan</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="manageServingTeamDialog" class="prepare-dialog prepare-dialog-wide prepare-serving-team-dialog" aria-labelledby="manageServingTeamTitle" aria-describedby="manageServingTeamDescription">
+    <form id="manageServingTeamForm">
+      <p class="section-kicker">SERVING TEAM</p>
+      <h2 id="manageServingTeamTitle" tabindex="-1">Assign people to this service</h2>
+      <p id="manageServingTeamDescription" class="prepare-dialog-description">Connect a person and a clear responsibility to an exact service item. These local assignments help planners and volunteers; this dialog never publishes anything to Community.</p>
+      <p id="manageServingTeamSummary" class="prepare-serving-team-dialog-summary" role="status" aria-live="polite">No assignments have been added.</p>
+      <div id="manageServingTeamRows" class="prepare-serving-assignment-rows" role="list" aria-label="Serving-team assignments" aria-describedby="manageServingTeamDescription"></div>
+      <p id="manageServingTeamEmpty" class="prepare-serving-team-empty">No one is assigned yet. Add an assignment when a person is responsible for an item in this service.</p>
+      <button type="button" id="btnAddServingTeamAssignment" class="btn btn-outline btn-compact" aria-controls="manageServingTeamRows">Add assignment</button>
+      <p id="manageServingTeamError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelServingTeam" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnSaveServingTeam" class="btn btn-primary">Save serving team</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="serviceReadinessDialog" class="prepare-dialog prepare-dialog-wide prepare-readiness-dialog" aria-labelledby="serviceReadinessTitle" aria-describedby="serviceReadinessDescription">
+    <form id="serviceReadinessForm">
+      <p class="section-kicker">SERVICE READINESS</p>
+      <h2 id="serviceReadinessTitle" tabindex="-1">Review this exact service plan</h2>
+      <p id="serviceReadinessDescription" class="prepare-dialog-description">Check the schedule and every revision-derived content check. An exception needs a specific human reason and applies only until projected content changes.</p>
+      <div class="prepare-dialog-field-grid">
+        <label class="field-group">
+          <span>Start time</span>
+          <input id="serviceReadinessStartTime" class="text-input" type="time" required>
+        </label>
+        <label class="field-group">
+          <span>Service date</span>
+          <input id="serviceReadinessDate" class="text-input" type="text" readonly>
+        </label>
+      </div>
+      <label class="field-group">
+        <span>Team notes <small>(optional)</small></span>
+        <textarea id="serviceReadinessTeamNotes" class="prepare-textarea prepare-textarea-compact" maxlength="4000" placeholder="Details volunteers should know before this service."></textarea>
+      </label>
+      <section class="prepare-readiness-review" aria-labelledby="serviceReadinessChecksHeading">
+        <div class="prepare-readiness-review-heading">
+          <div>
+            <p class="section-kicker">EXACT REVISION</p>
+            <h3 id="serviceReadinessChecksHeading">Content checks</h3>
+          </div>
+          <span id="serviceReadinessDialogBadge" class="prepare-service-readiness-badge">Checking</span>
+        </div>
+        <p id="serviceReadinessDialogSummary" class="prepare-dialog-description" role="status" aria-live="polite"></p>
+        <div id="serviceReadinessReviewChecks" class="prepare-readiness-review-checks"></div>
+      </section>
+      <label id="serviceReadinessConfirmedField" class="prepare-sermon-body-confirmation prepare-readiness-confirmation" for="serviceReadinessConfirmed">
+        <input id="serviceReadinessConfirmed" type="checkbox">
+        <span>
+          <strong>I reviewed this exact service order and every stated exception.</strong>
+          <small>Ready does not build or install a Show Package. Save &amp; go to Load remains separate.</small>
+        </span>
+      </label>
+      <p id="serviceReadinessError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelServiceReadiness" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnSaveServiceReadiness" class="btn btn-outline">Save plan review</button>
+        <button type="submit" id="btnMarkServiceReady" class="btn btn-primary">Save &amp; mark Ready</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="weeklySermonAnchorDialog" class="prepare-dialog" aria-labelledby="weeklySermonAnchorTitle" aria-describedby="weeklySermonAnchorDescription">
+    <form method="dialog">
+      <p class="section-kicker">THIS WEEK’S SERMON</p>
+      <h2 id="weeklySermonAnchorTitle">Choose the sermon section</h2>
+      <p id="weeklySermonAnchorDescription" class="prepare-dialog-description">This service has more than one sermon section. Choose the exact section you want to set up; SyncShow will not guess or change either one.</p>
+      <div id="weeklySermonAnchorChoices" class="prepare-weekly-sermon-choices" role="list" aria-label="Sermon sections"></div>
+      <p id="weeklySermonAnchorError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelWeeklySermonAnchor" class="btn btn-secondary">Cancel</button>
       </div>
     </form>
   </dialog>
@@ -885,7 +2113,7 @@
     </form>
   </dialog>
 
-  <dialog id="editServiceItemDialog" class="prepare-dialog prepare-dialog-wide" aria-labelledby="editServiceItemTitle">
+  <dialog id="editServiceItemDialog" class="prepare-dialog prepare-dialog-wide" aria-labelledby="editServiceItemTitle" aria-describedby="editServiceItemDescription">
     <form id="editServiceItemForm">
       <p class="section-kicker">EDIT ITEM</p>
       <h2 id="editServiceItemTitle">Edit service item</h2>
@@ -909,6 +2137,29 @@
         <span>Slide style</span>
         <select id="editServiceItemPreset" class="display-dropdown"></select>
       </label>
+      <fieldset id="editServiceItemRunSheet" class="prepare-item-run-sheet" aria-describedby="editServiceItemRunSheetHelp editServiceItemDurationStatus" hidden>
+        <legend>Run sheet</legend>
+        <p id="editServiceItemRunSheetHelp">Schedule the whole service item once, even when it produces several slides. Unchecked means untimed; checked with 0 minutes and 0 seconds is an intentional instantaneous item.</p>
+        <label class="prepare-item-schedule-toggle" for="editServiceItemScheduled">
+          <input id="editServiceItemScheduled" type="checkbox">
+          <span>
+            <strong>Schedule this item</strong>
+            <small>Include its explicit duration in the planned service finish time.</small>
+          </span>
+        </label>
+        <div id="editServiceItemDurationFields" class="prepare-item-duration-fields" role="group" aria-label="Planned item duration">
+          <label class="field-group">
+            <span>Minutes</span>
+            <input id="editServiceItemDurationMinutes" class="text-input" type="number" min="0" max="1440" step="1" inputmode="numeric" autocomplete="off" aria-describedby="editServiceItemRunSheetHelp editServiceItemDurationStatus" disabled>
+          </label>
+          <span class="prepare-item-duration-separator" aria-hidden="true">:</span>
+          <label class="field-group">
+            <span>Seconds</span>
+            <input id="editServiceItemDurationSeconds" class="text-input" type="number" min="0" max="59" step="1" inputmode="numeric" autocomplete="off" aria-describedby="editServiceItemRunSheetHelp editServiceItemDurationStatus" disabled>
+          </label>
+        </div>
+        <p id="editServiceItemDurationStatus" class="prepare-item-duration-status" role="status" aria-live="polite">This item is untimed.</p>
+      </fieldset>
       <section id="editServiceItemTextFields" class="prepare-output-text-fields" hidden>
         <div class="prepare-editor-heading">
           <div>
@@ -955,6 +2206,175 @@
     </form>
   </dialog>
 
+  <dialog id="currentServiceSongDialog" class="prepare-dialog prepare-dialog-song prepare-current-service-song-dialog" aria-labelledby="currentServiceSongDialogTitle" aria-describedby="currentServiceSongDialogDescription">
+    <form id="currentServiceSongForm">
+      <p class="section-kicker">CURRENT POWERPOINT SERVICE</p>
+      <h2 id="currentServiceSongDialogTitle">Review a local song family</h2>
+      <p id="currentServiceSongDialogDescription" class="prepare-dialog-description">Capture the original song and, when present, one translation from the same or a different service presentation. SyncShow does not change the PowerPoint or share anything with Community.</p>
+
+      <section id="currentServiceSongCaptureStage" aria-labelledby="currentServiceSongMemberHeading">
+        <div id="currentServiceSongFamilyTools" class="prepare-current-service-song-family-tools">
+          <div>
+            <p class="section-kicker">1 · CAPTURE</p>
+            <div id="currentServiceSongMemberTabs" class="prepare-current-service-song-member-tabs" role="group" aria-label="Song-family members"></div>
+          </div>
+          <div class="prepare-current-service-song-member-actions">
+            <button type="button" id="btnAddCurrentServiceSongTranslation" class="btn btn-outline btn-compact">Add translation</button>
+            <button type="button" id="btnRemoveCurrentServiceSongTranslation" class="btn btn-quiet btn-compact" hidden>Remove translation</button>
+          </div>
+        </div>
+        <h3 id="currentServiceSongMemberHeading" class="prepare-current-service-song-member-heading">Original song capture</h3>
+        <p id="currentServiceSongMemberHelp" class="prepare-current-service-song-member-help">Choose the exact source, lyric range, and text lane for this member. Suggested ranges remain advisory.</p>
+
+        <div class="prepare-current-service-song-fields">
+          <label class="field-group">
+            <span>Presentation</span>
+            <select id="currentServiceSongRole" class="display-dropdown"></select>
+          </label>
+          <label class="field-group prepare-current-service-song-suggestion-field">
+            <span>Suggested song range <small>Optional; always review it</small></span>
+            <select id="currentServiceSongSuggestedRange" class="display-dropdown" disabled>
+              <option value="">Inspect a presentation first</option>
+            </select>
+          </label>
+          <label class="field-group">
+            <span>Default text lane <small>Each slide can be changed below</small></span>
+            <select id="currentServiceSongLane" class="display-dropdown">
+              <option value="all">All text</option>
+              <option value="white">White text only</option>
+              <option value="yellow">Yellow text only</option>
+            </select>
+          </label>
+          <label class="field-group">
+            <span>First lyric slide</span>
+            <input id="currentServiceSongStartSlide" class="text-input" type="number" min="1" step="1" inputmode="numeric" required>
+          </label>
+          <label class="field-group">
+            <span>Last lyric slide</span>
+            <input id="currentServiceSongEndSlide" class="text-input" type="number" min="1" step="1" inputmode="numeric" required>
+          </label>
+          <label class="field-group">
+            <span>Song title</span>
+            <input id="currentServiceSongTitle" class="text-input" type="text" maxlength="200" autocomplete="off" required>
+          </label>
+          <label class="field-group">
+            <span>Language</span>
+            <input id="currentServiceSongLanguage" class="text-input" type="text" maxlength="35" autocomplete="off" placeholder="en, ru, uk…" required>
+          </label>
+          <label class="field-group">
+            <span>Song Library ID <small>Stable and editable</small></span>
+            <input id="currentServiceSongId" class="text-input" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="all-i-have-is-christ-en" required>
+          </label>
+        </div>
+
+        <div id="currentServiceSongStatus" class="prepare-song-validation" data-kind="" role="status" aria-live="polite">Choose a presentation to inspect its exact pinned slides.</div>
+        <ol id="currentServiceSongPreview" class="prepare-current-service-song-preview" aria-label="Selected PowerPoint lyric slide text"></ol>
+        <p class="prepare-current-service-song-note">Suggestions use exact title-placeholder and lyric-textbox runs from this PowerPoint template. They can be incomplete or wrong. White and yellow are source color lanes, not language labels; the language may switch colors between slides. Title-card lines remain unclassified: confirm the real title separately from alternate titles and credits. Every selected slide becomes an occurrence to review as new, repeat, or exclude; confirm Verse/Chorus/Bridge labels, repeats, credits, and source wording before the local save.</p>
+        <label class="prepare-confirmation">
+          <input id="currentServiceSongConfirmed" type="checkbox">
+          <span id="currentServiceSongConfirmedLabel">I reviewed this member’s selected presentation, every slide’s text-lane choice, lyric boundaries, Song Library ID, title, and language.</span>
+        </label>
+      </section>
+
+      <section id="currentServiceSongFamilyReviewStage" class="prepare-current-service-song-review" hidden aria-labelledby="currentServiceSongFamilyReviewHeading">
+        <div class="prepare-current-service-song-review-heading">
+          <div>
+            <p class="section-kicker">2 · REVIEW &amp; SAVE</p>
+            <h3 id="currentServiceSongFamilyReviewHeading" tabindex="-1">Review every occurrence</h3>
+          </div>
+          <span class="prepare-current-service-song-local-badge">LOCAL ONLY</span>
+        </div>
+        <p id="currentServiceSongFamilySummary" class="prepare-current-service-song-review-summary"></p>
+        <div id="currentServiceSongFamilyIdentitySummary" class="prepare-current-service-song-identities" aria-label="Current local Song Library identity effects"></div>
+        <ul id="currentServiceSongFamilyWarnings" class="prepare-current-service-song-warnings" aria-label="Song-family review warnings"></ul>
+        <ol id="currentServiceSongFamilyOccurrences" class="prepare-current-service-song-occurrences" aria-label="PowerPoint song occurrence decisions"></ol>
+
+        <div class="prepare-current-service-song-rights-heading">
+          <div>
+            <p class="section-kicker">SOURCE &amp; CREDITS</p>
+            <h3>Review the song details</h3>
+          </div>
+        </div>
+        <div id="currentServiceSongFamilyMetadata" class="prepare-current-service-song-metadata"></div>
+
+        <div class="prepare-current-service-song-confirmations" aria-label="Final local song-family confirmations">
+          <label class="prepare-confirmation">
+            <input id="currentServiceSongFamilySourceConfirmed" type="checkbox">
+            <span>I compared every occurrence with the named PowerPoint source and confirmed the captured wording and order.</span>
+          </label>
+          <input id="currentServiceSongFamilyRightsConfirmed" type="checkbox" checked hidden aria-hidden="true">
+          <label class="prepare-confirmation">
+            <input id="currentServiceSongFamilyLocalConfirmed" type="checkbox">
+            <span id="currentServiceSongFamilyLocalConfirmedLabel">Save this complete family atomically to the LOCAL Song Library. This does not publish or share anything with Community.</span>
+          </label>
+        </div>
+        <div id="currentServiceSongFamilyCommitStatus" class="prepare-song-validation" data-kind="" role="status" aria-live="polite">Review every occurrence and the song details before the local atomic save.</div>
+      </section>
+
+      <p id="currentServiceSongError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelCurrentServiceSong" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnBackToCurrentServiceSongCapture" class="btn btn-quiet" hidden>Back to captures</button>
+        <button type="button" id="btnRestartCurrentServiceSongFamily" class="btn btn-quiet" hidden>Restart review</button>
+        <button type="submit" id="btnBuildCurrentServiceSongDraft" class="btn btn-primary" disabled>Review occurrences</button>
+        <button type="button" id="btnCommitCurrentServiceSongFamily" class="btn btn-primary" hidden disabled>Save complete family locally</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="currentServiceSongRangeDialog" class="prepare-dialog prepare-reviewed-song-range-dialog" aria-labelledby="currentServiceSongRangeTitle" aria-describedby="currentServiceSongRangeDescription">
+    <form id="currentServiceSongRangeForm">
+      <p class="section-kicker">POWERPOINT → EDITABLE SERVICE</p>
+      <h2 id="currentServiceSongRangeTitle">Replace a reviewed song range</h2>
+      <p id="currentServiceSongRangeDescription" class="prepare-dialog-description">SyncShow will compare one exact, untouched PowerPoint range with the reviewed local song family. The original presentations and the current Load/Show selection stay unchanged.</p>
+
+      <section id="currentServiceSongRangeMappingStage" aria-labelledby="currentServiceSongRangeMappingHeading">
+        <div class="prepare-reviewed-song-range-heading">
+          <div>
+            <p class="section-kicker">1 · OUTPUT MAPPING</p>
+            <h3 id="currentServiceSongRangeMappingHeading">Choose what every output should show</h3>
+          </div>
+          <span class="prepare-current-service-song-local-badge">DRAFT ONLY</span>
+        </div>
+        <p id="currentServiceSongRangeSummary" class="prepare-reviewed-song-range-summary"></p>
+        <div id="currentServiceSongRangeMappings" class="prepare-reviewed-song-range-mappings" aria-label="Reviewed output mappings"></div>
+        <p class="prepare-current-service-song-note">Captured language outputs are pinned to their exact reviewed Song Library revisions. Any uncaptured output starts unselected and must be assigned explicitly before comparison.</p>
+        <button type="button" id="btnBuildCurrentServiceSongRangeComparison" class="btn btn-primary" disabled>Build side-by-side comparison</button>
+      </section>
+
+      <section id="currentServiceSongRangeComparisonStage" class="prepare-reviewed-song-range-comparison" hidden aria-labelledby="currentServiceSongRangeComparisonHeading">
+        <div class="prepare-reviewed-song-range-heading">
+          <div>
+            <p class="section-kicker">2 · COMPARE &amp; REPLACE</p>
+            <h3 id="currentServiceSongRangeComparisonHeading" tabindex="-1">Review every synchronized position</h3>
+          </div>
+          <span id="currentServiceSongRangePosition" class="prepare-reviewed-song-range-position">Position 1 of 1</span>
+        </div>
+        <p id="currentServiceSongRangeComparisonSummary" class="prepare-reviewed-song-range-summary"></p>
+        <div class="prepare-reviewed-song-range-navigation">
+          <button type="button" id="btnPreviousCurrentServiceSongRangePosition" class="btn btn-quiet btn-compact" disabled>Previous</button>
+          <div>
+            <p id="currentServiceSongRangeReviewProgress" role="status" aria-live="polite">No synchronized positions reviewed yet.</p>
+            <button type="button" id="btnRetryCurrentServiceSongRangePosition" class="btn btn-warning-quiet btn-compact" hidden disabled>Retry this position</button>
+          </div>
+          <button type="button" id="btnNextCurrentServiceSongRangePosition" class="btn btn-outline btn-compact" disabled>Next</button>
+        </div>
+        <div id="currentServiceSongRangePreviews" class="prepare-reviewed-song-range-previews" aria-live="polite"></div>
+        <label class="prepare-confirmation">
+          <input id="currentServiceSongRangeConfirmed" type="checkbox" disabled>
+          <span>I reviewed every original-versus-editable position on every output. Replace only this exact range in the native draft, keep the previous project revision for Undo, and leave PowerPoint, Load, Show, and Community unchanged.</span>
+        </label>
+      </section>
+
+      <p id="currentServiceSongRangeError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelCurrentServiceSongRange" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnBackCurrentServiceSongRangeMapping" class="btn btn-quiet" hidden>Back to mapping</button>
+        <button type="submit" id="btnCommitCurrentServiceSongRange" class="btn btn-primary" hidden disabled>Replace reviewed range</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="songDocumentDialog" class="prepare-dialog prepare-dialog-song" aria-labelledby="songDocumentDialogTitle">
     <form id="songDocumentForm">
       <p class="section-kicker">SONG LIBRARY</p>
@@ -978,28 +2398,41 @@
       </label>
       <fieldset class="prepare-song-community-sharing">
         <legend>Community sharing</legend>
-        <p>Choose who can find this song in Heritage Community. New songs stay private unless you change this.</p>
-        <div class="prepare-song-community-fields">
-          <label class="field-group">
-            <span>Visibility</span>
-            <select id="songDocumentCommunityVisibility" class="display-dropdown" disabled>
-              <option value="private" selected>Private — Community admins only</option>
-              <option value="public">Public — Community members now</option>
-              <option value="scheduled-public">Scheduled — Community members later</option>
-            </select>
-          </label>
-          <label id="songDocumentPublishAtField" class="field-group" hidden>
-            <span>Make public on</span>
-            <input id="songDocumentPublishAt" class="text-input" type="datetime-local" disabled>
-          </label>
+        <p>Saving lyrics stays local. Submitting to Community separately confirms the exact original, every linked translation, and the intended access.</p>
+        <div class="prepare-song-community-sections">
+          <section class="prepare-song-community-scope" aria-labelledby="songCommunityMembersHeading">
+            <h3 id="songCommunityMembersHeading">Signed-in church members</h3>
+            <p>Member access stays inside this church Community and has its own exact-family review.</p>
+            <div id="songDocumentCommunityState" class="prepare-song-community-state" data-kind="idle" role="status" aria-live="polite">
+              <strong>Private by default</strong>
+              <span>Connect Heritage Community in Admin Settings when you are ready to review and submit this song.</span>
+            </div>
+            <div class="prepare-song-community-actions">
+              <button type="button" id="btnReviewSongCommunitySharing" class="btn btn-outline" disabled>
+                Review and submit…
+              </button>
+              <button type="button" id="btnRestrictSongCommunity" class="btn btn-secondary" hidden disabled>
+                Restrict to admins
+              </button>
+            </div>
+            <button type="button" id="btnReviewSongCommunityConflict" class="btn btn-warning-quiet prepare-song-conflict-review" hidden>
+              Review conflict
+            </button>
+          </section>
+          <section id="songPublicLinkCard" class="prepare-song-community-scope prepare-song-public-link-card" data-kind="idle" aria-labelledby="songPublicLinkHeading">
+            <h3 id="songPublicLinkHeading">Anyone with the link</h3>
+            <p>No Community sign-in is required. A member-sharing review does not authorize an anonymous link.</p>
+            <div id="songPublicLinkState" class="prepare-song-community-state" data-kind="idle" role="status" aria-live="polite">
+              <strong>Public links are separate</strong>
+              <span>Save this song and connect a Community server that supports public song links.</span>
+            </div>
+            <div class="prepare-song-community-actions">
+              <button type="button" id="btnManageSongPublicLinks" class="btn btn-outline" hidden disabled>
+                Manage public links…
+              </button>
+            </div>
+          </section>
         </div>
-        <div id="songDocumentCommunityState" class="prepare-song-community-state" data-kind="idle" role="status" aria-live="polite">
-          <strong>Private by default</strong>
-          <span>Connect Heritage Community in Admin Settings to sync this song.</span>
-        </div>
-        <button type="button" id="btnReviewSongCommunityConflict" class="btn btn-warning-quiet prepare-song-conflict-review" hidden>
-          Review conflict
-        </button>
       </fieldset>
       <fieldset class="prepare-song-attribution">
         <legend>Song credits</legend>
@@ -1057,6 +2490,105 @@
     </form>
   </dialog>
 
+  <dialog id="songCommunitySharingReviewDialog" class="prepare-dialog prepare-dialog-song" aria-labelledby="songCommunitySharingReviewTitle" aria-describedby="songCommunitySharingReviewDescription songCommunitySharingFamilyInstructions">
+    <form id="songCommunitySharingReviewForm">
+      <p class="section-kicker">HERITAGE COMMUNITY</p>
+      <h2 id="songCommunitySharingReviewTitle" tabindex="-1">Review this song family</h2>
+      <p id="songCommunitySharingReviewDescription" class="prepare-dialog-description">This submits the exact saved family to this church Community with the access policy you choose. An anonymous public web link always requires a separate review.</p>
+      <section class="prepare-song-sharing-family" aria-labelledby="songCommunitySharingFamilyHeading">
+        <h3 id="songCommunitySharingFamilyHeading">Exact versions included</h3>
+        <p id="songCommunitySharingFamilyInstructions">Review every original and translation below. Focus this list and use the arrow keys to scroll through longer families. Any later lyric, credit, source, or family change requires another review.</p>
+        <div id="songCommunitySharingFamily" class="prepare-song-sharing-family-list" role="list" tabindex="0" aria-labelledby="songCommunitySharingFamilyHeading" aria-describedby="songCommunitySharingFamilyInstructions"></div>
+      </section>
+      <div class="prepare-song-community-fields">
+        <label class="field-group">
+          <span>Community access</span>
+          <select id="songCommunitySharingVisibility" class="display-dropdown" required>
+            <option value="private">Community admins only</option>
+            <option value="public">Visible to Community members now</option>
+            <option value="scheduled-public">Visible to Community members later</option>
+          </select>
+        </label>
+        <label id="songCommunitySharingPublishAtField" class="field-group" hidden>
+          <span>Make member-visible on</span>
+          <input id="songCommunitySharingPublishAt" class="text-input" type="datetime-local" aria-describedby="songCommunitySharingPublishAtHelp">
+          <small id="songCommunitySharingPublishAtHelp" class="prepare-field-help">Choose a date and time. Heritage Community will confirm whether the schedule is allowed.</small>
+        </label>
+      </div>
+      <input id="songCommunitySharingBasis" type="hidden" value="church-managed">
+      <input id="songCommunitySharingEvidence" type="hidden" value="">
+      <input id="songCommunitySharingValidUntil" type="hidden" value="">
+      <p id="songCommunitySharingReviewNote" class="prepare-song-sharing-review-note">The hosting church is responsible for its licenses and permissions. SyncShow does not require a license number or rights evidence.</p>
+      <label class="prepare-check">
+        <input id="songCommunitySharingConfirmed" type="checkbox" aria-describedby="songCommunitySharingFamilyInstructions songCommunitySharingReviewNote" required>
+        <span>I reviewed the lyrics, translation links, and credits for every listed language and version, and I approve this exact family for the selected Community access.</span>
+      </label>
+      <p id="songCommunitySharingStatus" class="prepare-status-copy" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p id="songCommunitySharingError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelSongCommunitySharing" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnRefreshSongCommunitySharing" class="btn btn-outline" hidden>Refresh exact family</button>
+        <button type="submit" id="btnApplySongCommunitySharing" class="btn btn-primary">Submit reviewed song</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="songPublicLinksDialog" class="prepare-dialog prepare-dialog-song prepare-dialog-public-links" aria-labelledby="songPublicLinksTitle" aria-describedby="songPublicLinksDescription">
+    <form id="songPublicLinksForm">
+      <p class="section-kicker">PUBLIC SONG LINK</p>
+      <h2 id="songPublicLinksTitle" tabindex="-1">Share this song family by link</h2>
+      <p id="songPublicLinksDescription" class="prepare-dialog-description">Anyone with one of these links can view its exact saved song-family snapshot without signing in. This does not change access for signed-in Community members.</p>
+
+      <section class="prepare-song-public-links-section" aria-labelledby="songPublicLinksActiveHeading">
+        <div class="prepare-song-public-links-heading">
+          <div>
+            <h3 id="songPublicLinksActiveHeading">Existing links</h3>
+            <p id="songPublicLinksActiveHelp">Each link keeps the exact family revision it was created for. Editing this song never silently changes an existing link.</p>
+          </div>
+          <button type="button" id="btnRefreshSongPublicLinks" class="btn btn-quiet btn-compact">Refresh</button>
+        </div>
+        <div id="songPublicLinksList" class="prepare-song-public-links-list" role="list" tabindex="0" aria-labelledby="songPublicLinksActiveHeading" aria-describedby="songPublicLinksActiveHelp"></div>
+      </section>
+
+      <section id="songPublicLinkCreateSection" class="prepare-song-public-links-section prepare-song-public-link-create" aria-labelledby="songPublicLinkCreateHeading">
+        <h3 id="songPublicLinkCreateHeading">Create another link</h3>
+        <p id="songPublicLinkCreateInstructions">Review every original and translation below. A new link is allowed only when Community confirms this exact saved family.</p>
+        <p id="songPublicLinkCreateBlocked" class="prepare-song-public-link-blocked" role="status" aria-live="polite" hidden></p>
+        <section class="prepare-song-sharing-family" aria-labelledby="songPublicLinkFamilyHeading">
+          <h4 id="songPublicLinkFamilyHeading">Exact versions included</h4>
+          <p id="songPublicLinkFamilyInstructions">Focus this list and use the arrow keys to scroll through longer families. Any later lyric, credit, source, or family change requires a new link review.</p>
+          <div id="songPublicLinkFamily" class="prepare-song-sharing-family-list" role="list" tabindex="0" aria-labelledby="songPublicLinkFamilyHeading" aria-describedby="songPublicLinkFamilyInstructions"></div>
+        </section>
+        <div class="prepare-song-public-link-fields">
+          <label class="field-group">
+            <span>Purpose or group <small>Optional</small></span>
+            <input id="songPublicLinkLabel" class="text-input" type="text" maxlength="120" autocomplete="off" placeholder="Tuesday home group">
+          </label>
+          <label class="field-group">
+            <span>Link expires <small>Optional</small></span>
+            <input id="songPublicLinkExpiresAt" class="text-input" type="datetime-local" aria-describedby="songPublicLinkTimingHelp">
+          </label>
+        </div>
+        <input id="songPublicLinkBasis" type="hidden" value="church-managed">
+        <input id="songPublicLinkEvidence" type="hidden" value="">
+        <input id="songPublicLinkValidUntil" type="hidden" value="">
+        <p id="songPublicLinkReviewNote" class="prepare-song-sharing-review-note">The hosting church is responsible for its licenses and permissions. SyncShow does not require a license number or rights evidence.</p>
+        <p id="songPublicLinkTimingHelp" class="prepare-field-help">You may optionally set an expiry for this public link.</p>
+        <label class="prepare-check">
+          <input id="songPublicLinkConfirmed" type="checkbox" aria-describedby="songPublicLinkFamilyInstructions songPublicLinkReviewNote" required>
+          <span>I understand that anyone with this link can view this exact song family without signing in.</span>
+        </label>
+      </section>
+
+      <p id="songPublicLinksStatus" class="prepare-status-copy" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p id="songPublicLinksError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions prepare-song-public-link-dialog-actions">
+        <button type="button" id="btnCloseSongPublicLinks" class="btn btn-secondary">Close</button>
+        <button type="submit" id="btnCreateSongPublicLink" class="btn btn-primary" disabled>Create public link</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="songCommunityConflictDialog" class="prepare-dialog prepare-dialog-conflict" aria-labelledby="songCommunityConflictTitle">
     <form method="dialog">
       <p class="section-kicker">HERITAGE COMMUNITY</p>
@@ -1077,6 +2609,31 @@
         <button type="button" id="btnCloseSongCommunityConflict" class="btn btn-secondary">Close review</button>
         <button type="button" id="btnKeepLocalSongConflict" class="btn btn-outline" disabled>Keep this Mac’s copy</button>
         <button type="button" id="btnKeepCommunitySongConflict" class="btn btn-danger-quiet" disabled>Keep Community copy</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sermonCommunityConflictDialog" class="prepare-dialog prepare-dialog-conflict prepare-sermon-conflict-dialog" aria-labelledby="sermonCommunityConflictTitle" aria-describedby="sermonCommunityConflictDescription">
+    <form method="dialog">
+      <p class="section-kicker">HERITAGE COMMUNITY</p>
+      <h2 id="sermonCommunityConflictTitle">Review sermon conflict</h2>
+      <p id="sermonCommunityConflictDescription" class="prepare-dialog-description">This Mac and Community both changed this sermon. Review the bounded sermon records below. Private attachments are never shown or transferred here.</p>
+      <div class="prepare-conflict-columns">
+        <section class="prepare-conflict-copy" aria-labelledby="sermonCommunityLocalHeading">
+          <h3 id="sermonCommunityLocalHeading">This Mac</h3>
+          <div id="sermonCommunityLocalRecord" class="prepare-sermon-conflict-record"></div>
+        </section>
+        <section class="prepare-conflict-copy" aria-labelledby="sermonCommunityRemoteHeading">
+          <h3 id="sermonCommunityRemoteHeading">Community</h3>
+          <div id="sermonCommunityRemoteRecord" class="prepare-sermon-conflict-record"></div>
+        </section>
+      </div>
+      <p class="prepare-sermon-conflict-service-note">Resolving changes the sermon library only. This service stays pinned to its exact saved revision until you explicitly link another revision.</p>
+      <p id="sermonCommunityConflictStatus" class="prepare-conflict-status" role="status" aria-live="polite">Loading both bounded sermon records…</p>
+      <div class="dialog-actions prepare-conflict-actions">
+        <button type="button" id="btnCloseSermonCommunityConflict" class="btn btn-secondary">Close review</button>
+        <button type="button" id="btnKeepLocalSermonConflict" class="btn btn-outline" disabled>Keep this Mac’s sermon</button>
+        <button type="button" id="btnKeepCommunitySermonConflict" class="btn btn-danger-quiet" disabled>Keep Community sermon</button>
       </div>
     </form>
   </dialog>
@@ -1105,6 +2662,31 @@
       <div class="dialog-actions">
         <button type="button" id="btnCancelServicePicture" class="btn btn-secondary">Cancel</button>
         <button type="submit" id="btnConfirmServicePicture" class="btn btn-primary">Choose picture</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="addServiceVideoDialog" class="prepare-dialog" aria-labelledby="addServiceVideoTitle">
+    <form id="addServiceVideoForm">
+      <p class="section-kicker">ADD VIDEO</p>
+      <h2 id="addServiceVideoTitle">Choose a video</h2>
+      <p class="prepare-dialog-description">The cue opens paused. Press Right or Space once to play it, then press Right to continue.</p>
+      <label class="field-group">
+        <span>Rundown title</span>
+        <input id="addServiceVideoName" class="text-input" type="text" maxlength="200" autocomplete="off" required placeholder="Example: Mission trip update">
+      </label>
+      <label class="field-group">
+        <span>Video layout</span>
+        <select id="addServiceVideoFit" class="display-dropdown">
+          <option value="fit">Fit — show the whole video</option>
+          <option value="fill">Fill — crop to fill the screen</option>
+          <option value="stretch">Stretch — fill without cropping</option>
+        </select>
+      </label>
+      <p id="addServiceVideoError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="btnCancelServiceVideo" class="btn btn-secondary">Cancel</button>
+        <button type="submit" id="btnConfirmServiceVideo" class="btn btn-primary">Choose video</button>
       </div>
     </form>
   </dialog>
@@ -1300,7 +2882,13 @@
   <script src="google-drive-oauth-state.js"></script>
   <script src="service-output-plan.js"></script>
   <script src="show-accessibility.js"></script>
+  <script src="service-handoff.js"></script>
+  <script src="prepared-service-guard.js"></script>
+  <script src="community-service-plan-review.js"></script>
+  <script src="weekly-readiness-actions.js"></script>
+  <script src="native-workflow-continuation.js"></script>
   <script src="prepare-controller.js"></script>
+  <script src="community-service-document-controller.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

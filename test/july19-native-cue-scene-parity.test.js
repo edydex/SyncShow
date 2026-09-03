@@ -10,8 +10,7 @@ const JSZip = require('jszip');
 
 const {
   compileServiceProject,
-  cueTextForChannel,
-  meaningfulFirstLine,
+  nativeCueSingerNext,
   normalizeServiceProject,
   resolveNativeTextPreset,
   splitLeadingScriptureReference
@@ -164,7 +163,7 @@ test('the rebuilt July 19 service preserves every native cue scene and Singer se
   const referencedAssetIds = new Set();
   let styledSceneCount = 0;
   let styledSpanCount = 0;
-  let emptySingerNextLineCount = 0;
+  const singerNextStateCounts = { text: 0, blank: 0, end: 0 };
 
   assert.equal(timeline.cueIds.length, 114);
   assert.deepEqual(project.channelIds, ['primary', 'secondary', 'media']);
@@ -214,17 +213,17 @@ test('the rebuilt July 19 service preserves every native cue scene and Singer se
       }
       for (const assetId of sceneAssetIds(scene)) referencedAssetIds.add(assetId);
 
-      const nextLine = meaningfulFirstLine(cueTextForChannel(nextCue, channelId));
-      const singer = deriveNativeSingerScene(scene, nextLine);
+      const next = nativeCueSingerNext(nextCue, channelId);
+      const singer = deriveNativeSingerScene(scene, next);
       assert.equal(singer.layout, 'singer-current-next');
       assert.deepEqual(singer.current, scene);
-      assert.equal(singer.nextLine, nextLine);
+      assert.deepEqual(singer.next, next);
       assert.equal(
         JSON.stringify(browserSceneValidator(JSON.parse(JSON.stringify(singer)), cue.id)),
         JSON.stringify(singer),
         `browser and main Singer scene schemas drifted for ${cue.id}/${channelId}`
       );
-      if (!nextLine) emptySingerNextLineCount += 1;
+      singerNextStateCounts[next.state] += 1;
 
       layoutCounts[scene.layout] = (layoutCounts[scene.layout] || 0) + 1;
       sourceKindCounts[scene.sourceKind] = (sourceKindCounts[scene.sourceKind] || 0) + 1;
@@ -246,7 +245,11 @@ test('the rebuilt July 19 service preserves every native cue scene and Singer se
   });
   assert.equal(styledSceneCount, 66);
   assert.equal(styledSpanCount, 156);
-  assert.equal(emptySingerNextLineCount, 36);
+  assert.deepEqual(singerNextStateCounts, {
+    text: 306,
+    blank: 33,
+    end: 3
+  });
   assert.deepEqual(
     [...referencedAssetIds].sort(),
     Object.keys(project.assets).sort()

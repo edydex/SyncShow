@@ -115,6 +115,18 @@
       display: none;
     }
 
+    .output-restore-guard {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: #000;
+      pointer-events: none;
+    }
+
+    .output-restore-guard[hidden] {
+      display: none;
+    }
+
     .bible-overlay {
       position: fixed;
       inset: 0;
@@ -243,6 +255,8 @@
         <span class="bible-attribution" id="bibleAttributionStaging"></span>
       </footer>
     </section>
+
+    <div class="output-restore-guard" id="outputRestoreGuard" aria-hidden="true" hidden></div>
   </div>
   
   <script src="bible-overlay.js"></script>

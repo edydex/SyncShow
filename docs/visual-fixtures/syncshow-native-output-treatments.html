@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>SyncShow native output treatments — static product illustration</title>
+  <style>
+    :root {
+      --ink: #f5f7ff;
+      --muted: #a6b2ca;
+      --quiet: #75829d;
+      --canvas: #07101e;
+      --panel: #101d32;
+      --panel-2: #14243d;
+      --line: rgba(173, 196, 232, 0.17);
+      --blue: #7fa8ff;
+      --blue-strong: #4d7cff;
+      --cyan: #66d9d1;
+      --green: #72d7a5;
+      --gold: #f2c66f;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 4%, rgba(77, 124, 255, 0.2), transparent 25rem),
+        radial-gradient(circle at 94% 90%, rgba(102, 217, 209, 0.1), transparent 28rem),
+        var(--canvas);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    .shell {
+      width: min(1460px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 22px 0 34px;
+    }
+
+    .fixture-note {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 14px;
+      padding: 10px 14px;
+      border: 1px solid rgba(242, 198, 111, 0.32);
+      border-radius: 12px;
+      color: #f3dca8;
+      background: rgba(78, 55, 15, 0.25);
+      font-size: 0.76rem;
+    }
+
+    .fixture-note strong { color: #ffe9b9; }
+    .fixture-note span:last-child { color: #cfbb8d; text-align: right; }
+
+    .app {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(8, 17, 31, 0.97);
+      box-shadow: var(--shadow);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      min-height: 66px;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(15, 28, 49, 0.98);
+    }
+
+    .brand,
+    .tabs,
+    .autosave {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 10px;
+      background: linear-gradient(145deg, var(--blue-strong), #7357ee);
+      font-weight: 900;
+    }
+
+    .brand-copy { display: grid; gap: 1px; }
+    .brand-copy strong { font-size: 0.92rem; }
+    .brand-copy span,
+    .autosave { color: var(--muted); font-size: 0.7rem; }
+
+    .tabs span {
+      padding: 7px 11px;
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 0.71rem;
+      font-weight: 800;
+    }
+
+    .tabs .active {
+      color: white;
+      background: rgba(77, 124, 255, 0.22);
+      box-shadow: inset 0 0 0 1px rgba(127, 168, 255, 0.32);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 780px;
+    }
+
+    .rundown {
+      padding: 20px 15px;
+      border-right: 1px solid var(--line);
+      background: rgba(7, 15, 28, 0.82);
+    }
+
+    .kicker {
+      margin: 0 0 4px;
+      color: var(--cyan);
+      font-size: 0.62rem;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 3px; font-size: 1.08rem; }
+    .rundown > small { display: block; margin-bottom: 16px; color: var(--muted); }
+
+    .cue {
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 6px;
+      padding: 10px 9px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+    }
+
+    .cue.selected {
+      border-color: rgba(127, 168, 255, 0.42);
+      background: rgba(77, 124, 255, 0.13);
+      box-shadow: inset 3px 0 var(--blue);
+    }
+
+    .cue .num,
+    .cue small { color: var(--quiet); font-size: 0.64rem; }
+    .cue strong {
+      display: block;
+      overflow: hidden;
+      font-size: 0.76rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cue .type { color: var(--muted); font-size: 0.6rem; }
+
+    .content {
+      padding: 22px;
+    }
+
+    .heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+
+    .heading h2 { margin-bottom: 4px; font-size: 1.35rem; }
+    .heading p { max-width: 760px; margin-bottom: 0; color: var(--muted); font-size: 0.78rem; }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border: 1px solid rgba(114, 215, 165, 0.32);
+      border-radius: 999px;
+      color: #a9edcd;
+      background: rgba(35, 111, 78, 0.18);
+      font-size: 0.68rem;
+      font-weight: 850;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(350px, 1.05fr) minmax(320px, 0.95fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .stack { display: grid; gap: 14px; }
+
+    .card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: linear-gradient(155deg, rgba(19, 35, 60, 0.98), rgba(12, 24, 42, 0.98));
+    }
+
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .card h3 { margin-bottom: 3px; font-size: 0.94rem; }
+    .card-head p { margin-bottom: 0; color: var(--muted); font-size: 0.7rem; }
+
+    .explicit {
+      color: #a9edcd;
+      font-size: 0.64rem;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .output {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.65fr) minmax(210px, 1.35fr);
+      gap: 9px;
+      align-items: center;
+      margin-top: 7px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(4, 11, 23, 0.42);
+    }
+
+    .output.source {
+      border-color: rgba(127, 168, 255, 0.28);
+      background: rgba(77, 124, 255, 0.075);
+    }
+
+    .output strong { font-size: 0.7rem; }
+
+    .choice {
+      padding: 7px 9px;
+      border: 1px solid rgba(173, 196, 232, 0.2);
+      border-radius: 8px;
+      color: #d9e2f3;
+      background: rgba(6, 15, 29, 0.88);
+      font-size: 0.66rem;
+    }
+
+    .choice.hidden { color: #b1bdd3; }
+    .choice.singer { color: #d8ccff; border-color: rgba(151, 126, 255, 0.32); }
+
+    .preview {
+      overflow: hidden;
+      min-height: 270px;
+      border: 1px solid rgba(127, 168, 255, 0.23);
+      border-radius: 13px;
+      background: #020306;
+    }
+
+    .preview-label {
+      display: flex;
+      justify-content: space-between;
+      padding: 9px 11px;
+      color: var(--muted);
+      background: #0c1525;
+      font-size: 0.62rem;
+    }
+
+    .current {
+      display: grid;
+      min-height: 150px;
+      place-items: center;
+      padding: 20px;
+      color: white;
+      font-size: 1.34rem;
+      font-weight: 750;
+      line-height: 1.25;
+      text-align: center;
+    }
+
+    .next {
+      display: grid;
+      min-height: 74px;
+      place-items: center;
+      padding: 14px;
+      border-top: 2px solid rgba(255, 255, 255, 0.32);
+      color: #d2d7e3;
+      font-size: 0.83rem;
+      font-weight: 650;
+      text-align: center;
+    }
+
+    .state-key {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .state {
+      padding: 7px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      background: rgba(4, 11, 23, 0.42);
+      font-size: 0.61rem;
+      text-align: center;
+    }
+
+    .state strong { display: block; margin-bottom: 1px; color: var(--ink); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 7px;
+      margin-top: 14px;
+    }
+
+    .flow-step {
+      position: relative;
+      padding: 10px 8px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: #dce5f5;
+      background: rgba(4, 11, 23, 0.46);
+      font-size: 0.64rem;
+      font-weight: 780;
+      text-align: center;
+    }
+
+    .flow-step:not(:last-child)::after {
+      position: absolute;
+      z-index: 2;
+      top: 50%;
+      right: -10px;
+      color: var(--cyan);
+      content: "→";
+      transform: translateY(-50%);
+    }
+
+    .footer-note {
+      margin: 14px 0 0;
+      padding: 10px 12px;
+      border-left: 3px solid var(--gold);
+      color: #d8caa9;
+      background: rgba(77, 55, 17, 0.18);
+      font-size: 0.68rem;
+    }
+
+    @media (max-width: 900px) {
+      .tabs { display: none; }
+      .workspace { grid-template-columns: 1fr; }
+      .rundown { display: none; }
+      .grid { grid-template-columns: 1fr; }
+      .content { padding: 16px; }
+    }
+
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 16px, 1460px); padding-top: 8px; }
+      .fixture-note { align-items: flex-start; flex-direction: column; gap: 3px; }
+      .fixture-note span:last-child { text-align: left; }
+      .autosave { display: none; }
+      .heading { display: block; }
+      .badge { display: inline-block; margin-top: 9px; }
+      .output { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr 1fr; }
+      .flow-step:nth-child(2)::after { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="fixture-note">
+      <span><strong>Static product illustration</strong> · grounded in the implemented Prepare controls and native renderer contracts</span>
+      <span>Read-only · no service, server, or output was changed</span>
+    </div>
+
+    <section class="app" aria-label="Illustrated SyncShow native output-treatment workflow">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">S</div>
+          <div class="brand-copy">
+            <strong>SyncShow</strong>
+            <span>Sunday Evening · Native service</span>
+          </div>
+        </div>
+        <nav class="tabs" aria-label="Application stage">
+          <span>Load</span>
+          <span class="active">Prepare</span>
+          <span>Show</span>
+        </nav>
+        <div class="autosave">● Autosaved</div>
+      </header>
+
+      <div class="workspace">
+        <aside class="rundown">
+          <p class="kicker">Rundown</p>
+          <h1>Sunday Evening</h1>
+          <small>9 native cues · 3 configured outputs</small>
+
+          <div class="cue">
+            <span class="num">01</span>
+            <div><strong>Welcome</strong><small>Notice</small></div>
+            <span class="type">T</span>
+          </div>
+          <div class="cue selected">
+            <span class="num">02</span>
+            <div><strong>Amazing Grace</strong><small>Song · 4 sections</small></div>
+            <span class="type">♪</span>
+          </div>
+          <div class="cue">
+            <span class="num">03</span>
+            <div><strong>Ephesians 3:9–10</strong><small>Linked sermon reading · before sermon</small></div>
+            <span class="type">B</span>
+          </div>
+          <div class="cue">
+            <span class="num">04</span>
+            <div><strong>The Wisdom of God</strong><small>Sermon section</small></div>
+            <span class="type">S</span>
+          </div>
+          <div class="cue">
+            <span class="num">05</span>
+            <div><strong>Closing blank</strong><small>Black screen</small></div>
+            <span class="type">■</span>
+          </div>
+        </aside>
+
+        <div class="content">
+          <div class="heading">
+            <div>
+              <p class="kicker">Native output treatments</p>
+              <h2>Every screen is chosen explicitly.</h2>
+              <p>
+                Custom names are only labels. The planner chooses the source,
+                language, current-plus-next view, or Hidden state before publishing.
+              </p>
+            </div>
+            <span class="badge">3 of 3 mapped</span>
+          </div>
+
+          <div class="grid">
+            <div class="stack">
+              <article class="card">
+                <div class="card-head">
+                  <div>
+                    <h3>Song · Amazing Grace</h3>
+                    <p>Exact versions and native Singer treatment</p>
+                  </div>
+                  <span class="explicit">NO NAME GUESSING</span>
+                </div>
+                <div class="output source">
+                  <strong>Sanctuary Wall</strong>
+                  <div class="choice">Pinned source · Amazing Grace · English</div>
+                </div>
+                <div class="output">
+                  <strong>Livestream EN</strong>
+                  <div class="choice">Same slides as Sanctuary Wall</div>
+                </div>
+                <div class="output">
+                  <strong>Confidence North</strong>
+                  <div class="choice singer">Current + next lyrics from Sanctuary Wall</div>
+                </div>
+              </article>
+
+              <article class="card">
+                <div class="card-head">
+                  <div>
+                    <h3>Generated sermon reading · Ephesians 3:9–10</h3>
+                    <p>Exact linked passage; Main resolves every visible translation</p>
+                  </div>
+                  <span class="explicit">3 OF 3 EXPLICIT</span>
+                </div>
+                <div class="output">
+                  <strong>Sanctuary Wall</strong>
+                  <div class="choice">Show BSB</div>
+                </div>
+                <div class="output">
+                  <strong>Livestream EN</strong>
+                  <div class="choice">Show LSV</div>
+                </div>
+                <div class="output">
+                  <strong>Confidence North</strong>
+                  <div class="choice hidden">Hidden for this passage</div>
+                </div>
+              </article>
+            </div>
+
+            <div class="stack">
+              <article class="card">
+                <div class="card-head">
+                  <div>
+                    <h3>Confidence North preview</h3>
+                    <p>Derived from the native source cue</p>
+                  </div>
+                  <span class="explicit">CURRENT + NEXT</span>
+                </div>
+                <div class="preview" aria-label="Illustrated singers current and next lyric preview">
+                  <div class="preview-label"><span>Current lyric</span><span>640×360 fit-safe</span></div>
+                  <div class="current">Amazing grace! How sweet the sound</div>
+                  <div class="next">That saved a wretch like me</div>
+                </div>
+                <div class="state-key">
+                  <div class="state"><strong>Text</strong>one exact next line</div>
+                  <div class="state"><strong>Blank</strong>no false label</div>
+                  <div class="state"><strong>End</strong>end of presentation</div>
+                </div>
+              </article>
+
+              <article class="card">
+                <div class="card-head">
+                  <div>
+                    <h3>Trusted native path</h3>
+                    <p>The renderer never supplies Bible verse text or project blobs</p>
+                  </div>
+                </div>
+                <div class="flow" aria-label="Output treatment data flow">
+                  <div class="flow-step">Planner chooses</div>
+                  <div class="flow-step">Main validates</div>
+                  <div class="flow-step">Package pins</div>
+                  <div class="flow-step">Show routes</div>
+                </div>
+                <p class="footer-note">
+                  PowerPoint remains a separate legacy fallback. This workflow is
+                  native service planning and native Show output.
+                </p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -10,6 +10,10 @@ const readSource = filePath => fs.readFileSync(filePath, 'utf8').replace(/\r\n/g
 const html = readSource(path.join(rendererDirectory, 'index.html'));
 const appSource = readSource(path.join(rendererDirectory, 'app.js'));
 const prepareSource = readSource(path.join(rendererDirectory, 'prepare-controller.js'));
+const sharedServiceSource = readSource(path.join(
+  rendererDirectory,
+  'community-service-document-controller.js'
+));
 const mainSource = readSource(path.join(__dirname, '..', 'main.js'));
 const preloadSource = readSource(path.join(__dirname, '..', 'preload.js'));
 const displayHtml = readSource(path.join(rendererDirectory, 'display.html'));
@@ -26,7 +30,8 @@ function matches(source, expression) {
 test('every renderer element lookup has a matching unique HTML id', () => {
   const lookedUpIds = new Set([
     ...matches(appSource, /getElementById\('([^']+)'\)/g),
-    ...matches(prepareSource, /byId\('([^']+)'\)/g)
+    ...matches(prepareSource, /byId\('([^']+)'\)/g),
+    ...matches(sharedServiceSource, /byId\('([^']+)'\)/g)
   ]);
   const htmlIds = matches(html, /\sid="([^"]+)"/g);
   const htmlIdSet = new Set(htmlIds);
@@ -43,9 +48,12 @@ test('live Show and in-flight Prepare work cannot be abandoned through stage tab
   assert.match(appSource, /function updateWorkflowNavigationAvailability\(\)/);
   assert.match(appSource, /elements\.btnStagePrepare\.disabled = liveShowSession/);
   assert.match(appSource, /elements\.btnStageLoad\.disabled = liveShowSession/);
-  assert.match(appSource, /Use Back to Load to end the live Show safely/);
+  assert.match(appSource, /Use the Show finish action to end the live session safely/);
   assert.match(appSource, /prepareController\?\.isBusy\?\.\(\)/);
-  assert.match(prepareSource, /isBusy: \(\) => state\.mutationBusy \|\| state\.publishBusy/);
+  assert.match(
+    prepareSource,
+    /isBusy: \(\) => state\.mutationBusy\s+\|\| state\.publishBusy\s+\|\| state\.communityPlanCheckBusy\s+\|\| state\.communityPlansBusy\s+\|\| state\.communityPlanReviewBusy\s+\|\| state\.communityPlanPrepareBusy\s+\|\| state\.communityPlanPrepareCancelBusy\s+\|\| state\.communityPlanImportBusy\s+\|\| state\.currentServiceSongBusy\s+\|\| state\.currentServiceSongBuildBusy\s+\|\| state\.sermonPacketSaveBusy\s+\|\| state\.linkedSermonServiceSourcesProposalBusy\s+\|\| state\.linkedSermonServiceSourcesCommitBusy\s+\|\| state\.attachSermonBusy/
+  );
 });
 
 test('Prepare exposes retry-safe loading, complete subtree warnings, and render progress', () => {
@@ -190,6 +198,33 @@ test('manual and cached filename warnings respect reusable input roles', () => {
 
   assert.match(warningSource, /getRole\(language\)\?\.datePolicy === 'none'/);
   assert.match(warningSource, /warningEl\.style\.display = 'none'/);
+});
+
+test('changing the service date rechecks loaded deck warnings without reconversion', () => {
+  const listenerStart = appSource.indexOf(
+    "elements.serviceFolderDate.addEventListener('change'"
+  );
+  const listenerEnd = appSource.indexOf(
+    'elements.btnShowDisplays.addEventListener',
+    listenerStart
+  );
+  const listenerSource = appSource.slice(listenerStart, listenerEnd);
+  const recheckStart = appSource.indexOf('function recheckLoadedPresentationDates()');
+  const recheckEnd = appSource.indexOf('function updateConversionStatus(', recheckStart);
+  const recheckSource = appSource.slice(recheckStart, recheckEnd);
+
+  assert.notEqual(listenerStart, -1, 'service-date listener must exist');
+  assert.match(listenerSource, /state\.serviceFolder\.requestedDate =/);
+  assert.match(listenerSource, /recheckLoadedPresentationDates\(\)/);
+  assert.doesNotMatch(listenerSource, /convertPptx|loadPresentationFile/);
+  assert.match(recheckSource, /for \(const role of getDeckRoles\(\)\)/);
+  assert.match(recheckSource, /!presentation\?\.loaded \|\| presentation\.pending/);
+  assert.match(recheckSource, /presentation\.dateSource \|\| presentation\.displayPath/);
+  assert.match(recheckSource, /checkFilenameDate\(/);
+  assert.match(
+    appSource,
+    /state\.serviceFolder\.requestedDate = serviceDateForProfile\(result\.venueProfile\);[\s\S]{0,240}recheckLoadedPresentationDates\(\);/
+  );
 });
 
 test('missing outputs are resolved by an accessible service-only Start dialog', () => {
@@ -345,19 +380,58 @@ test('native cue output is constrained, font-gated, staged, and acknowledged aft
   );
 
   assert.match(nativeCueSource, /function exactKeys\(/);
+  assert.match(nativeCueSource, /const SCHEMA_VERSION = 3/);
+  assert.match(nativeCueSource, /exactKeys\(value, \['state', 'text'\], 'scene\.next'\)/);
+  assert.match(nativeCueSource, /SINGER_NEXT_STATES\.has\(state\)/);
+  assert.match(nativeCueSource, /next\.dataset\.nextState = scene\.next\.state/);
+  assert.match(nativeCueSource, /native-singer-\$\{scene\.next\.state\}/);
+  assert.match(nativeCueSource, /End of presentation/);
   assert.match(nativeCueSource, /document\.createTextNode/);
   assert.match(nativeCueSource, /element\.scrollWidth <= element\.clientWidth/);
   assert.match(nativeCueSource, /element\.scrollHeight <= element\.clientHeight/);
+  assert.match(nativeCueSource, /function logicalCanvasScale\(/);
+  assert.match(
+    nativeCueSource,
+    /minimum \* Math\.min\(1, logicalCanvasScale\(logicalCanvas\)\)/
+  );
+  assert.match(nativeCueSource, /function scaledSongTextRange\(/);
+  assert.match(nativeCueSource, /function settleFittedTextHeight\(/);
+  assert.match(
+    nativeCueSource,
+    /fitText\(body, style\.bodySize, bodyMinimumSize, scale\)/
+  );
   assert.doesNotMatch(
     nativeCueSource,
     /innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\s*\(|new Function/
   );
+  assert.doesNotMatch(nativeCueSource, /End of song|nextLine/);
 });
 
 test('Bible overlay lifecycle is cancellable and preserves an exact Return path', () => {
-  assert.match(mainSource, /new BibleLibrary\(\{ maxVerses: 8 \}\)/);
+  assert.match(
+    mainSource,
+    /const bibleLibrary = new BibleLibrary\(\{ maxVerses: 8 \}\)/
+  );
+  assert.match(
+    mainSource,
+    /const sermonReferenceBibleLibrary = new BibleLibrary\(\{ maxVerses: 100 \}\)/
+  );
   assert.match(mainSource, /ipcMain\.handle\('bible:lookup'/);
   assert.match(mainSource, /ipcMain\.handle\('bible:show'/);
+  assert.match(mainSource, /ipcMain\.handle\('prepare:sermons:lookupPrimaryReference'/);
+  const ordinaryLookupStart = mainSource.indexOf("ipcMain.handle('bible:lookup'");
+  const ordinaryShowStart = mainSource.indexOf("ipcMain.handle('bible:show'");
+  assert.ok(ordinaryLookupStart >= 0 && ordinaryShowStart > ordinaryLookupStart);
+  const ordinaryLookupSource = mainSource.slice(ordinaryLookupStart, ordinaryShowStart);
+  assert.match(ordinaryLookupSource, /resolveBibleLookupRequest\(request\)/);
+  assert.doesNotMatch(
+    ordinaryLookupSource,
+    /resolveSermonPrimaryReferenceLookupRequest/
+  );
+  assert.match(
+    mainSource.slice(ordinaryShowStart, ordinaryShowStart + 2500),
+    /resolveBibleLookupRequest\(request\)/
+  );
   assert.match(mainSource, /let pendingBibleOverlay = null;/);
   assert.match(mainSource, /let bibleOperationEpoch = 0;/);
   assert.match(mainSource, /function createBibleOverlayWaiter\(/);

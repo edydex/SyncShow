@@ -58,6 +58,12 @@
     if (dialogOpen || !GLOBAL_SHORTCUT_KEYS.has(key)) return false;
     if (closestElement(event?.target, isEditableElement)) return false;
 
+    // Clear is the emergency Show escape hatch. A focused setup or live-tool
+    // button must not make Escape inert after the operator enters Show. Open
+    // dialogs and editable fields were rejected above, so their own cancel and
+    // editing semantics remain intact.
+    if (key === 'Escape') return true;
+
     const interactive = closestElement(event?.target, isInteractiveElement);
     if (!interactive) return true;
     const showTransport = SHOW_TRANSPORT_BUTTON_IDS.has(String(interactive.id || ''))

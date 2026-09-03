@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  CURRENT_PROFILE_SCHEMA_VERSION,
   VenueProfileError,
   migrateLegacySettingsToVenueProfile,
   migrateVenueProfile,
@@ -38,6 +39,7 @@ test('current nested settings migrate without losing assignments or preferences'
   });
 
   assert.equal(profile.friendlyModeDefault, false);
+  assert.equal(profile.operator.showControlMode, 'full');
   assert.deepEqual(profile.outputs.map(output => output.legacyDisplayId), [
     '1201', '1202', '1203'
   ]);
@@ -75,7 +77,7 @@ test('flat legacy display fields and previewEnabled aliases remain supported', (
 test('empty legacy settings produce backward-compatible safe defaults', () => {
   const profile = resolveVenueProfile({});
 
-  assert.equal(profile.schemaVersion, 1);
+  assert.equal(profile.schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
   assert.equal(profile.id, 'default');
   assert.equal(profile.name, 'Main Sanctuary');
   assert.deepEqual(profile.inputRoles.map(role => role.id), ['russian', 'english', 'media']);
@@ -89,11 +91,42 @@ test('empty legacy settings produce backward-compatible safe defaults', () => {
   assert.deepEqual(profile.outputs.map(output => output.legacyDisplayId), [null, null, null]);
   assert.deepEqual(profile.previewOutputIds, ['singer']);
   assert.deepEqual(profile.operator.previewOpenOutputIds, ['singer']);
+  assert.equal(profile.operator.showControlMode, 'full');
   assert.equal(profile.friendlyModeDefault, true);
   assert.equal(profile.stalenessPolicy, 'warn-and-confirm');
   assert.equal(profile.outputs[2].expectedRoleId, 'media');
+  assert.equal(profile.inputRoles[2].label, 'Stage-Facing Screen (Media)');
+  assert.equal(profile.outputs[2].name, 'Stage-Facing Screen');
   assert.equal(profile.outputs[2].fallback.mode, 'derive-next-text');
   assert.deepEqual(profile.outputs.map(output => output.enabled), [true, true, false]);
+});
+
+test('the exact old stock screen label upgrades without rewriting custom names', () => {
+  const stock = migrateVenueProfile({
+    schemaVersion: CURRENT_PROFILE_SCHEMA_VERSION,
+    id: 'default',
+    name: 'Main Sanctuary',
+    inputRoles: [
+      { id: 'english', label: 'English' },
+      { id: 'media', label: 'Singers Screen (Media)' }
+    ],
+    outputs: [
+      { id: 'english', name: 'English Screen', expectedRoleId: 'english' },
+      { id: 'singer', name: 'Singers Screen', expectedRoleId: 'media' }
+    ]
+  });
+  assert.equal(stock.inputRoles[1].label, 'Stage-Facing Screen (Media)');
+  assert.equal(stock.outputs[1].name, 'Stage-Facing Screen');
+
+  const customized = migrateVenueProfile({
+    schemaVersion: CURRENT_PROFILE_SCHEMA_VERSION,
+    id: 'custom',
+    name: 'Custom',
+    inputRoles: [{ id: 'media', label: 'Choir confidence feed' }],
+    outputs: [{ id: 'singer', name: 'Choir loft', expectedRoleId: 'media' }]
+  });
+  assert.equal(customized.inputRoles[0].label, 'Choir confidence feed');
+  assert.equal(customized.outputs[0].name, 'Choir loft');
 });
 
 test('an explicitly closed legacy Singer preview stays closed', () => {
@@ -148,8 +181,24 @@ test('a nested persisted venueProfile wins over surrounding legacy settings', ()
   });
 
   assert.equal(profile.id, 'portable');
+  assert.equal(profile.schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
   assert.equal(profile.friendlyModeDefault, true);
+  assert.equal(profile.operator.showControlMode, 'full');
   assert.deepEqual(profile.outputs.map(output => output.id), ['front']);
+});
+
+test('persisted volunteer mode survives v2 normalization', () => {
+  const profile = migrateVenueProfile({
+    schemaVersion: CURRENT_PROFILE_SCHEMA_VERSION,
+    id: 'volunteer-booth',
+    name: 'Volunteer Booth',
+    operator: {
+      showControlMode: 'volunteer'
+    }
+  });
+
+  assert.equal(profile.schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
+  assert.equal(profile.operator.showControlMode, 'volunteer');
 });
 
 test('persisted stock matchers gain the generic service names without changing custom roles', () => {

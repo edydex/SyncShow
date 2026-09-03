@@ -41,7 +41,78 @@ test('Back to Load ends rather than hides the output session', () => {
   assert.notEqual(backStart, -1, 'Back-to-setup handler must exist');
   const backEnd = rendererSource.indexOf('\n// Slide Navigation', backStart);
   const backSource = rendererSource.slice(backStart, backEnd);
+  const guardIndex = backSource.indexOf('if (state.showEndSessionBusy) return;');
+  const beginIndex = backSource.indexOf('beginShowOutputAction()');
+  const endIndex = backSource.indexOf('window.api.endPresentation()');
+  assert.ok(guardIndex >= 0 && guardIndex < beginIndex && beginIndex < endIndex);
+  assert.match(backSource, /state\.showEndSessionBusy = true/);
+  assert.match(backSource, /updateShowEndSessionBarrier\(\)/);
+  assert.match(backSource, /finally \{[\s\S]*state\.showEndSessionBusy = false/);
   assert.match(backSource, /window\.api\.endPresentation\(\)/);
+});
+
+test('the final cue exposes an explicit Finish service action on the safe end-session path', () => {
+  assert.match(
+    rendererSource,
+    /elements\.btnBackToSetup\.addEventListener\('click', \(\) => backToSetup\('load'\)\)/
+  );
+  const finishStart = rendererSource.indexOf('function renderShowFinishAction()');
+  const finishEnd = rendererSource.indexOf('\nasync function refreshPublishedProject', finishStart);
+  assert.ok(finishStart >= 0 && finishEnd > finishStart);
+  const finishSource = rendererSource.slice(finishStart, finishEnd);
+  assert.match(
+    finishSource,
+    /state\.totalSlides > 0[\s\S]*state\.currentSlide >= state\.totalSlides - 1/
+  );
+  assert.match(finishSource, /'Finish service…'/);
+  assert.match(finishSource, /'Back to Load'/);
+  assert.match(finishSource, /End outputs safely, return to Load/);
+  assert.match(
+    rendererSource,
+    /function renderShowCueContext\(\)[\s\S]*renderShowFinishAction\(\)/
+  );
+});
+
+test('Finish service blocks every competing local Show command until its receipt is consumed', () => {
+  for (const functionName of [
+    'showDisplays',
+    'clearDisplays',
+    'stopDisplays',
+    'sendBibleLive',
+    'returnFromBible',
+    'navigateSlide',
+    'goToSlide'
+  ]) {
+    const start = rendererSource.indexOf(`async function ${functionName}(`);
+    assert.notEqual(start, -1, `${functionName} must exist`);
+    const next = rendererSource.indexOf('\nasync function ', start + 1);
+    const body = rendererSource.slice(
+      start,
+      next === -1 ? rendererSource.length : next
+    );
+    assert.match(
+      body,
+      /showEndSessionBlocksAction\(\)|state\.showEndSessionBusy/,
+      `${functionName} must refuse work while Finish service is pending`
+    );
+  }
+  const barrierStart = rendererSource.indexOf('function updateShowEndSessionBarrier()');
+  const barrierEnd = rendererSource.indexOf(
+    '\nfunction showEndSessionBlocksAction()',
+    barrierStart
+  );
+  assert.ok(barrierStart >= 0 && barrierEnd > barrierStart);
+  const barrierSource = rendererSource.slice(barrierStart, barrierEnd);
+  for (const control of [
+    'btnShowDisplays',
+    'btnClearDisplays',
+    'btnStopDisplays',
+    'btnBackToSetup',
+    'btnOpenRemote'
+  ]) {
+    assert.match(barrierSource, new RegExp(`elements\\.${control}\\.disabled`));
+  }
+  assert.match(barrierSource, /updateBibleActions\(\)/);
 });
 
 test('control renderer consumes the same authoritative Show-state stream', () => {

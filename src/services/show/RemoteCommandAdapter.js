@@ -1,6 +1,10 @@
 'use strict';
 
 const crypto = require('crypto');
+const {
+  authorizeVolunteerShowCommand,
+  normalizeVolunteerShowMode
+} = require('./VolunteerShowPolicy');
 
 const COMMAND_TYPES = new Set([
   'cue.previous',
@@ -95,6 +99,67 @@ function sanitizeOutput(output) {
   };
 }
 
+function sanitizeLocalOperatorState(rawOperator, hasSession) {
+  const operator = isRecord(rawOperator) ? rawOperator : {};
+  const mode = hasSession && operator.mode === 'volunteer'
+    ? 'volunteer'
+    : 'full';
+  const authority = mode === 'volunteer' && operator.authority === 'unlocked'
+    ? 'unlocked'
+    : 'locked';
+  const unlockExpiresAt =
+    authority === 'unlocked'
+    && typeof operator.unlockExpiresAt === 'string'
+    && Number.isFinite(Date.parse(operator.unlockExpiresAt))
+    && new Date(Date.parse(operator.unlockExpiresAt)).toISOString()
+      === operator.unlockExpiresAt
+      ? operator.unlockExpiresAt
+      : null;
+  const rawControls = hasSession && isRecord(operator.controls)
+    ? operator.controls
+    : {};
+  const rawRehearsal = hasSession && isRecord(operator.rehearsal)
+    ? operator.rehearsal
+    : {};
+  const rehearsalStatus = [
+    'idle',
+    'rehearsing',
+    'ready',
+    'not-required'
+  ].includes(rawRehearsal.status)
+    ? rawRehearsal.status
+    : 'idle';
+  return {
+    mode,
+    authority,
+    unlockExpiresAt,
+    rehearsal: {
+      status: rehearsalStatus,
+      currentCue: Number.isSafeInteger(rawRehearsal.currentCue)
+        && rawRehearsal.currentCue >= 0
+        ? rawRehearsal.currentCue
+        : 0,
+      totalCues: Number.isSafeInteger(rawRehearsal.totalCues)
+        && rawRehearsal.totalCues >= 0
+        ? rawRehearsal.totalCues
+        : 0,
+      persisted: rawRehearsal.persisted === true,
+      reused: rawRehearsal.reused === true
+    },
+    controls: {
+      canPrevious: rawControls.canPrevious === true,
+      canNext: rawControls.canNext === true,
+      canJump: rawControls.canJump === true,
+      canRestore: rawControls.canRestore === true,
+      canClear: rawControls.canClear === true,
+      canStop: rawControls.canStop === true,
+      canEndSession: rawControls.canEndSession === true,
+      canShowBible: rawControls.canShowBible === true,
+      canManageRemote: rawControls.canManageRemote === true
+    }
+  };
+}
+
 function cloneState(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -105,9 +170,23 @@ function cloneState(value) {
  * IDs, role IDs, cache paths, or other setup/admin state.
  */
 class RemoteCommandAdapter {
-  constructor({ readRuntimeState, readCueCatalog, readCueThumbnail, commands = {}, createSessionId } = {}) {
+  constructor({
+    readRuntimeState,
+    readCueCatalog,
+    readCueThumbnail,
+    readShowPolicyState = () => ({ mode: 'full' }),
+    authorizeShowCommand = authorizeVolunteerShowCommand,
+    commands = {},
+    createSessionId
+  } = {}) {
     if (typeof readRuntimeState !== 'function') {
       throw new TypeError('RemoteCommandAdapter requires readRuntimeState');
+    }
+    if (typeof readShowPolicyState !== 'function') {
+      throw new TypeError('RemoteCommandAdapter requires readShowPolicyState to be a function');
+    }
+    if (typeof authorizeShowCommand !== 'function') {
+      throw new TypeError('RemoteCommandAdapter requires authorizeShowCommand to be a function');
     }
     this.readRuntimeState = readRuntimeState;
     this.readCueCatalogSource = typeof readCueCatalog === 'function'
@@ -116,6 +195,8 @@ class RemoteCommandAdapter {
     this.readCueThumbnailSource = typeof readCueThumbnail === 'function'
       ? readCueThumbnail
       : null;
+    this.readShowPolicyState = readShowPolicyState;
+    this.authorizeShowCommand = authorizeShowCommand;
     this.commands = commands;
     this.createSessionId = typeof createSessionId === 'function'
       ? createSessionId
@@ -153,6 +234,7 @@ class RemoteCommandAdapter {
       ? raw.outputs.map(sanitizeOutput).filter(Boolean).slice(0, 32)
       : [];
     const hasUnavailableOutput = outputs.some(output => output.status === 'unavailable');
+    const hasPendingOutput = outputs.some(output => output.status === 'starting');
     const rawPhase = hasUnavailableOutput
       ? 'interrupted'
       : raw.phase === 'starting' || raw.phase === 'locally-stopped'
@@ -160,10 +242,19 @@ class RemoteCommandAdapter {
       : raw.phase;
     const phase = hasSession && SHOW_PHASES.has(rawPhase) ? rawPhase : 'idle';
     const bible = hasSession ? sanitizeBible(raw.bible) : sanitizeBible(null);
+    const navigationPending = raw.navigationPending === true;
     const navigationAvailable = hasSession
       && (phase === 'live' || phase === 'cleared')
+      && !navigationPending
+      && !hasPendingOutput
       && bible.phase === 'idle';
     const outputActionsAvailable = hasSession && (phase === 'live' || phase === 'cleared');
+    const outputRestoreAvailable = outputActionsAvailable
+      && !navigationPending
+      && !hasPendingOutput;
+    const policyControls = this._policyControls();
+    const localOperator = sanitizeLocalOperatorState(raw.operator, hasSession);
+    const localPolicyControls = localOperator.controls;
 
     return {
       protocolVersion: 1,
@@ -176,12 +267,59 @@ class RemoteCommandAdapter {
       nextCue: hasSession ? sanitizeCue(raw.nextCue, totalSlides) : null,
       outputs,
       bible,
+      operator: {
+        ...localOperator,
+        controls: {
+          canPrevious:
+            navigationAvailable
+            && currentIndex > 0
+            && localPolicyControls.canPrevious,
+          canNext:
+            navigationAvailable
+            && currentIndex !== null
+            && currentIndex < totalSlides - 1
+            && localPolicyControls.canNext,
+          canJump:
+            navigationAvailable
+            && totalSlides > 0
+            && localPolicyControls.canJump,
+          canRestore:
+            outputRestoreAvailable
+            && localPolicyControls.canRestore,
+          canClear:
+            outputActionsAvailable
+            && localPolicyControls.canClear,
+          canStop:
+            hasSession
+            && localPolicyControls.canStop,
+          canEndSession:
+            hasSession
+            && localPolicyControls.canEndSession,
+          canShowBible:
+            hasSession
+            && phase === 'live'
+            && localPolicyControls.canShowBible,
+          canManageRemote:
+            hasSession
+            && localPolicyControls.canManageRemote
+        }
+      },
       controls: {
-        canPrevious: navigationAvailable && currentIndex > 0,
-        canNext: navigationAvailable && currentIndex !== null && currentIndex < totalSlides - 1,
-        canJump: navigationAvailable && totalSlides > 0,
-        canRestore: outputActionsAvailable,
-        canClear: outputActionsAvailable
+        canPrevious:
+          navigationAvailable
+          && currentIndex > 0
+          && policyControls.canPrevious,
+        canNext:
+          navigationAvailable
+          && currentIndex !== null
+          && currentIndex < totalSlides - 1
+          && policyControls.canNext,
+        canJump:
+          navigationAvailable
+          && totalSlides > 0
+          && policyControls.canJump,
+        canRestore: outputRestoreAvailable && policyControls.canRestore,
+        canClear: outputActionsAvailable && policyControls.canClear
       },
       permissions: {
         canOpenBiblePicker: hasSession && raw.permissions?.canOpenBiblePicker === true
@@ -278,6 +416,8 @@ class RemoteCommandAdapter {
       fail('SHOW_NOT_CONTROLLABLE', 'The Show is not ready for remote control.', { phase: before.phase });
     }
 
+    this._requirePolicyAuthorization(command.type);
+
     const isNavigation = command.type.startsWith('cue.');
     if (isNavigation && before.bible.phase !== 'idle') {
       fail('BIBLE_OVERLAY_ACTIVE', 'Return from the Bible passage before changing cues.');
@@ -293,10 +433,20 @@ class RemoteCommandAdapter {
         });
       }
     }
-    if (command.type === 'cue.previous' && !before.controls.canPrevious) {
+    const currentCueIndex = before.currentCue?.index;
+    if (
+      command.type === 'cue.previous'
+      && (!Number.isInteger(currentCueIndex) || currentCueIndex <= 0)
+    ) {
       fail('AT_FIRST_CUE', 'The Show is already at the first cue.');
     }
-    if (command.type === 'cue.next' && !before.controls.canNext) {
+    if (
+      command.type === 'cue.next'
+      && (
+        !Number.isInteger(currentCueIndex)
+        || currentCueIndex >= before.totalCues - 1
+      )
+    ) {
       fail('AT_LAST_CUE', 'The Show is already at the last cue.');
     }
     if (command.type === 'cue.jump') {
@@ -392,6 +542,90 @@ class RemoteCommandAdapter {
       fail('INVALID_REMOTE_COMMAND', 'Only relative navigation accepts expectedCueIndex.');
     }
     return { type, ...(type === 'cue.jump' ? { cueIndex: envelope.command.cueIndex } : {}) };
+  }
+
+  _readShowPolicyMode() {
+    const policyState = this.readShowPolicyState();
+    if (typeof policyState === 'string') {
+      if (policyState.length === 0) {
+        throw new TypeError('Show policy state must provide an explicit mode');
+      }
+      return normalizeVolunteerShowMode(policyState);
+    }
+    if (!isRecord(policyState)) {
+      throw new TypeError('Show policy state must provide an explicit mode');
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(policyState, 'mode');
+    if (
+      !descriptor
+      || !Object.prototype.hasOwnProperty.call(descriptor, 'value')
+      || descriptor.value === undefined
+      || descriptor.value === null
+      || descriptor.value === ''
+    ) {
+      throw new TypeError('Show policy state mode must be an own data property');
+    }
+    return normalizeVolunteerShowMode(descriptor.value);
+  }
+
+  _policyAllows(type, mode) {
+    try {
+      const decision = this.authorizeShowCommand(Object.freeze({
+        mode,
+        authority: 'locked',
+        source: 'remote',
+        type
+      }));
+      if (decision && typeof decision.then === 'function') {
+        Promise.resolve(decision).catch(() => {});
+        return false;
+      }
+      return Boolean(decision && decision.allowed === true);
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  _policyControls() {
+    let mode;
+    try {
+      mode = this._readShowPolicyMode();
+    } catch (_error) {
+      return {
+        canPrevious: false,
+        canNext: false,
+        canJump: false,
+        canRestore: false,
+        canClear: false
+      };
+    }
+    return {
+      canPrevious: this._policyAllows('cue.previous', mode),
+      canNext: this._policyAllows('cue.next', mode),
+      canJump: this._policyAllows('cue.jump', mode),
+      canRestore: this._policyAllows('output.restore', mode),
+      canClear: this._policyAllows('output.clear', mode)
+    };
+  }
+
+  _requirePolicyAuthorization(type) {
+    let mode;
+    try {
+      mode = this._readShowPolicyMode();
+    } catch (_error) {
+      fail(
+        'COMMAND_FORBIDDEN_BY_SHOW_POLICY',
+        'That Remote command is not allowed by the current Show control policy.',
+        { command: type }
+      );
+    }
+    if (!this._policyAllows(type, mode)) {
+      fail(
+        'COMMAND_FORBIDDEN_BY_SHOW_POLICY',
+        'That Remote command is not allowed by the current Show control policy.',
+        { command: type }
+      );
+    }
   }
 }
 

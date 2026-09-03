@@ -12,6 +12,7 @@ const { MAX_IMAGE_PIXELS } = require('./ServiceProject');
 
 const MAX_RENDER_PIXELS = 3840 * 2160;
 const MAX_TEXT_SPANS = 256;
+const MAX_SINGER_NEXT_TEXT = 2000;
 const SAFE_PANGO_COLOR_PATTERN = /^#[a-fA-F0-9]{6}$/;
 const COMPILED_SPAN_COLOR_PATTERN = /^#[a-f0-9]{6}$/;
 const SAFE_PANGO_WEIGHT_PATTERN = /^[1-9]00$/;
@@ -97,7 +98,24 @@ function escapePango(value) {
 }
 
 function meaningfulFirstLine(value) {
-  return String(value || '').split(/\r?\n/).map(line => line.trim()).find(Boolean) || '';
+  return String(value || '').split(/\r\n|\r|\n/).map(line => line.trim()).find(Boolean) || '';
+}
+
+function boundedSingerNextLine(value) {
+  const line = meaningfulFirstLine(value);
+  if (line.length <= MAX_SINGER_NEXT_TEXT) return line;
+  let bounded = line.slice(0, MAX_SINGER_NEXT_TEXT);
+  const lastCodeUnit = bounded.charCodeAt(bounded.length - 1);
+  if (lastCodeUnit >= 0xD800 && lastCodeUnit <= 0xDBFF) bounded = bounded.slice(0, -1);
+  return bounded;
+}
+
+function singerNextFromText(hasNext, value = '') {
+  if (hasNext !== true) return { state: 'end', text: '' };
+  const text = boundedSingerNextLine(value);
+  return text
+    ? { state: 'text', text }
+    : { state: 'blank', text: '' };
 }
 
 function normalizeScriptureBookToken(value) {
@@ -302,6 +320,58 @@ function cueTextForChannel(cue, channelId) {
   }).filter(Boolean).join('\n\n');
 }
 
+function nativeCueSingerNext(nextCue, channelId) {
+  return singerNextFromText(
+    nextCue !== null && nextCue !== undefined,
+    singerNextLine(cueTextForChannel(singerSourceCue(nextCue, channelId), channelId))
+  );
+}
+
+function cueMetadataForChannel(cue, channelId) {
+  const channel = cue?.channels?.[channelId];
+  let text = '';
+  if (
+    channel
+    && channel.mode !== 'hide'
+    && !channel.blocks?.some(block => block.type === 'blank')
+  ) {
+    const imageBlock = channel.blocks?.find(block => block.type === 'image');
+    const bibleBlock = channel.blocks?.find(block => block.type === 'bible');
+    const textBlocks = channel.blocks?.filter(block => block.type === 'text') || [];
+    if (imageBlock && imageBlock.role !== 'background') {
+      text = imageBlock.altText || '';
+    } else if (bibleBlock) {
+      text = scriptureFlowText(bibleBlock.verses);
+    } else {
+      const localizedTitle = textBlocks.find(block => block.role === 'title')?.text || '';
+      text = cue.kind === 'song' && localizedTitle
+        ? localizedTitle
+        : textBlocks
+          .filter(block => block.role !== 'title' && block.role !== 'credit')
+          .map(block => block.text || '')
+          .filter(Boolean)
+          .join('\n\n');
+    }
+  }
+  return {
+    cueId: cue.id,
+    title: cue.title,
+    kind: cue.kind,
+    groupPath: [...(cue.groupPath || [])],
+    text,
+    firstLine: meaningfulFirstLine(text) || cue.title
+  };
+}
+
+function singerCueMetadata(cue, sourceChannelId, nextCue = null) {
+  return {
+    ...cueMetadataForChannel(singerSourceCue(cue, sourceChannelId), sourceChannelId),
+    layout: 'singer-current-next',
+    sourceChannelId,
+    next: nativeCueSingerNext(nextCue, sourceChannelId)
+  };
+}
+
 function focalGravity(focalPoint = { x: 0.5, y: 0.5 }) {
   const horizontal = focalPoint.x < 0.34 ? 'west' : focalPoint.x > 0.66 ? 'east' : '';
   const vertical = focalPoint.y < 0.34 ? 'north' : focalPoint.y > 0.66 ? 'south' : '';
@@ -373,8 +443,10 @@ class NativeSlideRenderer {
     const fontStyle = options.italic === true ? 'italic' : 'normal';
     const markup =
       `<span foreground="${foreground}" weight="${weight}" style="${fontStyle}">${contentMarkup}</span>`;
-    let last = null;
-    for (let size = preferred; size >= minimum; size -= 2) {
+    const sizes = [];
+    for (let size = preferred; size > minimum; size -= 2) sizes.push(size);
+    sizes.push(minimum);
+    for (const size of sizes) {
       let rendered;
       try {
         const spacing = options.lineSpacingPercent === undefined
@@ -398,10 +470,8 @@ class NativeSlideRenderer {
         error.details = { width, maxHeight, fontSize: size };
         throw error;
       }
-      last = { ...rendered, fontSize: size, fontWeight: weight };
-      if (rendered.info.height <= maxHeight) return last;
+      if (rendered.info.height <= maxHeight + 2) return { ...rendered, fontSize: size, fontWeight: weight };
     }
-    if (last && last.info.height <= maxHeight * 1.08) return last;
     const error = new Error('This cue has more text than the selected preset can display safely.');
     error.code = 'TEXT_OVERFLOW';
     error.details = { width, maxHeight, minimumFontSize: minimum };
@@ -692,6 +762,7 @@ class NativeSlideRenderer {
       pipeline = this._background('#000000');
     } else {
       const imageBlock = channel.blocks?.find(block => block.type === 'image');
+      const videoBlock = channel.blocks?.find(block => block.type === 'video');
       const bibleBlock = channel.blocks?.find(block => block.type === 'bible');
       const textBlocks = channel.blocks?.filter(block => block.type === 'text') || [];
       const legacyBlock = channel.blocks?.find(block => block.type === 'legacy-deck');
@@ -700,7 +771,12 @@ class NativeSlideRenderer {
         error.code = 'LEGACY_DECK_REQUIRES_RENDER';
         throw error;
       }
-      if (imageBlock && imageBlock.role !== 'background') {
+      if (videoBlock) {
+        // Show-package thumbnails are static previews. The live native scene
+        // owns video decoding and starts paused on its first available frame.
+        pipeline = this._background('#000000');
+        textValue = 'Video';
+      } else if (imageBlock && imageBlock.role !== 'background') {
         pipeline = await this._renderPicture(imageBlock);
         textValue = imageBlock.altText;
       } else if (bibleBlock) {
@@ -782,14 +858,7 @@ class NativeSlideRenderer {
     return {
       info,
       typography,
-      metadata: {
-        cueId: cue.id,
-        title: cue.title,
-        kind: cue.kind,
-        groupPath: [...(cue.groupPath || [])],
-        text: textValue,
-        firstLine: meaningfulFirstLine(textValue) || cue.title
-      }
+      metadata: cueMetadataForChannel(cue, channelId)
     };
   }
 
@@ -811,8 +880,10 @@ class NativeSlideRenderer {
       .jpeg({ quality: this.jpegQuality, chromaSubsampling: '4:4:4' })
       .toBuffer();
 
-    const nextLine = singerNextLine(cueTextForChannel(singerSourceCue(nextCue, sourceChannelId), sourceChannelId));
-    const footerText = nextLine || 'End of song';
+    const next = nativeCueSingerNext(nextCue, sourceChannelId);
+    const footerText = next.state === 'text'
+      ? next.text
+      : next.state === 'end' ? 'End of presentation' : '';
     const currentScale = Math.min(currentWidth / this.width, currentHeight / this.height);
     const nextFontSize = current.typography
       ? Math.round(current.typography.fontSize * currentScale)
@@ -820,8 +891,9 @@ class NativeSlideRenderer {
     const nextLayer = await this._singleLineLayer(footerText, {
       width: this.width * 0.88,
       fontSize: nextFontSize,
-      foreground: nextLine ? '#f8fafc' : '#6b7280',
-      weight: current.typography?.fontWeight || '600'
+      foreground: next.state === 'end' ? '#6b7280' : '#f8fafc',
+      weight: current.typography?.fontWeight || '600',
+      italic: next.state === 'end'
     });
     const dashWidth = Math.max(12, Math.round(this.width * 0.025));
     const dashGap = Math.max(8, Math.round(dashWidth * 0.62));
@@ -869,12 +941,7 @@ class NativeSlideRenderer {
     }
     return {
       info,
-      metadata: {
-        ...current.metadata,
-        layout: 'singer-current-next',
-        sourceChannelId,
-        nextLine
-      },
+      metadata: singerCueMetadata(cue, sourceChannelId, nextCue),
       singerTypography: {
         currentFontSize: current.typography ? current.typography.fontSize * currentScale : null,
         nextFontSize, nextText: nextLayer?.displayText || '',
@@ -887,6 +954,7 @@ class NativeSlideRenderer {
 module.exports = {
   MAX_RENDER_PIXELS,
   NativeSlideRenderer,
+  cueMetadataForChannel,
   cueTextForChannel,
   escapePango,
   focalGravity,
@@ -894,6 +962,9 @@ module.exports = {
   markupTextSpans,
   normalizeSafeTextSpans,
   normalizeScriptureBookToken,
+  nativeCueSingerNext,
+  singerNextFromText,
+  singerCueMetadata,
   splitLeadingScriptureReference,
   meaningfulFirstLine
 };

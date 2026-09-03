@@ -44,13 +44,27 @@ async function ensureConfinedDirectory(rootPath, directoryPath) {
   for (const component of relative ? relative.split(path.sep) : []) {
     if (!component || component === '.' || component === '..') throw new Error('Unsafe storage directory component.');
     current = path.join(current, component);
+    let created = false;
     try {
       await fs.mkdir(current, { mode: 0o700 });
+      created = true;
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
     }
     const stats = await fs.lstat(current);
     if (!stats.isDirectory() || stats.isSymbolicLink()) throw new Error(`Unsafe storage directory: ${current}`);
+    if (created) {
+      try {
+        await fsyncDirectory(path.dirname(current));
+      } catch (error) {
+        if (
+          process.platform !== 'win32'
+          || !['EINVAL', 'EPERM', 'EBADF', 'EACCES'].includes(error.code)
+        ) {
+          throw error;
+        }
+      }
+    }
   }
   const realTarget = await fs.realpath(target);
   if (realTarget !== target || (realTarget !== root && !pathIsInside(root, realTarget))) {
@@ -64,6 +78,47 @@ async function fsyncDirectory(directoryPath) {
   try {
     handle = await fs.open(directoryPath, nativeFs.constants.O_RDONLY);
     await handle.sync();
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+async function flushPublishedFile(filePath, expectedBuffer) {
+  const beforePath = await fs.lstat(filePath);
+  if (
+    !beforePath.isFile()
+    || beforePath.isSymbolicLink()
+    || beforePath.size !== expectedBuffer.length
+  ) {
+    throw new Error('The published storage target is not the expected regular file.');
+  }
+  const beforeRealPath = await fs.realpath(filePath);
+  let handle;
+  try {
+    handle = await fs.open(
+      filePath,
+      nativeFs.constants.O_RDWR | (nativeFs.constants.O_NOFOLLOW || 0)
+    );
+    const opened = await handle.stat();
+    if (!opened.isFile() || !statIdentityMatches(beforePath, opened)) {
+      throw new Error('The published storage target changed while opening.');
+    }
+    const observed = await handle.readFile();
+    if (!observed.equals(expectedBuffer)) {
+      throw new Error('The published storage target does not contain the expected bytes.');
+    }
+    await handle.sync();
+    const after = await handle.stat();
+    const afterPath = await fs.lstat(filePath);
+    const afterRealPath = await fs.realpath(filePath);
+    if (
+      !statIdentityMatches(opened, after)
+      || !statIdentityMatches(opened, afterPath)
+      || afterPath.isSymbolicLink()
+      || beforeRealPath !== afterRealPath
+    ) {
+      throw new Error('The published storage target changed while being flushed.');
+    }
   } finally {
     await handle?.close().catch(() => {});
   }
@@ -161,6 +216,11 @@ async function atomicWriteFile(filePath, data, options = {}) {
     handle = null;
     await fs.rename(temporaryPath, filePath);
     published = true;
+    // A temp-file fsync followed by rename is not, by itself, a documented
+    // metadata durability barrier on Windows. Reopen the published name with
+    // write access, verify that it is still our exact file, and flush it before
+    // callers are allowed to advance a journal or clear recovery evidence.
+    await flushPublishedFile(filePath, buffer);
     try {
       await fsyncDirectory(directoryPath);
     } catch (error) {
@@ -172,7 +232,49 @@ async function atomicWriteFile(filePath, data, options = {}) {
   }
 }
 
-async function withExclusiveFileLock(lockPath, operation) {
+async function lockOwnerStatus(ownerPath) {
+  let owner;
+  try {
+    const { buffer } = await readFileNoFollow(ownerPath, 16 * 1024);
+    owner = JSON.parse(buffer.toString('utf8'));
+  } catch (_error) {
+    return 'unverifiable';
+  }
+  if (
+    !owner
+    || !Number.isSafeInteger(owner.pid)
+    || owner.pid < 1
+  ) {
+    return 'unverifiable';
+  }
+  if (owner.pid === process.pid) return 'alive';
+  try {
+    process.kill(owner.pid, 0);
+    return 'alive';
+  } catch (error) {
+    if (error.code === 'ESRCH') return 'dead';
+    if (error.code === 'EPERM') return 'alive';
+    return 'unverifiable';
+  }
+}
+
+async function verifiedDeadLockOwner(ownerPath) {
+  return await lockOwnerStatus(ownerPath) === 'dead';
+}
+
+async function withExclusiveFileLock(lockPath, operation, options = {}) {
+  if (
+    !options
+    || typeof options !== 'object'
+    || Array.isArray(options)
+    || Object.keys(options).some(key => key !== 'reclaimDeadOwner')
+    || (
+      options.reclaimDeadOwner !== undefined
+      && typeof options.reclaimDeadOwner !== 'boolean'
+    )
+  ) {
+    throw new TypeError('Write lock options are invalid.');
+  }
   const parent = await ensurePrivateDirectory(path.dirname(lockPath));
   const resolvedLockPath = assertInside(parent, lockPath, 'Write lock');
   const ownerPath = path.join(resolvedLockPath, 'owner.json');
@@ -192,7 +294,18 @@ async function withExclusiveFileLock(lockPath, operation) {
       if (error.code !== 'EEXIST') throw error;
       const stats = await fs.lstat(resolvedLockPath);
       if (!stats.isDirectory() || stats.isSymbolicLink()) throw new Error('The write lock path is unsafe.');
-      if (Date.now() - stats.mtimeMs <= staleAfterMs || attempt > 0) {
+      const ownerStatus = options.reclaimDeadOwner === true
+        ? await lockOwnerStatus(ownerPath)
+        : null;
+      const lockIsStale = Date.now() - stats.mtimeMs > staleAfterMs;
+      const mayReclaim = options.reclaimDeadOwner === true
+        ? ownerStatus === 'dead'
+          || (ownerStatus === 'unverifiable' && lockIsStale)
+        : lockIsStale;
+      if (
+        !mayReclaim
+        || attempt > 0
+      ) {
         const conflict = new Error('This item is already being saved by another SyncShow process.');
         conflict.code = 'WRITE_LOCKED';
         throw conflict;
@@ -235,10 +348,12 @@ module.exports = {
   atomicWriteFile,
   ensureConfinedDirectory,
   ensurePrivateDirectory,
+  flushPublishedFile,
   fsyncDirectory,
   hashFileNoFollow,
   pathIsInside,
   readFileNoFollow,
   statIdentityMatches,
+  verifiedDeadLockOwner,
   withExclusiveFileLock
 };

@@ -2,9 +2,12 @@
   --primary: #4f7cff;
   --primary-hover: #6890ff;
   --primary-soft: rgba(79, 124, 255, 0.14);
+  --accent: var(--primary);
+  --accent-light: #aac0ff;
   --success: #39c889;
   --warning: #f4ad45;
   --danger: #f87171;
+  --focus: #8eabff;
   --focus-ring: rgba(104, 144, 255, 0.72);
   --bg: #0b1020;
   --bg-raised: #121a2d;
@@ -13,10 +16,12 @@
   --border: #2a3853;
   --border-strong: #3a4c6d;
   --text: #f5f7fb;
+  --text-primary: var(--text);
   --text-secondary: #a9b5ca;
   --text-muted: #73819a;
   --radius-sm: 8px;
   --radius: 12px;
+  --radius-md: var(--radius);
   --radius-lg: 18px;
   --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
   --transition: 160ms ease;
@@ -371,6 +376,71 @@ summary:focus-visible {
   gap: 8px;
 }
 
+.prepare-current-service-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 12px;
+  padding: 11px 13px;
+  background: linear-gradient(135deg, rgba(79, 124, 255, 0.12), rgba(57, 200, 137, 0.07));
+  border: 1px solid rgba(104, 144, 255, 0.3);
+  border-radius: var(--radius-md);
+}
+
+.prepare-current-service-card[hidden] {
+  display: none;
+}
+
+.prepare-current-service-copy {
+  min-width: 0;
+}
+
+.prepare-current-service-copy h3 {
+  margin-top: 1px;
+  font-size: 0.92rem;
+}
+
+.prepare-current-service-files,
+.prepare-current-service-safety,
+.prepare-current-service-plan-handoff-hint {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+
+.prepare-current-service-files {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prepare-current-service-safety {
+  color: #a8efd0;
+}
+
+.prepare-current-service-plan-handoff-hint {
+  color: #c8d7ff;
+}
+
+.prepare-current-service-card .btn {
+  flex: 0 0 auto;
+}
+
+.prepare-current-service-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.plan-linked-powerpoint-handoff-dialog
+  .prepare-linked-sermon-source-list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
 .prepare-notice {
   min-height: 34px;
   margin-top: 14px;
@@ -429,6 +499,10 @@ summary:focus-visible {
 .prepare-library-pane {
   display: flex;
   flex-direction: column;
+}
+
+.prepare-rundown-pane {
+  overflow-y: auto;
 }
 
 .prepare-projects-pane,
@@ -558,10 +632,605 @@ summary:focus-visible {
   font-size: 0.63rem;
 }
 
+.prepare-project-group-heading {
+  margin: 7px 2px 0;
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.prepare-project-group-heading:first-child {
+  margin-top: 0;
+}
+
 .prepare-rundown-heading {
   min-height: 48px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
+}
+
+.prepare-planning-panel {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  padding: 11px 12px;
+  background: rgba(79, 124, 255, 0.07);
+  border: 1px solid rgba(104, 144, 255, 0.26);
+  border-radius: var(--radius-md);
+}
+
+.prepare-planning-panel[hidden] {
+  display: none;
+}
+
+.prepare-planning-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prepare-planning-summary h4 {
+  margin-top: 1px;
+  font-size: 0.82rem;
+}
+
+.prepare-planning-badge {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  color: #bed0ff;
+  background: rgba(79, 124, 255, 0.1);
+  border: 1px solid rgba(104, 144, 255, 0.34);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.prepare-planning-badge[data-status="ready"] {
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.08);
+  border-color: rgba(57, 200, 137, 0.32);
+}
+
+.prepare-planning-badge[data-status="completed"] {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border);
+}
+
+.prepare-planning-badge[data-status="needs-follow-up"] {
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.06);
+  border-color: rgba(244, 173, 69, 0.32);
+}
+
+.prepare-planning-notes,
+.prepare-planning-help {
+  margin-top: 7px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.prepare-planning-help {
+  color: var(--text-muted);
+}
+
+.prepare-planning-operational-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.prepare-planning-operational-summary[hidden] {
+  display: none;
+}
+
+.prepare-run-sheet-overview,
+.prepare-serving-team-overview {
+  min-width: 0;
+  padding: 9px 10px;
+  background: rgba(7, 12, 24, 0.34);
+  border: 1px solid rgba(114, 226, 255, 0.18);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-operational-summary-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prepare-operational-summary-heading h5 {
+  margin-top: 1px;
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+.prepare-operational-summary-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: #bed0ff;
+  background: rgba(79, 124, 255, 0.1);
+  border: 1px solid rgba(104, 144, 255, 0.3);
+  border-radius: 999px;
+  font-size: 0.56rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.prepare-operational-summary-badge[data-kind="ready"] {
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.08);
+  border-color: rgba(57, 200, 137, 0.3);
+}
+
+.prepare-operational-summary-badge[data-kind="warning"] {
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.06);
+  border-color: rgba(244, 173, 69, 0.3);
+}
+
+.prepare-operational-summary-copy {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.prepare-run-sheet-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0 0;
+}
+
+.prepare-run-sheet-facts div {
+  min-width: 0;
+  padding: 6px 7px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+}
+
+.prepare-run-sheet-facts dt {
+  color: var(--text-muted);
+  font-size: 0.53rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prepare-run-sheet-facts dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.63rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prepare-serving-team-overview .btn {
+  margin-top: 8px;
+}
+
+.prepare-planning-origin {
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: rgba(7, 12, 24, 0.34);
+  border: 1px solid rgba(114, 226, 255, 0.18);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-planning-origin[hidden] {
+  display: none;
+}
+
+.prepare-planning-origin-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prepare-planning-origin-heading h5 {
+  margin-top: 1px;
+  font-size: 0.72rem;
+}
+
+.prepare-planning-origin-badge {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.08);
+  border: 1px solid rgba(57, 200, 137, 0.3);
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.prepare-planning-origin-copy {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.prepare-planning-origin-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 8px 0 0;
+}
+
+.prepare-planning-origin-details div {
+  min-width: 0;
+}
+
+.prepare-planning-origin-details dt {
+  color: var(--text-muted);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prepare-planning-origin-details dd {
+  min-width: 0;
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+}
+
+.prepare-planning-origin-details code,
+.prepare-planning-origin-details time {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prepare-planning-origin-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(114, 226, 255, 0.12);
+}
+
+.prepare-planning-origin-check .btn {
+  flex: 0 0 auto;
+}
+
+.prepare-planning-origin-check-status {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.prepare-planning-origin-check-status[data-kind="success"] {
+  color: #a8efd0;
+}
+
+.prepare-planning-origin-check-status[data-kind="warning"] {
+  color: #ffd88a;
+}
+
+.prepare-planning-origin-check-status[data-kind="error"] {
+  color: #ffaaa5;
+}
+
+.prepare-planning-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.prepare-planning-status-actions [aria-pressed="true"] {
+  color: #dce6ff;
+  background: rgba(79, 124, 255, 0.15);
+  border-color: rgba(104, 144, 255, 0.4);
+}
+
+.prepare-service-readiness {
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: rgba(7, 12, 24, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-service-readiness-heading,
+.prepare-readiness-review-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prepare-service-readiness-heading h5,
+.prepare-readiness-review-heading h3 {
+  margin-top: 1px;
+}
+
+.prepare-service-readiness-heading h5 {
+  font-size: 0.72rem;
+}
+
+.prepare-service-readiness-badge {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 800;
+}
+
+.prepare-service-readiness-badge[data-kind="ready"] {
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.08);
+  border-color: rgba(57, 200, 137, 0.32);
+}
+
+.prepare-service-readiness-badge[data-kind="warning"] {
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.06);
+  border-color: rgba(244, 173, 69, 0.32);
+}
+
+.prepare-service-readiness-summary {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.prepare-service-readiness-checks {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prepare-service-readiness-checks li {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  line-height: 1.35;
+}
+
+.prepare-service-readiness-checks li::before {
+  flex: 0 0 auto;
+  content: "•";
+}
+
+.prepare-service-readiness-checks li[data-status="pass"] {
+  color: #9fdcbe;
+}
+
+.prepare-service-readiness-checks li[data-status="pass"]::before {
+  content: "✓";
+}
+
+.prepare-service-readiness-checks li[data-status="waived"] {
+  color: #ffdda8;
+}
+
+.prepare-service-readiness-checks li[data-status="waived"]::before {
+  content: "!";
+}
+
+.prepare-service-readiness-checks li[data-status="blocker"] {
+  color: #ffb8b8;
+}
+
+.prepare-service-readiness-checks li[data-status="blocker"]::before {
+  content: "×";
+}
+
+.prepare-service-readiness-check-copy {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.prepare-service-readiness-check-action {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  white-space: normal;
+  text-align: center;
+}
+
+.prepare-service-readiness-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.prepare-weekly-setup-next {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  background: rgba(79, 124, 255, 0.07);
+  border: 1px solid rgba(104, 144, 255, 0.22);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-weekly-setup-next[hidden] {
+  display: none;
+}
+
+.prepare-weekly-setup-next .btn {
+  justify-self: start;
+}
+
+.prepare-weekly-setup-next small,
+.prepare-weekly-setup-status {
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.prepare-weekly-setup-status {
+  margin: 0;
+}
+
+.prepare-weekly-setup-status[data-kind="warning"] {
+  color: #ffdda8;
+}
+
+.prepare-weekly-setup-status[data-kind="error"] {
+  color: #ffb8b8;
+}
+
+.prepare-weekly-sermon-choices {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.prepare-weekly-sermon-choice {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  background: rgba(7, 12, 24, 0.42);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.prepare-weekly-sermon-choice:hover,
+.prepare-weekly-sermon-choice:focus-visible {
+  background: rgba(79, 124, 255, 0.09);
+  border-color: rgba(104, 144, 255, 0.4);
+}
+
+.prepare-weekly-sermon-choice small {
+  color: var(--text-secondary);
+}
+
+.prepare-readiness-dialog {
+  width: min(760px, calc(100vw - 28px));
+}
+
+.prepare-readiness-review {
+  margin-top: 14px;
+  padding: 12px;
+  background: rgba(7, 12, 24, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-md);
+}
+
+.prepare-readiness-review-checks {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.prepare-readiness-review-check {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-readiness-review-check[data-status="pass"] {
+  border-color: rgba(57, 200, 137, 0.24);
+}
+
+.prepare-readiness-review-check[data-status="blocker"] {
+  border-color: rgba(242, 104, 104, 0.3);
+}
+
+.prepare-readiness-review-check[data-status="waived"] {
+  border-color: rgba(244, 173, 69, 0.3);
+}
+
+.prepare-readiness-review-check-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prepare-readiness-review-check-copy strong {
+  font-size: 0.76rem;
+}
+
+.prepare-readiness-review-check-copy small {
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.prepare-readiness-review-check-action {
+  justify-self: start;
+  white-space: normal;
+  text-align: center;
+}
+
+.prepare-readiness-waiver {
+  display: grid;
+  gap: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.prepare-readiness-waiver-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.prepare-readiness-waiver textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.prepare-readiness-confirmation {
+  margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .prepare-service-readiness-check-action {
+    flex-basis: calc(100% - 18px);
+    margin-inline-start: 18px;
+  }
+
+  .prepare-weekly-setup-next .btn,
+  .prepare-readiness-review-check-action {
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  .prepare-readiness-dialog .dialog-actions {
+    align-items: stretch;
+  }
+
+  .prepare-readiness-dialog .dialog-actions .btn {
+    width: 100%;
+  }
 }
 
 .prepare-empty-state {
@@ -607,11 +1276,12 @@ summary:focus-visible {
 .prepare-rundown-list {
   display: grid;
   align-content: start;
+  flex: 0 0 auto;
   gap: 6px;
   min-height: 0;
   margin: 0;
   padding: 11px 1px 2px;
-  overflow-y: auto;
+  overflow: visible;
   list-style: none;
 }
 
@@ -800,6 +1470,7 @@ summary:focus-visible {
 }
 
 .prepare-inspector,
+.prepare-sermon-inspector,
 .prepare-song-inspector,
 .prepare-add-section,
 .prepare-bible-panel,
@@ -807,6 +1478,7 @@ summary:focus-visible {
   flex: 0 0 auto;
 }
 
+.prepare-sermon-inspector,
 .prepare-song-inspector,
 .prepare-add-section,
 .prepare-song-library {
@@ -815,8 +1487,93 @@ summary:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+.prepare-sermon-inspector[hidden],
 .prepare-song-inspector[hidden] {
   display: none;
+}
+
+.prepare-inspector-sermon-reading {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(7, 12, 24, 0.42);
+  border: 1px solid rgba(114, 226, 255, 0.24);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-inspector-sermon-reading[hidden] {
+  display: none;
+}
+
+.prepare-inspector-sermon-reading-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prepare-inspector-sermon-reading-heading h4 {
+  margin-top: 1px;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.prepare-inspector-sermon-reading-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.08);
+  border: 1px solid rgba(57, 200, 137, 0.3);
+  border-radius: 999px;
+  font-size: 0.55rem;
+  font-weight: 800;
+}
+
+.prepare-inspector-sermon-reading-badge[data-kind="warning"] {
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.08);
+  border-color: rgba(244, 173, 69, 0.3);
+}
+
+.prepare-inspector-sermon-reading-details {
+  display: grid;
+  gap: 7px;
+  margin: 9px 0 0;
+}
+
+.prepare-inspector-sermon-reading-details div {
+  min-width: 0;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+}
+
+.prepare-inspector-sermon-reading-details dt {
+  color: var(--text-muted);
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prepare-inspector-sermon-reading-details dd {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.prepare-inspector-sermon-reading-status {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  line-height: 1.45;
+}
+
+.prepare-inspector-sermon-reading-status[data-kind="warning"] {
+  color: #ffdda8;
 }
 
 .prepare-inspector-actions {
@@ -893,6 +1650,755 @@ summary:focus-visible {
   color: var(--text-muted);
   font-size: 0.61rem;
   text-align: center;
+}
+
+.prepare-sermon-linked-state {
+  margin-top: 9px;
+  padding: 8px 9px;
+  color: #dce5ff;
+  background: rgba(79, 124, 255, 0.07);
+  border: 1px solid rgba(104, 144, 255, 0.24);
+  border-radius: var(--radius-sm);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-linked-state[data-kind="warning"] {
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.05);
+  border-color: rgba(244, 173, 69, 0.3);
+}
+
+.prepare-sermon-link-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.prepare-sermon-library-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.prepare-sermon-library-tools label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.prepare-sermon-library-tools .text-input {
+  width: 100%;
+}
+
+.prepare-sermon-link-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.prepare-sermon-link-controls .display-dropdown {
+  width: 100%;
+}
+
+.prepare-sermon-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prepare-sermon-actions .btn {
+  flex: 0 0 auto;
+}
+
+.prepare-sermon-source-status {
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-source-status[data-kind="warning"] {
+  color: #ffdda8;
+}
+
+.prepare-sermon-source-status[data-kind="error"] {
+  color: #ffc4c4;
+}
+
+.prepare-sermon-services {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 11px;
+  background: rgba(91, 137, 255, 0.035);
+  border: 1px solid rgba(104, 144, 255, 0.16);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-services-heading,
+.prepare-sermon-service-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prepare-sermon-services-heading h4 {
+  margin-top: 2px;
+  font-size: 0.72rem;
+}
+
+.prepare-sermon-services-status {
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-services-status[data-kind="error"] {
+  color: #ffc4c4;
+}
+
+.prepare-sermon-services-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prepare-sermon-service-row {
+  align-items: flex-start;
+  padding: 8px;
+  background: rgba(3, 8, 18, 0.28);
+  border: 1px solid rgba(104, 144, 255, 0.14);
+  border-radius: 7px;
+}
+
+.prepare-sermon-service-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prepare-sermon-service-copy strong {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 0.64rem;
+}
+
+.prepare-sermon-service-copy small {
+  color: var(--text-muted);
+  font-size: 0.56rem;
+  line-height: 1.4;
+}
+
+.prepare-sermon-service-row .btn {
+  flex: 0 0 auto;
+}
+
+.prepare-sermon-references {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 11px;
+  background: rgba(86, 191, 151, 0.04);
+  border: 1px solid rgba(86, 191, 151, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-references-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prepare-sermon-references-heading h4 {
+  margin-top: 2px;
+  font-size: 0.72rem;
+}
+
+.prepare-sermon-reference-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: #c9d4ea;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+}
+
+.prepare-sermon-reference-badge[data-kind="confirmed"] {
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.08);
+  border-color: rgba(57, 200, 137, 0.25);
+}
+
+.prepare-sermon-reference-badge[data-kind="suggested"],
+.prepare-sermon-reference-badge[data-kind="warning"] {
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.08);
+  border-color: rgba(244, 173, 69, 0.25);
+}
+
+.prepare-sermon-reference-status {
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-reference-status[data-kind="ready"] {
+  color: #9ce5bf;
+}
+
+.prepare-sermon-reference-status[data-kind="warning"] {
+  color: #ffdda8;
+}
+
+.prepare-sermon-reference-status[data-kind="error"] {
+  color: #ffc4c4;
+}
+
+.prepare-sermon-reference-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prepare-sermon-reference-list-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(3, 8, 18, 0.28);
+  border: 1px solid rgba(86, 191, 151, 0.15);
+  border-radius: 7px;
+}
+
+.prepare-sermon-reference-list-copy,
+.prepare-sermon-reference-list-badges {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 7px;
+}
+
+.prepare-sermon-reference-list-copy strong {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  font-size: 0.64rem;
+}
+
+.prepare-sermon-reference-list-copy small {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  font-size: 0.56rem;
+  line-height: 1.4;
+}
+
+.prepare-sermon-reference-state {
+  padding: 2px 6px;
+  color: #c9d4ea;
+  background: rgba(148, 163, 184, 0.07);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  font-size: 0.52rem;
+  font-weight: 750;
+}
+
+.prepare-sermon-reference-state[data-kind="confirmed"],
+.prepare-sermon-reference-state[data-kind="primary"] {
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.07);
+  border-color: rgba(57, 200, 137, 0.22);
+}
+
+.prepare-sermon-reference-state[data-kind="suggested"] {
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.07);
+  border-color: rgba(244, 173, 69, 0.22);
+}
+
+.prepare-sermon-references > .btn {
+  justify-self: start;
+}
+
+.prepare-sermon-reading {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 11px;
+  background: rgba(91, 137, 255, 0.045);
+  border: 1px solid rgba(104, 144, 255, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-reading h4 {
+  margin-top: 2px;
+  font-size: 0.72rem;
+}
+
+.prepare-sermon-reading-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+.prepare-sermon-reading-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.prepare-sermon-reading-controls .display-dropdown {
+  width: 100%;
+}
+
+.prepare-sermon-reading-controls .btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.prepare-sermon-reading-output-treatments {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  min-width: 0;
+  margin: 2px 0 0;
+  padding: 8px;
+  background: rgba(5, 11, 24, 0.28);
+  border: 1px solid rgba(104, 144, 255, 0.18);
+  border-radius: 7px;
+}
+
+.prepare-sermon-reading-output-treatments[hidden] {
+  display: none;
+}
+
+.prepare-sermon-reading-output-treatments legend {
+  padding: 0 4px;
+  color: var(--text-secondary);
+  font-size: 0.61rem;
+  font-weight: 800;
+}
+
+.prepare-sermon-reading-output-treatments > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-reading-output-treatments > .prepare-song-output-list {
+  margin-top: 4px;
+}
+
+.prepare-sermon-packet-reading-output-treatments {
+  margin-top: 10px;
+}
+
+.prepare-sermon-reading-status {
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-reading-status[data-kind="ready"] {
+  color: #9ce5bf;
+}
+
+.prepare-sermon-reading-status[data-kind="warning"] {
+  color: #ffdda8;
+}
+
+.prepare-sermon-post-service {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 11px;
+  background: rgba(244, 173, 69, 0.045);
+  border: 1px solid rgba(244, 173, 69, 0.22);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-post-service-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prepare-sermon-post-service-heading h4 {
+  margin-top: 2px;
+  font-size: 0.72rem;
+}
+
+.prepare-sermon-post-service-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.09);
+  border: 1px solid rgba(244, 173, 69, 0.26);
+  border-radius: 999px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.prepare-sermon-post-service-states {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.prepare-sermon-post-service-states div {
+  min-width: 0;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+}
+
+.prepare-sermon-post-service-states dt {
+  color: var(--text-muted);
+  font-size: 0.52rem;
+  line-height: 1.25;
+}
+
+.prepare-sermon-post-service-states dd {
+  display: grid;
+  gap: 2px;
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.prepare-sermon-post-service-recording-detail {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 0.52rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.prepare-sermon-post-service-status,
+.prepare-sermon-post-service-audience,
+.prepare-sermon-post-service-privacy,
+.prepare-sermon-post-service-meaning {
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  line-height: 1.5;
+}
+
+.prepare-sermon-post-service-audience,
+.prepare-sermon-post-service-privacy,
+.prepare-sermon-post-service-meaning {
+  color: var(--text-muted);
+}
+
+.prepare-sermon-post-service-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prepare-sermon-post-service-actions .btn {
+  flex: 0 0 auto;
+}
+
+.prepare-sermon-managed-upload {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  background: rgba(84, 141, 255, 0.045);
+  border: 1px solid rgba(84, 141, 255, 0.22);
+  border-radius: 7px;
+}
+
+.prepare-sermon-managed-upload-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prepare-sermon-managed-upload-heading h5 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+}
+
+.prepare-sermon-managed-upload-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: #bdd2ff;
+  background: rgba(84, 141, 255, 0.1);
+  border: 1px solid rgba(84, 141, 255, 0.28);
+  border-radius: 999px;
+  font-size: 0.53rem;
+  font-weight: 800;
+}
+
+.prepare-sermon-managed-upload-status,
+.prepare-sermon-managed-upload-help {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.58rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-managed-upload-help {
+  color: var(--text-muted);
+}
+
+.prepare-sermon-managed-upload-progress {
+  width: 100%;
+  height: 8px;
+  accent-color: #6ea0ff;
+}
+
+.prepare-sermon-managed-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prepare-sermon-managed-upload[data-kind="complete"] {
+  background: rgba(57, 200, 137, 0.055);
+  border-color: rgba(57, 200, 137, 0.28);
+}
+
+.prepare-sermon-managed-upload[data-kind="complete"] .prepare-sermon-managed-upload-badge {
+  color: #a9edcd;
+  background: rgba(57, 200, 137, 0.1);
+  border-color: rgba(57, 200, 137, 0.28);
+}
+
+.prepare-sermon-managed-upload[data-kind="error"],
+.prepare-sermon-managed-upload[data-kind="stale"],
+.prepare-sermon-managed-upload[data-kind="unavailable"] {
+  background: rgba(248, 113, 113, 0.045);
+  border-color: rgba(248, 113, 113, 0.26);
+}
+
+.prepare-sermon-managed-upload[data-kind="error"] .prepare-sermon-managed-upload-badge,
+.prepare-sermon-managed-upload[data-kind="stale"] .prepare-sermon-managed-upload-badge,
+.prepare-sermon-managed-upload[data-kind="unavailable"] .prepare-sermon-managed-upload-badge {
+  color: #ffc4c4;
+  background: rgba(248, 113, 113, 0.09);
+  border-color: rgba(248, 113, 113, 0.26);
+}
+
+.prepare-sermon-post-service[data-kind="ready"] {
+  background: rgba(57, 200, 137, 0.055);
+  border-color: rgba(57, 200, 137, 0.28);
+}
+
+.prepare-sermon-post-service[data-kind="ready"] .prepare-sermon-post-service-badge {
+  color: #a9edcd;
+  background: rgba(57, 200, 137, 0.1);
+  border-color: rgba(57, 200, 137, 0.28);
+}
+
+.prepare-sermon-post-service[data-kind="error"],
+.prepare-sermon-post-service[data-kind="archived"] {
+  background: rgba(248, 113, 113, 0.055);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.prepare-sermon-post-service[data-kind="error"] .prepare-sermon-post-service-badge,
+.prepare-sermon-post-service[data-kind="archived"] .prepare-sermon-post-service-badge {
+  color: #ffc4c4;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.prepare-sermon-post-service-fieldset {
+  display: grid;
+  gap: 9px;
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-post-service-fieldset legend {
+  padding: 0 6px;
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.prepare-sermon-post-service-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prepare-sermon-post-service-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.prepare-sermon-community {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 11px;
+  background: rgba(57, 200, 137, 0.045);
+  border: 1px solid rgba(57, 200, 137, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-community-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prepare-sermon-community-heading h4 {
+  margin-top: 2px;
+  font-size: 0.72rem;
+}
+
+.prepare-sermon-community-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: #b8c5df;
+  background: rgba(101, 113, 138, 0.12);
+  border: 1px solid rgba(101, 113, 138, 0.25);
+  border-radius: 999px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.prepare-sermon-community-status,
+.prepare-sermon-community-publication-status,
+.prepare-sermon-community-publication-help,
+.prepare-sermon-community-privacy {
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  line-height: 1.5;
+}
+
+.prepare-sermon-community-publication-status {
+  padding: 7px 8px;
+  background: rgba(79, 124, 255, 0.055);
+  border: 1px solid rgba(104, 144, 255, 0.2);
+  border-radius: 7px;
+  color: var(--text-primary);
+}
+
+.prepare-sermon-community-publication-help,
+.prepare-sermon-community-privacy {
+  color: var(--text-muted);
+}
+
+.prepare-sermon-community-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prepare-sermon-community-actions .btn {
+  flex: 0 0 auto;
+}
+
+.prepare-sermon-community[data-kind="synced"] {
+  background: rgba(57, 200, 137, 0.06);
+  border-color: rgba(57, 200, 137, 0.3);
+}
+
+.prepare-sermon-community[data-kind="synced"] .prepare-sermon-community-badge {
+  color: #a9edcd;
+  background: rgba(57, 200, 137, 0.1);
+  border-color: rgba(57, 200, 137, 0.28);
+}
+
+.prepare-sermon-community[data-kind="pending"],
+.prepare-sermon-community[data-kind="warning"] {
+  background: rgba(244, 173, 69, 0.05);
+  border-color: rgba(244, 173, 69, 0.27);
+}
+
+.prepare-sermon-community[data-kind="pending"] .prepare-sermon-community-badge,
+.prepare-sermon-community[data-kind="warning"] .prepare-sermon-community-badge {
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.09);
+  border-color: rgba(244, 173, 69, 0.26);
+}
+
+.prepare-sermon-community[data-kind="conflict"],
+.prepare-sermon-community[data-kind="error"] {
+  background: rgba(248, 113, 113, 0.055);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.prepare-sermon-community[data-kind="conflict"] .prepare-sermon-community-badge,
+.prepare-sermon-community[data-kind="error"] .prepare-sermon-community-badge {
+  color: #ffc4c4;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.prepare-sermon-community[data-kind="unsupported"] {
+  border-color: rgba(101, 113, 138, 0.24);
+}
+
+.prepare-sermon-reference-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.prepare-sermon-reference-row .field-group {
+  margin: 0;
+}
+
+.prepare-sermon-reference-preview {
+  padding: 10px;
+  color: var(--text-secondary);
+  background: rgba(79, 124, 255, 0.055);
+  border: 1px solid rgba(104, 144, 255, 0.24);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-reference-preview strong {
+  display: block;
+  color: #dce5ff;
+  font-size: 0.69rem;
+}
+
+.prepare-sermon-reference-preview p {
+  margin-top: 4px;
+  max-height: 130px;
+  overflow: auto;
+  font-size: 0.62rem;
+  line-height: 1.5;
 }
 
 .prepare-song-editor,
@@ -1016,6 +2522,12 @@ details[open] > summary .prepare-detail-state::after {
   line-height: 1.4;
 }
 
+.prepare-editor-subheading {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
 .prepare-editor-add {
   display: flex;
   flex: 0 0 auto;
@@ -1129,10 +2641,21 @@ details[open] > summary .prepare-detail-state::after {
 }
 
 .prepare-song-output-row .display-dropdown {
+  grid-column: 1 / -1;
   width: 100%;
   min-width: 0;
   height: 30px;
   font-size: 0.62rem;
+}
+
+.prepare-song-output-row.is-source {
+  background: rgba(79, 124, 255, 0.055);
+  border-color: rgba(104, 144, 255, 0.2);
+}
+
+.prepare-song-output-row .prepare-pane-subtitle {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .prepare-add-grid {
@@ -1299,6 +2822,12 @@ details[open] > summary .prepare-detail-state::after {
   font-size: 0.63rem;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.prepare-bible-output-treatments > .prepare-pane-subtitle {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.45;
 }
 
 .prepare-bible-actions {
@@ -1490,6 +3019,17 @@ details[open] > summary .prepare-detail-state::after {
   font-size: 0.75rem;
 }
 
+.prepare-dialog-field-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 0.65fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.prepare-dialog-field-grid .field-group {
+  margin-top: 0;
+}
+
 .prepare-dialog .field-group + .field-group {
   margin-top: 12px;
 }
@@ -1519,6 +3059,167 @@ details[open] > summary .prepare-detail-state::after {
 
 .prepare-textarea-compact {
   min-height: 78px;
+}
+
+.prepare-item-run-sheet {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 14px 0 0;
+  padding: 12px;
+  background: rgba(79, 124, 255, 0.045);
+  border: 1px solid rgba(104, 144, 255, 0.22);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-item-run-sheet[hidden] {
+  display: none;
+}
+
+.prepare-item-run-sheet legend {
+  padding: 0 6px;
+  color: #dce5ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.prepare-item-run-sheet > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.prepare-item-schedule-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  background: rgba(7, 12, 24, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.prepare-item-schedule-toggle input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.prepare-item-schedule-toggle strong,
+.prepare-item-schedule-toggle small {
+  display: block;
+}
+
+.prepare-item-schedule-toggle strong {
+  font-size: 0.7rem;
+}
+
+.prepare-item-schedule-toggle small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  line-height: 1.42;
+}
+
+.prepare-item-duration-fields {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr);
+  align-items: end;
+  gap: 8px;
+  max-width: 340px;
+}
+
+.prepare-item-duration-fields .field-group {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.prepare-item-duration-separator {
+  padding-bottom: 9px;
+  color: var(--text-muted);
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.prepare-item-duration-status {
+  min-height: 18px;
+}
+
+.prepare-serving-team-dialog {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.prepare-serving-team-dialog form {
+  min-width: 0;
+}
+
+.prepare-serving-team-dialog-summary,
+.prepare-serving-team-empty {
+  color: var(--text-secondary);
+  font-size: 0.69rem;
+  line-height: 1.48;
+}
+
+.prepare-serving-team-dialog-summary {
+  padding: 9px 10px;
+  background: rgba(79, 124, 255, 0.06);
+  border: 1px solid rgba(104, 144, 255, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-serving-assignment-rows {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.prepare-serving-assignment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(7, 12, 24, 0.36);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-serving-assignment-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  min-width: 0;
+}
+
+.prepare-serving-assignment-fields .field-group {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.prepare-serving-assignment-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.prepare-serving-team-empty {
+  margin-top: 12px;
+  padding: 16px;
+  color: var(--text-muted);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-serving-team-empty[hidden] {
+  display: none;
+}
+
+#btnAddServingTeamAssignment {
+  margin-top: 10px;
 }
 
 .prepare-output-text-fields {
@@ -1793,6 +3494,1036 @@ details[open] > summary .prepare-detail-state::after {
   line-height: 1.35;
 }
 
+.prepare-sermon-metadata-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 13px;
+  padding: 9px 10px;
+  background: rgba(79, 124, 255, 0.05);
+  border: 1px solid rgba(104, 144, 255, 0.2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.prepare-sermon-metadata-option input {
+  margin-top: 2px;
+}
+
+.prepare-sermon-metadata-option strong,
+.prepare-sermon-metadata-option small {
+  display: block;
+}
+
+.prepare-sermon-metadata-option strong {
+  font-size: 0.69rem;
+}
+
+.prepare-sermon-metadata-option small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  line-height: 1.35;
+}
+
+.prepare-sermon-reference-dialog {
+  width: min(820px, calc(100vw - 32px));
+}
+
+.prepare-sermon-reference-context,
+.prepare-sermon-reference-dialog-status {
+  overflow-wrap: anywhere;
+  font-size: 0.67rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-reference-context {
+  margin: -7px 0 0;
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  background: rgba(79, 124, 255, 0.055);
+  border: 1px solid rgba(104, 144, 255, 0.2);
+  border-radius: 7px;
+}
+
+.prepare-sermon-reference-dialog-status {
+  margin-top: 9px;
+  color: var(--text-muted);
+}
+
+.prepare-sermon-reference-dialog-status[data-kind="ready"] {
+  color: #9ce5bf;
+}
+
+.prepare-sermon-reference-dialog-status[data-kind="warning"] {
+  color: #ffdda8;
+}
+
+.prepare-sermon-reference-dialog-status[data-kind="error"] {
+  color: #ffc4c4;
+}
+
+.prepare-sermon-reference-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.prepare-sermon-reference-panel,
+.prepare-sermon-reference-proposal {
+  min-width: 0;
+  padding: 12px;
+  background: rgba(5, 11, 24, 0.34);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-reference-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prepare-sermon-reference-panel-heading h3 {
+  color: #dce5ff;
+  font-size: 0.76rem;
+}
+
+.prepare-sermon-reference-panel-heading p {
+  margin-top: 3px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  font-size: 0.62rem;
+  line-height: 1.42;
+}
+
+.prepare-sermon-reference-editor-rows,
+.prepare-sermon-reference-proposal-rows {
+  display: grid;
+  gap: 8px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: sermon-reference;
+}
+
+.prepare-sermon-reference-editor-row,
+.prepare-sermon-reference-proposal-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  padding: 10px;
+  background: rgba(3, 8, 18, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  counter-increment: sermon-reference;
+}
+
+.prepare-sermon-reference-editor-row::before,
+.prepare-sermon-reference-proposal-row::before {
+  display: grid;
+  place-items: center;
+  align-self: start;
+  width: 22px;
+  height: 22px;
+  color: #dce5ff;
+  background: rgba(79, 124, 255, 0.12);
+  border: 1px solid rgba(104, 144, 255, 0.25);
+  border-radius: 999px;
+  content: counter(sermon-reference);
+  font-size: 0.57rem;
+  font-weight: 850;
+}
+
+.prepare-sermon-reference-editor-row[data-kind="suggested"] {
+  background: rgba(244, 173, 69, 0.04);
+  border-color: rgba(244, 173, 69, 0.23);
+}
+
+.prepare-sermon-reference-editor-row-copy,
+.prepare-sermon-reference-proposal-row-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.prepare-sermon-reference-editor-row-copy strong,
+.prepare-sermon-reference-proposal-row-copy strong {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  font-size: 0.69rem;
+}
+
+.prepare-sermon-reference-editor-row-copy small,
+.prepare-sermon-reference-proposal-row-copy small {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  font-size: 0.6rem;
+  line-height: 1.42;
+}
+
+.prepare-sermon-reference-editor-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.prepare-sermon-reference-row-confirmation {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 8px;
+  color: var(--text-secondary);
+  background: rgba(79, 124, 255, 0.055);
+  border: 1px solid rgba(104, 144, 255, 0.2);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+
+.prepare-sermon-reference-row-confirmation input {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+}
+
+.prepare-sermon-reference-row-confirmation:focus-within {
+  border-color: rgba(104, 144, 255, 0.55);
+  box-shadow: 0 0 0 2px rgba(104, 144, 255, 0.2);
+}
+
+.prepare-sermon-reference-row-confirmation:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.prepare-sermon-reference-row-preview {
+  min-width: 0;
+  margin-top: 6px;
+  padding: 9px 10px;
+  color: var(--text-secondary);
+  background: rgba(79, 124, 255, 0.055);
+  border: 1px solid rgba(104, 144, 255, 0.2);
+  border-radius: 7px;
+}
+
+.prepare-sermon-reference-row-preview strong {
+  display: block;
+  color: #dce5ff;
+  font-size: 0.66rem;
+}
+
+.prepare-sermon-reference-row-preview p {
+  max-height: min(28vh, 240px);
+  margin-top: 5px;
+  padding-right: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  font-size: 0.62rem;
+  line-height: 1.52;
+}
+
+.prepare-sermon-reference-editor-row-copy .prepare-sermon-reference-row-warning {
+  display: block;
+  margin-top: 5px;
+  padding: 8px 9px;
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.07);
+  border: 1px solid rgba(244, 173, 69, 0.24);
+  border-radius: 7px;
+  font-size: 0.61rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-reference-empty {
+  margin-top: 10px;
+  padding: 10px;
+  color: var(--text-muted);
+  background: rgba(3, 8, 18, 0.28);
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  font-size: 0.63rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-reference-draft-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(145px, 0.42fr) auto;
+  align-items: end;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.prepare-sermon-reference-draft-grid .field-group {
+  min-width: 0;
+  margin: 0;
+}
+
+.prepare-sermon-reference-draft-grid .display-dropdown,
+.prepare-sermon-reference-draft-grid .text-input {
+  width: 100%;
+}
+
+.prepare-sermon-reference-draft-status,
+.prepare-sermon-reference-proposal-status {
+  margin-top: 9px;
+  color: var(--text-muted);
+  font-size: 0.63rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-reference-draft-status[data-kind="ready"],
+.prepare-sermon-reference-proposal-status[data-kind="ready"] {
+  color: #9ce5bf;
+}
+
+.prepare-sermon-reference-draft-status[data-kind="warning"],
+.prepare-sermon-reference-proposal-status[data-kind="warning"] {
+  color: #ffdda8;
+}
+
+.prepare-sermon-reference-draft-status[data-kind="error"],
+.prepare-sermon-reference-proposal-status[data-kind="error"] {
+  color: #ffc4c4;
+}
+
+.prepare-sermon-reference-draft-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 11px;
+  margin-top: 10px;
+  padding: 11px;
+  color: var(--text-secondary);
+  background: rgba(79, 124, 255, 0.065);
+  border: 1px solid rgba(104, 144, 255, 0.25);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-reference-draft-preview strong {
+  display: block;
+  color: #dce5ff;
+  font-size: 0.7rem;
+}
+
+.prepare-sermon-reference-draft-preview p {
+  max-height: min(24vh, 190px);
+  margin-top: 5px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  font-size: 0.63rem;
+  line-height: 1.52;
+}
+
+.prepare-sermon-reference-proposal {
+  margin-top: 13px;
+  background: rgba(57, 200, 137, 0.035);
+  border-color: rgba(57, 200, 137, 0.22);
+}
+
+.prepare-sermon-reference-full-confirmation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  margin-top: 12px;
+  padding: 11px;
+  color: var(--text-secondary);
+  background: rgba(244, 173, 69, 0.055);
+  border: 1px solid rgba(244, 173, 69, 0.24);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.prepare-sermon-reference-full-confirmation input {
+  margin-top: 2px;
+}
+
+.prepare-sermon-reference-full-confirmation:focus-within {
+  outline: 3px solid rgba(104, 144, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.prepare-sermon-reference-full-confirmation strong,
+.prepare-sermon-reference-full-confirmation small {
+  display: block;
+}
+
+.prepare-sermon-reference-full-confirmation strong {
+  color: #ffdda8;
+  font-size: 0.69rem;
+}
+
+.prepare-sermon-reference-full-confirmation small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  line-height: 1.42;
+}
+
+.prepare-sermon-reference-dialog-actions {
+  flex-wrap: wrap;
+}
+
+.prepare-sermon-reference-dialog-actions #reviewSermonReferenceEditAgainButton {
+  margin-left: auto;
+}
+
+.prepare-sermon-review-dialog {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.prepare-sermon-review-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.prepare-sermon-review-source-row .field-group {
+  min-width: 0;
+  margin: 0;
+}
+
+.prepare-sermon-review-source-row .display-dropdown {
+  width: 100%;
+}
+
+.prepare-sermon-review-status {
+  margin-top: 11px;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-review-status[data-kind="warning"] {
+  color: #ffdda8;
+}
+
+.prepare-sermon-review-status[data-kind="error"] {
+  color: #ffc4c4;
+}
+
+.linked-sermon-service-sources-dialog .prepare-sermon-review-status {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.prepare-linked-sermon-source-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(38vh, 320px);
+  margin-top: 11px;
+  padding: 2px;
+  overflow: auto;
+  list-style: none;
+}
+
+.prepare-linked-sermon-source-list[hidden] {
+  display: none;
+}
+
+.prepare-linked-sermon-source-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.prepare-linked-sermon-source-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: rgba(5, 11, 24, 0.34);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-linked-sermon-source-badge {
+  min-width: 52px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.61rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.prepare-linked-sermon-source-badge[data-disposition="add"] {
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.1);
+  border-color: rgba(57, 200, 137, 0.3);
+}
+
+.prepare-linked-sermon-source-badge[data-disposition="reuse"] {
+  color: #c9d8ff;
+  background: rgba(79, 124, 255, 0.1);
+  border-color: rgba(104, 144, 255, 0.3);
+}
+
+.prepare-linked-sermon-source-copy {
+  min-width: 0;
+}
+
+.prepare-linked-sermon-source-copy strong,
+.prepare-linked-sermon-source-copy small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.prepare-linked-sermon-source-copy strong {
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.prepare-linked-sermon-source-copy small {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 0.67rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-review-results {
+  display: grid;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.prepare-sermon-review-preview,
+.prepare-sermon-suggestion-section {
+  min-width: 0;
+  padding: 11px;
+  background: rgba(5, 11, 24, 0.34);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-review-preview h3,
+.prepare-sermon-suggestion-section h3 {
+  color: #dce5ff;
+  font-size: 0.75rem;
+}
+
+.prepare-sermon-review-preview p,
+.prepare-sermon-suggestion-section > div:first-child p {
+  margin-top: 3px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  font-size: 0.62rem;
+  line-height: 1.42;
+}
+
+.prepare-sermon-review-preview .prepare-sermon-review-persistence {
+  margin-top: 9px;
+  padding: 9px 10px;
+  color: var(--text-secondary);
+  background: rgba(79, 124, 255, 0.08);
+  border: 1px solid rgba(104, 144, 255, 0.24);
+  border-radius: 7px;
+}
+
+.prepare-sermon-review-preview pre {
+  max-height: min(30vh, 250px);
+  margin-top: 9px;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  background: rgba(3, 8, 18, 0.58);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 7px;
+  font: 0.65rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.prepare-sermon-body-results {
+  display: grid;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.prepare-sermon-body-summary {
+  min-width: 0;
+  padding: 11px;
+  background: rgba(5, 11, 24, 0.34);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-body-summary h3 {
+  color: #dce5ff;
+  font-size: 0.75rem;
+}
+
+.prepare-sermon-body-summary p,
+.prepare-sermon-body-results .field-group small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  font-size: 0.62rem;
+  line-height: 1.42;
+}
+
+.prepare-sermon-body-results .field-group small[data-kind="error"] {
+  color: #ffc4c4;
+}
+
+.prepare-sermon-body-notice {
+  padding: 10px 11px;
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.075);
+  border: 1px solid rgba(244, 173, 69, 0.24);
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.prepare-sermon-body-text {
+  min-height: min(42vh, 420px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+}
+
+.prepare-sermon-body-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 11px;
+  background: rgba(79, 124, 255, 0.06);
+  border: 1px solid rgba(104, 144, 255, 0.22);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.prepare-sermon-body-confirmation input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.prepare-sermon-body-confirmation strong,
+.prepare-sermon-body-confirmation small {
+  display: block;
+}
+
+.prepare-sermon-body-confirmation strong {
+  font-size: 0.7rem;
+}
+
+.prepare-sermon-body-confirmation small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1.42;
+}
+
+.prepare-sermon-material-dialog {
+  width: min(980px, calc(100vw - 32px));
+}
+
+.prepare-sermon-material-section {
+  margin-top: 14px;
+  padding: 14px;
+  background: rgba(5, 11, 24, 0.34);
+  border: 1px solid rgba(104, 144, 255, 0.24);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-material-section + .prepare-sermon-material-section {
+  margin-top: 12px;
+}
+
+.prepare-sermon-material-file {
+  border-color: var(--border);
+}
+
+.prepare-sermon-material-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+
+.prepare-sermon-material-heading .section-kicker {
+  margin-bottom: 2px;
+}
+
+.prepare-sermon-material-heading h3 {
+  color: #dce5ff;
+  font-size: 0.82rem;
+}
+
+.prepare-sermon-material-badge {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  color: #dce5ff;
+  background: rgba(79, 124, 255, 0.15);
+  border: 1px solid rgba(104, 144, 255, 0.34);
+  border-radius: 999px;
+  font-size: 0.57rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prepare-sermon-material-badge[data-kind="secondary"] {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--border);
+}
+
+.prepare-sermon-material-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.prepare-sermon-material-grid .field-group,
+.prepare-sermon-material-file-grid .field-group {
+  margin-top: 0;
+}
+
+.prepare-sermon-material-text {
+  min-height: min(34vh, 310px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+}
+
+.prepare-sermon-material-section .prepare-sermon-body-confirmation {
+  margin: 11px 0;
+}
+
+.prepare-sermon-material-file-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.linked-sermon-service-sources-dialog .prepare-sermon-body-confirmation {
+  margin-top: 11px;
+}
+
+.linked-sermon-service-sources-dialog .prepare-sermon-body-confirmation small {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+
+.linked-sermon-service-sources-dialog .prepare-sermon-body-confirmation[data-disabled="true"] {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.025);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+.prepare-sermon-cue-dialog {
+  width: min(980px, calc(100vw - 32px));
+}
+
+.prepare-sermon-cue-dialog form {
+  min-width: 0;
+}
+
+.prepare-sermon-cue-mapping-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  background: rgba(5, 11, 24, 0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-cue-mapping-fieldset legend {
+  padding: 0 6px;
+  color: #dce5ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.prepare-sermon-cue-mapping-fieldset > p,
+.prepare-sermon-cue-review-help,
+.prepare-sermon-cue-review-heading p {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-cue-mapping {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(225px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.prepare-sermon-cue-mapping label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.prepare-sermon-cue-mapping label > span {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.prepare-sermon-cue-mapping .display-dropdown {
+  width: 100%;
+}
+
+.prepare-sermon-cue-propose-row,
+.prepare-sermon-cue-review-heading,
+.prepare-sermon-cue-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prepare-sermon-cue-propose-row .prepare-sermon-review-status {
+  flex: 1 1 auto;
+}
+
+.prepare-sermon-cue-propose-row .btn,
+.prepare-sermon-cue-review-heading .btn {
+  flex: 0 0 auto;
+}
+
+.prepare-sermon-cue-proposal {
+  min-width: 0;
+  margin-top: 14px;
+}
+
+.prepare-sermon-cue-review-heading {
+  align-items: flex-start;
+}
+
+.prepare-sermon-cue-review-heading h3 {
+  color: #dce5ff;
+  font-size: 0.82rem;
+}
+
+.prepare-sermon-cue-review-heading p {
+  margin-top: 3px;
+}
+
+.prepare-sermon-cue-review-help {
+  margin-top: 9px;
+  padding: 9px 10px;
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.07);
+  border: 1px solid rgba(244, 173, 69, 0.23);
+  border-radius: 7px;
+}
+
+.prepare-sermon-cue-rows {
+  display: grid;
+  gap: 10px;
+  max-height: min(52vh, 560px);
+  margin-top: 10px;
+  padding-right: 5px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.prepare-sermon-cue-row {
+  min-width: 0;
+  padding: 11px;
+  background: rgba(5, 11, 24, 0.38);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-sermon-cue-row[data-action="insert"] {
+  border-color: rgba(104, 144, 255, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(104, 144, 255, 0.08);
+}
+
+.prepare-sermon-cue-row-heading strong {
+  font-size: 0.72rem;
+}
+
+.prepare-sermon-cue-unmatched {
+  padding: 3px 7px;
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.08);
+  border: 1px solid rgba(244, 173, 69, 0.28);
+  border-radius: 999px;
+  font-size: 0.59rem;
+  font-weight: 800;
+}
+
+.prepare-sermon-cue-row-controls {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.45fr) minmax(220px, 1fr);
+  gap: 10px;
+  margin-top: 9px;
+}
+
+.prepare-sermon-cue-row-controls label,
+.prepare-sermon-cue-channel {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.prepare-sermon-cue-row-controls label > span,
+.prepare-sermon-cue-channel > label > span,
+.prepare-sermon-cue-channel-heading {
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.prepare-sermon-cue-channel-heading {
+  display: block;
+  color: #dce5ff;
+  font-size: 0.7rem;
+}
+
+.prepare-sermon-cue-row-controls .display-dropdown,
+.prepare-sermon-cue-channel .display-dropdown {
+  width: 100%;
+}
+
+.prepare-sermon-cue-channels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.prepare-sermon-cue-channel {
+  padding: 9px;
+  background: rgba(79, 124, 255, 0.04);
+  border: 1px solid rgba(104, 144, 255, 0.16);
+  border-radius: 7px;
+}
+
+.prepare-sermon-cue-channel.is-unmatched {
+  background: rgba(244, 173, 69, 0.045);
+  border-color: rgba(244, 173, 69, 0.25);
+}
+
+.prepare-sermon-cue-channel label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.prepare-sermon-cue-exact-label {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prepare-sermon-cue-exact-text {
+  max-height: 150px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  background: rgba(3, 8, 18, 0.58);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 7px;
+  font: 0.62rem/1.48 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.prepare-sermon-cue-exact-text[data-empty="true"] {
+  color: #ffdda8;
+  font-family: inherit;
+  font-style: italic;
+}
+
+.prepare-sermon-cue-condensed-text {
+  min-height: 112px;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.prepare-sermon-cue-condensed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.prepare-sermon-cue-condensed-help {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-cue-confirmation {
+  margin-top: 12px;
+}
+
+.prepare-sermon-suggestion-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.prepare-sermon-suggestion-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: rgba(79, 124, 255, 0.045);
+  border: 1px solid rgba(104, 144, 255, 0.18);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.prepare-sermon-suggestion-option input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.prepare-sermon-suggestion-option span {
+  min-width: 0;
+}
+
+.prepare-sermon-suggestion-option strong,
+.prepare-sermon-suggestion-option small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.prepare-sermon-suggestion-option strong {
+  color: var(--text);
+  font-size: 0.69rem;
+}
+
+.prepare-sermon-suggestion-option small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  line-height: 1.4;
+}
+
+.prepare-sermon-suggestion-empty {
+  padding: 9px 10px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px dashed rgba(148, 163, 184, 0.22);
+  border-radius: 7px;
+  font-size: 0.63rem;
+  line-height: 1.45;
+}
+
 .prepare-song-fields,
 .prepare-song-credit-grid,
 .prepare-song-attribution-grid {
@@ -1823,8 +4554,48 @@ details[open] > summary .prepare-detail-state::after {
 .prepare-song-community-sharing > p {
   margin: 0 0 10px;
   color: var(--text-muted);
-  font-size: 0.64rem;
+  font-size: 0.72rem;
   line-height: 1.45;
+}
+
+.prepare-song-community-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.prepare-song-community-scope {
+  min-width: 0;
+  padding: 10px;
+  background: rgba(5, 11, 24, 0.26);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-song-community-scope h3 {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.prepare-song-community-scope > p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.69rem;
+  line-height: 1.45;
+}
+
+.prepare-song-public-link-card {
+  background: rgba(79, 124, 255, 0.045);
+  border-color: rgba(104, 144, 255, 0.22);
+}
+
+.prepare-song-public-link-card[data-kind="synced"] {
+  border-color: rgba(57, 200, 137, 0.3);
+}
+
+.prepare-song-public-link-card[data-kind="warning"],
+.prepare-song-public-link-card[data-kind="pending"] {
+  border-color: rgba(244, 173, 69, 0.3);
 }
 
 .prepare-song-community-fields {
@@ -1845,12 +4616,12 @@ details[open] > summary .prepare-detail-state::after {
 }
 
 .prepare-song-community-state strong {
-  font-size: 0.68rem;
+  font-size: 0.76rem;
 }
 
 .prepare-song-community-state span {
   color: var(--text-muted);
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   line-height: 1.42;
 }
 
@@ -1873,8 +4644,353 @@ details[open] > summary .prepare-detail-state::after {
   border-color: rgba(248, 113, 113, 0.3);
 }
 
+.prepare-song-community-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.prepare-song-sharing-family {
+  margin: 15px 0;
+  padding: 12px;
+  background: rgba(5, 11, 24, 0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-song-sharing-family h3,
+.prepare-song-sharing-family h4 {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.prepare-song-sharing-family > p,
+.prepare-song-sharing-review-note,
+.prepare-status-copy {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.48;
+}
+
+.prepare-song-sharing-family > p {
+  margin: 4px 0 10px;
+}
+
+.prepare-song-sharing-family-list {
+  display: grid;
+  gap: 9px;
+  max-height: min(40vh, 390px);
+  overflow: auto;
+}
+
+.prepare-song-sharing-family-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.prepare-song-sharing-family-document {
+  min-width: 0;
+  padding: 10px;
+  background: rgba(8, 15, 29, 0.68);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+}
+
+.prepare-song-sharing-family-document header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prepare-song-sharing-family-document header h4 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}
+
+.prepare-song-sharing-family-document header span,
+.prepare-song-sharing-family-revision {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.prepare-song-sharing-family-revision {
+  margin: 4px 0 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.prepare-song-sharing-family-rights {
+  display: grid;
+  grid-template-columns: minmax(86px, auto) minmax(0, 1fr);
+  gap: 3px 9px;
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.42;
+}
+
+.prepare-song-sharing-family-rights dt {
+  color: var(--text-muted);
+}
+
+.prepare-song-sharing-family-rights dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.prepare-song-sharing-family-empty {
+  margin: 0;
+  color: #ffc2c2;
+  font-size: 0.74rem;
+}
+
+.prepare-song-sharing-review-note {
+  margin: 9px 0 12px;
+  padding: 9px 10px;
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.045);
+  border: 1px solid rgba(244, 173, 69, 0.24);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.48;
+}
+
+.prepare-field-help {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.prepare-check input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.prepare-status-copy {
+  min-height: 1.5em;
+  margin: 12px 0 0;
+}
+
+.prepare-status-copy[data-kind="pending"] {
+  color: #ffdda8;
+}
+
+.prepare-status-copy[data-kind="success"] {
+  color: #a8efd0;
+}
+
+.prepare-status-copy[data-kind="error"] {
+  color: #ffc2c2;
+}
+
 .prepare-song-conflict-review {
   margin-top: 9px;
+}
+
+.prepare-dialog-public-links {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.prepare-song-public-links-section {
+  min-width: 0;
+  margin-top: 14px;
+  padding: 12px;
+  background: rgba(5, 11, 24, 0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-song-public-links-section > h3,
+.prepare-song-public-links-heading h3 {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.prepare-song-public-links-section > p,
+.prepare-song-public-links-heading p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.prepare-song-public-links-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prepare-song-public-links-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(34vh, 330px);
+  margin-top: 10px;
+  overflow: auto;
+}
+
+.prepare-song-public-links-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.prepare-song-public-links-empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--text-muted);
+  background: rgba(8, 15, 29, 0.52);
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.prepare-song-public-link-item {
+  min-width: 0;
+  padding: 11px;
+  background: rgba(8, 15, 29, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+}
+
+.prepare-song-public-link-item header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prepare-song-public-link-item h4 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.79rem;
+}
+
+.prepare-song-public-link-badges,
+.prepare-song-public-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.prepare-song-public-link-badges {
+  justify-content: flex-end;
+}
+
+.prepare-song-public-link-badge {
+  padding: 3px 7px;
+  color: var(--text-secondary);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.prepare-song-public-link-badge.active {
+  color: #a8efd0;
+  border-color: rgba(57, 200, 137, 0.3);
+}
+
+.prepare-song-public-link-badge.expired,
+.prepare-song-public-link-badge.older {
+  color: #ffdda8;
+  border-color: rgba(244, 173, 69, 0.3);
+}
+
+.prepare-song-public-link-badge.revoked {
+  color: #ffc2c2;
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.prepare-song-public-link-meta,
+.prepare-song-public-link-warning {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.prepare-song-public-link-warning {
+  color: #ffdda8;
+}
+
+.prepare-song-public-link-url {
+  display: block;
+  min-width: 0;
+  margin-top: 9px;
+  padding: 8px 9px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: #cbd8ff;
+  background: rgba(79, 124, 255, 0.07);
+  border: 1px solid rgba(104, 144, 255, 0.22);
+  border-radius: 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.prepare-song-public-link-actions {
+  margin-top: 9px;
+}
+
+.prepare-song-public-link-revoke-confirm {
+  margin-top: 10px;
+  padding: 9px;
+  color: #ffc2c2;
+  background: rgba(248, 113, 113, 0.045);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  border-radius: 7px;
+}
+
+.prepare-song-public-link-revoke-confirm p {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.prepare-song-public-link-create > .prepare-song-sharing-family {
+  margin-bottom: 12px;
+}
+
+.prepare-song-public-link-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.8fr);
+  gap: 12px;
+}
+
+.prepare-song-public-link-fields .field-group {
+  margin-top: 0;
+}
+
+.prepare-song-public-link-blocked {
+  padding: 9px 10px;
+  color: #ffdda8 !important;
+  background: rgba(244, 173, 69, 0.045);
+  border: 1px solid rgba(244, 173, 69, 0.24);
+  border-radius: 7px;
+}
+
+.prepare-song-public-link-dialog-actions {
+  flex-wrap: wrap;
 }
 
 .prepare-dialog-conflict {
@@ -1971,6 +5087,122 @@ details[open] > summary .prepare-detail-state::after {
   flex-wrap: wrap;
 }
 
+.prepare-sermon-conflict-dialog form {
+  min-width: 0;
+}
+
+.prepare-sermon-conflict-record {
+  display: grid;
+  gap: 10px;
+  max-height: min(52vh, 510px);
+  overflow: auto;
+}
+
+.prepare-sermon-conflict-record-title {
+  color: #e5ebfb;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.prepare-sermon-conflict-fields {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.prepare-sermon-conflict-field {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.42fr) minmax(0, 1fr);
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.prepare-sermon-conflict-field dt {
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  font-weight: 700;
+}
+
+.prepare-sermon-conflict-field dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.prepare-sermon-conflict-section {
+  display: grid;
+  gap: 6px;
+}
+
+.prepare-sermon-conflict-section h5 {
+  color: #cbd7f0;
+  font-size: 0.64rem;
+}
+
+.prepare-sermon-conflict-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.prepare-sermon-conflict-body-entry {
+  min-width: 0;
+  overflow: hidden;
+  background: rgba(3, 8, 18, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 7px;
+}
+
+.prepare-sermon-conflict-body-entry h6 {
+  padding: 7px 9px;
+  color: #dce5ff;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+
+.prepare-sermon-conflict-body-entry pre {
+  max-height: 280px;
+  margin: 0;
+  padding: 9px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font: 0.62rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.prepare-sermon-conflict-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 0.61rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.prepare-sermon-conflict-empty,
+.prepare-sermon-conflict-service-note {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1.45;
+}
+
+.prepare-sermon-conflict-service-note {
+  margin-top: 12px;
+  padding: 8px 10px;
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.05);
+  border: 1px solid rgba(244, 173, 69, 0.22);
+  border-radius: var(--radius-sm);
+}
+
 .prepare-song-attribution {
   margin: 13px 0;
   padding: 11px;
@@ -2064,6 +5296,480 @@ details[open] > summary .prepare-detail-state::after {
   border-color: rgba(244, 173, 69, 0.24);
 }
 
+.prepare-current-service-song-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.prepare-current-service-song-family-tools,
+.prepare-current-service-song-review-heading,
+.prepare-current-service-song-rights-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.prepare-current-service-song-family-tools {
+  margin-bottom: 12px;
+  padding: 10px 11px;
+  background: rgba(79, 124, 255, 0.055);
+  border: 1px solid rgba(104, 144, 255, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-current-service-song-member-tabs,
+.prepare-current-service-song-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.prepare-current-service-song-member-tabs {
+  margin-top: 6px;
+}
+
+.prepare-current-service-song-member-tab {
+  min-width: 116px;
+  padding: 7px 10px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.69rem;
+  font-weight: 750;
+  text-align: left;
+}
+
+.prepare-current-service-song-member-tab[aria-pressed="true"] {
+  color: #e7edff;
+  background: rgba(79, 124, 255, 0.14);
+  border-color: rgba(104, 144, 255, 0.48);
+}
+
+.prepare-current-service-song-member-tab[data-reviewed="true"]::after {
+  content: " · reviewed";
+  color: #9de8c8;
+  font-size: 0.6rem;
+}
+
+.prepare-current-service-song-member-heading {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.prepare-current-service-song-member-help,
+.prepare-current-service-song-review-summary {
+  margin: 4px 0 12px;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.prepare-current-service-song-suggestion-field {
+  grid-column: 1 / -1;
+}
+
+.prepare-current-service-song-preview {
+  display: grid;
+  max-height: min(34vh, 330px);
+  margin: 12px 0 0;
+  padding: 0;
+  overflow: auto;
+  gap: 8px;
+  list-style: none;
+}
+
+.prepare-current-service-song-preview li {
+  padding: 9px 10px;
+  background: rgba(10, 16, 31, 0.52);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-current-service-song-preview .prepare-current-service-song-title-evidence {
+  background: rgba(244, 173, 69, 0.055);
+  border-color: rgba(244, 173, 69, 0.28);
+}
+
+.prepare-current-service-song-preview .prepare-current-service-song-title-evidence strong {
+  color: #ffdda8;
+}
+
+.prepare-current-service-song-preview strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent-light);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prepare-current-service-song-slide-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.prepare-current-service-song-slide-heading strong {
+  margin-bottom: 0;
+}
+
+.prepare-current-service-song-slide-lane {
+  width: auto;
+  min-width: 118px;
+  padding-block: 5px;
+  font-size: 0.68rem;
+}
+
+.prepare-current-service-song-preview pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.73rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.prepare-current-service-song-note {
+  margin-top: 11px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.prepare-current-service-song-review[hidden] {
+  display: none;
+}
+
+.prepare-current-service-song-review-heading h3,
+.prepare-current-service-song-rights-heading h3 {
+  margin: 1px 0 0;
+  font-size: 0.88rem;
+}
+
+.prepare-current-service-song-local-badge {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  color: #a8efd0;
+  background: rgba(57, 200, 137, 0.07);
+  border: 1px solid rgba(57, 200, 137, 0.25);
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+}
+
+.prepare-current-service-song-identities {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.prepare-current-service-song-identity {
+  min-width: 0;
+  padding: 10px;
+  background: rgba(79, 124, 255, 0.045);
+  border: 1px solid rgba(104, 144, 255, 0.22);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-current-service-song-identity.is-create {
+  background: rgba(57, 200, 137, 0.055);
+  border-color: rgba(57, 200, 137, 0.28);
+}
+
+.prepare-current-service-song-identity.is-existing {
+  background: rgba(244, 173, 69, 0.055);
+  border-color: rgba(244, 173, 69, 0.3);
+}
+
+.prepare-current-service-song-identity.is-retained {
+  background: rgba(255, 255, 255, 0.025);
+  border-color: var(--border);
+}
+
+.prepare-current-service-song-identity h4 {
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 0.68rem;
+  letter-spacing: 0.025em;
+}
+
+.prepare-current-service-song-identity p {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.63rem;
+  line-height: 1.42;
+}
+
+.prepare-current-service-song-identity-revision code {
+  color: var(--text-muted);
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.prepare-current-service-song-identity-proposal {
+  color: #ffdda8 !important;
+}
+
+.prepare-current-service-song-identity-rights strong {
+  color: var(--text);
+}
+
+.prepare-current-service-song-warnings {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.prepare-current-service-song-warnings:empty {
+  display: none;
+}
+
+.prepare-current-service-song-warnings li {
+  padding: 8px 10px;
+  color: #ffdda8;
+  background: rgba(244, 173, 69, 0.05);
+  border: 1px solid rgba(244, 173, 69, 0.24);
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.prepare-current-service-song-occurrences {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 10px;
+  list-style: none;
+}
+
+.prepare-current-service-song-dialog .dialog-actions {
+  position: sticky;
+  z-index: 2;
+  bottom: -18px;
+  padding: 12px 0 18px;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(23, 33, 55, 0),
+      #172137 18px
+    );
+}
+
+.prepare-current-service-song-occurrence {
+  padding: 11px;
+  background: rgba(10, 16, 31, 0.48);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-current-service-song-occurrence-heading,
+.prepare-current-service-song-occurrence-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.7fr);
+  gap: 10px;
+}
+
+.prepare-current-service-song-occurrence-heading {
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.prepare-current-service-song-occurrence-heading strong {
+  color: var(--accent-light);
+  font-size: 0.72rem;
+}
+
+.prepare-current-service-song-occurrence-heading small {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  text-align: right;
+}
+
+.prepare-current-service-song-occurrence-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.prepare-current-service-song-occurrence-member {
+  min-width: 0;
+  padding: 8px 9px;
+  background: rgba(79, 124, 255, 0.045);
+  border: 1px solid rgba(104, 144, 255, 0.18);
+  border-radius: 7px;
+}
+
+.prepare-current-service-song-occurrence-member strong,
+.prepare-current-service-song-occurrence-member small {
+  display: block;
+}
+
+.prepare-current-service-song-occurrence-member strong {
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+}
+
+.prepare-current-service-song-occurrence-member small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.58rem;
+}
+
+.prepare-current-service-song-complete-label {
+  display: block;
+  margin-top: 7px;
+  color: #a8efd0;
+  font-size: 0.54rem;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+}
+
+.prepare-current-service-song-occurrence-member pre {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1.42;
+  white-space: pre-wrap;
+}
+
+.prepare-current-service-song-occurrence-controls {
+  align-items: end;
+}
+
+.prepare-current-service-song-occurrence-controls .field-group {
+  margin: 0;
+}
+
+.prepare-current-service-song-repeat-field[hidden] {
+  display: none;
+}
+
+.prepare-current-service-song-occurrence-note {
+  grid-column: 1 / -1;
+}
+
+.prepare-current-service-song-rights-heading {
+  margin-top: 17px;
+}
+
+.prepare-current-service-song-metadata {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.prepare-current-service-song-metadata-card {
+  padding: 11px;
+  background: rgba(79, 124, 255, 0.045);
+  border: 1px solid rgba(104, 144, 255, 0.18);
+  border-radius: var(--radius-sm);
+}
+
+.prepare-current-service-song-metadata-card h4 {
+  margin: 0 0 9px;
+  color: var(--accent-light);
+  font-size: 0.75rem;
+}
+
+.prepare-current-service-song-title-card-evidence {
+  margin: 0 0 10px;
+  padding: 9px;
+  background: rgba(8, 14, 27, 0.42);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.prepare-current-service-song-title-card-evidence.is-template-local {
+  border-color: rgba(244, 173, 69, 0.3);
+}
+
+.prepare-current-service-song-title-card-evidence strong {
+  display: block;
+  color: #ffdda8;
+  font-size: 0.58rem;
+  letter-spacing: 0.045em;
+}
+
+.prepare-current-service-song-title-card-evidence p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  line-height: 1.42;
+}
+
+.prepare-current-service-song-title-card-evidence pre {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.69rem;
+  line-height: 1.42;
+  white-space: pre-wrap;
+}
+
+.prepare-current-service-song-metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.prepare-current-service-song-metadata-grid .prepare-current-service-song-wide {
+  grid-column: 1 / -1;
+}
+
+.prepare-current-service-song-metadata-grid textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.prepare-current-service-song-confirmations {
+  margin-top: 12px;
+}
+
+.prepare-current-service-song-confirmations .prepare-confirmation {
+  margin-top: 7px;
+}
+
+.prepare-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 10px 11px;
+  color: var(--text-secondary);
+  background: rgba(57, 200, 137, 0.05);
+  border: 1px solid rgba(57, 200, 137, 0.22);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.prepare-confirmation input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.prepare-confirmation:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79, 124, 255, 0.18);
+}
+
 .prepare-song-row {
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -2071,7 +5777,21 @@ details[open] > summary .prepare-detail-state::after {
 .prepare-song-row-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+}
+
+.prepare-song-replacement-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 7px 8px;
+  color: #ffc4c4;
+  background: rgba(255, 92, 92, 0.08);
+  border: 1px solid rgba(255, 112, 112, 0.25);
+  border-radius: var(--radius-sm);
+  font-size: 0.62rem;
+  line-height: 1.4;
 }
 
 /* Load */
@@ -2120,6 +5840,14 @@ details[open] > summary .prepare-detail-state::after {
   color: var(--text-secondary);
 }
 
+.load-intro-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 9px;
+}
+
 .load-auto-status {
   flex: 0 0 auto;
   padding: 7px 11px;
@@ -2135,6 +5863,83 @@ details[open] > summary .prepare-detail-state::after {
   color: #a8efd0;
   background: rgba(57, 200, 137, 0.09);
   border-color: rgba(57, 200, 137, 0.27);
+}
+
+.load-service-handoff {
+  display: grid;
+  gap: 9px;
+  padding: 16px 18px;
+  background:
+    linear-gradient(135deg, rgba(57, 200, 137, 0.12), rgba(79, 124, 255, 0.07)),
+    rgba(9, 17, 31, 0.84);
+  border: 1px solid rgba(83, 211, 154, 0.34);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 14px 34px rgba(3, 8, 19, 0.2);
+}
+
+.load-service-handoff[hidden] {
+  display: none;
+}
+
+.load-service-handoff-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.load-service-handoff-heading h3 {
+  color: #f2fff9;
+  font-size: 1.02rem;
+  letter-spacing: -0.015em;
+}
+
+.load-service-handoff-schedule,
+.load-service-handoff-notes,
+.load-service-handoff-review {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.48;
+}
+
+.load-service-handoff-notes {
+  color: #e6eefc;
+  white-space: pre-wrap;
+}
+
+.load-service-handoff-operational-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 7px;
+}
+
+.load-service-handoff-run-sheet,
+.load-service-handoff-team {
+  min-width: 0;
+  padding: 8px 10px;
+  color: #dce7fb;
+  background: rgba(7, 12, 24, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.load-service-handoff-run-sheet[hidden],
+.load-service-handoff-team[hidden] {
+  display: none;
+}
+
+.load-service-handoff-badge {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  color: #b5f5d9;
+  background: rgba(57, 200, 137, 0.11);
+  border: 1px solid rgba(57, 200, 137, 0.34);
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .load-auto-status.working,
@@ -2838,6 +6643,15 @@ details[open] > summary .prepare-detail-state::after {
   margin-top: 10px;
 }
 
+.conversion-recovery {
+  display: flex;
+  margin-top: 9px;
+}
+
+.conversion-recovery[hidden] {
+  display: none;
+}
+
 .service-role-actions {
   display: grid;
   gap: 8px;
@@ -3233,6 +7047,137 @@ details[open] > summary .prepare-detail-state::after {
   color: var(--text-muted);
   font-size: 0.65rem;
   line-height: 1.42;
+}
+
+.sermon-storage-section {
+  margin-top: 12px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(125, 149, 255, 0.08), transparent 36%),
+    rgba(10, 16, 31, 0.48);
+  border-color: rgba(125, 149, 255, 0.2);
+}
+
+.sermon-storage-heading {
+  margin-bottom: 7px;
+}
+
+.sermon-storage-intro {
+  max-width: 880px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.sermon-storage-status {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 13px;
+  padding: 11px 12px;
+  color: var(--text-secondary);
+  background: rgba(5, 11, 24, 0.34);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sermon-storage-status > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.sermon-storage-status strong {
+  color: var(--text-primary);
+  font-size: 0.72rem;
+}
+
+.sermon-storage-status small {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.42;
+}
+
+.sermon-storage-status-mark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #aebdff;
+  background: rgba(125, 149, 255, 0.12);
+  border-radius: 50%;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.sermon-storage-status[data-kind="ready"] {
+  border-color: rgba(57, 200, 137, 0.28);
+}
+
+.sermon-storage-status[data-kind="ready"] .sermon-storage-status-mark {
+  color: var(--success);
+  background: rgba(57, 200, 137, 0.1);
+}
+
+.sermon-storage-status[data-kind="attention"] {
+  border-color: rgba(244, 173, 69, 0.3);
+}
+
+.sermon-storage-status[data-kind="attention"] .sermon-storage-status-mark {
+  color: var(--warning);
+  background: rgba(244, 173, 69, 0.1);
+}
+
+.sermon-storage-status[data-kind="error"] {
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.sermon-storage-status[data-kind="error"] .sermon-storage-status-mark {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.sermon-storage-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.sermon-storage-summary[hidden] {
+  display: none;
+}
+
+.sermon-storage-summary > div {
+  min-width: 0;
+  padding: 10px;
+  background: rgba(5, 11, 24, 0.3);
+  border: 1px solid rgba(125, 149, 255, 0.13);
+  border-radius: 8px;
+}
+
+.sermon-storage-summary dt {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+
+.sermon-storage-summary dd {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.sermon-storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sermon-storage-actions .btn[hidden] {
+  display: none;
 }
 
 /* Settings */
@@ -3878,6 +7823,91 @@ details[open] > summary .prepare-detail-state::after {
   font-size: 1.08rem;
 }
 
+.volunteer-control-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 11px;
+  background: rgba(57, 200, 137, 0.1);
+  border: 1px solid rgba(57, 200, 137, 0.38);
+  border-radius: var(--radius);
+}
+
+.volunteer-control-bar[hidden] {
+  display: none;
+}
+
+.volunteer-control-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: #08170f;
+  background: var(--success);
+  border-radius: 50%;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.volunteer-control-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.volunteer-control-copy strong {
+  font-size: 0.74rem;
+}
+
+.volunteer-control-copy small {
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  line-height: 1.35;
+}
+
+.volunteer-control-bar .btn {
+  grid-column: 1 / -1;
+}
+
+body.volunteer-show-locked .main-horizontal-layout {
+  justify-content: center;
+}
+
+body.volunteer-show-locked .thumbnails-section {
+  display: none;
+}
+
+body.volunteer-show-locked .controls-column {
+  flex: 0 1 420px;
+  width: min(100%, 420px);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+body.volunteer-show-locked .nav-box {
+  grid-template-columns: 1fr;
+}
+
+body.volunteer-show-locked #btnNextSlide {
+  min-height: 58px;
+  font-size: 1.04rem;
+}
+
+body.volunteer-show-locked #btnPrevSlide,
+body.volunteer-show-locked .live-tools-box:not(.volunteer-cleanup-visible),
+body.volunteer-show-locked #remoteLiveStrip,
+body.volunteer-show-locked #btnShowDisplays,
+body.volunteer-show-locked #btnStopDisplays,
+body.volunteer-show-locked #btnBackToSetup,
+body.volunteer-show-locked #previewBox {
+  display: none !important;
+}
+
+body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRemote {
+  display: none;
+}
+
 .show-output-state {
   display: flex;
   align-items: center;
@@ -3961,6 +7991,75 @@ details[open] > summary .prepare-detail-state::after {
 .slide-counter-box .divider {
   margin: 0 6px;
   color: var(--text-muted);
+}
+
+.show-cue-context {
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+  background: rgba(79, 124, 255, 0.08);
+  border: 1px solid rgba(118, 149, 244, 0.25);
+  border-radius: var(--radius);
+}
+
+.show-cue-context-path {
+  color: #9db6ff;
+  font-size: 0.61rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.show-cue-context h3 {
+  color: #f6f8ff;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.show-cue-context-meta {
+  color: #c9d7ff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.show-cue-context-meta[hidden] {
+  display: none;
+}
+
+.show-cue-context-note {
+  padding: 7px 8px;
+  color: #f5dfb8;
+  background: rgba(244, 173, 69, 0.08);
+  border-left: 3px solid rgba(244, 173, 69, 0.7);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.show-cue-context-next {
+  display: grid;
+  gap: 1px;
+  margin-top: 3px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(118, 149, 244, 0.18);
+}
+
+.show-cue-context-next span {
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.show-cue-context-next strong {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.4;
 }
 
 .nav-box,
@@ -4387,6 +8486,57 @@ details[open] > summary .prepare-detail-state::after {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
+}
+
+.show-handoff-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.show-handoff-icon {
+  color: #071c13;
+  background: var(--success);
+}
+
+.show-handoff-dialog[data-mode="powerpoint"] .show-handoff-icon {
+  color: #071426;
+  background: #7bb6ff;
+}
+
+.show-handoff-summary {
+  display: grid;
+  gap: 3px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: rgba(57, 200, 137, 0.08);
+  border: 1px solid rgba(57, 200, 137, 0.25);
+  border-radius: var(--radius);
+}
+
+.show-handoff-dialog[data-mode="powerpoint"] .show-handoff-summary {
+  background: rgba(84, 153, 255, 0.08);
+  border-color: rgba(123, 182, 255, 0.3);
+}
+
+.show-handoff-summary strong {
+  color: #edfff7;
+  font-size: 0.86rem;
+}
+
+.show-handoff-summary span {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.42;
+}
+
+.show-handoff-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.show-handoff-actions .btn {
+  min-height: 42px;
 }
 
 /* Start-time output choices */
@@ -5167,6 +9317,7 @@ details[open] > summary .prepare-detail-state::after {
   }
 
   .prepare-song-inspector,
+  .prepare-sermon-inspector,
   .prepare-add-section,
   .prepare-bible-panel {
     grid-column: 1;
@@ -5205,22 +9356,154 @@ details[open] > summary .prepare-detail-state::after {
     flex-direction: column;
   }
 
+  .prepare-sermon-post-service-states,
+  .prepare-sermon-post-service-grid,
+  .prepare-dialog-field-grid,
+  .prepare-sermon-material-grid,
+  .prepare-sermon-material-file-grid {
+    grid-template-columns: 1fr;
+  }
+
   .prepare-primary-actions .btn {
     flex: 1 1 0;
+  }
+
+  .prepare-current-service-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prepare-current-service-card .btn {
+    width: 100%;
+  }
+
+  .prepare-current-service-actions {
+    width: 100%;
+  }
+
+  .prepare-current-service-song-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .prepare-current-service-song-family-tools,
+  .prepare-current-service-song-review-heading,
+  .prepare-current-service-song-rights-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prepare-current-service-song-member-actions .btn {
+    flex: 1 1 145px;
+  }
+
+  .prepare-current-service-song-occurrence-heading,
+  .prepare-current-service-song-occurrence-controls,
+  .prepare-current-service-song-metadata-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prepare-current-service-song-occurrence-heading small {
+    text-align: left;
+  }
+
+  .prepare-current-service-song-occurrence-note,
+  .prepare-current-service-song-metadata-grid .prepare-current-service-song-wide {
+    grid-column: auto;
   }
 
   .prepare-song-fields,
   .prepare-song-credit-grid,
   .prepare-song-attribution-grid,
+  .prepare-song-community-sections,
   .prepare-song-community-fields,
+  .prepare-song-public-link-fields,
   .prepare-output-text-card {
     grid-template-columns: 1fr;
+  }
+
+  .prepare-song-public-links-heading,
+  .prepare-song-public-link-item header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prepare-song-public-link-badges {
+    justify-content: flex-start;
+  }
+
+  .prepare-song-public-link-actions .btn {
+    flex: 1 1 150px;
   }
 
   .prepare-dialog-song,
   .prepare-dialog-wide,
   .prepare-dialog-conflict {
     padding: 18px;
+  }
+
+  .prepare-sermon-review-source-row {
+    grid-template-columns: 1fr;
+  }
+
+  .prepare-sermon-review-source-row .btn {
+    width: 100%;
+  }
+
+  .prepare-sermon-reference-draft-grid,
+  .prepare-sermon-reference-draft-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .prepare-sermon-reference-draft-grid .btn,
+  .prepare-sermon-reference-draft-preview .btn {
+    width: 100%;
+  }
+
+  .prepare-sermon-reference-row-confirmation {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .prepare-sermon-reference-row-preview {
+    padding: 8px 9px;
+  }
+
+  .prepare-sermon-reference-row-preview p {
+    max-height: min(34vh, 210px);
+  }
+
+  .prepare-sermon-reference-panel-heading,
+  .prepare-sermon-reference-dialog-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prepare-sermon-reference-dialog-actions #reviewSermonReferenceEditAgainButton {
+    margin-left: 0;
+  }
+
+  .prepare-sermon-reference-dialog-actions .btn {
+    width: 100%;
+  }
+
+  .prepare-sermon-cue-propose-row,
+  .prepare-sermon-cue-review-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prepare-sermon-cue-propose-row .btn,
+  .prepare-sermon-cue-review-heading .btn {
+    width: 100%;
+  }
+
+  .prepare-sermon-cue-row-controls,
+  .prepare-sermon-cue-channels {
+    grid-template-columns: 1fr;
+  }
+
+  .prepare-sermon-cue-rows {
+    max-height: min(58vh, 620px);
   }
 
   .prepare-conflict-columns,
@@ -5326,6 +9609,14 @@ details[open] > summary .prepare-detail-state::after {
     width: 100%;
   }
 
+  .sermon-storage-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sermon-storage-actions .btn {
+    flex: 1 1 220px;
+  }
+
   .service-source-public {
     grid-column: auto;
   }
@@ -5357,6 +9648,20 @@ details[open] > summary .prepare-detail-state::after {
   .load-intro {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .load-intro-actions {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .load-service-handoff-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .show-handoff-actions {
+    grid-template-columns: 1fr;
   }
 
   .readiness-card {
@@ -5469,5 +9774,453 @@ details[open] > summary .prepare-detail-state::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+.prepare-community-plans-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-raised);
+}
+
+.prepare-community-plans-card h3,
+.prepare-community-plans-card p {
+  margin: 0;
+}
+
+.community-service-plans-dialog {
+  width: min(1120px, calc(100vw - 40px));
+}
+
+.community-service-plans-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.6fr);
+  gap: 18px;
+  min-height: 480px;
+}
+
+.community-service-plans-dialog[data-review-source="project"] {
+  width: min(820px, calc(100vw - 40px));
+}
+
+.community-service-plans-dialog[data-review-source="project"]
+  .community-service-plans-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.community-service-plans-dialog[data-review-source="project"]
+  .community-service-plans-list-pane {
+  display: none;
+}
+
+.community-service-plans-list-pane,
+.community-service-plan-detail {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.community-service-plans-list-pane .prepare-list {
+  max-height: 470px;
+  overflow: auto;
+}
+
+.community-service-plan-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.community-service-plan-title-row h3,
+.community-service-plan-title-row p {
+  margin: 0;
+}
+
+.community-service-plan-review-state,
+.community-service-plan-notes,
+.community-service-plan-findings {
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--bg-input);
+}
+
+.community-service-plan-review-state[data-kind="error"],
+.community-service-plan-findings {
+  border-left: 3px solid var(--danger);
+}
+
+.community-service-plan-review-state[data-kind="success"] {
+  border-left: 3px solid var(--success);
+}
+
+.community-service-plan-review-state[data-kind="warning"] {
+  border-left: 3px solid var(--warning);
+}
+
+.community-service-plan-entries,
+.community-service-plan-findings ul {
+  display: grid;
+  gap: 7px;
+  padding-left: 24px;
+}
+
+.community-service-plan-reconciliation {
+  border-left-color: var(--primary);
+}
+
+.community-service-plan-reconciliation h5 {
+  margin-top: 14px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.community-service-plan-reconciliation-summary {
+  margin-top: 6px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.community-service-plan-reconciliation-mode {
+  margin-top: 9px;
+  padding: 9px 10px;
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.community-service-plan-reconciliation-mode[data-mode="legacy-full-replace"] {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.community-service-plan-conflicts {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.community-service-plan-conflict {
+  min-width: 0;
+  padding: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.community-service-plan-conflict legend {
+  max-width: 100%;
+  padding: 0 5px;
+  color: var(--text);
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.community-service-plan-conflict-kind {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: lowercase;
+}
+
+.community-service-plan-conflict-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.community-service-plan-conflict-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  align-content: start;
+  padding: 9px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.community-service-plan-conflict-choice:has(input:checked) {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.community-service-plan-conflict-choice input {
+  grid-row: 1 / span 2;
+  margin-top: 3px;
+}
+
+.community-service-plan-conflict-choice strong {
+  color: var(--text);
+}
+
+.community-service-plan-conflict-choice span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.community-service-plan-conflict-choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.community-service-plan-decision-status {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-weight: 650;
+}
+
+.community-service-plan-decision-status[data-kind="warning"] {
+  color: var(--warning);
+}
+
+.community-service-plan-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 14px 0;
+}
+
+.community-service-plan-confirmation input {
+  margin-top: 3px;
+}
+
+.shared-services-dialog {
+  width: min(980px, calc(100vw - 40px));
+}
+
+.shared-service-button span {
+  color: var(--text-muted);
+}
+
+.shared-service-conflict-versions {
+  display: grid;
+  gap: 9px;
+  margin: 16px 0;
+}
+
+.shared-service-conflict-versions > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.shared-service-conflict-versions dt {
+  color: var(--text-secondary);
+  font-weight: 750;
+}
+
+.shared-service-conflict-versions dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.shared-services-footer-actions {
+  margin-top: 14px;
+}
+
+@media (max-width: 850px) {
+  .prepare-community-plans-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .community-service-plans-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .community-service-plan-conflict-choices {
+    grid-template-columns: 1fr;
+  }
+
+  .prepare-planning-origin-check {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prepare-planning-origin-check .btn {
+    align-self: flex-start;
+  }
+}
+
+.prepare-reviewed-song-range-dialog {
+  width: min(1180px, calc(100vw - 36px));
+}
+
+.prepare-reviewed-song-range-heading,
+.prepare-reviewed-song-range-navigation,
+.prepare-reviewed-song-range-mapping-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.prepare-reviewed-song-range-heading h3,
+.prepare-reviewed-song-range-heading p,
+.prepare-reviewed-song-range-navigation p,
+.prepare-reviewed-song-range-summary {
+  margin: 0;
+}
+
+.prepare-reviewed-song-range-summary {
+  margin: 12px 0;
+  color: var(--text-muted);
+}
+
+.prepare-reviewed-song-range-position {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.prepare-reviewed-song-range-mappings {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.prepare-reviewed-song-range-mapping {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(260px, 1.5fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+}
+
+.prepare-reviewed-song-range-mapping strong,
+.prepare-reviewed-song-range-mapping small {
+  display: block;
+}
+
+.prepare-reviewed-song-range-mapping small {
+  margin-top: 3px;
+  color: var(--text-muted);
+}
+
+.prepare-reviewed-song-range-comparison {
+  margin-top: 4px;
+}
+
+.prepare-reviewed-song-range-navigation {
+  margin: 14px 0;
+}
+
+.prepare-reviewed-song-range-navigation p {
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.prepare-reviewed-song-range-previews {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.prepare-reviewed-song-range-preview-card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-input);
+}
+
+.prepare-reviewed-song-range-preview-card h4 {
+  margin: 0 0 10px;
+}
+
+.prepare-reviewed-song-range-preview-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.prepare-reviewed-song-range-preview-pair figure {
+  min-width: 0;
+  margin: 0;
+}
+
+.prepare-reviewed-song-range-preview-pair figcaption {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.prepare-reviewed-song-range-preview-pair img,
+.prepare-reviewed-song-range-preview-placeholder {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #111;
+  object-fit: contain;
+}
+
+.prepare-reviewed-song-range-preview-placeholder {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .prepare-reviewed-song-range-heading,
+  .prepare-reviewed-song-range-navigation,
+  .prepare-reviewed-song-range-mapping-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prepare-reviewed-song-range-mapping,
+  .prepare-reviewed-song-range-preview-pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .prepare-item-duration-fields {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    max-width: none;
+  }
+
+  .prepare-serving-assignment-row,
+  .prepare-serving-assignment-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .prepare-serving-assignment-row {
+    align-items: stretch;
+  }
+
+  .prepare-serving-assignment-actions,
+  .prepare-serving-assignment-actions .btn {
+    width: 100%;
   }
 }

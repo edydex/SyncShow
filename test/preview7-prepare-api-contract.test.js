@@ -19,6 +19,7 @@ const preview7Channels = Object.freeze([
   'prepare:projects:addGroup',
   'prepare:projects:updateSongArrangement',
   'prepare:projects:linkSongTranslation',
+  'prepare:projects:setSongOutputTreatment',
   'prepare:projects:resetSongTranslation',
   'prepare:projects:addBible'
 ]);
@@ -225,6 +226,53 @@ test('song translation discovery and reset keep content authority in main', asyn
   ]);
 });
 
+test('setSongOutputTreatment forwards only one explicit output treatment and source', async () => {
+  const { api, calls } = loadPreloadBridge();
+  assert.equal(typeof api.setSongOutputTreatment, 'function');
+
+  await api.setSongOutputTreatment({
+    projectId: 'service-sunday',
+    expectedRevisionId: PROJECT_REVISION,
+    itemId: 'song-amazing-grace',
+    channelId: 'confidence-monitor',
+    mode: 'derive-next-text',
+    sourceChannelId: 'front-projector',
+    variant: { hostile: true },
+    resourceId: `sha256:${'c'.repeat(64)}`
+  });
+  await api.setSongOutputTreatment({
+    projectId: 'service-sunday',
+    expectedRevisionId: PROJECT_REVISION,
+    itemId: 'song-amazing-grace',
+    channelId: 'broadcast-feed',
+    mode: 'hidden',
+    sourceChannelId: 'renderer-must-not-forward-this'
+  });
+
+  assert.deepEqual(calls, [{
+    kind: 'invoke',
+    channel: 'prepare:projects:setSongOutputTreatment',
+    payload: {
+      projectId: 'service-sunday',
+      expectedRevisionId: PROJECT_REVISION,
+      itemId: 'song-amazing-grace',
+      channelId: 'confidence-monitor',
+      mode: 'derive-next-text',
+      sourceChannelId: 'front-projector'
+    }
+  }, {
+    kind: 'invoke',
+    channel: 'prepare:projects:setSongOutputTreatment',
+    payload: {
+      projectId: 'service-sunday',
+      expectedRevisionId: PROJECT_REVISION,
+      itemId: 'song-amazing-grace',
+      channelId: 'broadcast-feed',
+      mode: 'hidden'
+    }
+  }]);
+});
+
 test('addBiblePassageToService sends lookup intent only; main owns canonical resolution and verse text', async () => {
   const { api, calls } = loadPreloadBridge();
   assert.equal(typeof api.addBiblePassageToService, 'function');
@@ -233,9 +281,23 @@ test('addBiblePassageToService sends lookup intent only; main owns canonical res
     projectId: 'service-sunday',
     expectedRevisionId: PROJECT_REVISION,
     reference: 'pet 1 4',
-    translationId: 'BSB',
     selectedBookId: '2 Peter',
     parentId: 'scripture-readings',
+    outputs: [{
+      channelId: 'front-projector',
+      mode: 'translation',
+      translationId: 'BSB',
+      verses: [{ number: 4, text: 'renderer-controlled nested text' }]
+    }, {
+      channelId: 'translation-projector',
+      mode: 'translation',
+      translationId: 'LSV',
+      passage: { hostile: true }
+    }, {
+      channelId: 'confidence-monitor',
+      mode: 'hidden',
+      translationId: 'renderer-must-not-forward-this'
+    }],
     passage: { reference: '1 Peter 1:4' },
     verses: [{ number: 4, text: 'renderer-controlled text' }],
     attribution: 'renderer-controlled attribution'
@@ -248,9 +310,20 @@ test('addBiblePassageToService sends lookup intent only; main owns canonical res
       projectId: 'service-sunday',
       expectedRevisionId: PROJECT_REVISION,
       reference: 'pet 1 4',
-      translationId: 'BSB',
       selectedBookId: '2 Peter',
-      parentId: 'scripture-readings'
+      parentId: 'scripture-readings',
+      outputs: [{
+        channelId: 'front-projector',
+        mode: 'translation',
+        translationId: 'BSB'
+      }, {
+        channelId: 'translation-projector',
+        mode: 'translation',
+        translationId: 'LSV'
+      }, {
+        channelId: 'confidence-monitor',
+        mode: 'hidden'
+      }]
     }
   }]);
 });
@@ -352,7 +425,7 @@ test('translation linking resolves an exact library revision in main before vali
   assert.doesNotMatch(source, /request\.(?:song|document|resource|resourceId|origin)\b/);
 });
 
-test('translation candidates and reset use the same authoritative project model', () => {
+test('translation candidates, reset, and explicit treatments use the authoritative project model', () => {
   const discovery = handlerSource('prepare:songs:translationsForItem');
   assert.match(discovery, /requireControlSender\(event\)/);
   assert.match(discovery, /readExpectedProject\(request\)/);
@@ -366,34 +439,54 @@ test('translation candidates and reset use the same authoritative project model'
     'prepare:projects:resetSongTranslation',
     16 * 1024
   );
-  assert.match(reset, /resetSongChannelVariant\(/);
-  assert.match(reset, /\(media\|singer\|stage\)/);
+  assert.match(reset, /resolveAuthoritativeSongSource\(/);
+  assert.match(reset, /setSongChannelTreatment\(/);
+  assert.match(reset, /mode:\s*'inherit'/);
+  assert.doesNotMatch(reset, /\(media\|singer\|stage\)/);
   assert.doesNotMatch(reset, /request\.(?:mode|variant|resourceId|song)\b/);
+
+  const treatment = assertTrustedCasMutation(
+    'prepare:projects:setSongOutputTreatment',
+    16 * 1024
+  );
+  assert.match(treatment, /requireExactPrepareKeys\(/);
+  assert.match(treatment, /\['inherit', 'derive-next-text', 'hidden'\]\.includes\(mode\)/);
+  assert.match(treatment, /setSongChannelTreatment\(/);
+  assert.match(treatment, /sourceChannelId/);
+  assert.doesNotMatch(treatment, /\(media\|singer\|stage\)/);
+  assert.doesNotMatch(
+    treatment,
+    /request\.(?:variant|resourceId|song|document|titleCardMode)\b/
+  );
 });
 
-test('Bible authoring rejects unresolved ambiguity before pinning main-owned canonical text', () => {
+test('Bible authoring resolves dense main-owned output translations against one canonical range', () => {
   const source = assertTrustedCasMutation('prepare:projects:addBible', 32 * 1024);
-  const lookupIndex = Math.max(
-    source.indexOf('resolveBibleLookupRequest('),
-    source.indexOf('bibleLibrary.lookup(')
-  );
-  const ambiguityIndex = source.indexOf("'ambiguous'");
+  const lookupIndex = source.indexOf('resolvePreparedBibleOutputs(');
   const addIndex = source.indexOf('addBibleItem(');
 
   assert.ok(lookupIndex >= 0, 'main must resolve the local Bible lookup itself');
+  assert.match(source, /requireExactPrepareKeys\(/);
   assert.match(source, /const reference = prepareText\(request\.reference/);
-  assert.match(source, /const translationId = prepareText\(request\.translationId/);
   assert.match(source, /const selectedBookId = request\.selectedBookId/);
-  assert.match(source, /query:\s*reference/);
-  assert.match(source, /translationId(?:,\s*|\s*:\s*translationId)/);
-  assert.match(source, /selectedBook:\s*selectedBookId/);
-  assert.ok(ambiguityIndex > lookupIndex && addIndex > ambiguityIndex,
-    'an ambiguous shorthand must require a canonical book choice before any project mutation');
-  assert.match(source, /(?:lookup|lookupResult)\.passage/);
+  assert.match(source, /prepareBibleOutputSelections\(\s*request\.outputs/);
+  assert.ok(addIndex > lookupIndex,
+    'every selected output must resolve before any project mutation');
+  assert.match(source, /passagesByChannel:\s*resolved\.passagesByChannel/);
   assert.match(source, /addBibleItem\(/,
     'resolved text must pass through the domain helper that pins range, text, attribution, and checksum');
-  assert.doesNotMatch(source, /request\.(?:passage|verses|attribution|book|chapter|verseStart|verseEnd)\b/,
+  assert.doesNotMatch(source, /request\.(?:translationId|passage|verses|attribution|book|chapter|verseStart|verseEnd)\b/,
     'canonical range, verse text, and attribution must come from the trusted local Bible library');
+
+  assert.match(mainSource, /function prepareBibleOutputSelections\(/);
+  assert.match(mainSource, /rawOutputs\.length !== project\.channelIds\.length/);
+  assert.match(mainSource, /DUPLICATE_BIBLE_OUTPUT/);
+  assert.match(mainSource, /MISSING_BIBLE_OUTPUT/);
+  assert.match(mainSource, /BIBLE_OUTPUTS_ALL_HIDDEN/);
+  assert.match(mainSource, /UNSUPPORTED_BIBLE_TRANSLATION/);
+  assert.match(mainSource, /bibleLibrary\.lookupCanonicalRange\(canonicalRange/);
+  assert.match(mainSource, /preparedBiblePassageMatchesRange\(/);
+  assert.match(mainSource, /BIBLE_RANGE_MISMATCH/);
 });
 
 test('Prepare keeps advanced song editing intentional while exposing the simple workflow actions', () => {
@@ -441,20 +534,22 @@ test('Prepare controller uses semantic mutations for arrangements, translations,
   assert.doesNotMatch(addBibleSource, /\bverses\s*:/);
 });
 
-test('new projects mirror configured venue roles and stale revisions cannot replace Load', () => {
+test('new projects mirror configured venue roles without label inference and stale revisions cannot replace Load', () => {
   assert.match(mainSource, /function nativeProjectChannels\(profile = activeVenueProfile\)/);
   assert.match(mainSource, /\.filter\(role => role\.enabled && role\.kind === 'deck'\)/);
   assert.match(mainSource, /channels:\s*nativeProjectChannels\(\)/);
-  assert.match(
-    mainSource,
-    /const sourceChannelId = withResource\.project\.channelIds\.includes\('primary'\)[\s\S]*\? 'primary'[\s\S]*:\s*withResource\.project\.channelIds\.find/
-  );
-  assert.match(mainSource, /!\s*\/\(media\|singer\|stage\)\//);
+  const songSetupStart = mainSource.indexOf('function prepareServiceSongItem(');
+  const songSetupEnd = mainSource.indexOf('function requestedArrangement(', songSetupStart);
+  const songSetup = mainSource.slice(songSetupStart, songSetupEnd);
+  assert.doesNotMatch(songSetup, /media\|singer\|stage/);
+  assert.match(songSetup, /createDefaultSongChannelVariants\(/);
 
   const publish = handlerSource('prepare:projects:publish');
   const publication = publish.indexOf('showPackagePublisher.publish(');
   const finalRead = publish.indexOf('currentBeforeInstall');
-  const install = publish.indexOf('installPresentation(roleId, presentation)');
+  const install = publish.indexOf(
+    'installPreparedPresentations(published.presentations, binding.roleIds)'
+  );
   assert.match(publish, /const selected = await services\.serviceProjectStore\.read\(projectId\)/);
   assert.match(publish, /selected\.revisionId !== revisionId/);
   assert.match(publish, /currentBeforeInstall\.revisionId !== revisionId/);

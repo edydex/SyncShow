@@ -7,7 +7,8 @@
 const elements = {
   container: document.getElementById('singerContainer'),
   currentSlideContainer: document.getElementById('currentSlideContainer'),
-  nextText: document.getElementById('nextText')
+  nextText: document.getElementById('nextText'),
+  restoreGuard: document.getElementById('outputRestoreGuard')
 };
 
 let currentImage = null;
@@ -18,6 +19,8 @@ let lastUpdateData = null;
 let updateVersion = 0;
 let pendingImage = null;
 let isCleared = false;
+let restoreGuardId = null;
+let restoreGuardVersion = 0;
 const bibleOverlayController = window.createBibleOverlayController({
   onReady: data => window.api.reportBibleOverlayReady(data),
   onReveal: data => {
@@ -37,6 +40,7 @@ function init() {
 
   window.api.onSingerUpdate(handleUpdate);
   window.api.onDisplayClear(handleClear);
+  window.api.onOutputRestoreGuard(handleOutputRestoreGuard);
   window.api.onSingerFontSize(handleFontSize);
   window.api.onSingerCharLimit(handleCharLimit);
   window.api.onSingerTextPadding(handleTextPadding);
@@ -72,11 +76,73 @@ function applyFontSize() {
   }
 }
 
+function waitForPaintFrame() {
+  return new Promise(resolve => window.requestAnimationFrame(() => resolve()));
+}
+
 function handleClear() {
   invalidatePendingImage();
   bibleOverlayController.hide();
   isCleared = true;
   elements.container.classList.add('cleared');
+}
+
+async function handleOutputRestoreGuard(data) {
+  const guardId = typeof data?.guardId === 'string' ? data.guardId : '';
+  const outputId = typeof data?.outputId === 'string' ? data.outputId : '';
+  const active = data?.active;
+  const reveal = data?.reveal === true;
+  const valid = /^[A-Za-z0-9_-]{1,128}$/u.test(guardId)
+    && outputId === lastUpdateData?.outputId
+    && (active === true || active === false)
+    && !(active && reveal)
+    && elements.restoreGuard;
+
+  if (!valid) {
+    window.api.reportOutputRestoreGuardReady({
+      guardId,
+      outputId,
+      active,
+      reveal,
+      ok: false,
+      error: 'The Restore guard request was invalid for this output'
+    });
+    return;
+  }
+
+  if (active === false && restoreGuardId !== guardId) {
+    window.api.reportOutputRestoreGuardReady({
+      guardId,
+      outputId,
+      active,
+      reveal,
+      ok: false,
+      error: 'The Restore guard was superseded before release'
+    });
+    return;
+  }
+
+  const version = restoreGuardVersion + 1;
+  restoreGuardVersion = version;
+  if (active) {
+    restoreGuardId = guardId;
+    elements.restoreGuard.hidden = false;
+  } else if (reveal) {
+    elements.restoreGuard.hidden = true;
+  }
+
+  await waitForPaintFrame();
+  await waitForPaintFrame();
+  if (restoreGuardVersion !== version || restoreGuardId !== guardId) return;
+
+  if (!active && reveal) restoreGuardId = null;
+  window.api.reportOutputRestoreGuardReady({
+    guardId,
+    outputId,
+    active,
+    reveal,
+    ok: true
+  });
 }
 
 function handleUpdate(data, preserveClearedState = false) {
@@ -109,15 +175,31 @@ function handleUpdate(data, preserveClearedState = false) {
       // fully decoded.
       img.hidden = true;
       pendingImage = img;
-      img.onload = () => {
+      img.onload = async () => {
         if (thisUpdateVersion !== updateVersion || pendingImage !== img) return;
+        try {
+          if (typeof img.decode === 'function') await img.decode();
+          if (thisUpdateVersion !== updateVersion || pendingImage !== img) return;
 
-        pendingImage = null;
-        img.hidden = false;
-        elements.currentSlideContainer.replaceChildren(img);
-        currentImage = img;
-        console.log(`[Singer] Slide ${currentSlide} image loaded; reporting frame ready`);
-        reportFrameReady(currentSlide, true);
+          pendingImage = null;
+          img.hidden = false;
+          elements.currentSlideContainer.replaceChildren(img);
+          currentImage = img;
+          // Decode completion alone is not a painted-frame guarantee. Wait for
+          // layout and one following compositor opportunity before ACKing the
+          // exact cue to main.
+          await waitForPaintFrame();
+          await waitForPaintFrame();
+          if (thisUpdateVersion !== updateVersion || currentImage !== img) return;
+          console.log(`[Singer] Slide ${currentSlide} painted; reporting frame ready`);
+          reportFrameReady(currentSlide, true);
+        } catch (error) {
+          if (thisUpdateVersion !== updateVersion || pendingImage !== img) return;
+          pendingImage = null;
+          img.remove();
+          console.error(`[Singer] Slide ${currentSlide} could not be decoded:`, error);
+          reportFrameReady(currentSlide, false, 'Slide image could not be decoded');
+        }
       };
       img.onerror = () => {
         if (thisUpdateVersion !== updateVersion || pendingImage !== img) return;

@@ -10,6 +10,7 @@ const API = Object.freeze({
 
 const PROTOCOL_VERSION = 1;
 const CUE_CATALOG_PAGE_SIZE = 200;
+const LIVE_COMMAND_TIMEOUT_MS = 20_000;
 const PAIR_TICKET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const PHASES = new Set(['idle', 'live', 'cleared', 'hidden', 'interrupted']);
 const COMMAND_TYPES = new Set([
@@ -1019,7 +1020,7 @@ async function sendCommand(command, label) {
     const payload = await requestJson(API.commands, {
       method: 'POST',
       body: envelope,
-      timeoutMs: 6500
+      timeoutMs: LIVE_COMMAND_TIMEOUT_MS
     });
     if (payload.accepted !== true && payload.duplicate !== true) {
       throw new ApiError('SyncShow did not confirm this action.', 0, payload);

@@ -533,6 +533,7 @@ test('songs compile one stable bilingual public title cue and a simplified deriv
   assert.deepEqual(titleCue.channels.media, {
     mode: 'condensed',
     sourceChannelId: 'primary',
+    sourceBlocks: [{ type: 'text', role: 'title', text: 'Grace' }],
     blocks: [{ type: 'text', role: 'title', text: 'Grace' }]
   });
   assert.deepEqual(titleCue.channels.hidden, { mode: 'hide', blocks: [] });

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "kind": "syncshow-community-service-plan-conformance",
+  "plan": {
+    "schemaVersion": 1,
+    "kind": "syncshow-community-service-plan",
+    "id": "service-2026-08-02",
+    "title": "Sunday Service — August 2",
+    "serviceDate": "2026-08-02",
+    "startTime": "10:30",
+    "teamNotes": "Communion this week.\nSound check at 09:45.",
+    "entries": [
+      {
+        "id": "opening",
+        "kind": "section",
+        "title": "Opening"
+      },
+      {
+        "id": "song-grace",
+        "kind": "song",
+        "title": "Grace Alone",
+        "syncId": "family-grace-alone",
+        "expectedRevision": "song:family-grace-alone:7",
+        "expectedSyncVersion": 7
+      },
+      {
+        "id": "reading",
+        "kind": "scripture",
+        "title": "Ephesians 3:14–21",
+        "range": {
+          "schemaVersion": 1,
+          "bookId": "Eph",
+          "start": {
+            "chapter": 3,
+            "verse": 14
+          },
+          "end": {
+            "chapter": 3,
+            "verse": 21
+          }
+        },
+        "translationId": "BSB"
+      },
+      {
+        "id": "sermon-prayer",
+        "kind": "sermon",
+        "title": "The Prayer That Transforms the Church",
+        "syncId": "sermon-golden-v3",
+        "expectedRevision": "7e57e0f46d027c34991822f006387e380de5fd1f8322bbfe1cd2de99989cd57a",
+        "expectedSyncVersion": 4
+      }
+    ]
+  },
+  "canonicalSource": "{\"entries\":[{\"id\":\"opening\",\"kind\":\"section\",\"title\":\"Opening\"},{\"expectedRevision\":\"song:family-grace-alone:7\",\"expectedSyncVersion\":7,\"id\":\"song-grace\",\"kind\":\"song\",\"syncId\":\"family-grace-alone\",\"title\":\"Grace Alone\"},{\"id\":\"reading\",\"kind\":\"scripture\",\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"title\":\"Ephesians 3:14–21\",\"translationId\":\"BSB\"},{\"expectedRevision\":\"7e57e0f46d027c34991822f006387e380de5fd1f8322bbfe1cd2de99989cd57a\",\"expectedSyncVersion\":4,\"id\":\"sermon-prayer\",\"kind\":\"sermon\",\"syncId\":\"sermon-golden-v3\",\"title\":\"The Prayer That Transforms the Church\"}],\"id\":\"service-2026-08-02\",\"kind\":\"syncshow-community-service-plan\",\"schemaVersion\":1,\"serviceDate\":\"2026-08-02\",\"startTime\":\"10:30\",\"teamNotes\":\"Communion this week.\\nSound check at 09:45.\",\"title\":\"Sunday Service — August 2\"}\n",
+  "revision": "eafc16866af0f21cf88d379f3889a41b70d0e280c35af9d22e7b4eefe4c8aec7",
+  "envelope": {
+    "syncId": "service-2026-08-02",
+    "syncVersion": 9,
+    "revision": "eafc16866af0f21cf88d379f3889a41b70d0e280c35af9d22e7b4eefe4c8aec7",
+    "documentSource": "{\"entries\":[{\"id\":\"opening\",\"kind\":\"section\",\"title\":\"Opening\"},{\"expectedRevision\":\"song:family-grace-alone:7\",\"expectedSyncVersion\":7,\"id\":\"song-grace\",\"kind\":\"song\",\"syncId\":\"family-grace-alone\",\"title\":\"Grace Alone\"},{\"id\":\"reading\",\"kind\":\"scripture\",\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"title\":\"Ephesians 3:14–21\",\"translationId\":\"BSB\"},{\"expectedRevision\":\"7e57e0f46d027c34991822f006387e380de5fd1f8322bbfe1cd2de99989cd57a\",\"expectedSyncVersion\":4,\"id\":\"sermon-prayer\",\"kind\":\"sermon\",\"syncId\":\"sermon-golden-v3\",\"title\":\"The Prayer That Transforms the Church\"}],\"id\":\"service-2026-08-02\",\"kind\":\"syncshow-community-service-plan\",\"schemaVersion\":1,\"serviceDate\":\"2026-08-02\",\"startTime\":\"10:30\",\"teamNotes\":\"Communion this week.\\nSound check at 09:45.\",\"title\":\"Sunday Service — August 2\"}\n",
+    "status": "ready",
+    "changedAt": "2026-07-28T20:00:00.000Z"
+  },
+  "invalidCases": [
+    {
+      "name": "extra plan field",
+      "override": {
+        "extra": "must-not-travel"
+      },
+      "expectedCode": "INVALID_SERVICE_PLAN_FIELDS"
+    },
+    {
+      "name": "invalid calendar date",
+      "override": {
+        "serviceDate": "2026-02-29"
+      },
+      "expectedCode": "INVALID_SERVICE_PLAN_DATE"
+    },
+    {
+      "name": "invalid local time",
+      "override": {
+        "startTime": "10:30 AM"
+      },
+      "expectedCode": "INVALID_SERVICE_PLAN_TIME"
+    },
+    {
+      "name": "unsafe title control",
+      "override": {
+        "entries": [
+          {
+            "id": "opening",
+            "kind": "section",
+            "title": "Unsafe\tTitle"
+          }
+        ]
+      },
+      "expectedCode": "INVALID_SERVICE_PLAN_TEXT"
+    }
+  ]
+}

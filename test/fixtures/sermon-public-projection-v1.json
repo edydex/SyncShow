@@ -1,0 +1,260 @@
+{
+  "description": "Cross-repository golden fixture for an explicitly selected Heritage public sermon projection. The canonical sermon source includes private provenance and unapproved content that must not enter expectedDetail.",
+  "document": {
+    "schemaVersion": 3,
+    "kind": "syncshow-sermon",
+    "id": "Golden:Sermon:2026-07-26",
+    "titles": {
+      "en": "The Prayer That Transforms the Church",
+      "ru": "Молитва, преображающая Церковь"
+    },
+    "defaultLanguage": "en",
+    "speaker": {
+      "id": "private-speaker-id",
+      "name": "Paul Lvutin"
+    },
+    "serviceDate": "2026-07-26",
+    "series": {
+      "id": "private-series-id",
+      "titles": {
+        "en": "From Pain to Unity",
+        "ru": "От боли к единству"
+      }
+    },
+    "outline": [
+      {
+        "id": "private-outline-id",
+        "parentId": null,
+        "kind": "section",
+        "titles": {
+          "en": "The Foundation",
+          "ru": "Основание"
+        }
+      }
+    ],
+    "sources": [
+      {
+        "id": "private-manuscript-id",
+        "kind": "manuscript",
+        "fileName": "private-pastor-manuscript.docx",
+        "mediaType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "languages": [
+          "en",
+          "ru"
+        ],
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sizeBytes": 24000,
+        "provenance": {
+          "providedBy": "Private inbox identity",
+          "receivedAt": "2026-07-24T18:30:00Z",
+          "sourceSystem": "pastor-email",
+          "externalId": "private-message-id"
+        }
+      }
+    ],
+    "references": [
+      {
+        "id": "private-primary-id",
+        "range": {
+          "schemaVersion": 1,
+          "bookId": "Eph",
+          "start": {
+            "chapter": 3,
+            "verse": 14
+          },
+          "end": {
+            "chapter": 3,
+            "verse": 21
+          }
+        },
+        "role": "primary",
+        "source": "pastor",
+        "reviewStatus": "confirmed",
+        "enteredText": "Ephesians 3:14-21",
+        "sourceId": "private-manuscript-id",
+        "sectionId": null,
+        "startOffset": 10,
+        "endOffset": 30
+      },
+      {
+        "id": "private-mentioned-id",
+        "range": {
+          "schemaVersion": 1,
+          "bookId": "Eph",
+          "start": {
+            "chapter": 5,
+            "verse": 2
+          },
+          "end": {
+            "chapter": 5,
+            "verse": 2
+          }
+        },
+        "role": "mentioned",
+        "source": "manuscript",
+        "reviewStatus": "confirmed",
+        "enteredText": "Ephesians 5:2",
+        "sourceId": "private-manuscript-id",
+        "sectionId": "private-outline-id",
+        "startOffset": 100,
+        "endOffset": 116
+      },
+      {
+        "id": "private-suggested-id",
+        "range": {
+          "schemaVersion": 1,
+          "bookId": "Eph",
+          "start": {
+            "chapter": 1,
+            "verse": 19
+          },
+          "end": {
+            "chapter": 1,
+            "verse": 20
+          }
+        },
+        "role": "mentioned",
+        "source": "transcript-extraction",
+        "reviewStatus": "suggested",
+        "enteredText": "Ephesians 1:19-20",
+        "sourceId": null,
+        "sectionId": null,
+        "startOffset": null,
+        "endOffset": null
+      }
+    ],
+    "body": [
+      {
+        "id": "private-body-en",
+        "kind": "manuscript",
+        "language": "en",
+        "sourceId": "private-manuscript-id",
+        "sectionId": "private-outline-id",
+        "text": "The reviewed English sermon body.\n\nSecond paragraph."
+      },
+      {
+        "id": "private-body-ru",
+        "kind": "manuscript",
+        "language": "ru",
+        "sourceId": "private-manuscript-id",
+        "sectionId": "private-outline-id",
+        "text": "Проверенный русский текст проповеди."
+      }
+    ],
+    "media": [
+      {
+        "id": "private-audio-id",
+        "kind": "audio",
+        "status": "ready",
+        "title": "Sermon audio",
+        "language": "en",
+        "mediaType": "audio/mpeg",
+        "fileName": "private-recording.mp3",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sizeBytes": 48000000,
+        "durationSeconds": 2484.5,
+        "url": "https://media.example.church/sermons/prayer.mp3"
+      },
+      {
+        "id": "private-pending-notes-id",
+        "kind": "document",
+        "status": "pending",
+        "title": "Sermon notes",
+        "language": "en",
+        "mediaType": "application/pdf",
+        "fileName": "private-notes.pdf",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "sizeBytes": 500000,
+        "durationSeconds": null,
+        "url": "https://media.example.church/sermons/prayer-notes.pdf"
+      }
+    ],
+    "publication": {
+      "status": "published",
+      "visibility": "public",
+      "publishedAt": "2026-07-26T20:00:00Z",
+      "canonicalUrl": "https://church.example/sermons/prayer"
+    }
+  },
+  "selectedBodyEntryIds": [
+    "private-body-en"
+  ],
+  "selectedMediaIds": [
+    "private-audio-id"
+  ],
+  "expectedSermonRevision": "e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920",
+  "expectedPublicId": "sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a",
+  "expectedDetailChecksum": "caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3",
+  "expectedDetail": {
+    "schemaVersion": 1,
+    "kind": "heritage-public-sermon",
+    "publicId": "sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a",
+    "sermonId": "Golden:Sermon:2026-07-26",
+    "sermonRevision": "e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920",
+    "titles": {
+      "en": "The Prayer That Transforms the Church",
+      "ru": "Молитва, преображающая Церковь"
+    },
+    "defaultLanguage": "en",
+    "speaker": {
+      "name": "Paul Lvutin"
+    },
+    "serviceDate": "2026-07-26",
+    "series": {
+      "titles": {
+        "en": "From Pain to Unity",
+        "ru": "От боли к единству"
+      }
+    },
+    "references": [
+      {
+        "role": "primary",
+        "range": {
+          "schemaVersion": 1,
+          "bookId": "Eph",
+          "start": {
+            "chapter": 3,
+            "verse": 14
+          },
+          "end": {
+            "chapter": 3,
+            "verse": 21
+          }
+        }
+      },
+      {
+        "role": "mentioned",
+        "range": {
+          "schemaVersion": 1,
+          "bookId": "Eph",
+          "start": {
+            "chapter": 5,
+            "verse": 2
+          },
+          "end": {
+            "chapter": 5,
+            "verse": 2
+          }
+        }
+      }
+    ],
+    "body": [
+      {
+        "kind": "manuscript",
+        "language": "en",
+        "text": "The reviewed English sermon body.\n\nSecond paragraph."
+      }
+    ],
+    "media": [
+      {
+        "kind": "audio",
+        "title": "Sermon audio",
+        "language": "en",
+        "mediaType": "audio/mpeg",
+        "durationSeconds": 2484.5,
+        "url": "https://media.example.church/sermons/prayer.mp3"
+      }
+    ],
+    "canonicalUrl": "https://church.example/sermons/prayer"
+  }
+}

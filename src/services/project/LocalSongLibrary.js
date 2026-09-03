@@ -12,6 +12,15 @@ const {
   serializeSongDocument
 } = require('./SongDocument');
 const {
+  MAX_FAMILY_DOCUMENTS,
+  compareCanonicalText,
+  songFamilyRevision
+} = require('./SongFamilyRevision');
+const {
+  FAMILY_JOURNAL_FILE,
+  DurableFamilyJournal
+} = require('./DurableFamilyJournal');
+const {
   atomicWriteFile,
   ensureConfinedDirectory,
   ensurePrivateDirectory,
@@ -21,6 +30,8 @@ const {
 } = require('./StorageSafety');
 
 const POINTER_SCHEMA_VERSION = 1;
+const MAX_POINTER_BYTES = 64 * 1024;
+const PENDING_FAMILY_JOURNAL_FILE = FAMILY_JOURNAL_FILE;
 const SONG_DIRECTORY_PATTERN = /^song-[a-f0-9]{64}$/;
 const REVISION_PATTERN = /^[a-f0-9]{64}$/;
 const MAX_LIBRARY_SONGS = 10000;
@@ -28,6 +39,8 @@ const MAX_QUERY_LENGTH = 120;
 const MAX_PAGE_SIZE = 100;
 const MAX_AUTHORED_ATTRIBUTION_LENGTH = 500;
 const SONG_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const FAMILY_JOURNALS = new WeakMap();
+const FAMILY_RECOVERY_AUTHORITIES = new WeakMap();
 
 class SongLibraryError extends Error {
   constructor(code, message, details = {}) {
@@ -48,6 +61,32 @@ function idStorageKey(songId) {
 
 function sourceRevision(source) {
   return crypto.createHash('sha256').update(source).digest('hex');
+}
+
+function familySnapshotHash(familyId, documents) {
+  return crypto.createHash('sha256')
+    .update(JSON.stringify([
+      familyId,
+      documents.map(document => [
+        document.songId,
+        document.revision,
+        document.translationOf
+      ])
+    ]))
+    .digest('hex');
+}
+
+function sameFamilySnapshot(left, right) {
+  return left.familyId === right.familyId
+    && left.snapshotHash === right.snapshotHash
+    && left.familyRevision === right.familyRevision
+    && left.documents.length === right.documents.length
+    && left.documents.every((document, index) => {
+      const candidate = right.documents[index];
+      return document.songId === candidate.songId
+        && document.revision === candidate.revision
+        && document.translationOf === candidate.translationOf;
+    });
 }
 
 function forkSongId(songId, number) {
@@ -88,6 +127,22 @@ class LocalSongLibrary {
     }
     this.rootPath = path.resolve(options.rootPath);
     this.clock = options.clock || (() => new Date());
+    if (
+      options.familyRecoveryAuthority !== undefined
+      && typeof options.familyRecoveryAuthority !== 'symbol'
+    ) {
+      throw new TypeError(
+        'LocalSongLibrary familyRecoveryAuthority must be a Symbol'
+      );
+    }
+    FAMILY_RECOVERY_AUTHORITIES.set(
+      this,
+      options.familyRecoveryAuthority || null
+    );
+    FAMILY_JOURNALS.set(this, new DurableFamilyJournal({
+      rootPath: this.rootPath
+    }));
+    this.operationTail = Promise.resolve();
   }
 
   async initialize() {
@@ -99,12 +154,129 @@ class LocalSongLibrary {
     return path.join(this.rootPath, idStorageKey(songId));
   }
 
+  async _assertNoPendingFamilyJournal() {
+    try {
+      const active = await FAMILY_JOURNALS.get(this).read();
+      if (active.clear) return;
+    } catch (error) {
+      if (error instanceof SongLibraryError) throw error;
+      fail(
+        'SONG_FAMILY_RECOVERY_REQUIRED',
+        'The pending song-family transaction could not be checked safely.',
+        { cause: error.code || error.name || 'journal-check-failed' }
+      );
+    }
+    fail(
+      'SONG_FAMILY_RECOVERY_REQUIRED',
+      'Finish recovering the pending song-family transaction before using the current library.'
+    );
+  }
+
+  #withExclusiveSession(
+    operation,
+    { allowPendingFamily = false, familyCommit = false } = {}
+  ) {
+    const pending = this.operationTail.then(async () => {
+      await this.initialize();
+      return withExclusiveFileLock(
+        path.join(this.rootPath, '.library-write-lock'),
+        async () => {
+          if (!allowPendingFamily) await this._assertNoPendingFamilyJournal();
+          return operation(
+            familyCommit
+              ? this.#familyCommitSession()
+              : this.#currentSnapshotSession()
+          );
+        },
+        { reclaimDeadOwner: true }
+      );
+    });
+    this.operationTail = pending.then(
+      () => undefined,
+      () => undefined
+    );
+    return pending;
+  }
+
+  async withCurrentSnapshot(operation) {
+    if (typeof operation !== 'function') {
+      throw new TypeError(
+        'LocalSongLibrary current snapshot requires an operation'
+      );
+    }
+    return this.#withExclusiveSession(operation);
+  }
+
+  async withFamilyCommitSession(
+    operation,
+    { recoveryAuthority } = {}
+  ) {
+    if (typeof operation !== 'function') {
+      throw new TypeError(
+        'LocalSongLibrary family commit session requires an operation'
+      );
+    }
+    if (
+      FAMILY_RECOVERY_AUTHORITIES.get(this) === null
+      || typeof recoveryAuthority !== 'symbol'
+      || recoveryAuthority !== FAMILY_RECOVERY_AUTHORITIES.get(this)
+    ) {
+      throw new TypeError(
+        'LocalSongLibrary family commit recovery authority is invalid'
+      );
+    }
+    return this.#withExclusiveSession(operation, {
+      allowPendingFamily: true,
+      familyCommit: true
+    });
+  }
+
+  #currentSnapshotSession() {
+    return Object.freeze({
+      readCurrent: async rawSongId => {
+        const songId = this._expectedSongId(rawSongId);
+        const pointer = await this._readPointer(songId);
+        return pointer
+          ? this._readRevision(songId, pointer.revision, pointer.updatedAt)
+          : null;
+      },
+      readRevision: async (rawSongId, revision) =>
+        this._readRevision(this._expectedSongId(rawSongId), revision),
+      listCurrent: async () => {
+        const summaries = await this._listAll({}, { strict: true });
+        const documents = [];
+        for (const item of summaries) {
+          documents.push(await this._readRevision(
+            item.id,
+            item.revision,
+            item.updatedAt
+          ));
+        }
+        return documents;
+      },
+      snapshotFamily: familyId =>
+        this.#snapshotFamilyUnderLibraryLock(familyId)
+    });
+  }
+
+  #familyCommitSession() {
+    return Object.freeze({
+      ...this.#currentSnapshotSession(),
+      stageFamily: request =>
+        this.#stageFamilyUnderLibraryLock(request),
+      stageSource: (source, options = {}) =>
+        this.#stageSourceUnderLibraryLock(source, options),
+      promoteRevision: (songId, revision, options = {}) =>
+        this.#promoteRevisionUnderLibraryLock(songId, revision, options)
+    });
+  }
+
   async _readPointer(songId) {
     const songDirectory = this._songDirectory(songId);
     const pointerPath = path.join(songDirectory, 'current.json');
     let payload;
     try {
-      const { buffer } = await readFileNoFollow(pointerPath, 64 * 1024);
+      const { buffer } = await readFileNoFollow(pointerPath, MAX_POINTER_BYTES);
       payload = JSON.parse(buffer.toString('utf8'));
     } catch (error) {
       if (error.code === 'ENOENT') return null;
@@ -113,7 +285,13 @@ class LocalSongLibrary {
     if (!payload
       || payload.schemaVersion !== POINTER_SCHEMA_VERSION
       || payload.songId !== songId
-      || !REVISION_PATTERN.test(payload.revision || '')) {
+      || !REVISION_PATTERN.test(payload.revision || '')
+      || Object.keys(payload).sort().join(',') !==
+        'revision,schemaVersion,songId,updatedAt'
+      || typeof payload.updatedAt !== 'string'
+      || payload.updatedAt.length > 40
+      || Number.isNaN(Date.parse(payload.updatedAt))
+      || new Date(payload.updatedAt).toISOString() !== payload.updatedAt) {
       fail('LIBRARY_POINTER_INVALID', `The saved pointer for ${songId} is invalid.`, { songId });
     }
     return payload;
@@ -159,7 +337,7 @@ class LocalSongLibrary {
     return value;
   }
 
-  async _listAll(options = {}) {
+  async _listAll(options = {}, { strict = false } = {}) {
     const items = [];
     let offset = 0;
     while (true) {
@@ -169,9 +347,9 @@ class LocalSongLibrary {
           ...options,
           pageSize: MAX_PAGE_SIZE,
           offset
-        });
+        }, { strict });
       } catch (error) {
-        if (error.code === 'ENOENT') return items;
+        if (!strict && error.code === 'ENOENT') return items;
         throw error;
       }
       items.push(...page.items);
@@ -343,7 +521,7 @@ class LocalSongLibrary {
     );
   }
 
-  async validateSource(source, options = {}) {
+  async _validateSourceUnderLibraryLock(source, options = {}) {
     let song = parseSongDocument(source, { fileName: options.fileName || 'song.md' });
     if (options.expectedSongId !== undefined && options.expectedSongId !== null) {
       const expectedSongId = this._expectedSongId(options.expectedSongId);
@@ -372,23 +550,47 @@ class LocalSongLibrary {
     };
   }
 
+  async validateSource(source, options = {}) {
+    // Keep validation read-only for a brand-new library. Once current
+    // relationships exist, validation shares the same gate as mutations so it
+    // cannot inspect a partially recovered multi-song family transaction.
+    try {
+      const stats = await fs.lstat(this.rootPath);
+      if (!stats.isDirectory() || stats.isSymbolicLink()) {
+        fail('LIBRARY_UNAVAILABLE', 'The local song library directory is unsafe.');
+      }
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return this._validateSourceUnderLibraryLock(source, options);
+      }
+      throw error;
+    }
+    return this.#withExclusiveSession(() =>
+      this._validateSourceUnderLibraryLock(source, options));
+  }
+
   async read(songId, options = {}) {
     await this.initialize();
     if (options.revision !== undefined && options.revision !== null) {
       return this._readRevision(songId, options.revision);
     }
-    const pointer = await this._readPointer(songId);
-    if (!pointer) fail('SONG_NOT_FOUND', `Song ${songId} is not in the local library.`, { songId });
-    return this._readRevision(songId, pointer.revision, pointer.updatedAt);
+    return this.#withExclusiveSession(async session => {
+      const current = await session.readCurrent(songId);
+      if (!current) {
+        fail('SONG_NOT_FOUND', `Song ${songId} is not in the local library.`, {
+          songId
+        });
+      }
+      return current;
+    });
   }
 
   async saveSource(source, options = {}) {
-    await this.initialize();
-    return withExclusiveFileLock(path.join(this.rootPath, '.library-write-lock'), () =>
-      this._saveSourceUnderLibraryLock(source, options));
+    return this.#withExclusiveSession(() =>
+      this.#saveSourceUnderLibraryLock(source, options));
   }
 
-  async _saveSourceUnderLibraryLock(source, options = {}) {
+  async #saveSourceUnderLibraryLock(source, options = {}) {
     if (options.expectedSongId !== undefined
       && options.expectedSongId !== null
       && options.onConflict === 'fork') {
@@ -397,7 +599,7 @@ class LocalSongLibrary {
         'An opened song must be saved through revision checking; only an explicit import may fork automatically.'
       );
     }
-    let validated = await this.validateSource(source, {
+    let validated = await this._validateSourceUnderLibraryLock(source, {
       fileName: options.fileName || 'song.md',
       expectedSongId: options.expectedSongId
     });
@@ -414,10 +616,12 @@ class LocalSongLibrary {
       while (await this._readPointer(forkSongId(song.id, suffix))) suffix += 1;
       songId = forkSongId(song.id, suffix);
       forked = true;
-      validated = await this.validateSource(serializeSongDocument({ ...song, id: songId }), {
+      validated = await this._validateSourceUnderLibraryLock(
+        serializeSongDocument({ ...song, id: songId }), {
         fileName: `${songId}.md`,
         expectedSongId: songId
-      });
+        }
+      );
       song = validated.song;
       canonical = validated.documentSource;
       revision = validated.revision;
@@ -482,7 +686,7 @@ class LocalSongLibrary {
         updatedAt
       };
       await atomicWriteFile(path.join(songDirectory, 'current.json'), `${JSON.stringify(pointer, null, 2)}\n`, {
-        maximumBytes: 64 * 1024,
+        maximumBytes: MAX_POINTER_BYTES,
         mode: 0o600,
         rootPath: this.rootPath
       });
@@ -492,6 +696,446 @@ class LocalSongLibrary {
         forked,
         unchanged: false
       };
+    }, { reclaimDeadOwner: true });
+  }
+
+  async #stageSourceUnderLibraryLock(source, options = {}) {
+    const expectedSongId = this._expectedSongId(options.expectedSongId);
+    let song = parseSongDocument(source, {
+      fileName: options.fileName || `${expectedSongId}.md`
+    });
+    if (song.id !== expectedSongId) {
+      fail(
+        'SONG_ID_CHANGED',
+        `This reviewed song belongs to ${expectedSongId}; its song id cannot change to ${song.id}.`,
+        { expectedSongId, actualSongId: song.id }
+      );
+    }
+    await this._validateAuthoredAttribution(song, {
+      expectedSongId
+    });
+    const canonical = serializeSongDocument(song);
+    song = parseSongDocument(canonical, { fileName: `${song.id}.md` });
+    const revision = sourceRevision(canonical);
+    const songDirectory = this._songDirectory(song.id);
+    await ensureConfinedDirectory(
+      this.rootPath,
+      path.join(songDirectory, 'versions')
+    );
+    return withExclusiveFileLock(path.join(songDirectory, '.write-lock'), async () => {
+      const revisionPath = path.join(
+        songDirectory,
+        'versions',
+        `${revision}.md`
+      );
+      try {
+        const existingHash = await hashFileNoFollow(
+          revisionPath,
+          MAX_SOURCE_BYTES
+        );
+        if (existingHash !== revision) {
+          fail(
+            'LIBRARY_REVISION_CORRUPT',
+            'An immutable song revision has changed.'
+          );
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        await atomicWriteFile(revisionPath, canonical, {
+          maximumBytes: MAX_SOURCE_BYTES,
+          mode: 0o600,
+          rootPath: this.rootPath
+        });
+      }
+      return {
+        song,
+        source: canonical,
+        documentSource: canonical,
+        revision,
+        updatedAt: null,
+        summary: summary(song, revision, null)
+      };
+    }, { reclaimDeadOwner: true });
+  }
+
+  async #promoteRevisionUnderLibraryLock(
+    rawSongId,
+    revision,
+    options = {}
+  ) {
+    const songId = this._expectedSongId(rawSongId);
+    if (!REVISION_PATTERN.test(revision || '')) {
+      fail('INVALID_LIBRARY_REVISION', 'Song revision is invalid.');
+    }
+    if (
+      options.expectedRevision !== null
+      && (
+        options.expectedRevision === undefined
+        || typeof options.expectedRevision !== 'string'
+        || !REVISION_PATTERN.test(options.expectedRevision || '')
+      )
+    ) {
+      fail(
+        'INVALID_LIBRARY_REVISION',
+        'Promoting a song revision requires its current expected revision.'
+      );
+    }
+    const songDirectory = this._songDirectory(songId);
+    await ensureConfinedDirectory(
+      this.rootPath,
+      path.join(songDirectory, 'versions')
+    );
+    return withExclusiveFileLock(path.join(songDirectory, '.write-lock'), async () => {
+      const current = await this._readPointer(songId);
+      const actualRevision = current?.revision || null;
+      if (actualRevision !== options.expectedRevision) {
+        fail('SONG_CONFLICT', `Song ${songId} changed before promotion.`, {
+          songId,
+          expectedRevision: options.expectedRevision,
+          currentRevision: actualRevision
+        });
+      }
+      if (actualRevision === revision) {
+        return {
+          ...(await this._readRevision(songId, revision, current.updatedAt)),
+          unchanged: true
+        };
+      }
+      await this._readRevision(songId, revision);
+      const updatedAt = options.updatedAt || this.clock().toISOString();
+      const pointer = {
+        schemaVersion: POINTER_SCHEMA_VERSION,
+        songId,
+        revision,
+        updatedAt
+      };
+      await atomicWriteFile(
+        path.join(songDirectory, 'current.json'),
+        `${JSON.stringify(pointer, null, 2)}\n`,
+        {
+          maximumBytes: MAX_POINTER_BYTES,
+          mode: 0o600,
+          rootPath: this.rootPath
+        }
+      );
+      return {
+        ...(await this._readRevision(songId, revision, updatedAt)),
+        unchanged: false
+      };
+    }, { reclaimDeadOwner: true });
+  }
+
+  async #snapshotFamilyUnderLibraryLock(rawFamilyId) {
+    const familyId = this._expectedSongId(rawFamilyId);
+    const current = await this._listAll({}, { strict: true });
+    const documents = current
+      .filter(item =>
+        (item.id === familyId && !item.translationOf)
+        || item.translationOf === familyId)
+      .map(item => ({
+        songId: item.id,
+        revision: item.revision,
+        translationOf: item.translationOf || null
+      }))
+      .sort((left, right) =>
+        Number(Boolean(left.translationOf))
+          - Number(Boolean(right.translationOf))
+        || compareCanonicalText(left.songId, right.songId));
+    if (documents.length > MAX_FAMILY_DOCUMENTS) {
+      fail(
+        'SONG_FAMILY_TOO_LARGE',
+        `A song family can contain at most ${MAX_FAMILY_DOCUMENTS} documents.`,
+        { familyId, maximum: MAX_FAMILY_DOCUMENTS }
+      );
+    }
+    const exactDocuments = [];
+    for (const document of documents) {
+      const read = await this._readRevision(
+        document.songId,
+        document.revision
+      );
+      exactDocuments.push(read);
+    }
+    return Object.freeze({
+      familyId,
+      snapshotHash: familySnapshotHash(familyId, documents),
+      familyRevision: exactDocuments.length > 0
+        ? songFamilyRevision(exactDocuments)
+        : null,
+      documents: Object.freeze(
+        documents.map(document => Object.freeze({ ...document }))
+      )
+    });
+  }
+
+  _normalizeExpectedFamilySnapshot(raw, familyId) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      fail('INVALID_SONG_FAMILY', 'Expected song-family state is invalid.');
+    }
+    const actualKeys = Object.keys(raw).sort();
+    const expectedKeys = [
+      'documents',
+      'familyId',
+      'familyRevision',
+      'snapshotHash'
+    ].sort();
+    if (
+      actualKeys.length !== expectedKeys.length
+      || actualKeys.some((key, index) => key !== expectedKeys[index])
+      || raw.familyId !== familyId
+      || typeof raw.snapshotHash !== 'string'
+      || !REVISION_PATTERN.test(raw.snapshotHash)
+      || (
+        raw.familyRevision !== null
+        && (
+          typeof raw.familyRevision !== 'string'
+          || !REVISION_PATTERN.test(raw.familyRevision)
+        )
+      )
+      || !Array.isArray(raw.documents)
+      || raw.documents.length > MAX_FAMILY_DOCUMENTS
+    ) {
+      fail('INVALID_SONG_FAMILY', 'Expected song-family state is invalid.');
+    }
+    const seen = new Set();
+    const documents = raw.documents.map(document => {
+      if (!document || typeof document !== 'object' || Array.isArray(document)) {
+        fail('INVALID_SONG_FAMILY', 'Expected song-family state is invalid.');
+      }
+      const keys = Object.keys(document).sort();
+      if (
+        keys.length !== 3
+        || keys[0] !== 'revision'
+        || keys[1] !== 'songId'
+        || keys[2] !== 'translationOf'
+      ) {
+        fail('INVALID_SONG_FAMILY', 'Expected song-family state is invalid.');
+      }
+      const songId = this._expectedSongId(document.songId);
+      if (
+        seen.has(songId)
+        || typeof document.revision !== 'string'
+        || !REVISION_PATTERN.test(document.revision)
+        || (
+          document.translationOf !== null
+          && document.translationOf !== familyId
+        )
+      ) {
+        fail('INVALID_SONG_FAMILY', 'Expected song-family state is invalid.');
+      }
+      seen.add(songId);
+      return Object.freeze({
+        songId,
+        revision: document.revision,
+        translationOf: document.translationOf
+      });
+    });
+    const sorted = documents.slice().sort((left, right) =>
+      Number(Boolean(left.translationOf))
+        - Number(Boolean(right.translationOf))
+      || compareCanonicalText(left.songId, right.songId));
+    const normalized = Object.freeze({
+      familyId,
+      snapshotHash: raw.snapshotHash,
+      familyRevision: raw.familyRevision,
+      documents: Object.freeze(sorted)
+    });
+    let exactFamilyRevision = null;
+    if (sorted.length > 0) {
+      exactFamilyRevision = songFamilyRevision(sorted.map(document => ({
+        song: {
+          id: document.songId,
+          translationOf: document.translationOf
+        },
+        revision: document.revision
+      })));
+    }
+    if (
+      familySnapshotHash(familyId, sorted) !== normalized.snapshotHash
+      || normalized.familyRevision !== exactFamilyRevision
+    ) {
+      fail('INVALID_SONG_FAMILY', 'Expected song-family state is inconsistent.');
+    }
+    return normalized;
+  }
+
+  async #stageFamilyUnderLibraryLock(raw = {}) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      fail('INVALID_SONG_FAMILY', 'Reviewed song-family request is invalid.');
+    }
+    const keys = Object.keys(raw).sort();
+    if (
+      keys.length !== 3
+      || keys[0] !== 'documents'
+      || keys[1] !== 'expectedSnapshot'
+      || keys[2] !== 'familyId'
+    ) {
+      fail('INVALID_SONG_FAMILY', 'Reviewed song-family request is invalid.');
+    }
+    const familyId = this._expectedSongId(raw.familyId);
+    const expected = this._normalizeExpectedFamilySnapshot(
+      raw.expectedSnapshot,
+      familyId
+    );
+    const current = await this.#snapshotFamilyUnderLibraryLock(familyId);
+    if (!sameFamilySnapshot(current, expected)) {
+      fail(
+        'SONG_FAMILY_CONFLICT',
+        'This complete song family changed after it was reviewed.',
+        {
+          familyId,
+          expectedSnapshotHash: expected.snapshotHash,
+          currentSnapshotHash: current.snapshotHash,
+          expectedFamilyRevision: expected.familyRevision,
+          currentFamilyRevision: current.familyRevision
+        }
+      );
+    }
+    if (
+      !Array.isArray(raw.documents)
+      || raw.documents.length < 1
+      || raw.documents.length > MAX_FAMILY_DOCUMENTS
+    ) {
+      fail(
+        'INVALID_SONG_FAMILY',
+        `A reviewed family must contain 1 to ${MAX_FAMILY_DOCUMENTS} documents.`
+      );
+    }
+
+    const finalDocuments = [];
+    const finalById = new Map();
+    for (const rawDocument of raw.documents) {
+      if (
+        !rawDocument
+        || typeof rawDocument !== 'object'
+        || Array.isArray(rawDocument)
+        || Object.keys(rawDocument).sort().join(',') !==
+          'documentSource,expectedSongId'
+      ) {
+        fail('INVALID_SONG_FAMILY', 'A reviewed song document is invalid.');
+      }
+      const expectedSongId = this._expectedSongId(
+        rawDocument.expectedSongId
+      );
+      let song = parseSongDocument(rawDocument.documentSource, {
+        fileName: `${expectedSongId}.md`
+      });
+      if (song.id !== expectedSongId || finalById.has(song.id)) {
+        fail(
+          'INVALID_SONG_FAMILY',
+          'Reviewed song-family identities are invalid or duplicated.'
+        );
+      }
+      await this._validateAuthoredAttribution(song, {
+        expectedSongId: song.id
+      });
+      const documentSource = serializeSongDocument(song);
+      song = parseSongDocument(documentSource, {
+        fileName: `${song.id}.md`
+      });
+      const document = {
+        song,
+        documentSource,
+        source: documentSource,
+        revision: sourceRevision(documentSource)
+      };
+      finalById.set(song.id, document);
+      finalDocuments.push(document);
+    }
+
+    const root = finalById.get(familyId);
+    if (!root || root.song.translationOf) {
+      fail(
+        'INVALID_SONG_FAMILY',
+        'The reviewed family must contain exactly one original matching its family identity.'
+      );
+    }
+    for (const document of finalDocuments) {
+      if (
+        document.song.id !== familyId
+        && document.song.translationOf !== familyId
+      ) {
+        fail(
+          'INVALID_SONG_FAMILY',
+          'Every reviewed translation must point directly to the family original.'
+        );
+      }
+      if (document.song.id === familyId) continue;
+      const alignment = compareSongSections(root.song, document.song);
+      if (!alignment.compatible) {
+        fail(
+          'SONG_FAMILY_STRUCTURE_MISMATCH',
+          `${document.song.title} does not match the reviewed original's section and slide structure.`,
+          {
+            familyId,
+            songId: document.song.id,
+            ...alignment
+          }
+        );
+      }
+    }
+
+    const expectedIds = new Set(
+      expected.documents.map(document => document.songId)
+    );
+    for (const songId of expectedIds) {
+      if (!finalById.has(songId)) {
+        fail(
+          'SONG_FAMILY_DELETE_UNSUPPORTED',
+          'Reviewed family commits cannot delete an existing family member.',
+          { familyId, songId }
+        );
+      }
+    }
+    const allCurrent = await this._listAll();
+    const currentById = new Map(allCurrent.map(item => [item.id, item]));
+    for (const document of finalDocuments) {
+      const existing = currentById.get(document.song.id);
+      if (
+        existing
+        && !expectedIds.has(document.song.id)
+      ) {
+        fail(
+          'SONG_ID_BELONGS_TO_ANOTHER_FAMILY',
+          `Song ${document.song.id} already belongs to another saved family.`,
+          {
+            songId: document.song.id,
+            currentFamilyId: existing.translationOf || existing.id
+          }
+        );
+      }
+    }
+
+    const staged = [];
+    for (const document of finalDocuments) {
+      staged.push(await this.#stageSourceUnderLibraryLock(
+        document.documentSource,
+        {
+          expectedSongId: document.song.id,
+          fileName: `${document.song.id}.md`
+        }
+      ));
+    }
+    staged.sort((left, right) =>
+      Number(Boolean(left.song.translationOf))
+        - Number(Boolean(right.song.translationOf))
+      || compareCanonicalText(left.song.id, right.song.id));
+    const beforeById = new Map(
+      expected.documents.map(document => [document.songId, document])
+    );
+    const members = staged.map(document => Object.freeze({
+      songId: document.song.id,
+      language: document.song.language,
+      translationOf: document.song.translationOf,
+      beforeRevision: beforeById.get(document.song.id)?.revision || null,
+      afterRevision: document.revision
+    }));
+    return Object.freeze({
+      familyId,
+      expectedSnapshot: expected,
+      nextFamilyRevision: songFamilyRevision(staged),
+      members: Object.freeze(members),
+      documents: Object.freeze(staged)
     });
   }
 
@@ -514,16 +1158,28 @@ class LocalSongLibrary {
     });
   }
 
-  async _listPage(options = {}) {
+  async _listPage(options = {}, { strict = false } = {}) {
     const query = String(options.query || '').trim();
     if (query.length > MAX_QUERY_LENGTH) fail('QUERY_TOO_LONG', `Library search must be ${MAX_QUERY_LENGTH} characters or fewer.`);
     const pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, Number.isSafeInteger(options.pageSize) ? options.pageSize : 50));
     const offset = Math.max(0, Number.isSafeInteger(options.offset) ? options.offset : 0);
     const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
     const entries = await fs.readdir(this.rootPath, { withFileTypes: true });
-    const songEntries = entries.filter(entry =>
-      entry.isDirectory() && !entry.isSymbolicLink?.() && SONG_DIRECTORY_PATTERN.test(entry.name));
-    if (songEntries.length > MAX_LIBRARY_SONGS) {
+    const namedSongEntries = entries.filter(entry =>
+      SONG_DIRECTORY_PATTERN.test(entry.name));
+    if (
+      strict
+      && namedSongEntries.some(entry =>
+        !entry.isDirectory() || entry.isSymbolicLink?.())
+    ) {
+      fail(
+        'LIBRARY_POINTER_INVALID',
+        'A saved song storage entry is unsafe.'
+      );
+    }
+    const songEntries = namedSongEntries.filter(entry =>
+      entry.isDirectory() && !entry.isSymbolicLink?.());
+    if (namedSongEntries.length > MAX_LIBRARY_SONGS) {
       fail('LIBRARY_TOO_LARGE', `The local library can contain at most ${MAX_LIBRARY_SONGS} songs.`);
     }
     const results = [];
@@ -531,12 +1187,27 @@ class LocalSongLibrary {
       const pointerPath = path.join(this.rootPath, entry.name, 'current.json');
       let pointer;
       try {
-        const { buffer } = await readFileNoFollow(pointerPath, 64 * 1024);
+        const { buffer } = await readFileNoFollow(pointerPath, MAX_POINTER_BYTES);
         pointer = JSON.parse(buffer.toString('utf8'));
         if (pointer.schemaVersion !== POINTER_SCHEMA_VERSION
           || typeof pointer.songId !== 'string'
           || idStorageKey(pointer.songId) !== entry.name
-          || !REVISION_PATTERN.test(pointer.revision || '')) continue;
+          || !REVISION_PATTERN.test(pointer.revision || '')
+          || Object.keys(pointer).sort().join(',') !==
+            'revision,schemaVersion,songId,updatedAt'
+          || typeof pointer.updatedAt !== 'string'
+          || pointer.updatedAt.length > 40
+          || Number.isNaN(Date.parse(pointer.updatedAt))
+          || new Date(pointer.updatedAt).toISOString() !== pointer.updatedAt) {
+          if (strict) {
+            fail(
+              'LIBRARY_POINTER_INVALID',
+              'A saved song pointer is invalid.',
+              { storageKey: entry.name }
+            );
+          }
+          continue;
+        }
         const item = await this._readRevision(pointer.songId, pointer.revision, pointer.updatedAt);
         const searchable = [
           item.song.id,
@@ -556,7 +1227,18 @@ class LocalSongLibrary {
           && (!options.translationOf || item.song.translationOf === options.translationOf)) {
           results.push(item.summary);
         }
-      } catch (_error) {
+      } catch (error) {
+        if (strict) {
+          if (error instanceof SongLibraryError) throw error;
+          fail(
+            'LIBRARY_POINTER_INVALID',
+            'A saved song pointer is unreadable.',
+            {
+              storageKey: entry.name,
+              cause: error.code || error.name || 'pointer-read-failed'
+            }
+          );
+        }
         // A broken entry is omitted from search but remains on disk for an
         // explicit recovery/diagnostics flow; listing must not rewrite it.
       }
@@ -571,14 +1253,19 @@ class LocalSongLibrary {
   }
 
   async list(options = {}) {
-    await this.initialize();
-    return this._listPage(options);
+    return this.#withExclusiveSession(() => this._listPage(options));
+  }
+
+  async snapshotAllCurrent() {
+    return this.#withExclusiveSession(session => session.listCurrent());
   }
 }
 
 module.exports = {
   LocalSongLibrary,
   MAX_PAGE_SIZE,
+  PENDING_FAMILY_JOURNAL_FILE,
   SongLibraryError,
+  familySnapshotHash,
   idStorageKey
 };

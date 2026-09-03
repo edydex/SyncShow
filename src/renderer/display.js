@@ -23,7 +23,9 @@ const displayState = {
   pendingReveal: null,
   nativeActiveLayer: 0,
   nativeRenderers: [null, null],
-  fontReadiness: Promise.resolve({ ok: true })
+  fontReadiness: Promise.resolve({ ok: true }),
+  restoreGuardId: null,
+  restoreGuardVersion: 0
 };
 
 // DOM Elements
@@ -39,7 +41,8 @@ const elements = {
     document.getElementById('native-layer-0'),
     document.getElementById('native-layer-1')
   ],
-  loading: document.getElementById('loadingIndicator')
+  loading: document.getElementById('loadingIndicator'),
+  restoreGuard: document.getElementById('outputRestoreGuard')
 };
 
 const bibleOverlayController = window.createBibleOverlayController({
@@ -61,9 +64,14 @@ function init() {
 
   // Listen for constrained live-DOM cue changes.
   window.api.onNativeCueGoto(handleNativeCueGoto);
+  window.api.onNativeCueVideoControl(handleNativeCueVideoControl);
   
   // Listen for clear command (black screen)
   window.api.onDisplayClear(handleClear);
+
+  // Restore keeps this independently acknowledged black guard above every
+  // rendered layer until main has the authoritative cue on every output.
+  window.api.onOutputRestoreGuard(handleOutputRestoreGuard);
   
   // Listen for fade duration changes
   window.api.onFadeUpdate(handleFadeUpdate);
@@ -96,6 +104,98 @@ function handleClear() {
   clearNativeLayers();
   elements.noSlide.style.display = 'none';
   console.log('[Display] Screen cleared (black)');
+}
+
+async function handleNativeCueVideoControl(data) {
+  const active = displayState.nativeRenderers[displayState.nativeActiveLayer];
+  const valid = data?.outputId === displayState.language
+    && Number.isSafeInteger(data?.index)
+    && data.index === displayState.currentSlide
+    && typeof data?.cueId === 'string'
+    && active?.scene?.cueId === data.cueId
+    && active.videoState?.() !== 'not-video';
+  if (!valid) return;
+  try {
+    if (data.action === 'play') await active.playVideo();
+    else if (data.action === 'pause') active.pauseVideo();
+    else if (data.action === 'toggle') {
+      if (active.videoState() === 'playing') active.pauseVideo();
+      else await active.playVideo();
+    } else if (data.action === 'stop') active.stopVideo();
+  } catch (error) {
+    window.api.reportOutputVideoState({
+      outputId: displayState.language,
+      index: displayState.currentSlide,
+      cueId: active.scene.cueId,
+      state: 'error',
+      error: error instanceof Error ? error.message : 'Video playback failed'
+    });
+  }
+}
+
+function waitForPaintFrame() {
+  return new Promise(resolve => window.requestAnimationFrame(() => resolve()));
+}
+
+async function handleOutputRestoreGuard(data) {
+  const guardId = typeof data?.guardId === 'string' ? data.guardId : '';
+  const outputId = typeof data?.outputId === 'string' ? data.outputId : '';
+  const active = data?.active;
+  const reveal = data?.reveal === true;
+  const valid = /^[A-Za-z0-9_-]{1,128}$/u.test(guardId)
+    && outputId === displayState.language
+    && (active === true || active === false)
+    && !(active && reveal)
+    && elements.restoreGuard;
+
+  if (!valid) {
+    window.api.reportOutputRestoreGuardReady({
+      guardId,
+      outputId,
+      active,
+      reveal,
+      ok: false,
+      error: 'The Restore guard request was invalid for this output'
+    });
+    return;
+  }
+
+  if (active === false && displayState.restoreGuardId !== guardId) {
+    window.api.reportOutputRestoreGuardReady({
+      guardId,
+      outputId,
+      active,
+      reveal,
+      ok: false,
+      error: 'The Restore guard was superseded before release'
+    });
+    return;
+  }
+
+  const version = displayState.restoreGuardVersion + 1;
+  displayState.restoreGuardVersion = version;
+  if (active) {
+    displayState.restoreGuardId = guardId;
+    elements.restoreGuard.hidden = false;
+  } else if (reveal) {
+    elements.restoreGuard.hidden = true;
+  }
+
+  await waitForPaintFrame();
+  await waitForPaintFrame();
+  if (
+    displayState.restoreGuardVersion !== version
+    || displayState.restoreGuardId !== guardId
+  ) return;
+
+  if (!active && reveal) displayState.restoreGuardId = null;
+  window.api.reportOutputRestoreGuardReady({
+    guardId,
+    outputId,
+    active,
+    reveal,
+    ok: true
+  });
 }
 
 function handleFadeUpdate(duration) {
@@ -212,6 +312,7 @@ async function handleNativeCueGoto(data) {
 
     nextLayer.classList.remove('active');
     nextLayer.setAttribute('aria-hidden', 'true');
+    displayState.nativeRenderers[nextLayerIndex]?.destroy?.();
     nextLayer.replaceChildren();
     displayState.nativeRenderers[nextLayerIndex] = null;
 
@@ -220,6 +321,15 @@ async function handleNativeCueGoto(data) {
         if (!Object.prototype.hasOwnProperty.call(assetPaths, assetId)) return null;
         const assetUrl = window.pathUtils.toFileUrl(assetPaths[assetId]);
         return typeof assetUrl === 'string' && assetUrl.startsWith('file:') ? assetUrl : null;
+      },
+      onVideoState(video) {
+        window.api.reportOutputVideoState({
+          outputId: displayState.language,
+          index,
+          cueId: video.cueId,
+          state: video.state,
+          error: video.error || ''
+        });
       }
     });
     nextLayer.appendChild(candidate.element);
@@ -229,6 +339,7 @@ async function handleNativeCueGoto(data) {
     candidate.relayout();
     if (!isCurrentNavigation(navigationVersion)) {
       if (nextLayer.firstElementChild === candidate.element) {
+        candidate.destroy?.();
         nextLayer.replaceChildren();
         displayState.nativeRenderers[nextLayerIndex] = null;
       }
@@ -251,6 +362,7 @@ async function handleNativeCueGoto(data) {
   } catch (error) {
     if (!isCurrentNavigation(navigationVersion)) return;
     if (candidate && nextLayer.firstElementChild === candidate.element) {
+      candidate.destroy?.();
       nextLayer.replaceChildren();
       displayState.nativeRenderers[nextLayerIndex] = null;
     }
@@ -405,6 +517,7 @@ async function swapToNativeCue(layerIndex, revealAt, navigationVersion) {
       nextLayer.classList.add('active');
       nextLayer.setAttribute('aria-hidden', 'false');
       if (previousLayer !== nextLayer) {
+        displayState.nativeRenderers[displayState.nativeActiveLayer]?.pauseVideo?.();
         previousLayer.classList.remove('active');
         previousLayer.setAttribute('aria-hidden', 'true');
       }
@@ -497,10 +610,12 @@ function deactivateNativeLayers() {
     layer.classList.remove('active');
     layer.setAttribute('aria-hidden', 'true');
   });
+  displayState.nativeRenderers.forEach(renderer => renderer?.pauseVideo?.());
 }
 
 function clearNativeLayers() {
   deactivateNativeLayers();
+  displayState.nativeRenderers.forEach(renderer => renderer?.destroy?.());
   elements.nativeLayers.forEach(layer => layer?.replaceChildren());
   displayState.nativeRenderers = [null, null];
   displayState.nativeActiveLayer = 0;

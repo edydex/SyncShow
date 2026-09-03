@@ -64,7 +64,10 @@ test('every local live-output action reports rejection to the operator', () => {
 
 test('local cue navigation is acknowledged, relative, and returns authoritative state', () => {
   assert.match(preloadSource, /navigateToSlide: \(slideIndex\) => ipcRenderer\.invoke\('show:navigateTo', slideIndex\)/);
-  assert.match(preloadSource, /nextSlide: \(\) => ipcRenderer\.invoke\('show:navigateBy', 1\)/);
+  assert.match(
+    preloadSource,
+    /nextSlide: \(input = 'right'\) => ipcRenderer\.invoke\('show:navigateBy', 1, \{[\s\S]*input: input === 'space' \? 'space' : 'right'/
+  );
   assert.match(preloadSource, /prevSlide: \(\) => ipcRenderer\.invoke\('show:navigateBy', -1\)/);
   assert.doesNotMatch(preloadSource, /ipcRenderer\.send\('slide:(?:navigate|next|prev)'/);
   assert.doesNotMatch(mainSource, /ipcMain\.on\('slide:(?:navigate|next|prev)'/);
@@ -83,7 +86,7 @@ test('local cue navigation is acknowledged, relative, and returns authoritative 
   const relativeEnd = rendererSource.indexOf('async function goToSlide', relativeStart);
   const relativeSource = rendererSource.slice(relativeStart, relativeEnd);
   assert.match(relativeSource, /window\.api\.prevSlide\(\)/);
-  assert.match(relativeSource, /window\.api\.nextSlide\(\)/);
+  assert.match(relativeSource, /window\.api\.nextSlide\(forwardInput\)/);
   assert.doesNotMatch(relativeSource, /state\.currentSlide \+ delta/);
 
   const relativeHandlerStart = mainSource.indexOf("ipcMain.handle('show:navigateBy'");

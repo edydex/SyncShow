@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "kind": "syncshow-community-sermon-publication-conformance",
+  "description": "Self-contained cross-repository vector binding one exact published sermon revision and authenticated read-only publication state to anonymous detail, catalog, and passage-index bytes.",
+  "documentSource": "{\"body\":[{\"id\":\"private-body-en\",\"kind\":\"manuscript\",\"language\":\"en\",\"sectionId\":\"private-outline-id\",\"sourceId\":\"private-manuscript-id\",\"text\":\"The reviewed English sermon body.\\n\\nSecond paragraph.\"},{\"id\":\"private-body-ru\",\"kind\":\"manuscript\",\"language\":\"ru\",\"sectionId\":\"private-outline-id\",\"sourceId\":\"private-manuscript-id\",\"text\":\"Проверенный русский текст проповеди.\"}],\"defaultLanguage\":\"en\",\"id\":\"Golden:Sermon:2026-07-26\",\"kind\":\"syncshow-sermon\",\"media\":[{\"durationSeconds\":2484.5,\"fileName\":\"private-recording.mp3\",\"id\":\"private-audio-id\",\"kind\":\"audio\",\"language\":\"en\",\"mediaType\":\"audio/mpeg\",\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sizeBytes\":48000000,\"status\":\"ready\",\"title\":\"Sermon audio\",\"url\":\"https://media.example.church/sermons/prayer.mp3\"},{\"durationSeconds\":null,\"fileName\":\"private-notes.pdf\",\"id\":\"private-pending-notes-id\",\"kind\":\"document\",\"language\":\"en\",\"mediaType\":\"application/pdf\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sizeBytes\":500000,\"status\":\"pending\",\"title\":\"Sermon notes\",\"url\":\"https://media.example.church/sermons/prayer-notes.pdf\"}],\"outline\":[{\"id\":\"private-outline-id\",\"kind\":\"section\",\"parentId\":null,\"titles\":{\"en\":\"The Foundation\",\"ru\":\"Основание\"}}],\"publication\":{\"canonicalUrl\":\"https://church.example/sermons/prayer\",\"publishedAt\":\"2026-07-26T20:00:00.000Z\",\"status\":\"published\",\"visibility\":\"public\"},\"references\":[{\"endOffset\":30,\"enteredText\":\"Ephesians 3:14-21\",\"id\":\"private-primary-id\",\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"reviewStatus\":\"confirmed\",\"role\":\"primary\",\"sectionId\":null,\"source\":\"pastor\",\"sourceId\":\"private-manuscript-id\",\"startOffset\":10},{\"endOffset\":116,\"enteredText\":\"Ephesians 5:2\",\"id\":\"private-mentioned-id\",\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":5,\"verse\":2},\"schemaVersion\":1,\"start\":{\"chapter\":5,\"verse\":2}},\"reviewStatus\":\"confirmed\",\"role\":\"mentioned\",\"sectionId\":\"private-outline-id\",\"source\":\"manuscript\",\"sourceId\":\"private-manuscript-id\",\"startOffset\":100},{\"endOffset\":null,\"enteredText\":\"Ephesians 1:19-20\",\"id\":\"private-suggested-id\",\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":1,\"verse\":20},\"schemaVersion\":1,\"start\":{\"chapter\":1,\"verse\":19}},\"reviewStatus\":\"suggested\",\"role\":\"mentioned\",\"sectionId\":null,\"source\":\"transcript-extraction\",\"sourceId\":null,\"startOffset\":null}],\"schemaVersion\":3,\"series\":{\"id\":\"private-series-id\",\"titles\":{\"en\":\"From Pain to Unity\",\"ru\":\"От боли к единству\"}},\"serviceDate\":\"2026-07-26\",\"sources\":[{\"fileName\":\"private-pastor-manuscript.docx\",\"id\":\"private-manuscript-id\",\"kind\":\"manuscript\",\"languages\":[\"en\",\"ru\"],\"mediaType\":\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\",\"provenance\":{\"externalId\":\"private-message-id\",\"providedBy\":\"Private inbox identity\",\"receivedAt\":\"2026-07-24T18:30:00.000Z\",\"sourceSystem\":\"pastor-email\"},\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sizeBytes\":24000}],\"speaker\":{\"id\":\"private-speaker-id\",\"name\":\"Paul Lvutin\"},\"titles\":{\"en\":\"The Prayer That Transforms the Church\",\"ru\":\"Молитва, преображающая Церковь\"}}\n",
+  "publicationState": {
+    "schemaVersion": 1,
+    "syncId": "Golden:Sermon:2026-07-26",
+    "currentRevision": "e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920",
+    "syncVersion": 8,
+    "publicationVersion": 1,
+    "publicRevision": "e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920",
+    "publicId": "sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a",
+    "detailChecksum": "caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3",
+    "catalogChecksum": "d83db5ee1d461512c7d9051391169775151148655040e8e8f8f045127294d719",
+    "passageIndexChecksum": "7c8f59d22f1dad380cdbe07573dbcf5b249603fa4481e9ddf924c6c4e31f2c07",
+    "publishedAt": "2026-07-26T20:00:00.000Z",
+    "selectedBodyEntryIds": [
+      "private-body-en"
+    ],
+    "selectedMediaIds": [
+      "private-audio-id"
+    ]
+  },
+  "detailSource": "{\"body\":[{\"kind\":\"manuscript\",\"language\":\"en\",\"text\":\"The reviewed English sermon body.\\n\\nSecond paragraph.\"}],\"canonicalUrl\":\"https://church.example/sermons/prayer\",\"defaultLanguage\":\"en\",\"kind\":\"heritage-public-sermon\",\"media\":[{\"durationSeconds\":2484.5,\"kind\":\"audio\",\"language\":\"en\",\"mediaType\":\"audio/mpeg\",\"title\":\"Sermon audio\",\"url\":\"https://media.example.church/sermons/prayer.mp3\"}],\"publicId\":\"sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\",\"references\":[{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"role\":\"primary\"},{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":5,\"verse\":2},\"schemaVersion\":1,\"start\":{\"chapter\":5,\"verse\":2}},\"role\":\"mentioned\"}],\"schemaVersion\":1,\"series\":{\"titles\":{\"en\":\"From Pain to Unity\",\"ru\":\"От боли к единству\"}},\"sermonId\":\"Golden:Sermon:2026-07-26\",\"sermonRevision\":\"e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920\",\"serviceDate\":\"2026-07-26\",\"speaker\":{\"name\":\"Paul Lvutin\"},\"titles\":{\"en\":\"The Prayer That Transforms the Church\",\"ru\":\"Молитва, преображающая Церковь\"}}\n",
+  "catalogSource": "{\"contentType\":\"sermons\",\"items\":[{\"checksum\":\"caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3\",\"content\":{\"mediaType\":\"application/vnd.heritage.sermon+json\",\"url\":\"/content/sermons/sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\"},\"defaultLanguage\":\"en\",\"id\":\"sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\",\"references\":[{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"role\":\"primary\"},{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":5,\"verse\":2},\"schemaVersion\":1,\"start\":{\"chapter\":5,\"verse\":2}},\"role\":\"mentioned\"}],\"series\":{\"titles\":{\"en\":\"From Pain to Unity\",\"ru\":\"От боли к единству\"}},\"sermonId\":\"Golden:Sermon:2026-07-26\",\"sermonRevision\":\"e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920\",\"serviceDate\":\"2026-07-26\",\"speaker\":{\"name\":\"Paul Lvutin\"},\"title\":\"The Prayer That Transforms the Church\",\"titles\":{\"en\":\"The Prayer That Transforms the Church\",\"ru\":\"Молитва, преображающая Церковь\"}}],\"schemaVersion\":2}\n",
+  "passageIndexSource": "{\"items\":[{\"checksum\":\"caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3\",\"contentUrl\":\"/content/sermons/sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\",\"publicId\":\"sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\",\"references\":[{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"role\":\"primary\"},{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":5,\"verse\":2},\"schemaVersion\":1,\"start\":{\"chapter\":5,\"verse\":2}},\"role\":\"mentioned\"}],\"sermonId\":\"Golden:Sermon:2026-07-26\",\"sermonRevision\":\"e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920\",\"serviceDate\":\"2026-07-26\",\"speaker\":{\"name\":\"Paul Lvutin\"},\"title\":\"The Prayer That Transforms the Church\"}],\"kind\":\"heritage-public-sermon-passage-index\",\"schemaVersion\":1}\n",
+  "queries": [
+    {
+      "id": "primary-overlap",
+      "range": {
+        "schemaVersion": 1,
+        "bookId": "Eph",
+        "start": {
+          "chapter": 3,
+          "verse": 18
+        },
+        "end": {
+          "chapter": 3,
+          "verse": 18
+        }
+      },
+      "expected": {
+        "primary": [
+          {
+            "publicId": "sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a",
+            "sermonId": "Golden:Sermon:2026-07-26",
+            "sermonRevision": "e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920",
+            "checksum": "caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3",
+            "title": "The Prayer That Transforms the Church",
+            "speaker": {
+              "name": "Paul Lvutin"
+            },
+            "serviceDate": "2026-07-26",
+            "contentUrl": "/content/sermons/sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a",
+            "matches": [
+              {
+                "schemaVersion": 1,
+                "bookId": "Eph",
+                "start": {
+                  "chapter": 3,
+                  "verse": 14
+                },
+                "end": {
+                  "chapter": 3,
+                  "verse": 21
+                }
+              }
+            ]
+          }
+        ],
+        "mentioned": []
+      }
+    },
+    {
+      "id": "mentioned-only",
+      "range": {
+        "schemaVersion": 1,
+        "bookId": "Eph",
+        "start": {
+          "chapter": 5,
+          "verse": 2
+        },
+        "end": {
+          "chapter": 5,
+          "verse": 2
+        }
+      },
+      "expected": {
+        "primary": [],
+        "mentioned": [
+          {
+            "publicId": "sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a",
+            "sermonId": "Golden:Sermon:2026-07-26",
+            "sermonRevision": "e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920",
+            "checksum": "caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3",
+            "title": "The Prayer That Transforms the Church",
+            "speaker": {
+              "name": "Paul Lvutin"
+            },
+            "serviceDate": "2026-07-26",
+            "contentUrl": "/content/sermons/sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a",
+            "matches": [
+              {
+                "schemaVersion": 1,
+                "bookId": "Eph",
+                "start": {
+                  "chapter": 5,
+                  "verse": 2
+                },
+                "end": {
+                  "chapter": 5,
+                  "verse": 2
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "suggested-excluded",
+      "range": {
+        "schemaVersion": 1,
+        "bookId": "Eph",
+        "start": {
+          "chapter": 1,
+          "verse": 19
+        },
+        "end": {
+          "chapter": 1,
+          "verse": 20
+        }
+      },
+      "expected": {
+        "primary": [],
+        "mentioned": []
+      }
+    }
+  ]
+}

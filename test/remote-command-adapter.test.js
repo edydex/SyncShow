@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  authorizeVolunteerShowCommand,
   RemoteCommandAdapter,
   RemoteCommandError
 } = require('../src/services/show');
@@ -12,7 +13,11 @@ function cue(index, text = `Cue ${index + 1}`) {
   return { index, text, thumbnailAvailable: true };
 }
 
-function createHarness({ readCueThumbnail } = {}) {
+function createHarness({
+  readCueThumbnail,
+  readShowPolicyState,
+  authorizeShowCommand
+} = {}) {
   const runtime = {
     hasActiveShow: true,
     phase: 'live',
@@ -46,6 +51,8 @@ function createHarness({ readCueThumbnail } = {}) {
   const adapter = new RemoteCommandAdapter({
     readRuntimeState: () => runtime,
     readCueThumbnail,
+    readShowPolicyState,
+    authorizeShowCommand,
     createSessionId: () => 'session-1234567890abcdef',
     commands: {
       previous: () => {
@@ -157,6 +164,246 @@ test('native semantic cue ids survive the Remote boundary while unsafe ids fall 
   assert.equal(state.nextCue.id, 'cue-2');
 });
 
+test('volunteer policy masks privileged Remote controls without changing protocol v1', () => {
+  const { adapter, runtime, syncCues } = createHarness({
+    readShowPolicyState: () => ({ mode: 'volunteer' })
+  });
+  runtime.currentSlide = 1;
+  syncCues();
+
+  const state = adapter.getState();
+
+  assert.equal(state.protocolVersion, 1);
+  assert.deepEqual(state.controls, {
+    canPrevious: false,
+    canNext: true,
+    canJump: false,
+    canRestore: false,
+    canClear: true
+  });
+});
+
+test('trusted desktop operator state can unlock locally without widening Remote controls', () => {
+  const { adapter, runtime, syncCues } = createHarness({
+    readShowPolicyState: () => ({ mode: 'volunteer' })
+  });
+  runtime.currentSlide = 1;
+  syncCues();
+  runtime.operator = {
+    mode: 'volunteer',
+    authority: 'unlocked',
+    unlockExpiresAt: '2026-07-29T22:02:00.000Z',
+    rehearsal: {
+      status: 'ready',
+      currentCue: 3,
+      totalCues: 3,
+      persisted: true,
+      reused: false
+    },
+    controls: {
+      canPrevious: true,
+      canNext: true,
+      canJump: true,
+      canRestore: true,
+      canClear: true,
+      canStop: true,
+      canEndSession: true,
+      canShowBible: true,
+      canManageRemote: true
+    },
+    unlockToken: 'must-not-cross'
+  };
+
+  const state = adapter.getState();
+  assert.deepEqual(state.controls, {
+    canPrevious: false,
+    canNext: true,
+    canJump: false,
+    canRestore: false,
+    canClear: true
+  });
+  assert.equal(state.operator.mode, 'volunteer');
+  assert.equal(state.operator.authority, 'unlocked');
+  assert.equal(state.operator.controls.canPrevious, true);
+  assert.equal(state.operator.controls.canRestore, true);
+  assert.equal(state.operator.rehearsal.status, 'ready');
+  assert.equal(JSON.stringify(state).includes('must-not-cross'), false);
+});
+
+test('execute independently rejects privileged volunteer commands while Next and Clear remain available', async () => {
+  const { adapter, runtime, calls, syncCues } = createHarness({
+    readShowPolicyState: () => ({ mode: 'volunteer' })
+  });
+  runtime.currentSlide = 1;
+  syncCues();
+  const state = adapter.getState();
+
+  await rejectsCode(
+    adapter.execute(
+      envelope(state, { type: 'cue.previous' }, { expectedCueIndex: 1 })
+    ),
+    'COMMAND_FORBIDDEN_BY_SHOW_POLICY'
+  );
+  await rejectsCode(
+    adapter.execute(envelope(state, { type: 'cue.jump', cueIndex: 0 })),
+    'COMMAND_FORBIDDEN_BY_SHOW_POLICY'
+  );
+  await rejectsCode(
+    adapter.execute(envelope(state, { type: 'output.restore' })),
+    'COMMAND_FORBIDDEN_BY_SHOW_POLICY'
+  );
+
+  const advanced = await adapter.execute(
+    envelope(state, { type: 'cue.next' }, { expectedCueIndex: 1 })
+  );
+  assert.equal(advanced.state.currentCue.index, 2);
+  const cleared = await adapter.execute(
+    envelope(advanced.state, { type: 'output.clear' })
+  );
+  assert.equal(cleared.state.phase, 'cleared');
+  assert.deepEqual(calls, ['next', 'clear']);
+});
+
+test('Remote authorization never receives or consumes a local unlock grant', async () => {
+  const requests = [];
+  const secretToken = 'local-only-unlock-token-12345678901234567890';
+  const policyState = { mode: 'volunteer' };
+  Object.defineProperties(policyState, {
+    authority: {
+      enumerable: true,
+      get() {
+        throw new Error('Remote read local authority');
+      }
+    },
+    unlockGrant: {
+      enumerable: true,
+      get() {
+        throw new Error('Remote read local grant');
+      }
+    },
+    binding: {
+      enumerable: true,
+      value: Object.freeze({ secretToken })
+    }
+  });
+  const { adapter, runtime, syncCues } = createHarness({
+    readShowPolicyState: () => policyState,
+    authorizeShowCommand: request => {
+      requests.push(request);
+      return authorizeVolunteerShowCommand(request);
+    }
+  });
+  runtime.currentSlide = 1;
+  syncCues();
+  const state = adapter.getState();
+
+  await rejectsCode(
+    adapter.execute(
+      envelope(state, { type: 'cue.previous' }, { expectedCueIndex: 1 })
+    ),
+    'COMMAND_FORBIDDEN_BY_SHOW_POLICY'
+  );
+
+  assert.ok(requests.length > 0);
+  for (const request of requests) {
+    assert.deepEqual(Object.keys(request).sort(), [
+      'authority',
+      'mode',
+      'source',
+      'type'
+    ]);
+    assert.equal(request.authority, 'locked');
+    assert.equal(request.mode, 'volunteer');
+    assert.equal(request.source, 'remote');
+    assert.equal(Object.isFrozen(request), true);
+  }
+  assert.doesNotMatch(JSON.stringify(requests), /unlock|grant|binding|local-only/i);
+});
+
+test('execute rechecks policy when the mode changes after state publication', async () => {
+  let mode = 'full';
+  const { adapter, runtime, syncCues } = createHarness({
+    readShowPolicyState: () => ({ mode })
+  });
+  runtime.currentSlide = 1;
+  syncCues();
+  const publishedState = adapter.getState();
+  assert.equal(publishedState.controls.canPrevious, true);
+
+  mode = 'volunteer';
+  await rejectsCode(
+    adapter.execute(
+      envelope(
+        publishedState,
+        { type: 'cue.previous' },
+        { expectedCueIndex: 1 }
+      )
+    ),
+    'COMMAND_FORBIDDEN_BY_SHOW_POLICY'
+  );
+});
+
+test('invalid or asynchronous policy hooks fail closed', async () => {
+  const invalidStateHarness = createHarness({
+    readShowPolicyState: () => Object.defineProperty({}, 'mode', {
+      enumerable: true,
+      get() {
+        throw new Error('must not run');
+      }
+    })
+  });
+  const invalidState = invalidStateHarness.adapter.getState();
+  assert.deepEqual(invalidState.controls, {
+    canPrevious: false,
+    canNext: false,
+    canJump: false,
+    canRestore: false,
+    canClear: false
+  });
+  await rejectsCode(
+    invalidStateHarness.adapter.execute(
+      envelope(invalidState, { type: 'output.clear' })
+    ),
+    'COMMAND_FORBIDDEN_BY_SHOW_POLICY'
+  );
+
+  const asyncAuthorizerHarness = createHarness({
+    readShowPolicyState: () => ({ mode: 'full' }),
+    authorizeShowCommand: async () => ({ allowed: true })
+  });
+  const asyncState = asyncAuthorizerHarness.adapter.getState();
+  assert.deepEqual(asyncState.controls, {
+    canPrevious: false,
+    canNext: false,
+    canJump: false,
+    canRestore: false,
+    canClear: false
+  });
+  await rejectsCode(
+    asyncAuthorizerHarness.adapter.execute(
+      envelope(asyncState, { type: 'output.clear' })
+    ),
+    'COMMAND_FORBIDDEN_BY_SHOW_POLICY'
+  );
+});
+
+test('policy injections must be synchronous functions', () => {
+  assert.throws(
+    () => new RemoteCommandAdapter({
+      readRuntimeState: () => ({}),
+      readShowPolicyState: 'volunteer'
+    }),
+    /readShowPolicyState to be a function/
+  );
+  assert.throws(
+    () => new RemoteCommandAdapter({
+      readRuntimeState: () => ({}),
+      authorizeShowCommand: { allowed: true }
+    }),
+    /authorizeShowCommand to be a function/
+  );
+});
+
 test('remote navigation requires the current session, revision, and cue expectation', async () => {
   const { adapter, calls } = createHarness();
   const initial = adapter.getState();
@@ -221,6 +468,44 @@ test('Bible state blocks navigation while Clear and Restore remain authoritative
   const restored = await adapter.execute(envelope(cleared.state, { type: 'output.restore' }));
   assert.equal(restored.state.phase, 'live');
   assert.equal(calls.at(-1), 'restore');
+});
+
+test('a starting output disables Remote and local navigation and Restore while preserving Clear', () => {
+  const { adapter, runtime, syncCues } = createHarness();
+  runtime.currentSlide = 1;
+  syncCues();
+  runtime.outputs[0].status = 'starting';
+  runtime.operator = {
+    mode: 'full',
+    authority: 'locked',
+    controls: {
+      canPrevious: true,
+      canNext: true,
+      canJump: true,
+      canRestore: true,
+      canClear: true,
+      canStop: true,
+      canEndSession: true,
+      canShowBible: true,
+      canManageRemote: true
+    }
+  };
+  adapter.publish('cue-transition-started');
+
+  const state = adapter.getState();
+  assert.equal(state.phase, 'live');
+  assert.deepEqual(state.controls, {
+    canPrevious: false,
+    canNext: false,
+    canJump: false,
+    canRestore: false,
+    canClear: true
+  });
+  assert.equal(state.operator.controls.canPrevious, false);
+  assert.equal(state.operator.controls.canNext, false);
+  assert.equal(state.operator.controls.canJump, false);
+  assert.equal(state.operator.controls.canRestore, false);
+  assert.equal(state.operator.controls.canClear, true);
 });
 
 test('an unavailable output pauses every Remote command until local recovery', async () => {

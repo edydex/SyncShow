@@ -1,0 +1,129 @@
+name: Package Smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Shared broad gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run syntax and regression checks once
+        run: npm run ci
+
+  package:
+    name: QA package (${{ matrix.target }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x64
+            runner: windows-latest
+            platform: win32
+            arch: x64
+            build_command: npm run build:win -- --x64
+          - target: linux-x64
+            runner: ubuntu-latest
+            platform: linux
+            arch: x64
+            build_command: npm run build:linux -- --x64
+          - target: macos-arm64
+            runner: macos-15
+            platform: darwin
+            arch: arm64
+            build_command: npm run build:mac:adhoc -- --arm64
+          - target: macos-x64
+            runner: macos-15-intel
+            platform: darwin
+            arch: x64
+            build_command: npm run build:mac:adhoc -- --x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Confirm native runner target
+        run: >-
+          node -e "if (process.platform !== '${{ matrix.platform }}'
+          || process.arch !== '${{ matrix.arch }}')
+          throw new Error('Runner target mismatch: '
+          + process.platform + '-' + process.arch)"
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build ordinary QA packages
+        run: ${{ matrix.build_command }}
+
+      - name: Verify packaged PDF engine
+        run: npm run build:verify-pdf-engine -- --root dist
+
+      - name: Verify packaged Sharp runtime
+        run: npm run build:verify-sharp -- --root dist
+
+      - name: Run the packaged shared service workflow
+        run: npm run build:verify-service-core -- --root dist
+
+      - name: Launch the packaged application
+        if: matrix.platform != 'linux'
+        run: npm run build:verify-app-launch -- --root dist
+
+      - name: Launch the packaged application under Xvfb
+        if: matrix.platform == 'linux'
+        run: xvfb-run -a npm run build:verify-app-launch -- --root dist
+
+      - name: Verify blocked legal evidence without publishing
+        run: npm run build:verify-release-legal -- --root dist --evidence-only
+
+      - name: Write exact QA artifact evidence
+        run: >-
+          npm run build:verify-package-smoke --
+          --root dist
+          --platform ${{ matrix.platform }}
+          --arch ${{ matrix.arch }}
+          --source-revision ${{ github.sha }}
+          --manifest dist/package-smoke-${{ matrix.target }}.json
+
+      - name: Upload short-lived QA package evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-package-${{ matrix.target }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/package-smoke-*.json
+            dist/packaged-launch-*.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

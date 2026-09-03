@@ -298,6 +298,7 @@ test('PPTX extraction follows presentation order and reads embedded images witho
   const deckPath = path.join(root, 'fixture.pptx');
   await writeFixtureDeck(deckPath);
 
+  assert.equal(PptxDeckExtractor.prototype.extractSlideStyledText.length, 2);
   const extractor = await PptxDeckExtractor.open(deckPath);
   assert.equal(extractor.slideCount, 2);
   assert.deepEqual(await extractor.extractSlideText(1), ['Fixture line one\nFixture line two']);

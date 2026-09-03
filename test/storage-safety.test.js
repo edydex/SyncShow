@@ -304,6 +304,95 @@ test('abandoned stale locks are quarantined before a new owner proceeds', async 
   await assert.rejects(fs.lstat(lockPath), error => error.code === 'ENOENT');
 });
 
+test('a verified dead owner can be reclaimed immediately when explicitly enabled', async t => {
+  const deadPid = 2_147_483_647;
+  try {
+    process.kill(deadPid, 0);
+    t.skip('The selected characterization PID unexpectedly exists.');
+    return;
+  } catch (error) {
+    if (error.code !== 'ESRCH') {
+      t.skip(`This platform cannot characterize a dead PID: ${error.code}`);
+      return;
+    }
+  }
+  const root = await tempDirectory(t);
+  const lockPath = path.join(root, '.write-lock');
+  await fs.mkdir(lockPath);
+  await fs.writeFile(path.join(lockPath, 'owner.json'), `${JSON.stringify({
+    token: 'dead-owner',
+    pid: deadPid,
+    createdAt: Date.now()
+  })}\n`);
+
+  assert.equal(
+    await withExclusiveFileLock(
+      lockPath,
+      async () => 'recovered immediately',
+      { reclaimDeadOwner: true }
+    ),
+    'recovered immediately'
+  );
+  await assert.rejects(fs.lstat(lockPath), error => error.code === 'ENOENT');
+});
+
+test('dead-owner mode never steals an old lock from a verified live process', async t => {
+  const root = await tempDirectory(t);
+  const lockPath = path.join(root, '.write-lock');
+  await fs.mkdir(lockPath);
+  await fs.writeFile(path.join(lockPath, 'owner.json'), `${JSON.stringify({
+    token: 'live-owner',
+    pid: process.pid,
+    createdAt: Date.now() - 10 * 60 * 1000
+  })}\n`);
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  await fs.utimes(lockPath, old, old);
+
+  await assert.rejects(
+    withExclusiveFileLock(
+      lockPath,
+      async () => 'must not overlap',
+      { reclaimDeadOwner: true }
+    ),
+    error => error.code === 'WRITE_LOCKED'
+  );
+  assert.equal((await fs.lstat(lockPath)).isDirectory(), true);
+});
+
+test('dead-owner mode preserves a fresh ownerless lock from the acquisition crash window', async t => {
+  const root = await tempDirectory(t);
+  const lockPath = path.join(root, '.write-lock');
+  await fs.mkdir(lockPath);
+
+  await assert.rejects(
+    withExclusiveFileLock(
+      lockPath,
+      async () => 'must not overlap',
+      { reclaimDeadOwner: true }
+    ),
+    error => error.code === 'WRITE_LOCKED'
+  );
+  assert.equal((await fs.lstat(lockPath)).isDirectory(), true);
+});
+
+test('dead-owner mode eventually reclaims a stale ownerless acquisition crash', async t => {
+  const root = await tempDirectory(t);
+  const lockPath = path.join(root, '.write-lock');
+  await fs.mkdir(lockPath);
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  await fs.utimes(lockPath, old, old);
+
+  assert.equal(
+    await withExclusiveFileLock(
+      lockPath,
+      async () => 'recovered stale ownerless lock',
+      { reclaimDeadOwner: true }
+    ),
+    'recovered stale ownerless lock'
+  );
+  await assert.rejects(fs.lstat(lockPath), error => error.code === 'ENOENT');
+});
+
 test('a symbolic-link lock path cannot redirect lock ownership', async t => {
   if (process.platform === 'win32') {
     t.skip('Creating symlinks is not reliably permitted on Windows CI.');

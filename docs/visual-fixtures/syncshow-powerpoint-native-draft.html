@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncShow PowerPoint-to-native draft visual fixture</title>
+  <link rel="stylesheet" href="../../src/renderer/styles.css">
+  <style>
+    html,
+    body.native-draft-fixture {
+      height: auto;
+      min-height: 100%;
+    }
+
+    body.native-draft-fixture {
+      overflow: auto;
+    }
+
+    .native-draft-fixture .app-container {
+      height: auto;
+      min-height: 100vh;
+    }
+
+    .native-draft-fixture .prepare-panel {
+      overflow: visible;
+    }
+
+    .native-draft-fixture .prepare-current-service-card {
+      align-items: flex-start;
+      padding: 16px 18px;
+    }
+
+    .native-draft-fixture .prepare-current-service-copy {
+      max-width: 860px;
+    }
+
+    .native-draft-fixture .prepare-current-service-files {
+      white-space: normal;
+    }
+
+    .native-draft-fixture .prepare-workspace {
+      grid-template-columns: 250px minmax(520px, 1fr) 360px;
+      flex: 0 0 auto;
+      min-height: 495px;
+    }
+
+    .native-draft-fixture .fixture-selected {
+      color: #dce6ff;
+      background: rgba(79, 124, 255, 0.13);
+      border-color: rgba(104, 144, 255, 0.4);
+    }
+
+    .native-draft-fixture .native-review-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .native-draft-fixture .native-review-role {
+      padding: 12px;
+      background: rgba(7, 12, 24, 0.46);
+      border: 1px solid rgba(104, 144, 255, 0.23);
+      border-radius: 10px;
+    }
+
+    .native-draft-fixture .native-review-role strong,
+    .native-draft-fixture .native-review-role span {
+      display: block;
+    }
+
+    .native-draft-fixture .native-review-role strong {
+      color: #dce6ff;
+      font-size: 0.78rem;
+    }
+
+    .native-draft-fixture .native-review-role span {
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-size: 0.62rem;
+      line-height: 1.35;
+    }
+
+    .native-draft-fixture .native-review-role em {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 9px;
+      color: #a8efd0;
+      font-size: 0.64rem;
+      font-style: normal;
+      font-weight: 800;
+    }
+
+    .native-draft-fixture .native-review-role em::before {
+      width: 7px;
+      height: 7px;
+      background: #39c889;
+      border-radius: 50%;
+      content: "";
+      box-shadow: 0 0 0 4px rgba(57, 200, 137, 0.12);
+    }
+
+    .native-draft-fixture .native-flow {
+      display: grid;
+      grid-template-columns: 1fr 34px 1fr 34px 1fr;
+      align-items: stretch;
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    .native-draft-fixture .native-flow-step {
+      min-width: 0;
+      padding: 12px;
+      background: linear-gradient(145deg, rgba(79, 124, 255, 0.1), rgba(7, 12, 24, 0.42));
+      border: 1px solid rgba(104, 144, 255, 0.22);
+      border-radius: 10px;
+    }
+
+    .native-draft-fixture .native-flow-step strong,
+    .native-draft-fixture .native-flow-step span {
+      display: block;
+    }
+
+    .native-draft-fixture .native-flow-step strong {
+      color: #dce6ff;
+      font-size: 0.72rem;
+    }
+
+    .native-draft-fixture .native-flow-step span {
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-size: 0.6rem;
+      line-height: 1.4;
+    }
+
+    .native-draft-fixture .native-flow-arrow {
+      display: grid;
+      color: #72e2ff;
+      place-items: center;
+      font-size: 1.05rem;
+    }
+
+    .native-draft-fixture .native-boundary {
+      margin-top: 14px;
+      padding: 11px 12px;
+      color: #a8efd0;
+      background: rgba(57, 200, 137, 0.07);
+      border: 1px solid rgba(57, 200, 137, 0.25);
+      border-radius: 10px;
+      font-size: 0.66rem;
+      line-height: 1.45;
+    }
+
+    .native-draft-fixture .native-boundary strong {
+      color: #d8ffed;
+    }
+
+    .native-draft-fixture .fixture-caption {
+      margin-top: 9px;
+      color: var(--text-muted);
+      font-size: 0.6rem;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 900px) {
+      .native-draft-fixture .prepare-workspace {
+        grid-template-columns: minmax(190px, 0.7fr) minmax(0, 1.3fr);
+      }
+
+      .native-draft-fixture .prepare-library-pane {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .native-draft-fixture .prepare-workspace,
+      .native-draft-fixture .native-review-grid,
+      .native-draft-fixture .native-flow {
+        grid-template-columns: 1fr;
+      }
+
+      .native-draft-fixture .prepare-library-pane {
+        grid-column: auto;
+      }
+
+      .native-draft-fixture .native-flow-arrow {
+        min-height: 24px;
+        transform: rotate(90deg);
+      }
+    }
+  </style>
+</head>
+<body class="friendly-mode prepare-stage native-draft-fixture">
+  <p class="sr-only" role="note">
+    Static visual fixture built from the read-only current local ServiceSet
+    metadata. No native draft was created to produce this image.
+  </p>
+
+  <div class="app-container">
+    <header class="header" id="setupHeader">
+      <div class="header-left">
+        <div class="app-mark" aria-hidden="true">S</div>
+        <div>
+          <div class="app-title-row">
+            <h1 class="app-title">SyncShow</h1>
+            <span class="preview-label">Preview</span>
+          </div>
+          <span class="app-subtitle">Build the service in order</span>
+        </div>
+      </div>
+
+      <nav class="workflow-steps" aria-label="Service workflow">
+        <button type="button" class="workflow-step active" aria-current="step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">1</span>
+          <span class="workflow-label">Prepare</span>
+        </button>
+        <button type="button" class="workflow-step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">2</span>
+          <span class="workflow-label">Load</span>
+        </button>
+        <button type="button" class="workflow-step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">3</span>
+          <span class="workflow-label">Show</span>
+        </button>
+      </nav>
+
+      <div class="header-right header-load-actions">
+        <button class="btn btn-secondary" type="button" tabindex="-1" aria-disabled="true">Admin Settings</button>
+        <button class="btn btn-primary btn-start" type="button" tabindex="-1" aria-disabled="true">Save &amp; go to Load</button>
+      </div>
+    </header>
+
+    <section class="prepare-panel" aria-labelledby="fixturePrepareHeading">
+      <div class="prepare-shell">
+        <div class="prepare-intro">
+          <div>
+            <p class="section-kicker">PREPARE</p>
+            <h2 id="fixturePrepareHeading">Build the service in order</h2>
+            <p>Keep this week’s PowerPoint Show usable while beginning a separate native service draft.</p>
+          </div>
+          <div class="prepare-primary-actions">
+            <button type="button" class="btn btn-quiet" tabindex="-1" aria-disabled="true">Import service</button>
+            <button type="button" class="btn btn-secondary" tabindex="-1" aria-disabled="true">New service</button>
+            <button type="button" class="btn btn-primary" tabindex="-1" aria-disabled="true">Save &amp; go to Load</button>
+          </div>
+        </div>
+
+        <aside class="prepare-current-service-card" aria-labelledby="fixtureCurrentServiceHeading">
+          <div class="prepare-current-service-copy">
+            <p class="section-kicker">CURRENT POWERPOINT SERVICE</p>
+            <h3 id="fixtureCurrentServiceHeading">Main Sanctuary — 2026-07-25</h3>
+            <p class="prepare-pane-subtitle">Jul 25, 2026 · Main Sanctuary · 112 synchronized positions</p>
+            <p class="prepare-current-service-files">
+              07-25-2026 Service ENG.pptx · 07-25-2026 Служение RUS.pptx · 07-25-2026 Media.pptx
+            </p>
+            <p class="prepare-current-service-safety">
+              The original presentations remain untouched and stay the current Show source. A native draft copies the exact rendered slides already on this computer; replace only ranges you review.
+            </p>
+          </div>
+          <div class="prepare-current-service-actions">
+            <button type="button" class="btn btn-primary" tabindex="-1" aria-disabled="true">Create native draft…</button>
+            <button type="button" class="btn btn-outline" tabindex="-1" aria-disabled="true">Review songs from this service…</button>
+            <button type="button" class="btn btn-secondary" tabindex="-1" aria-disabled="true">Start sermon handoff</button>
+          </div>
+        </aside>
+
+        <p class="prepare-notice" data-kind="success" role="status">
+          Ready for explicit review. SyncShow will verify every rendered position again before publishing the separate draft.
+        </p>
+
+        <div class="prepare-workspace">
+          <aside class="prepare-column prepare-projects-pane" aria-labelledby="fixtureProjectsHeading">
+            <div class="prepare-pane-heading">
+              <div>
+                <p class="section-kicker">SERVICES</p>
+                <h3 id="fixtureProjectsHeading">Service projects</h3>
+              </div>
+              <span class="prepare-count">4</span>
+            </div>
+            <div class="prepare-list" role="list">
+              <h4 class="prepare-project-group-heading" role="presentation">Current source</h4>
+              <div role="listitem">
+                <button class="prepare-project-button fixture-selected" type="button" tabindex="-1" aria-current="true">
+                  <strong>Main Sanctuary — 2026-07-25</strong>
+                  <span>PowerPoint ServiceSet · current Show source</span>
+                </button>
+              </div>
+              <h4 class="prepare-project-group-heading" role="presentation">Native work</h4>
+              <div role="listitem">
+                <button class="prepare-project-button" type="button" tabindex="-1">
+                  <strong>Sunday Service</strong>
+                  <span>Editable native service · planning</span>
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          <section class="prepare-column prepare-rundown-pane" aria-labelledby="fixtureReviewHeading">
+            <div class="prepare-pane-heading">
+              <div>
+                <p class="section-kicker">EXACT REVIEW</p>
+                <h3 id="fixtureReviewHeading">Rendered positions line up</h3>
+                <p class="prepare-pane-subtitle">One role per enabled presentation channel · equal counts required</p>
+              </div>
+              <span class="prepare-save-state">Verified locally</span>
+            </div>
+
+            <div class="native-review-grid" aria-label="Reviewed PowerPoint channels">
+              <div class="native-review-role">
+                <strong>English</strong>
+                <span>07-25-2026 Service ENG.pptx</span>
+                <em>112 positions</em>
+              </div>
+              <div class="native-review-role">
+                <strong>Russian</strong>
+                <span>07-25-2026 Служение RUS.pptx</span>
+                <em>112 positions</em>
+              </div>
+              <div class="native-review-role">
+                <strong>Singers / Media</strong>
+                <span>07-25-2026 Media.pptx</span>
+                <em>112 positions</em>
+              </div>
+            </div>
+
+            <div class="native-flow" aria-label="PowerPoint to native draft flow">
+              <div class="native-flow-step">
+                <strong>Exact ServiceSet</strong>
+                <span>Service identity, venue revision, roles, and loaded cache provenance are pinned.</span>
+              </div>
+              <span class="native-flow-arrow" aria-hidden="true">→</span>
+              <div class="native-flow-step">
+                <strong>Verify rendered JPEGs</strong>
+                <span>Contiguous generations, hashes, dimensions, type, count, and file identity are checked.</span>
+              </div>
+              <span class="native-flow-arrow" aria-hidden="true">→</span>
+              <div class="native-flow-step">
+                <strong>Separate picture-cue draft</strong>
+                <span>One runnable cue per synchronized position, ready for deliberate range replacement.</span>
+              </div>
+            </div>
+
+            <p class="native-boundary">
+              <strong>Human-controlled boundary:</strong> creating the draft does not replace Load or Show. An operator must review the new native project and explicitly choose <strong>Save &amp; go to Load</strong>.
+            </p>
+          </section>
+
+          <aside class="prepare-column prepare-library-pane" aria-labelledby="fixtureBoundaryHeading">
+            <section class="prepare-inspector">
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">WHAT THE DRAFT IS</p>
+                  <h3 id="fixtureBoundaryHeading">Runnable visual starting point</h3>
+                </div>
+              </div>
+              <p class="prepare-pane-subtitle">
+                Every position becomes a normal SyncShow picture cue with the correct output-specific image.
+              </p>
+
+              <div class="native-boundary">
+                <strong>Preserved:</strong> the exact rendered visual for each channel and synchronized position.
+              </div>
+              <div class="native-boundary">
+                <strong>Not recovered:</strong> editable PowerPoint text, notes, animations, transitions, or semantic song and sermon structure.
+              </div>
+              <p class="fixture-caption">
+                Static fixture populated from the read-only current local
+                ServiceSet metadata. Its custom review panel visualizes the
+                implemented behavior and safety contract; it is not the live
+                confirmation dialog, and no draft or Show replacement was made.
+              </p>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <footer class="status-bar">
+      <div class="status-left">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>Source-faithful bridge ready · current PowerPoint Show unchanged</span>
+      </div>
+      <div class="status-right">
+        <span>Static visual fixture · read-only local metadata</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

@@ -35,8 +35,8 @@ function textCue(presetId, kind, title, text) {
 }
 
 test('the built-in preset catalog is validated, immutable, and keeps original render tokens stable', () => {
-  assert.equal(NATIVE_PRESET_CATALOG_VERSION, 3);
-  assert.equal(NATIVE_RENDERER_VERSION, 8);
+  assert.equal(NATIVE_PRESET_CATALOG_VERSION, 4);
+  assert.equal(NATIVE_RENDERER_VERSION, 11);
   assert.equal(DEFAULT_NATIVE_TEXT_PRESET_ID, 'default-text');
   assert.ok(Object.isFrozen(NATIVE_PRESETS));
   assert.ok(NATIVE_PRESETS.every(preset => Object.isFrozen(preset) && Object.isFrozen(preset.render)));
@@ -110,6 +110,10 @@ test('the built-in preset catalog is validated, immutable, and keeps original re
     showTitle: true,
     bodyWeight: '500'
   });
+  assert.deepEqual(getNativePreset('video-fullscreen').render, {
+    mode: 'video'
+  });
+  assert.equal(isNativePresetAllowed('video-fullscreen', 'video'), true);
   assert.deepEqual(getNativePreset('song-title').render, {
     mode: 'text',
     background: '#04070d',
