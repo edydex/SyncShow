@@ -147,6 +147,7 @@ async function run() {
     'the Community device authorization',
     45_000
   );
+  assert.match(connection.detail, /Community-created services are available from Prepare and Load/);
   await renderer(controlWindow, `document.querySelector('#btnCloseAdminSettings').click()`);
   await waitFor(
     () => renderer(controlWindow, `!document.querySelector('#advancedSetupDetails')?.open`),

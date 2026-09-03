@@ -1860,6 +1860,8 @@ function projectCommunityConnection(connection) {
     canWriteSongPublicLinks: connection.canWriteSongPublicLinks === true,
     canReadSermons: connection.canReadSermons === true,
     canWriteSermons: connection.canWriteSermons === true,
+    canReadServicePlans: connection.canReadServicePlans === true,
+    canReadServiceDocuments: connection.canReadServiceDocuments === true,
     expiresAt: connection.expiresAt,
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt
@@ -2126,6 +2128,10 @@ function renderCommunitySettings() {
     && state.community.status?.connection?.canReadSongPublicLinks === true;
   const canWriteSongPublicLinks = canReadSongPublicLinks
     && state.community.status?.connection?.canWriteSongPublicLinks === true;
+  const canReadServicePlans = connected
+    && state.community.status?.connection?.canReadServicePlans === true;
+  const canReadServiceDocuments = connected
+    && state.community.status?.connection?.canReadServiceDocuments === true;
   const badge = elements.communityConnectionBadge;
   badge.classList.remove('ready', 'attention', 'scanning');
 
@@ -2146,20 +2152,28 @@ function renderCommunitySettings() {
         ? (state.community.sermonSyncing
           ? 'Pulling Community sermon updates into the local library…'
           : 'Syncing the local and Community song libraries…')
-        : canReadSongs && canReadSermons
+        : canReadServiceDocuments
+          ? 'Community-created services are available from Prepare and Load. An opened service remains available locally for offline Show.'
+          : canReadServicePlans
+            ? 'Community service plans are available in Prepare and remain local after import.'
+            : canReadSongs && canReadSermons
           ? 'Songs and sermon records remain available locally. Conflicts are held for review instead of being overwritten.'
           : canReadSongs
             ? 'This connection includes the shared song library. Sermon synchronization is not currently available.'
             : canReadSermons
               ? 'This connection includes the shared sermon library. Song synchronization is not currently available.'
               : 'No currently approved Community library resource is available on this connection.');
-    elements.communityConnectionHelp.textContent = canReadSongs && canReadSermons
-      ? 'This computer can read both Community libraries. Local sermons are shared only from the explicit button in Prepare.'
-      : canReadSongs
-        ? 'This computer can read the Community song library. Other resource lanes remain independent.'
-        : canReadSermons
-          ? 'This computer can read the Community sermon library. Local sermons are shared only from the explicit button in Prepare.'
-          : 'Reconnect to approve a resource the server currently advertises. Local library work remains available.';
+    elements.communityConnectionHelp.textContent = canReadServiceDocuments
+      ? 'Use Open Community service in Load or Open shared service in Prepare. Opening downloads an exact revision; it does not publish or overwrite another service.'
+      : canReadServicePlans
+        ? 'Use Browse plans in Prepare to review and import a Community plan.'
+        : canReadSongs && canReadSermons
+          ? 'This computer can read both Community libraries. Local sermons are shared only from the explicit button in Prepare.'
+          : canReadSongs
+            ? 'This computer can read the Community song library. Other resource lanes remain independent.'
+            : canReadSermons
+              ? 'This computer can read the Community sermon library. Local sermons are shared only from the explicit button in Prepare.'
+              : 'Reconnect to approve a resource the server currently advertises. Local library work remains available.';
   } else if (pending) {
     badge.textContent = 'Waiting';
     badge.classList.add('scanning');

@@ -137,6 +137,8 @@ test('sermon library sync is a separate capability-gated manual pull', () => {
   const render = functionBlock(appSource, 'renderCommunitySettings');
   assert.match(render, /canReadSongs = connected[\s\S]*canReadSongs === true/);
   assert.match(render, /canReadSermons = connected[\s\S]*canReadSermons === true/);
+  assert.match(render, /canReadServiceDocuments = connected[\s\S]*canReadServiceDocuments === true/);
+  assert.match(render, /canReadServicePlans = connected[\s\S]*canReadServicePlans === true/);
   assert.match(
     render,
     /btnSyncCommunitySongs\.disabled = !canReadSongs/
@@ -148,6 +150,8 @@ test('sermon library sync is a separate capability-gated manual pull', () => {
   assert.match(render, /canReadSongs && canReadSermons/);
   assert.match(render, /includes the shared song library/);
   assert.match(render, /includes the shared sermon library/);
+  assert.match(render, /Community-created services are available from Prepare and Load/);
+  assert.match(render, /Use Open Community service in Load or Open shared service in Prepare/);
   assert.match(render, /No currently approved Community library resource/);
   assert.match(render, /Song synchronization is not available for this connection/);
   assert.match(render, /Sermon synchronization is not available for this connection/);
