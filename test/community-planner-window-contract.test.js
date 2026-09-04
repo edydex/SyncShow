@@ -55,6 +55,13 @@ test('renderer receives only narrow planner open and status capabilities', () =>
   assert.match(main, /ipcMain\.handle\('community:planner:state'/u);
 });
 
+test('closing Community Prepare clears the stale open status', () => {
+  assert.match(
+    app,
+    /const wasOpen = state\.community\.plannerOpen;[\s\S]*?wasOpen && !state\.community\.plannerOpen[\s\S]*?setStatus\('Community Prepare closed'\)/u
+  );
+});
+
 test('normal Prepare never asks for a computer password or activates the local editor', () => {
   assert.match(html, /Heritage Community account with admin access/u);
   assert.match(html, /never ask for this computer.s system password/u);

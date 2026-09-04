@@ -2486,12 +2486,16 @@ function renderCommunityPrepare() {
 }
 
 function handleCommunityPlannerStateChanged(payload = {}) {
+  const wasOpen = state.community.plannerOpen;
   state.community.plannerOpen = payload?.open === true;
   state.community.plannerBusy = false;
   state.community.plannerError = typeof payload?.error?.message === 'string'
     ? payload.error.message
     : null;
   renderCommunityPrepare();
+  if (wasOpen && !state.community.plannerOpen && !state.community.plannerError) {
+    setStatus('Community Prepare closed');
+  }
 }
 
 async function refreshCommunityPlannerState() {
