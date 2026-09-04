@@ -691,6 +691,11 @@ test('sync is offline-first, CAS-guarded, cancellable, and conflict-resolvable',
     )
   );
   assert.match(mainSource, /new CommunityConnectionStore\(\{[\s\S]*maximumConnections: 1/);
+  assert.match(
+    mainSource,
+    /safeStorage: new AppLocalCredentialStorage\(\{\s*storageRoot: path\.join\(communityStorageRoot, 'credentials'\)\s*\}\)/,
+    'Community authorization must persist in its app-local vault without invoking the system password prompt'
+  );
   assert.match(mainSource, /new CommunitySyncStateStore/);
   assert.match(mainSource, /new CommunitySongSync/);
   assert.match(mainSource, /new CommunitySongFamilyImportCoordinator/);
@@ -1187,7 +1192,7 @@ test('revoked manager authority enters a replaceable reconnect state', () => {
   assert.match(mainSource, /function requireCommunityReconnectFor/);
   assert.match(
     mainSource,
-    /'AUTH_REQUIRED',\s*'AUTHORIZATION_EXPIRED',\s*'PERMISSION_DENIED'/
+    /'AUTH_REQUIRED',\s*'AUTHORIZATION_EXPIRED',\s*'CREDENTIAL_RECONNECT_REQUIRED',\s*'PERMISSION_DENIED'/
   );
   assert.match(mainSource, /status: 'reconnect-required'/);
   const connectStart = mainSource.slice(

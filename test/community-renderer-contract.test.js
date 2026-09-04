@@ -150,8 +150,9 @@ test('sermon library sync is a separate capability-gated manual pull', () => {
   assert.match(render, /canReadSongs && canReadSermons/);
   assert.match(render, /includes the shared song library/);
   assert.match(render, /includes the shared sermon library/);
-  assert.match(render, /Community-created services are available from Prepare and Load/);
-  assert.match(render, /Use Open Community service in Load or Open shared service in Prepare/);
+  assert.match(render, /Services prepared in Community are available from Load/);
+  assert.match(render, /Use Open from Heritage Community in Load/);
+  assert.match(render, /replaces the current Load service only after its offline package is complete/);
   assert.match(render, /No currently approved Community library resource/);
   assert.match(render, /Song synchronization is not available for this connection/);
   assert.match(render, /Sermon synchronization is not available for this connection/);

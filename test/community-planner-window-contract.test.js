@@ -27,7 +27,8 @@ test('Community planner window keeps Electron privileges and navigation locked d
   assert.match(main, /nodeIntegration: false/u);
   assert.match(main, /contextIsolation: true/u);
   assert.match(main, /sandbox: true/u);
-  assert.match(main, /partition: 'persist:syncshow-community-planner'/u);
+  assert.match(main, /partition: 'syncshow-community-planner'/u);
+  assert.doesNotMatch(main, /partition: 'persist:syncshow-community-planner'/u);
   assert.match(main, /setPermissionRequestHandler\([\s\S]*callback\(false\)/u);
   assert.match(main, /setPermissionCheckHandler\(\(\) => false\)/u);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/u);

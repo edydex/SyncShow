@@ -306,17 +306,16 @@ above.
 
 This is not an end-to-end deployed Heritage result. SyncShow has a strict pure projection that converts one exact eligible public sermon revision into Heritage Content Server v2 catalog, detail, and passage-index records, with canonical checksums and primary-over-mentioned passage handling. A separate conformance verifier and self-contained cross-runtime vector bind the authenticated read-only publication pointer, exact canonical published source, selected body/media IDs, detail bytes, complete catalog snapshot, and complete derived passage-index snapshot; a newer private `currentRevision` may correctly coexist with the older public revision. Separate pure schema-1 transaction gates now cover active republish and genuine first publication without adding a SyncShow Publish operation. The first-publication gate requires true null/null pre-state, exact Ready-to-Published bytes, publication version 1, and the Heritage server's locked pre/post catalog-authority generations; it rejects a pre-existing target, unrelated-row loss, checksum/index drift, or anything other than one exact generation advance. Its safe fixed vector matches the current Heritage schema-1 manager transition and public projection byte-for-byte. This does not yet cover Heritage's schema-2 direct-recording mutation, authenticate the authority record outside the server transaction, or replace deployed/PostgreSQL atomicity proof. The real Heritage branch `codex/syncshow-community-integration` now contains the matching scoped SyncShow device flow, song/public-link/sermon/publication/service-plan resources, immutable private sermon-change sources, anonymous link reader, public sermon routes, and Study Bible **On this passage**/**Appears in** sidebar and strict sermon viewer. It passes 171/171 Community contract tests, TypeScript checking, 144/144 reader assertions, and 80/80 reader protocol checks; a disposable PostgreSQL 17 run applied all 13 migrations and passed the real schema-v2 linked-plan lifecycle. The branch remains uncommitted, unmerged, and undeployed. Local contracts and disposable runtime evidence do not prove packaged desktop authorization, a production-data restore, deployed browser/phone access, or venue operation. ServiceProject publishing, static Content Server subscription in SyncShow, and remote Prepare authoring remain separate follow-up work. See [`docs/HERITAGE_COMMUNITY_SERMON_IMPLEMENTATION_PLAN.md`](docs/HERITAGE_COMMUNITY_SERMON_IMPLEMENTATION_PLAN.md) for the implementation record and remaining proof gates.
 
-macOS credential storage now fails closed without freezing the app. When
-Electron exposes the complete asynchronous protected-storage API, SyncShow
-treats that API as authoritative and bounds availability, encryption, and
-decryption to three seconds; it never falls through to a blocking synchronous
-call after an async failure. The exact fixed bytes were exercised in a separate
-ad-hoc QA packaged UI while the host denied login-Keychain access: Admin Settings
-returned a redacted recovery message after the bound, remained responsive, and
-the disposable Community server recorded no device grant. This proves the
-packaged failure path, not successful Community authorization or
-credential-after-restart recovery; those still require a host session whose
-login Keychain is genuinely available.
+Heritage Community approval no longer uses the macOS login Keychain. SyncShow
+encrypts its Community token with AES-256-GCM and a random app-local device key;
+the vault directory and key are created with owner-only permissions, and the
+connection survives an app restart without a computer-password prompt. This is
+an intentional convenience tradeoff: another process already running as the
+same computer user and able to read SyncShow's application data could obtain
+both the encrypted token and its key. Existing Keychain-backed Community
+connections require one Community-admin reapproval after this update. Google
+Drive remains separate and continues to use the operating system's protected
+credential storage.
 
 Separately, the current source completed the successful data path against a
 real disposable Heritage Community server backed by Payload and PostgreSQL.

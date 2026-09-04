@@ -2316,7 +2316,7 @@ function renderCommunitySettings() {
           ? 'Pulling Community sermon updates into the local library…'
           : 'Syncing the local and Community song libraries…')
         : canReadServiceDocuments
-          ? 'Community-created services are available from Prepare and Load. An opened service remains available locally for offline Show.'
+          ? 'Services prepared in Community are available from Load. An opened service remains available locally for offline Show.'
           : canReadServicePlans
             ? 'Community service plans are available in Prepare and remain local after import.'
             : canReadSongs && canReadSermons
@@ -2327,7 +2327,7 @@ function renderCommunitySettings() {
               ? 'This connection includes the shared sermon library. Song synchronization is not currently available.'
               : 'No currently approved Community library resource is available on this connection.');
     elements.communityConnectionHelp.textContent = canReadServiceDocuments
-      ? 'Use Open Community service in Load or Open shared service in Prepare. Opening downloads an exact revision; it does not publish or overwrite another service.'
+      ? 'Use Open from Heritage Community in Load. SyncShow downloads the exact revision and replaces the current Load service only after its offline package is complete.'
       : canReadServicePlans
         ? 'Use Browse plans in Prepare to review and import a Community plan.'
         : canReadSongs && canReadSermons
@@ -2356,7 +2356,7 @@ function renderCommunitySettings() {
     elements.communityConnectionStatusDetail.textContent = state.community.error
       || state.community.status?.message
       || 'Enter the server address and an admin email to connect the shared Community library.';
-    elements.communityConnectionHelp.textContent = 'Connecting sends an approval link to the admin email. SyncShow never shows or stores a server password here.';
+    elements.communityConnectionHelp.textContent = 'Connecting emails an approval link to the Community admin account and remembers this computer. SyncShow never asks for the computer’s system password.';
   }
 
   const inputsDisabled = !available || connected || pending || busy;

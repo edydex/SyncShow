@@ -219,6 +219,7 @@ const {
 } = require('./src/services/project/SongBatchImport');
 const { parseSongDocument } = require('./src/services/project/SongDocument');
 const {
+  AppLocalCredentialStorage,
   CommunityBinaryClient,
   CommunityClient,
   CommunityConnectionStore,
@@ -3159,14 +3160,20 @@ async function getCommunityServices() {
     throw new Error('Community storage is not available before SyncShow is ready.');
   }
   if (!communityServicesPromise) {
+    const communityStorageRoot = path.join(
+      app.getPath('userData'),
+      'community'
+    );
     communityServicesPromise = Promise.resolve({
       connectionStore: new CommunityConnectionStore({
-        storageRoot: path.join(app.getPath('userData'), 'community'),
-        safeStorage,
+        storageRoot: communityStorageRoot,
+        safeStorage: new AppLocalCredentialStorage({
+          storageRoot: path.join(communityStorageRoot, 'credentials')
+        }),
         maximumConnections: 1
       }),
       stateStore: new CommunitySyncStateStore({
-        storageRoot: path.join(app.getPath('userData'), 'community')
+        storageRoot: communityStorageRoot
       }),
       serviceDocumentOutbox: new HeritageServiceDocumentOutbox({
         rootPath: path.join(
@@ -3257,11 +3264,14 @@ function requireCommunityReconnectFor(error) {
   if (![
     'AUTH_REQUIRED',
     'AUTHORIZATION_EXPIRED',
+    'CREDENTIAL_RECONNECT_REQUIRED',
     'PERMISSION_DENIED'
   ].includes(error?.code)) return false;
   communityReconnectRequired = {
     code: error.code,
-    message: error.code === 'PERMISSION_DENIED'
+    message: error.code === 'CREDENTIAL_RECONNECT_REQUIRED'
+      ? 'This SyncShow update no longer uses the macOS login keychain for Community. Connect once with your Heritage Community admin account; no computer password is needed.'
+      : error.code === 'PERMISSION_DENIED'
       ? 'This Community account no longer has Community-editor permission. Connect again with a manager account.'
       : error.code === 'AUTHORIZATION_EXPIRED'
         ? 'This Community approval expired. Connect this computer again.'
@@ -4396,6 +4406,16 @@ async function communityLastSermonSyncFromState(connectionId) {
 
 async function communityStatusPayload({ refreshCapabilities = false } = {}) {
   const connection = await currentCommunityConnectionSummary({ refreshCapabilities });
+  if (connection
+    && !communityConnectionExpired(connection)
+    && !communityReconnectRequired) {
+    const { connectionStore } = await getCommunityServices();
+    try {
+      await connectionStore.getConnection(connection.id);
+    } catch (error) {
+      if (!requireCommunityReconnectFor(error)) throw error;
+    }
+  }
   const pending = pendingCommunityAuthorizations.values().next().value;
   if (pending) {
     return {
@@ -7428,7 +7448,7 @@ async function openCommunityPlannerWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      partition: 'persist:syncshow-community-planner'
+      partition: 'syncshow-community-planner'
     }
   });
   communityPlannerWindow = planner;
@@ -18589,9 +18609,17 @@ ipcMain.handle('community:connectPoll', async (event, request = {}) => {
 
     const { connectionStore, stateStore } = await getCommunityServices();
     let connectionId = pending.replaceConnectionId;
-    const previousConnection = connectionId
-      ? await connectionStore.getConnection(connectionId)
-      : null;
+    let previousConnection = null;
+    let previousCredentialUnavailable = false;
+    if (connectionId) {
+      try {
+        previousConnection = await connectionStore.getConnection(connectionId);
+      } catch (error) {
+        if (error?.code !== 'CREDENTIAL_RECONNECT_REQUIRED') throw error;
+        previousConnection = await connectionStore.getConnectionSummary(connectionId);
+        previousCredentialUnavailable = Boolean(previousConnection);
+      }
+    }
     if (connectionId && !previousConnection) connectionId = null;
     const sameServer = Boolean(
       previousConnection
@@ -18602,8 +18630,10 @@ ipcMain.handle('community:connectPoll', async (event, request = {}) => {
     const changingServers = Boolean(previousConnection && !sameServer);
     if (changingServers) {
       clearCommunitySermonMediaOperationState();
-      await connectionStore.disconnect(connectionId);
-      connectionId = null;
+      if (!previousCredentialUnavailable) {
+        await connectionStore.disconnect(connectionId);
+        connectionId = null;
+      }
     }
     let savedConnection;
     try {
@@ -18621,7 +18651,9 @@ ipcMain.handle('community:connectPoll', async (event, request = {}) => {
         expiresAt: grant.expiresAt
       });
     } catch (error) {
-      if (changingServers && previousConnection) {
+      if (changingServers
+        && previousConnection
+        && !previousCredentialUnavailable) {
         await connectionStore.saveConnection(previousConnection).catch(restoreError => {
           console.error(
             '[Community] Previous connection could not be restored after a failed replacement:',
@@ -18637,8 +18669,11 @@ ipcMain.handle('community:connectPoll', async (event, request = {}) => {
     if (changingServers && previousConnection) {
       await stateStore.removeConnectionState(previousConnection.id);
     }
-    communityConnectionWarning = null;
+    communityConnectionWarning = previousCredentialUnavailable
+      ? 'The previous Community approval could not be revoked automatically. Revoke the older SyncShow connection from Community admin.'
+      : null;
     if (previousConnection
+      && !previousCredentialUnavailable
       && previousConnection.accessToken !== grant.accessToken) {
       try {
         const revoked = await communityClientForConnection(previousConnection)

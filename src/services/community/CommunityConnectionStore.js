@@ -17,6 +17,9 @@ const CONNECTION_SCHEMA_VERSION = 5;
 const MAX_STORE_BYTES = 2 * 1024 * 1024;
 const MAX_CONNECTIONS = 64;
 const DEFAULT_SECURE_STORAGE_TIMEOUT_MS = 15000;
+const LEGACY_SECRET_FORMAT = 'electron-safe-storage-v1';
+const LOCAL_SECRET_FORMAT = 'app-local-aes-256-gcm-v1';
+const SECRET_FORMATS = new Set([LEGACY_SECRET_FORMAT, LOCAL_SECRET_FORMAT]);
 const CONNECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,99}$/;
 const SERVER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
@@ -229,7 +232,7 @@ function normalizeAccount(value) {
 }
 
 function normalizeSecret(value) {
-  if (!value || value.format !== 'electron-safe-storage-v1') {
+  if (!value || !SECRET_FORMATS.has(value.format)) {
     fail('CORRUPT_STORE', 'Saved community credentials are missing.');
   }
   const ciphertext = value.ciphertext;
@@ -240,7 +243,7 @@ function normalizeSecret(value) {
   if (!decoded.length || decoded.toString('base64') !== ciphertext) {
     fail('CORRUPT_STORE', 'Saved community credentials are invalid.');
   }
-  return { format: 'electron-safe-storage-v1', ciphertext };
+  return { format: value.format, ciphertext };
 }
 
 function normalizeRecord(value, {
@@ -384,7 +387,7 @@ class CommunityConnectionStore {
       && typeof safeStorage.decryptStringAsync === 'function'
     );
     if (!synchronous && !asynchronous) {
-      throw new TypeError('Community connection store requires Electron safeStorage');
+      throw new TypeError('Community connection store requires a credential storage provider');
     }
     if (!['darwin', 'linux', 'win32'].includes(platform)) {
       throw new TypeError('Community connection store platform is invalid');
@@ -428,10 +431,7 @@ class CommunityConnectionStore {
   }
 
   _unavailableMessage() {
-    if (this.platform === 'darwin') {
-      return 'Approve any macOS Keychain prompt for SyncShow, then click Connect again. If no prompt appears, unlock the login keychain, fully quit SyncShow, and reopen it.';
-    }
-    return 'Secure credential storage is unavailable. Unlock the system credential store, then reopen SyncShow.';
+    return 'Community credential storage is unavailable. Fully quit and reopen SyncShow, then connect with your Community admin account.';
   }
 
   async _boundedAsyncStorageOperation(operation) {
@@ -507,7 +507,7 @@ class CommunityConnectionStore {
       fail('ENCRYPTION_FAILED', 'Community credentials could not be encrypted.');
     }
     return {
-      format: 'electron-safe-storage-v1',
+      format: LOCAL_SECRET_FORMAT,
       ciphertext: encrypted.toString('base64')
     };
   }
@@ -525,15 +525,33 @@ class CommunityConnectionStore {
       return normalizeTokenBundle(JSON.parse(plaintext));
     } catch (error) {
       if (error instanceof CommunityConnectionStoreError) throw error;
+      if (error?.code === 'CREDENTIAL_RECONNECT_REQUIRED') {
+        fail(
+          'CREDENTIAL_RECONNECT_REQUIRED',
+          'Reconnect Heritage Community once with your Community admin account. No computer password is needed.',
+          error.code
+        );
+      }
       fail('DECRYPTION_FAILED', 'Saved community credentials could not be decrypted.', error?.code || error?.name);
+    }
+  }
+
+  _forgetSecret(secret) {
+    if (typeof this.safeStorage.forget !== 'function') return;
+    try {
+      this.safeStorage.forget(Buffer.from(secret.ciphertext, 'base64'));
+    } catch (_error) {
+      // A durable connection mutation must not be reported as failed only
+      // because best-effort session-memory cleanup was already unnecessary.
     }
   }
 
   async assertSecureStorageAvailable() {
     const probe = { accessToken: 'syncshow-community-storage-check' };
+    let encrypted = null;
     try {
       const mode = await this._storageMode();
-      const encrypted = await this._encrypt(probe, mode);
+      encrypted = await this._encrypt(probe, mode);
       const decrypted = await this._decrypt(encrypted, mode);
       if (decrypted.accessToken !== probe.accessToken) throw new Error('round-trip-failed');
       return true;
@@ -545,6 +563,8 @@ class CommunityConnectionStore {
         this._unavailableMessage(),
         error?.code || error?.name
       );
+    } finally {
+      if (encrypted) this._forgetSecret(encrypted);
     }
   }
 
@@ -652,6 +672,9 @@ class CommunityConnectionStore {
       if (index >= 0) records[index] = record;
       else records.push(record);
       await this._writeRecords(records);
+      if (previous && previous.secret.ciphertext !== record.secret.ciphertext) {
+        this._forgetSecret(previous.secret);
+      }
       return sanitize(record);
     });
   }
@@ -721,7 +744,8 @@ class CommunityConnectionStore {
       ) !== record.updatedAt) {
         fail('CONNECTION_CONFLICT', 'Community credentials changed since they were opened.');
       }
-      const previous = await this._decrypt(record.secret);
+      const previousSecret = record.secret;
+      const previous = await this._decrypt(previousSecret);
       record.secret = await this._encrypt({
         accessToken: input.accessToken,
         refreshToken: input.refreshToken === undefined
@@ -734,6 +758,7 @@ class CommunityConnectionStore {
       record.updatedAt = this._timestamp();
       records[index] = normalizeRecord(record);
       await this._writeRecords(records);
+      this._forgetSecret(previousSecret);
       return sanitize(records[index]);
     });
   }
@@ -742,9 +767,13 @@ class CommunityConnectionStore {
     const id = this._connectionId(connectionId);
     return this._serialize(async () => {
       const records = await this._readRecords();
+      const removed = records.filter(record => record.id === id);
       const retained = records.filter(record => record.id !== id);
       const disconnected = retained.length !== records.length;
-      if (disconnected) await this._writeRecords(retained);
+      if (disconnected) {
+        await this._writeRecords(retained);
+        for (const record of removed) this._forgetSecret(record.secret);
+      }
       return { disconnected };
     });
   }
