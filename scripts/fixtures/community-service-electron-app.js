@@ -16,6 +16,8 @@ const {
 
 const RESULT_PATH = process.env.SYNCSHOW_COMMUNITY_SERVICE_RESULT || '';
 const BASE_URL = process.env.SYNCSHOW_COMMUNITY_SERVICE_BASE_URL || '';
+const SERVICE_ID = process.env.SYNCSHOW_COMMUNITY_SERVICE_ID || '';
+const SERVICE_SELECTOR = `.shared-service-button[data-sync-id="${SERVICE_ID}"]`;
 const SCREENSHOT_ROOT =
   process.env.SYNCSHOW_COMMUNITY_SERVICE_SCREENSHOT_ROOT || '';
 const TIMEOUT_MS = 180_000;
@@ -93,6 +95,7 @@ async function run() {
   assert.equal(path.isAbsolute(RESULT_PATH), true);
   assert.equal(path.isAbsolute(SCREENSHOT_ROOT), true);
   assert.match(BASE_URL, /^http:\/\/127\.0\.0\.1:\d+\/$/u);
+  assert.match(SERVICE_ID, /^[a-z0-9][a-z0-9-]{2,127}$/u);
 
   const controlWindow = await waitFor(() => {
     const candidate = BrowserWindow.getAllWindows().find(window =>
@@ -174,7 +177,7 @@ async function run() {
     sharedList = await waitFor(
       () => renderer(controlWindow, `(() => {
         const dialog = document.querySelector('#sharedServicesDialog');
-        const button = document.querySelector('.shared-service-button[data-sync-id="service-2026-08-23"]');
+        const button = document.querySelector(${JSON.stringify(SERVICE_SELECTOR)});
         const notice = document.querySelector('#sharedServicesNotice')?.textContent?.trim() || '';
         return dialog?.open && button && !button.disabled
           ? { title: button.querySelector('strong')?.textContent || '', detail: button.querySelector('span')?.textContent || '', notice }
@@ -198,7 +201,10 @@ async function run() {
     throw new Error(`${error.message} Diagnostic: ${JSON.stringify(diagnostic)}`);
   }
   const sharedListScreenshot = await capture(controlWindow, '01-community-service-list');
-  await renderer(controlWindow, `document.querySelector('.shared-service-button[data-sync-id="service-2026-08-23"]').click()`);
+  await renderer(
+    controlWindow,
+    `document.querySelector(${JSON.stringify(SERVICE_SELECTOR)}).click()`
+  );
 
   let loadSurface;
   try {
@@ -248,7 +254,7 @@ async function run() {
   const store = new ServiceProjectStore({
     rootPath: path.join(app.getPath('userData'), 'service-projects')
   });
-  const stored = await store.read('service-2026-08-23');
+  const stored = await store.read(SERVICE_ID);
   const timeline = compileServiceProject(stored.project);
   const installedAssets = [];
   for (const asset of Object.values(stored.project.assets)) {
@@ -286,7 +292,9 @@ async function run() {
       const counter = document.querySelector('#totalSlides')?.textContent?.trim() || '';
       const title = document.querySelector('#showOutputStateTitle')?.textContent?.trim() || '';
       const detail = document.querySelector('#showOutputStateDetail')?.textContent?.trim() || '';
-      return counter === '84' ? { counter, title, detail } : null;
+      return counter === ${JSON.stringify(String(timeline.cueIds.length))}
+        ? { counter, title, detail }
+        : null;
     })()`),
     'the live Show stage',
     60_000

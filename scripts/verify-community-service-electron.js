@@ -202,7 +202,7 @@ async function startCommunityServer({ documentSource, project, assets }) {
   };
 }
 
-function runElectron({ profilePath, resultPath, baseUrl, screenshotRoot }) {
+function runElectron({ profilePath, resultPath, baseUrl, serviceId, screenshotRoot }) {
   const entryPath = path.resolve(
     __dirname,
     'fixtures',
@@ -213,6 +213,7 @@ function runElectron({ profilePath, resultPath, baseUrl, screenshotRoot }) {
   environment.SYNCSHOW_TEST_USER_DATA_DIR = profilePath;
   environment.SYNCSHOW_COMMUNITY_SERVICE_RESULT = resultPath;
   environment.SYNCSHOW_COMMUNITY_SERVICE_BASE_URL = baseUrl;
+  environment.SYNCSHOW_COMMUNITY_SERVICE_ID = serviceId;
   environment.SYNCSHOW_COMMUNITY_SERVICE_SCREENSHOT_ROOT = screenshotRoot;
   environment.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
@@ -305,6 +306,7 @@ async function main() {
       profilePath,
       resultPath,
       baseUrl: community.baseUrl,
+      serviceId: project.id,
       screenshotRoot
     });
     let result;
