@@ -36,6 +36,7 @@
     'bible',
     'sermon',
     'picture',
+    'video',
     'notice',
     'blank',
     'slide'
@@ -64,6 +65,7 @@
     'sermon',
     'notice',
     'picture',
+    'video',
     'blank',
     'imported-deck'
   ]);

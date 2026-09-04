@@ -398,6 +398,10 @@ contextBridge.exposeInMainWorld('api', {
   getCommunityStatus: () => ipcRenderer.invoke('community:status'),
   openCommunityPlanner: () => ipcRenderer.invoke('community:planner:open'),
   getCommunityPlannerState: () => ipcRenderer.invoke('community:planner:state'),
+  layoutCommunityPlanner: (request = {}) => ipcRenderer.invoke('community:planner:layout', {
+    visible: request?.visible === true,
+    bounds: request?.bounds
+  }),
   startCommunityConnection: (request = {}) => ipcRenderer.invoke('community:connectStart', {
     serverUrl: request?.serverUrl,
     email: request?.email

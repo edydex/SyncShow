@@ -47,23 +47,45 @@
     </header>
 
     <section id="preparePanel" class="prepare-panel" aria-labelledby="communityPrepareHeading">
+      <div class="prepare-mode-bar">
+        <div>
+          <p class="section-kicker">PREPARE</p>
+          <h2>Build the service</h2>
+        </div>
+        <nav class="prepare-mode-tabs" role="tablist" aria-label="Prepare location">
+          <button type="button" id="btnPrepareModeCommunity" class="prepare-mode-tab is-active" role="tab" aria-selected="true" aria-controls="communityPrepareShell">
+            Heritage Community
+            <small>Shared with the church</small>
+          </button>
+          <button type="button" id="btnPrepareModeLocal" class="prepare-mode-tab" role="tab" aria-selected="false" aria-controls="legacyPrepareShell">
+            This computer
+            <small>Works offline · import/export</small>
+          </button>
+        </nav>
+      </div>
+
       <div id="communityPrepareShell" class="community-prepare-shell">
-        <div class="community-prepare-mark" aria-hidden="true">H</div>
-        <div class="community-prepare-copy">
-          <p class="section-kicker">HERITAGE COMMUNITY</p>
-          <h2 id="communityPrepareHeading" tabindex="-1">Prepare in the shared Community planner</h2>
-          <p>The Prepare window is the same planner used by Heritage Community. Its layout and tools now come directly from the connected Community server, so there is only one planner design to maintain.</p>
-          <div class="community-prepare-destination" aria-live="polite">
-            <span>Connected planner</span>
-            <strong id="communityPrepareServer">Connect Heritage Community to begin</strong>
+        <div class="community-prepare-toolbar">
+          <div>
+            <h2 id="communityPrepareHeading" tabindex="-1">Community planner</h2>
+            <p id="communityPrepareServer">The same planner used by Heritage Community, shown inside SyncShow.</p>
           </div>
-          <p id="communityPrepareStatus" class="community-prepare-status" role="status" aria-live="polite">Checking this computer’s Community connection…</p>
           <div class="community-prepare-actions">
-            <button type="button" id="btnOpenCommunityPlanner" class="btn btn-primary">Open Prepare</button>
+            <button type="button" id="btnOpenCommunityPlanner" class="btn btn-outline">Reload planner</button>
             <button type="button" id="btnPrepareCommunitySettings" class="btn btn-secondary">Community settings</button>
             <button type="button" id="btnPrepareGoToLoad" class="btn btn-quiet">Return to Load</button>
           </div>
-          <p class="community-prepare-account-note">Sign in there with your Heritage Community account with admin access. SyncShow will never ask for this computer’s system password.</p>
+        </div>
+        <div class="community-prepare-state-row">
+          <p id="communityPrepareStatus" class="community-prepare-status" role="status" aria-live="polite">Checking this computer’s Community connection…</p>
+          <p class="community-prepare-account-note">Uses only your Heritage Community admin account—never the computer’s system password.</p>
+        </div>
+        <div id="communityPlannerViewport" class="community-planner-viewport" aria-label="Embedded Heritage Community service planner">
+          <div class="community-planner-placeholder">
+            <span class="community-prepare-mark" aria-hidden="true">H</span>
+            <strong>Loading the Community planner here…</strong>
+            <small>If Community is unavailable, choose This computer to keep working offline.</small>
+          </div>
         </div>
       </div>
 
@@ -713,52 +735,86 @@
             <div>
               <p class="section-kicker">LOAD</p>
               <h2 id="loadHeading">Load today’s service</h2>
-              <p>Open one prepared service from Heritage Community, or import the church’s PowerPoint files.</p>
-            </div>
-            <div class="load-intro-actions">
-              <span id="loadAutoStatus" class="load-auto-status" role="status" aria-live="polite">
-                Checking automatic loading…
-              </span>
+              <p>Choose a SyncShow service, or use the legacy PowerPoint workflow.</p>
             </div>
           </div>
 
-          <div class="load-source-choices" aria-label="Ways to load a service">
-            <button type="button" id="btnOpenCommunityServiceFromLoad" class="load-source-choice is-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog">
-              <span class="load-source-choice-mark" aria-hidden="true">H</span>
-              <span>
-                <strong>Open from Heritage Community</strong>
-                <small>Choose a service prepared by your church</small>
-              </span>
-              <span class="load-source-choice-action" aria-hidden="true">Choose service&nbsp; →</span>
+          <nav class="load-mode-tabs" role="tablist" aria-label="Service file type">
+            <button type="button" id="loadTabSyncShow" class="load-mode-tab is-active" role="tab" aria-selected="true" aria-controls="loadSyncShowPanel" data-load-tab="syncshow">
+              <span class="load-source-choice-mark" aria-hidden="true">S</span>
+              <span><strong>SyncShow service</strong><small>Local file or Heritage Community</small></span>
             </button>
-            <button type="button" id="btnOpenPptxImportFromLoad" class="load-source-choice">
+            <button type="button" id="loadTabPptx" class="load-mode-tab" role="tab" aria-selected="false" aria-controls="loadPptxPanel" data-load-tab="pptx" tabindex="-1">
               <span class="load-source-choice-mark" aria-hidden="true">P</span>
-              <span>
-                <strong>Import PPTXs</strong>
-                <small>Use Google Drive or a folder on this computer</small>
-              </span>
-              <span class="load-source-choice-action" aria-hidden="true">Open setup&nbsp; →</span>
+              <span><strong>Legacy PPTX files</strong><small>Load one or more PowerPoints</small></span>
             </button>
-          </div>
+          </nav>
 
-        <section id="loadServiceHandoff" class="load-service-handoff" aria-labelledby="loadServiceHandoffTitle" hidden>
-          <div class="load-service-handoff-heading">
-            <div>
-              <p class="section-kicker">REVIEWED SERVICE</p>
-              <h3 id="loadServiceHandoffTitle">Prepared native service</h3>
-              <p id="loadServiceHandoffSchedule" class="load-service-handoff-schedule"></p>
+          <section id="loadSyncShowPanel" class="load-mode-panel" role="tabpanel" aria-labelledby="loadTabSyncShow" data-load-panel="syncshow">
+            <div class="load-source-actions">
+              <button type="button" id="btnOpenCommunityServiceFromLoad" class="load-source-choice is-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog">
+                <span class="load-source-choice-mark" aria-hidden="true">H</span>
+                <span><strong>Heritage Community</strong><small>Open a church-synced service</small></span>
+                <span class="load-source-choice-action" aria-hidden="true">Choose&nbsp; →</span>
+              </button>
+              <button type="button" id="btnImportSyncShowFileFromLoad" class="load-source-choice">
+                <span class="load-source-choice-mark" aria-hidden="true">↥</span>
+                <span><strong>Import SyncShow file</strong><small>Open a portable service without a server</small></span>
+                <span class="load-source-choice-action" aria-hidden="true">Import&nbsp; →</span>
+              </button>
             </div>
-            <span id="loadServiceHandoffBadge" class="load-service-handoff-badge">Exact revision</span>
-          </div>
-          <p id="loadServiceHandoffNotes" class="load-service-handoff-notes"></p>
-          <div class="load-service-handoff-operational-summary">
-            <p id="loadServiceHandoffRunSheet" class="load-service-handoff-run-sheet" hidden></p>
-            <p id="loadServiceHandoffTeam" class="load-service-handoff-team" hidden></p>
-          </div>
-          <p id="loadServiceHandoffReview" class="load-service-handoff-review"></p>
-        </section>
 
-        <div class="setup-grid" id="inputCards" aria-label="Service slideshow inputs"></div>
+            <section class="local-service-library" aria-labelledby="localServiceLibraryHeading">
+              <div class="local-service-library-heading">
+                <div>
+                  <h3 id="localServiceLibraryHeading">Saved on this computer</h3>
+                  <p>Services remain here for offline editing and Show.</p>
+                </div>
+                <button type="button" id="btnRefreshLocalServices" class="btn btn-quiet btn-compact">Refresh</button>
+              </div>
+              <div id="loadLocalServiceList" class="local-service-list" role="list" aria-live="polite">
+                <p class="local-service-empty">Loading saved services…</p>
+              </div>
+            </section>
+
+            <section id="loadServiceHandoff" class="load-service-handoff" aria-labelledby="loadServiceHandoffTitle" hidden>
+              <div class="load-service-handoff-heading">
+                <div>
+                  <p class="section-kicker">READY FOR SHOW</p>
+                  <h3 id="loadServiceHandoffTitle">Prepared native service</h3>
+                  <p id="loadServiceHandoffSchedule" class="load-service-handoff-schedule"></p>
+                </div>
+                <span id="loadServiceHandoffBadge" class="load-service-handoff-badge">Exact revision</span>
+              </div>
+              <div class="load-service-handoff-actions">
+                <button type="button" id="btnEditLoadedService" class="btn btn-outline">Open in Prepare</button>
+                <button type="button" id="btnLoadedServiceScreens" class="btn btn-secondary">Screen routing</button>
+              </div>
+              <details id="loadServiceReviewDetails" class="load-service-review-details" hidden>
+                <summary>Notes and readiness details</summary>
+                <p id="loadServiceHandoffNotes" class="load-service-handoff-notes" hidden></p>
+                <div class="load-service-handoff-operational-summary">
+                  <p id="loadServiceHandoffRunSheet" class="load-service-handoff-run-sheet" hidden></p>
+                  <p id="loadServiceHandoffTeam" class="load-service-handoff-team" hidden></p>
+                </div>
+                <p id="loadServiceHandoffReview" class="load-service-handoff-review" hidden></p>
+              </details>
+            </section>
+          </section>
+
+          <section id="loadPptxPanel" class="load-mode-panel" role="tabpanel" aria-labelledby="loadTabPptx" data-load-panel="pptx" hidden>
+            <div class="legacy-pptx-intro">
+              <div>
+                <h3>Load the PowerPoints for this service</h3>
+                <p>Choose one, two, three, or more files. Automatic Google Drive and folder loading is optional.</p>
+                <span id="loadAutoStatus" class="load-auto-status" role="status" aria-live="polite">Checking automatic loading…</span>
+              </div>
+              <button type="button" id="btnOpenPptxImportFromLoad" class="btn btn-secondary">Google Drive &amp; folder setup</button>
+            </div>
+            <div id="inputCardsHostLoad">
+              <div class="setup-grid" id="inputCards" aria-label="Service slideshow inputs"></div>
+            </div>
+          </section>
 
         <section class="readiness-card" aria-labelledby="readinessTitle">
           <div class="readiness-icon" id="readinessIcon" aria-hidden="true">…</div>
@@ -789,8 +845,8 @@
                 <small>Account, services, and library sync</small>
               </button>
               <button type="button" id="settingsTabGoogleDrive" class="admin-settings-tab" role="tab" aria-selected="false" aria-controls="settingsGoogleDrivePanel" data-settings-tab="google-drive" tabindex="-1">
-                <span>Google Drive &amp; PPTX</span>
-                <small>Automatic PowerPoint loading</small>
+                <span>PPTX Loading</span>
+                <small>Google Drive and local folders</small>
               </button>
               <button type="button" id="settingsTabScreens" class="admin-settings-tab" role="tab" aria-selected="false" aria-controls="settingsScreensPanel" data-settings-tab="screens" tabindex="-1">
                 <span>Screen Setup</span>
@@ -1014,10 +1070,10 @@
               <section class="settings-section display-tools-section" aria-labelledby="displayToolsHeading">
                 <div class="settings-section-heading">
                   <div>
-                    <p class="section-kicker">SCREENS</p>
-                    <h3 id="displayToolsHeading">Connected screen tools</h3>
+                    <p class="section-kicker">STEP 1</p>
+                    <h3 id="displayToolsHeading">Find the screens</h3>
                   </div>
-                  <p>Use these after changing cables, adapters, or monitor order.</p>
+                  <p>Use Identify after changing cables or monitor order.</p>
                 </div>
                 <div class="display-tools-actions">
                   <button id="btnRefreshDisplays" class="btn btn-secondary" title="Look for connected screens again">
@@ -1030,31 +1086,50 @@
               </section>
 
               <div class="settings-body">
-            <div class="friendly-setting">
-              <div>
-                <label for="friendlyMode">Normal Person Friendly Mode</label>
-                <p>Keep the safe defaults and hide controls volunteers should not need.</p>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="friendlyMode" checked>
-                <span class="switch-track" aria-hidden="true"></span>
-                <span class="sr-only">Normal Person Friendly Mode</span>
-              </label>
-            </div>
+            <input type="checkbox" id="friendlyMode" checked hidden>
 
             <section class="settings-section" id="outputSettingsSection" aria-labelledby="outputSettingsHeading">
               <div class="settings-section-heading">
                 <div>
-                  <p class="section-kicker">OUTPUTS</p>
-                  <h3 id="outputSettingsHeading">Venue output health</h3>
+                  <p class="section-kicker">STEP 2</p>
+                  <h3 id="outputSettingsHeading">Choose what appears where</h3>
                 </div>
-                <p>Friendly Mode uses the saved venue setup. SyncShow will never silently substitute a missing screen.</p>
+                <p>Each output gets one physical screen and one slideshow.</p>
               </div>
               <div id="outputHealthSummary" class="output-health-summary" role="status" aria-live="polite"></div>
-              <p class="settings-note">Use Identify screens whenever cables or monitor order changed. Missing screens stay missing until an admin deliberately remaps them.</p>
+              <div id="inputCardsHostScreens" class="service-routing-settings" hidden>
+                <div class="service-routing-settings-heading">
+                  <strong>This service’s slideshow routing</strong>
+                  <small>Change a prepared service’s exceptional routing here—not on the main Load page.</small>
+                </div>
+              </div>
+              <div class="profile-editor-block output-editor-block">
+                <div class="profile-editor-heading">
+                  <div>
+                    <strong>Screen assignments</strong>
+                    <small>Pick a connected screen and slideshow for each output. Open More options only when needed.</small>
+                  </div>
+                  <button type="button" id="btnAddOutput" class="btn btn-outline btn-compact">Add output</button>
+                </div>
+                <ol id="outputSettingsList" class="profile-list output-profile-list" aria-label="Configured outputs"></ol>
+              </div>
+              <div class="profile-actions">
+                <button type="button" id="btnResetProfileDraft" class="btn btn-quiet">Reset draft to safe defaults</button>
+                <span class="profile-actions-spacer"></span>
+                <button type="button" id="btnCancelProfileChanges" class="btn btn-secondary" disabled>Discard changes</button>
+                <button type="button" id="btnSaveProfile" class="btn btn-primary" disabled>Save screen setup</button>
+              </div>
+              <p id="profileEditorStatus" class="settings-note" role="status" aria-live="polite">No unsaved screen changes.</p>
+              <p class="settings-note">SyncShow never silently substitutes a missing screen.</p>
             </section>
 
             <div id="expertSettingsSection" class="expert-settings">
+              <details class="settings-tier" id="venueProfileDetails">
+                <summary>
+                  <span class="settings-tier-number">3</span>
+                  <span><strong>Venue defaults</strong><small>Names, normal slideshow routes, and volunteer controls</small></span>
+                  <span class="summary-action">Expand</span>
+                </summary>
               <section class="settings-section" id="venueProfileSection" aria-labelledby="venueProfileHeading">
                 <div class="settings-section-heading">
                   <div>
@@ -1107,37 +1182,27 @@
                   <option value="Australia/Sydney"></option>
                 </datalist>
 
-                <div class="profile-editor-block">
+                <details class="profile-editor-block profile-editor-more">
+                  <summary>
+                    <span><strong>PPTX input matching</strong><small>Only needed when filenames or input channels are unusual</small></span>
+                    <span class="summary-action">Expand</span>
+                  </summary>
                   <div class="profile-editor-heading">
-                    <div>
-                      <strong>Slideshow inputs</strong>
-                      <small>Rename these for your church, or add another deck channel.</small>
-                    </div>
+                    <span></span>
                     <button type="button" id="btnAddInputRole" class="btn btn-outline btn-compact">Add input</button>
                   </div>
                   <ol id="inputRoleSettingsList" class="profile-list" aria-label="Configured slideshow inputs"></ol>
-                </div>
+                </details>
 
-                <div class="profile-editor-block">
-                  <div class="profile-editor-heading">
-                    <div>
-                      <strong>Outputs</strong>
-                      <small>Add, duplicate, rename, reorder, or remove destination screens.</small>
-                    </div>
-                    <button type="button" id="btnAddOutput" class="btn btn-outline btn-compact">Add output</button>
-                  </div>
-                  <ol id="outputSettingsList" class="profile-list output-profile-list" aria-label="Configured outputs"></ol>
-                </div>
-
-                <div class="profile-actions">
-                  <button type="button" id="btnResetProfileDraft" class="btn btn-quiet">Reset draft to safe defaults</button>
-                  <span class="profile-actions-spacer"></span>
-                  <button type="button" id="btnCancelProfileChanges" class="btn btn-secondary" disabled>Discard changes</button>
-                  <button type="button" id="btnSaveProfile" class="btn btn-primary" disabled>Save venue profile</button>
-                </div>
-                <p id="profileEditorStatus" class="settings-note" role="status" aria-live="polite">No unsaved profile changes.</p>
               </section>
+              </details>
 
+              <details class="settings-tier" id="technicalSettingsDetails">
+                <summary>
+                  <span class="settings-tier-number">4</span>
+                  <span><strong>Advanced Show behavior</strong><small>Fade timing and Stage-Facing text tuning</small></span>
+                  <span class="summary-action">Expand</span>
+                </summary>
               <section class="settings-section" aria-labelledby="technicalSettingsHeading">
                 <div class="settings-section-heading">
                   <div>
@@ -1192,6 +1257,7 @@
                   <span><strong>Experimental synchronized reveal</strong><small>Best-effort timing across screens; verify on venue hardware</small></span>
                 </label>
               </section>
+              </details>
             </div>
           </div>
               </section>

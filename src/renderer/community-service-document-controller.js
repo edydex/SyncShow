@@ -383,16 +383,20 @@
             setCard(state.autosaveMessage, 'warning');
             onStatus(state.autosaveMessage);
           } else if (saved.state === 'queued') {
-            state.autosaveMessage = 'Saved locally. This edit will synchronize when Community is reachable.';
+            state.autosaveMessage = `Saved as v${requested.project.revision} offline. It will synchronize when Community is reachable.`;
             setCard(state.autosaveMessage, 'warning');
           } else {
             state.autosaveMessage = '';
-            setCard('Saved locally and to Heritage Community.', 'success');
+            setCard(`Saved as v${requested.project.revision} locally and in Heritage Community.`, 'success');
           }
         }
       } catch (error) {
+        const current = prepareController.getCurrent();
+        const version = Number.isSafeInteger(current.project?.revision)
+          ? `v${current.project.revision}`
+          : 'a new local version';
         state.autosaveMessage = error.message;
-        setCard(`Saved locally. Community save needs attention: ${error.message}`, 'warning');
+        setCard(`Saved as ${version} offline. Community sync needs attention: ${error.message}`, 'warning');
       } finally {
         state.autosaveBusy = false;
         if (state.autosave) scheduleAutosave();

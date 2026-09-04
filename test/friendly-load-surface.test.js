@@ -86,13 +86,15 @@ test('Friendly Load keeps only operator essentials on the normal surface', () =>
     'folder setup must not appear among normal operator essentials');
 });
 
-test('Load offers one clear Community path and one separate PPTX setup path', () => {
+test('Load separates SyncShow services from the legacy PPTX setup path', () => {
   const loadEssentials = elementBlockById(html, 'loadEssentials');
 
   assertContainsId(loadEssentials, 'btnOpenCommunityServiceFromLoad');
+  assertContainsId(loadEssentials, 'btnImportSyncShowFileFromLoad');
   assertContainsId(loadEssentials, 'btnOpenPptxImportFromLoad');
-  assert.match(loadEssentials, /Open from Heritage Community/);
-  assert.match(loadEssentials, /Import PPTXs/);
+  assert.match(loadEssentials, /<strong>Heritage Community<\/strong>/);
+  assert.match(loadEssentials, /<strong>Import SyncShow file<\/strong>/);
+  assert.match(loadEssentials, /<strong>Legacy PPTX files<\/strong>/);
   assert.match(
     appSource,
     /elements\.btnOpenPptxImportFromLoad\.addEventListener\('click', \(\) => \{\s*openSettings\('google-drive'\)/,
@@ -108,10 +110,11 @@ test('Prepare opens the single planner supplied by Heritage Community', () => {
   assertContainsId(communityShell, 'btnOpenCommunityPlanner');
   assertContainsId(communityShell, 'btnPrepareCommunitySettings');
   assert.match(communityShell, /same planner used by Heritage Community/);
-  assert.match(communityShell, /only one planner design to maintain/);
+  assert.match(communityShell, /shown inside SyncShow/);
+  assertContainsId(communityShell, 'communityPlannerViewport');
   assert.match(preparePanel, /id="legacyPrepareShell"[^>]+hidden/,
-    'the older native handoff tools must not be the normal Prepare surface');
-  assert.match(appSource, /activation = openCommunityPrepare\(\)/);
+    'the local offline tools stay a deliberate second Prepare mode');
+  assert.match(appSource, /activatePrepareMode\(requestedMode, activationOptions\)/);
   assert.match(appSource, /window\.api\.openCommunityPlanner\(\)/);
 });
 

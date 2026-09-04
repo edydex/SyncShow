@@ -635,8 +635,10 @@ test('the Prepare stage keeps the receipt-only activation mode after exact open'
   const source = functionSource(appSource, 'setWorkflowStage');
   assert.match(
     source,
-    /prepareController\?\.activate\(activationOptions\)/
+    /activatePrepareMode\(requestedMode, activationOptions\)/
   );
+  const modeSource = functionSource(appSource, 'activatePrepareMode');
+  assert.match(modeSource, /prepareController\?\.activate\(options\)/);
   const action = functionSource(appSource, 'openPostShowSermonHandoff');
   assert.match(
     action,

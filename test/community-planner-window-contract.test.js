@@ -11,11 +11,14 @@ const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8');
 
-test('Prepare uses the connected Community server as the single planner source', () => {
+test('Prepare embeds the connected Community server as its shared planner source', () => {
   assert.match(main, /currentCommunityConnectionSummary\(\{\s*refreshCapabilities: true\s*\}\)/u);
   assert.match(main, /parsed\.pathname = '\/admin\/plan-service'/u);
   assert.match(main, /const plannerUrl = safeCommunityPlannerUrl\(connection\.baseUrl\)/u);
-  assert.match(main, /await planner\.loadURL\(plannerUrl\.href\)/u);
+  assert.match(main, /const planner = new WebContentsView/u);
+  assert.match(main, /controlWindow\.contentView\.addChildView\(planner\)/u);
+  assert.match(main, /await planner\.webContents\.loadURL\(plannerUrl\.href\)/u);
+  assert.match(html, /id="communityPlannerViewport"/u);
   assert.doesNotMatch(
     main,
     /openCommunityPlannerWindow\([^)]*url/u,
@@ -23,7 +26,7 @@ test('Prepare uses the connected Community server as the single planner source',
   );
 });
 
-test('Community planner window keeps Electron privileges and navigation locked down', () => {
+test('embedded Community planner keeps Electron privileges and navigation locked down', () => {
   assert.match(main, /nodeIntegration: false/u);
   assert.match(main, /contextIsolation: true/u);
   assert.match(main, /sandbox: true/u);
@@ -51,8 +54,12 @@ test('renderer receives only narrow planner open and status capabilities', () =>
   assert.match(preload, /openCommunityPlanner: \(\) => ipcRenderer\.invoke\('community:planner:open'\)/u);
   assert.match(preload, /getCommunityPlannerState: \(\) => ipcRenderer\.invoke\('community:planner:state'\)/u);
   assert.match(preload, /onCommunityPlannerState: \(callback\) =>/u);
+  assert.match(preload, /layoutCommunityPlanner: \(request = \{\}\) => ipcRenderer\.invoke\('community:planner:layout'/u);
   assert.match(main, /ipcMain\.handle\('community:planner:open'/u);
   assert.match(main, /ipcMain\.handle\('community:planner:state'/u);
+  assert.match(main, /ipcMain\.handle\('community:planner:layout'/u);
+  assert.match(main, /bounds\.width < 640 \|\| bounds\.height < 420/u);
+  assert.match(app, /elements\.communityPlannerViewport\.getBoundingClientRect\(\)/u);
 });
 
 test('closing Community Prepare clears the stale open status', () => {
@@ -62,10 +69,11 @@ test('closing Community Prepare clears the stale open status', () => {
   );
 });
 
-test('normal Prepare never asks for a computer password or activates the local editor', () => {
-  assert.match(html, /Heritage Community account with admin access/u);
-  assert.match(html, /never ask for this computer.s system password/u);
-  assert.match(app, /const localTools = activationOptions\?\.localTools === true/u);
-  assert.match(app, /if \(localTools\) \{[\s\S]*prepareController\?\.activate/u);
-  assert.match(app, /\} else \{[\s\S]*activation = openCommunityPrepare\(\)/u);
+test('Prepare offers explicit shared and offline workspaces without a computer password', () => {
+  assert.match(html, /Uses only your Heritage Community admin account[^<]*never the computer.s system password/u);
+  assert.match(html, /id="btnPrepareModeCommunity"[\s\S]*Heritage Community/u);
+  assert.match(html, /id="btnPrepareModeLocal"[\s\S]*This computer[\s\S]*Works offline/u);
+  assert.match(app, /const requestedMode = activationOptions\?\.localTools === true[\s\S]*communityIsConnected\(\)[\s\S]*: 'local'/u);
+  assert.match(app, /if \(local\) \{[\s\S]*prepareController\?\.activate/u);
+  assert.match(app, /return openCommunityPrepare\(\)/u);
 });

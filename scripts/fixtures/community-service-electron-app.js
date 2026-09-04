@@ -118,8 +118,8 @@ async function run() {
     'the Load Community service action'
   );
   assert.deepEqual(initialLoad, {
-    title: 'Open from Heritage Community',
-    detail: 'Choose a service prepared by your church',
+    title: 'Heritage Community',
+    detail: 'Open a church-synced service',
     disabled: false
   });
 
@@ -163,6 +163,38 @@ async function run() {
   await waitFor(
     () => renderer(controlWindow, `!document.querySelector('#advancedSetupDetails')?.open`),
     'Admin Settings to close'
+  );
+  await renderer(controlWindow, `document.querySelector('#btnStagePrepare').click()`);
+  const expectedPlannerUrl = new URL('/admin/plan-service', BASE_URL).href;
+  const plannerSurface = await waitFor(async () => {
+    const shell = await renderer(controlWindow, `(() => {
+      const viewport = document.querySelector('#communityPlannerViewport')?.getBoundingClientRect();
+      return document.body.classList.contains('prepare-stage') && viewport
+        ? { width: Math.round(viewport.width), height: Math.round(viewport.height) }
+        : null;
+    })()`);
+    const planner = electron.webContents.getAllWebContents().find(contents =>
+      contents.getURL() === expectedPlannerUrl
+    );
+    const plannerState = await renderer(controlWindow, `window.api.getCommunityPlannerState()`);
+    return shell && planner && plannerState?.data?.open && plannerState?.data?.visible
+      ? {
+          ...shell,
+          url: planner.getURL(),
+          embedded: plannerState.data.embedded,
+          visible: plannerState.data.visible
+        }
+      : null;
+  }, 'the embedded Community planner', 20_000);
+  assert.equal(plannerSurface.embedded, true);
+  assert.equal(plannerSurface.visible, true);
+  assert.ok(plannerSurface.width >= 640);
+  assert.ok(plannerSurface.height >= 420);
+  const plannerScreenshot = await capture(controlWindow, '00-community-planner-embedded');
+  await renderer(controlWindow, `document.querySelector('#btnStageLoad').click()`);
+  await waitFor(
+    () => renderer(controlWindow, `window.api.getCommunityPlannerState().then(result => result?.data?.visible === false)`),
+    'the embedded planner to hide on Load'
   );
   const connectionApiStatus = await renderer(controlWindow, `window.api.getCommunityStatus()`);
   assert.equal(
@@ -352,6 +384,7 @@ async function run() {
       outputs: outputSurfaces
     },
     screenshots: {
+      planner: plannerScreenshot,
       sharedList: sharedListScreenshot,
       load: loadScreenshot,
       show: showScreenshot

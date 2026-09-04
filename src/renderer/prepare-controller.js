@@ -16224,10 +16224,12 @@
         elements.projectMeta.textContent = 'Choose a service from the menu above.';
       } else {
         elements.rundownHeading.textContent = project.title;
+        const localVersion = `v${project.revision} · saved on this computer`;
         elements.projectMeta.textContent = isPowerPointCompanionProject(project)
-          ? `${formatDate(project.serviceDate)} · PowerPoint service record · ${rows.length} ${rows.length === 1 ? 'record' : 'records'}`
+          ? `${formatDate(project.serviceDate)} · ${localVersion} · PowerPoint service record · ${rows.length} ${rows.length === 1 ? 'record' : 'records'}`
           : [
               formatDate(project.serviceDate),
+              localVersion,
               project.planning
                 ? `${servicePlanningStatusLabel(project.planning.status)}${project.planning.startTime ? ` · ${project.planning.startTime}` : ''}`
                 : '',
@@ -32037,6 +32039,7 @@
     const controller = Object.freeze({
       activate,
       initialize,
+      importProject,
       openProjectById: projectId => openProject(projectId),
       openCurrentServiceCompanion,
       openServiceHandoff,

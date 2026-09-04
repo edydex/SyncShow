@@ -59,6 +59,16 @@ function sendJson(response, value, status = 200) {
   response.end(bytes);
 }
 
+function sendHtml(response, html, status = 200) {
+  const bytes = Buffer.from(html);
+  response.writeHead(status, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': String(bytes.length),
+    'Cache-Control': 'no-store'
+  });
+  response.end(bytes);
+}
+
 async function startCommunityServer({ documentSource, project, assets }) {
   const documentRevision = crypto
     .createHash('sha256')
@@ -109,6 +119,10 @@ async function startCommunityServer({ documentSource, project, assets }) {
           }
         }
       });
+    }
+
+    if (url.pathname === '/admin/plan-service' && request.method === 'GET') {
+      return sendHtml(response, '<!doctype html><html><body><main><h1>Community service planner</h1><p>Embedded verification planner</p></main></body></html>');
     }
 
     if (url.pathname.endsWith('/auth/device/start') && request.method === 'POST') {

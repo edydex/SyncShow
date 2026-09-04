@@ -29,6 +29,13 @@ const state = {
   advancedWarningAcknowledged: false,
   advancedWarningAction: null,
   settingsTab: 'community',
+  prepareMode: 'community',
+  loadMode: 'syncshow',
+  loadLocalServices: {
+    items: [],
+    busy: false,
+    error: null
+  },
   prepareAddTab: 'songs',
   cachedPresentations: null,
   cachedRestorePlan: null,
@@ -169,6 +176,9 @@ const elements = {
   btnStageShow: document.getElementById('btnStageShow'),
   communityPrepareShell: document.getElementById('communityPrepareShell'),
   legacyPrepareShell: document.getElementById('legacyPrepareShell'),
+  btnPrepareModeCommunity: document.getElementById('btnPrepareModeCommunity'),
+  btnPrepareModeLocal: document.getElementById('btnPrepareModeLocal'),
+  communityPlannerViewport: document.getElementById('communityPlannerViewport'),
   communityPrepareHeading: document.getElementById('communityPrepareHeading'),
   communityPrepareServer: document.getElementById('communityPrepareServer'),
   communityPrepareStatus: document.getElementById('communityPrepareStatus'),
@@ -263,7 +273,14 @@ const elements = {
   syncMode: document.getElementById('syncMode'),
   friendlyMode: document.getElementById('friendlyMode'),
   btnOpenCommunityServiceFromLoad: document.getElementById('btnOpenCommunityServiceFromLoad'),
+  btnImportSyncShowFileFromLoad: document.getElementById('btnImportSyncShowFileFromLoad'),
   btnOpenPptxImportFromLoad: document.getElementById('btnOpenPptxImportFromLoad'),
+  loadModeTabs: Array.from(document.querySelectorAll('[data-load-tab]')),
+  loadModePanels: Array.from(document.querySelectorAll('[data-load-panel]')),
+  loadLocalServiceList: document.getElementById('loadLocalServiceList'),
+  btnRefreshLocalServices: document.getElementById('btnRefreshLocalServices'),
+  inputCardsHostLoad: document.getElementById('inputCardsHostLoad'),
+  inputCardsHostScreens: document.getElementById('inputCardsHostScreens'),
   loadAutoStatus: document.getElementById('loadAutoStatus'),
   loadServiceHandoff: document.getElementById('loadServiceHandoff'),
   loadServiceHandoffTitle: document.getElementById('loadServiceHandoffTitle'),
@@ -273,6 +290,9 @@ const elements = {
   loadServiceHandoffRunSheet: document.getElementById('loadServiceHandoffRunSheet'),
   loadServiceHandoffTeam: document.getElementById('loadServiceHandoffTeam'),
   loadServiceHandoffReview: document.getElementById('loadServiceHandoffReview'),
+  loadServiceReviewDetails: document.getElementById('loadServiceReviewDetails'),
+  btnEditLoadedService: document.getElementById('btnEditLoadedService'),
+  btnLoadedServiceScreens: document.getElementById('btnLoadedServiceScreens'),
   adminSettingsTabs: Array.from(document.querySelectorAll('[data-settings-tab]')),
   adminSettingsPanels: Array.from(document.querySelectorAll('[data-settings-panel]')),
   prepareAddTabs: Array.from(document.querySelectorAll('[data-prepare-add-tab]')),
@@ -447,6 +467,7 @@ let sharedServiceController = null;
 let communityPollTimer = null;
 let communityStatusUnsubscribe = null;
 let communityPlannerStateUnsubscribe = null;
+let communityPlannerLayoutFrame = null;
 
 function setTextIfChanged(element, value) {
   const text = String(value ?? '');
@@ -490,8 +511,10 @@ async function init() {
       api: window.api,
       onPublished: refreshPublishedProject,
       onStatus: setStatus,
-      onProjectChanged: result =>
-        sharedServiceController?.projectChanged?.(result)
+      onProjectChanged: result => {
+        refreshLoadLocalServices();
+        return sharedServiceController?.projectChanged?.(result);
+      }
     }).initialize();
   }
   if (window.SyncShowSharedServices?.createController && prepareController) {
@@ -563,6 +586,8 @@ function setupEventListeners() {
   elements.btnStagePrepare.addEventListener('click', () => navigateWorkflowStage('prepare'));
   elements.btnStageLoad.addEventListener('click', () => navigateWorkflowStage('load'));
   elements.btnStageShow.addEventListener('click', () => navigateWorkflowStage('show'));
+  elements.btnPrepareModeCommunity.addEventListener('click', () => activatePrepareMode('community'));
+  elements.btnPrepareModeLocal.addEventListener('click', () => activatePrepareMode('local'));
   elements.btnOpenCommunityPlanner.addEventListener('click', openCommunityPrepare);
   elements.btnPrepareCommunitySettings.addEventListener('click', () => {
     openSettings('community');
@@ -583,9 +608,20 @@ function setupEventListeners() {
       elements.btnOpenCommunityServiceFromLoad.disabled = false;
     }
   });
+  elements.btnImportSyncShowFileFromLoad.addEventListener('click', async () => {
+    await setWorkflowStage('prepare', { localTools: true });
+    await prepareController?.importProject?.();
+  });
   elements.btnOpenPptxImportFromLoad.addEventListener('click', () => {
     openSettings('google-drive');
   });
+  elements.loadModeTabs.forEach(tab => {
+    tab.addEventListener('click', () => activateLoadMode(tab.dataset.loadTab));
+    tab.addEventListener('keydown', handleLoadModeKeydown);
+  });
+  elements.btnRefreshLocalServices.addEventListener('click', refreshLoadLocalServices);
+  elements.btnEditLoadedService.addEventListener('click', openLoadedServiceInPrepare);
+  elements.btnLoadedServiceScreens.addEventListener('click', () => openSettings('screens'));
 
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
@@ -742,6 +778,8 @@ function setupEventListeners() {
     elements.btnOpenSettings.focus();
   });
   window.addEventListener('beforeunload', disposeCommunityConnectionUi);
+  window.addEventListener('resize', scheduleCommunityPlannerLayout);
+  window.addEventListener('scroll', scheduleCommunityPlannerLayout, true);
 
   elements.btnOpenBible.addEventListener('click', openBibleDialog);
   elements.btnCloseBible.addEventListener('click', closeBibleDialog);
@@ -1170,6 +1208,146 @@ function handlePrepareAddTabKeydown(event) {
   activatePrepareAddTab(tabs[nextIndex].dataset.prepareAddTab, { focusTab: true });
 }
 
+function activateLoadMode(mode, { focusTab = false } = {}) {
+  const activeTab = elements.loadModeTabs.find(tab => tab.dataset.loadTab === mode)
+    || elements.loadModeTabs[0];
+  if (!activeTab) return;
+  state.loadMode = activeTab.dataset.loadTab;
+  elements.loadModeTabs.forEach(tab => {
+    const selected = tab === activeTab;
+    tab.classList.toggle('is-active', selected);
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  elements.loadModePanels.forEach(panel => {
+    panel.hidden = panel.dataset.loadPanel !== state.loadMode;
+  });
+  if (state.loadMode === 'syncshow') refreshLoadLocalServices();
+  if (focusTab) activeTab.focus();
+}
+
+function handleLoadModeKeydown(event) {
+  const currentIndex = elements.loadModeTabs.indexOf(event.currentTarget);
+  if (currentIndex < 0) return;
+  let nextIndex = currentIndex;
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % elements.loadModeTabs.length;
+  else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + elements.loadModeTabs.length) % elements.loadModeTabs.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = elements.loadModeTabs.length - 1;
+  else return;
+  event.preventDefault();
+  activateLoadMode(elements.loadModeTabs[nextIndex].dataset.loadTab, { focusTab: true });
+}
+
+function renderLoadLocalServices() {
+  elements.loadLocalServiceList.replaceChildren();
+  if (state.loadLocalServices.busy) {
+    elements.loadLocalServiceList.appendChild(
+      createElement('p', 'local-service-empty', 'Loading saved services…')
+    );
+    return;
+  }
+  if (state.loadLocalServices.error) {
+    elements.loadLocalServiceList.appendChild(
+      createElement('p', 'local-service-empty is-error', state.loadLocalServices.error)
+    );
+    return;
+  }
+  if (state.loadLocalServices.items.length === 0) {
+    elements.loadLocalServiceList.appendChild(
+      createElement('p', 'local-service-empty', 'No SyncShow services are saved here yet. Import a file or start in Prepare.')
+    );
+    return;
+  }
+  for (const project of state.loadLocalServices.items) {
+    const row = createElement('div', 'local-service-row');
+    row.dataset.projectId = project.id;
+    row.setAttribute('role', 'listitem');
+    const copy = createElement('span', 'local-service-row-copy');
+    copy.append(
+      createElement('strong', '', project.title || 'Untitled service'),
+      createElement(
+        'small',
+        '',
+        [
+          formatServiceDate(project.serviceDate),
+          `version ${project.revision}`,
+          project.planning?.status ? planningStatusLabel(project.planning.status) : 'Saved locally'
+        ].filter(Boolean).join(' · ')
+      )
+    );
+    const actions = createElement('span', 'local-service-row-actions');
+    const loadButton = createElement('button', 'btn btn-primary btn-compact', 'Load');
+    loadButton.type = 'button';
+    loadButton.addEventListener('click', () => loadLocalService(project, loadButton));
+    const editButton = createElement('button', 'btn btn-quiet btn-compact', 'Edit');
+    editButton.type = 'button';
+    editButton.addEventListener('click', () => openLocalServiceInPrepare(project.id));
+    actions.append(loadButton, editButton);
+    row.append(copy, actions);
+    elements.loadLocalServiceList.appendChild(row);
+  }
+}
+
+async function refreshLoadLocalServices() {
+  if (state.loadLocalServices.busy || typeof window.api?.listServiceProjects !== 'function') return;
+  state.loadLocalServices.busy = true;
+  state.loadLocalServices.error = null;
+  renderLoadLocalServices();
+  try {
+    const result = await window.api.listServiceProjects({
+      query: '',
+      pageSize: 8,
+      offset: 0
+    });
+    state.loadLocalServices.items = Array.isArray(result?.items) ? result.items : [];
+  } catch (error) {
+    state.loadLocalServices.items = [];
+    state.loadLocalServices.error = operatorErrorMessage(
+      error,
+      'Saved services could not be listed.'
+    );
+  } finally {
+    state.loadLocalServices.busy = false;
+    renderLoadLocalServices();
+  }
+}
+
+async function openLocalServiceInPrepare(projectId) {
+  await setWorkflowStage('prepare', { localTools: true });
+  await prepareController?.openProjectById?.(projectId);
+}
+
+async function loadLocalService(project, button) {
+  if (!project?.id || !project?.revisionId || button.disabled) return;
+  button.disabled = true;
+  const previousLabel = button.textContent;
+  button.textContent = 'Loading…';
+  setStatus(`Preparing ${project.title || 'saved service'} for offline Show…`);
+  try {
+    const result = await window.api.publishServiceProject({
+      projectId: project.id,
+      revisionId: project.revisionId
+    });
+    await refreshPublishedProject(result, { project });
+  } catch (error) {
+    console.error('[Load] Saved SyncShow service could not be loaded:', error);
+    setStatus(`Could not load ${project.title || 'that service'}: ${operatorErrorMessage(
+      error,
+      'Review it in Prepare and try again.'
+    )}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = previousLabel;
+  }
+}
+
+async function openLoadedServiceInPrepare() {
+  const projectId = state.serviceHandoff?.project?.id;
+  if (!projectId) return;
+  await openLocalServiceInPrepare(projectId);
+}
+
 function activateSettingsTab(tabId, { focusTab = false } = {}) {
   const requestedTab = typeof tabId === 'string' ? tabId : '';
   const activeTab = elements.adminSettingsTabs.find(
@@ -1344,32 +1522,25 @@ function setWorkflowStage(stage) {
 
   let activation = Promise.resolve(true);
   if (stage === 'prepare') {
-    const localTools = activationOptions?.localTools === true;
-    elements.communityPrepareShell.hidden = localTools;
-    elements.legacyPrepareShell.hidden = !localTools;
-    elements.preparePanel.setAttribute(
-      'aria-labelledby',
-      localTools ? 'prepareHeading' : 'communityPrepareHeading'
-    );
-    if (localTools) {
-      activation = prepareController?.activate(activationOptions).catch(error => {
-        console.error('[Prepare] Could not activate local handoff tools:', error);
-        setStatus(`Local handoff tools could not open: ${error.message}`);
-        return false;
-      });
-    } else {
-      window.setTimeout(() => elements.communityPrepareHeading.focus(), 0);
-      activation = openCommunityPrepare();
-    }
+    const requestedMode = activationOptions?.localTools === true
+      ? 'local'
+      : communityIsConnected()
+        ? state.prepareMode
+        : 'local';
+    activation = activatePrepareMode(requestedMode, activationOptions);
   } else if (stage === 'load') {
+    scheduleCommunityPlannerLayout();
     resumeServiceFolderScanOnLoad();
+    activateLoadMode(state.loadMode);
+  } else {
+    scheduleCommunityPlannerLayout();
   }
   return activation;
 }
 
 async function navigateWorkflowStage(stage) {
   if (stage === state.workflowStage) {
-    if (stage === 'prepare' && !elements.communityPrepareShell.hidden) {
+    if (stage === 'prepare' && state.prepareMode === 'community') {
       await openCommunityPrepare();
     }
     return;
@@ -1628,6 +1799,7 @@ function servingLoadSummary(rawServing) {
 function renderLoadServiceHandoff() {
   const handoff = state.serviceHandoff;
   elements.loadServiceHandoff.hidden = !handoff;
+  placeServiceInputCards();
   if (!handoff) return;
 
   const planning = handoff.planning;
@@ -1642,18 +1814,22 @@ function renderLoadServiceHandoff() {
   elements.loadServiceHandoffBadge.textContent = planning
     ? planningStatusLabel(state.postShowOutcome?.status || planning.status)
     : 'Verified package';
+  elements.loadServiceHandoffNotes.hidden = !planning?.teamNotes;
   elements.loadServiceHandoffNotes.textContent = planning?.teamNotes
     ? `Team note: ${planning.teamNotes}`
-    : 'No volunteer notes were recorded for this service.';
+    : '';
+  let hasReviewDetails = Boolean(planning?.teamNotes);
   if (elements.loadServiceHandoffRunSheet) {
     const runSheetSummary = runSheetLoadSummary(handoff.runSheet);
     elements.loadServiceHandoffRunSheet.hidden = !runSheetSummary;
     elements.loadServiceHandoffRunSheet.textContent = runSheetSummary;
+    hasReviewDetails = hasReviewDetails || Boolean(runSheetSummary);
   }
   if (elements.loadServiceHandoffTeam) {
     const teamSummary = servingLoadSummary(planning?.serving);
     elements.loadServiceHandoffTeam.hidden = !teamSummary;
     elements.loadServiceHandoffTeam.textContent = teamSummary;
+    hasReviewDetails = hasReviewDetails || Boolean(teamSummary);
   }
 
   const waivers = planning?.readinessWaivers || [];
@@ -1661,13 +1837,30 @@ function renderLoadServiceHandoff() {
     ? `Reviewed ${waivers.length} ${waivers.length === 1 ? 'exception' : 'exceptions'}: ${
         waivers.map(waiver => waiver.reason).join(' · ')
       }`
-    : 'All readiness checks passed without an exception.';
+    : '';
   const outcomeSummary = state.postShowOutcome
     ? ` After Show, the local plan was marked ${planningStatusLabel(
         state.postShowOutcome.status
       )} in a newer revision.`
     : '';
-  elements.loadServiceHandoffReview.textContent = `${readinessSummary}${outcomeSummary}`;
+  const reviewText = `${readinessSummary}${outcomeSummary}`.trim();
+  elements.loadServiceHandoffReview.hidden = !reviewText;
+  elements.loadServiceHandoffReview.textContent = reviewText;
+  hasReviewDetails = hasReviewDetails || Boolean(reviewText);
+  elements.loadServiceReviewDetails.hidden = !hasReviewDetails;
+}
+
+function placeServiceInputCards() {
+  const preparedService = Boolean(state.serviceHandoff)
+    || Object.values(state.presentations).some(
+      presentation => presentation?.loaded && presentation?.source === 'prepared'
+    );
+  const target = preparedService
+    ? elements.inputCardsHostScreens
+    : elements.inputCardsHostLoad;
+  if (elements.inputCards.parentElement !== target) target.appendChild(elements.inputCards);
+  elements.inputCardsHostScreens.hidden = !preparedService;
+  elements.inputCardsHostLoad.hidden = preparedService;
 }
 
 function handoffCueAt(index) {
@@ -1816,6 +2009,7 @@ async function refreshPublishedProject(_publishResult, context = {}) {
     renderProfileEditor();
     renderOutputHealth();
     checkReadyState();
+    refreshLoadLocalServices();
     setStatus(`${context.project?.title || 'Prepared service'} is ready in Load`);
   } catch (error) {
     console.error('[Prepare] Published service could not be refreshed in Load:', error);
@@ -2457,8 +2651,8 @@ function renderCommunityPrepare() {
   elements.btnOpenCommunityPlanner.textContent = state.community.plannerBusy
     ? 'Opening…'
     : state.community.plannerOpen
-      ? 'Bring Prepare to front'
-      : 'Open Prepare';
+      ? 'Reload planner'
+      : 'Load planner';
 
   elements.communityPrepareStatus.dataset.kind = '';
   if (!available) {
@@ -2478,11 +2672,88 @@ function renderCommunityPrepare() {
   } else if (state.community.plannerOpen) {
     elements.communityPrepareStatus.dataset.kind = 'success';
     elements.communityPrepareStatus.textContent =
-      'Community Prepare is open. Changes are saved in the shared service.';
+      'Connected · the Community planner is embedded below.';
   } else {
     elements.communityPrepareStatus.textContent =
-      'Prepare opens in a secure SyncShow window and stays current with Community.';
+      'The connected Community planner will appear here.';
   }
+  scheduleCommunityPlannerLayout();
+}
+
+function communityPlannerShouldBeVisible() {
+  return state.workflowStage === 'prepare'
+    && state.prepareMode === 'community'
+    && communityIsConnected()
+    && state.community.plannerOpen
+    && !elements.communityPrepareShell.hidden;
+}
+
+async function syncCommunityPlannerLayout() {
+  if (typeof window.api?.layoutCommunityPlanner !== 'function') return;
+  if (!communityPlannerShouldBeVisible()) {
+    await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
+    return;
+  }
+  const rect = elements.communityPlannerViewport.getBoundingClientRect();
+  if (rect.width < 640 || rect.height < 420) {
+    await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
+    return;
+  }
+  try {
+    await window.api.layoutCommunityPlanner({
+      visible: true,
+      bounds: {
+        x: Math.max(0, Math.round(rect.left)),
+        y: Math.max(0, Math.round(rect.top)),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      }
+    });
+  } catch (error) {
+    state.community.plannerError = communityErrorMessage(
+      error,
+      'Embedded Community Prepare could not be positioned.'
+    );
+    renderCommunityPrepare();
+  }
+}
+
+function scheduleCommunityPlannerLayout() {
+  if (communityPlannerLayoutFrame !== null) return;
+  communityPlannerLayoutFrame = window.requestAnimationFrame(() => {
+    communityPlannerLayoutFrame = null;
+    syncCommunityPlannerLayout();
+  });
+}
+
+async function activatePrepareMode(mode, options = {}) {
+  const selected = mode === 'local' ? 'local' : 'community';
+  state.prepareMode = selected;
+  const local = selected === 'local';
+  elements.communityPrepareShell.hidden = local;
+  elements.legacyPrepareShell.hidden = !local;
+  elements.btnPrepareModeCommunity.classList.toggle('is-active', !local);
+  elements.btnPrepareModeCommunity.setAttribute('aria-selected', String(!local));
+  elements.btnPrepareModeCommunity.tabIndex = local ? -1 : 0;
+  elements.btnPrepareModeLocal.classList.toggle('is-active', local);
+  elements.btnPrepareModeLocal.setAttribute('aria-selected', String(local));
+  elements.btnPrepareModeLocal.tabIndex = local ? 0 : -1;
+  elements.preparePanel.setAttribute(
+    'aria-labelledby',
+    local ? 'prepareHeading' : 'communityPrepareHeading'
+  );
+  scheduleCommunityPlannerLayout();
+  if (local) {
+    const activated = await prepareController?.activate(options).catch(error => {
+      console.error('[Prepare] Could not activate local tools:', error);
+      setStatus(`Local Prepare could not open: ${error.message}`);
+      return false;
+    });
+    window.setTimeout(() => elements.legacyPrepareShell.querySelector('h2')?.focus(), 0);
+    return activated;
+  }
+  window.setTimeout(() => elements.communityPrepareHeading.focus(), 0);
+  return openCommunityPrepare();
 }
 
 function handleCommunityPlannerStateChanged(payload = {}) {
@@ -2537,7 +2808,8 @@ async function openCommunityPrepare() {
     );
     state.community.plannerOpen = result.opened === true;
     const destination = result.serverName || communityServerLabel();
-    setStatus(`${destination} Prepare is open`);
+    setStatus(`${destination} Prepare is embedded in SyncShow`);
+    scheduleCommunityPlannerLayout();
     return state.community.plannerOpen;
   } catch (error) {
     state.community.plannerOpen = false;
@@ -2947,6 +3219,11 @@ async function syncCommunitySermons() {
 
 function disposeCommunityConnectionUi() {
   stopCommunityAuthorizationPolling({ clearAuthorization: true });
+  if (communityPlannerLayoutFrame !== null) {
+    window.cancelAnimationFrame(communityPlannerLayoutFrame);
+    communityPlannerLayoutFrame = null;
+  }
+  window.api?.layoutCommunityPlanner?.({ visible: false }).catch(() => {});
   if (typeof communityStatusUnsubscribe === 'function') communityStatusUnsubscribe();
   communityStatusUnsubscribe = null;
   if (typeof communityPlannerStateUnsubscribe === 'function') {
@@ -4373,6 +4650,7 @@ function renderInputCards() {
     renderPresentationConversionRecovery(role.id);
   });
   elements.inputCards.appendChild(fragment);
+  placeServiceInputCards();
   refreshServiceRoleActions();
 }
 
@@ -4595,15 +4873,26 @@ function renderOutputEditor() {
       actions.appendChild(button);
     }
 
-    const grid = createElement('div', 'profile-row-grid output-row-grid');
-    grid.append(
-      createEditorField('Output name', name),
+    const quickGrid = createElement('div', 'profile-row-grid output-quick-grid');
+    quickGrid.append(
       createEditorField('Physical screen', display),
-      createEditorField('Expected slideshow', roleSelect),
+      createEditorField('Slideshow shown here', roleSelect)
+    );
+    const more = document.createElement('details');
+    more.className = 'output-row-more';
+    const moreSummary = document.createElement('summary');
+    moreSummary.append(
+      createElement('span', '', 'More options'),
+      createElement('small', '', 'Name, behavior, preview, and remove')
+    );
+    const moreGrid = createElement('div', 'profile-row-grid output-row-grid');
+    moreGrid.append(
+      createEditorField('Output name', name),
       createEditorField('Screen behavior', kind),
       enabledLabel,
       previewLabel
     );
+    more.append(moreSummary, moreGrid, actions);
     fieldset.appendChild(legend);
     if (!isEditableOutputRoute(output)) {
       const warning = createElement('div', 'profile-route-warning');
@@ -4622,7 +4911,7 @@ function renderOutputEditor() {
       warning.appendChild(useDirect);
       fieldset.appendChild(warning);
     }
-    fieldset.append(grid, actions);
+    fieldset.append(quickGrid, more);
     item.appendChild(fieldset);
     elements.outputSettingsList.appendChild(item);
   });

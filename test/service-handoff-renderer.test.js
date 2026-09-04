@@ -233,6 +233,14 @@ test('renderer normalization returns a detached, deeply frozen text-only handoff
   ]);
 });
 
+test('renderer retains a bounded video cue in the exact service handoff', () => {
+  const input = fixture();
+  input.cues[cueId(2)].kind = 'video';
+  const normalized = normalizeServiceHandoff(input);
+  assert.equal(normalized.cues[cueId(2)].kind, 'video');
+  assert.equal(cueContextAtIndex(normalized, 1).currentCue.kind, 'video');
+});
+
 test('renderer strictly normalizes v2 serving, run-sheet, and cue ancestry', () => {
   const input = fixtureV2();
   const before = clone(input);
@@ -420,7 +428,7 @@ test('bounds, calendar dates, kinds, and renderer-visible text fail closed', () 
   );
 
   const unknownKind = fixture();
-  unknownKind.cues[cueId(1)].kind = 'video';
+  unknownKind.cues[cueId(1)].kind = 'audio';
   assert.throws(
     () => normalizeServiceHandoff(unknownKind),
     /kind is unsupported/

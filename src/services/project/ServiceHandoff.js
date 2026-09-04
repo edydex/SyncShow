@@ -62,6 +62,7 @@ const RUN_SHEET_ITEM_KINDS = Object.freeze([
   'sermon',
   'notice',
   'picture',
+  'video',
   'blank',
   'imported-deck'
 ]);

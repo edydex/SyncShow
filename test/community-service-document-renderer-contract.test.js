@@ -38,7 +38,7 @@ test('Load retains the Community service chooser and offline handoff', () => {
 
 test('Load offers a direct route to the canonical Community service browser', () => {
   assert.match(html, /id="btnOpenCommunityServiceFromLoad"/u);
-  assert.match(html, />\s*Open from Heritage Community\s*</u);
+  assert.match(html, /id="btnOpenCommunityServiceFromLoad"[\s\S]*<strong>Heritage Community<\/strong>/u);
   assert.match(app, /sharedServiceController\?\.open\?\.\(\)/u);
   assert.doesNotMatch(
     app,
@@ -75,7 +75,8 @@ test('linked local mutations autosave through the narrow durable service bridge'
   assert.match(prepare, /openProjectById: projectId => openProject\(projectId\)/u);
   assert.match(controller, /getCommunityServiceDocumentState/u);
   assert.match(controller, /saveCommunityServiceDocument/u);
-  assert.match(controller, /Saved locally\. This edit will synchronize/u);
+  assert.match(controller, /Saved as v\$\{requested\.project\.revision\} offline\. It will synchronize/u);
+  assert.match(controller, /Saved as v\$\{requested\.project\.revision\} locally and in Heritage Community/u);
   assert.match(preload, /community:serviceDocuments:save/u);
   assert.match(main, /HeritageServiceDocumentOutbox/u);
   assert.match(main, /community:serviceDocuments:flush/u);

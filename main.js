@@ -1,6 +1,7 @@
 const {
   app,
   BrowserWindow,
+  WebContentsView,
   ipcMain,
   screen,
   dialog,
@@ -334,7 +335,7 @@ const sermonExtractionProposalCoordinator = new SermonSourceExtractionCoordinato
 
 // Keep references to prevent garbage collection
 let controlWindow = null;
-let communityPlannerWindow = null;
+let communityPlannerView = null;
 let communityPlannerOrigin = null;
 let controlSettingsDraftState = { dirty: false, saving: false };
 let outputWindows = new Map();
@@ -7346,11 +7347,13 @@ function guardControlWindowClose(event) {
 
 function communityPlannerStatePayload({ error = null } = {}) {
   const open = Boolean(
-    communityPlannerWindow
-    && !communityPlannerWindow.isDestroyed()
+    communityPlannerView
+    && !communityPlannerView.webContents.isDestroyed()
   );
   return {
     open,
+    embedded: true,
+    visible: open && communityPlannerView.getVisible(),
     origin: open ? communityPlannerOrigin : null,
     error: error && typeof error === 'object'
       ? publicCommunityError(error)
@@ -7447,11 +7450,10 @@ async function openCommunityPlannerWindow() {
 
   const plannerUrl = safeCommunityPlannerUrl(connection.baseUrl);
   const plannerOrigin = plannerUrl.origin;
-  if (communityPlannerWindow && !communityPlannerWindow.isDestroyed()) {
+  if (communityPlannerView && !communityPlannerView.webContents.isDestroyed()) {
     if (communityPlannerOrigin === plannerOrigin) {
-      if (communityPlannerWindow.isMinimized()) communityPlannerWindow.restore();
-      communityPlannerWindow.show();
-      communityPlannerWindow.focus();
+      communityPlannerView.setVisible(true);
+      communityPlannerView.webContents.focus();
       return {
         opened: true,
         alreadyOpen: true,
@@ -7461,18 +7463,17 @@ async function openCommunityPlannerWindow() {
     }
     failMainOperation(
       'COMMUNITY_PLANNER_ALREADY_OPEN',
-      'Close the existing Community Prepare window before opening a different Community server.'
+      'Close the existing Community Prepare view before opening a different Community server.'
     );
   }
 
-  const planner = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1024,
-    minHeight: 680,
-    backgroundColor: '#111111',
-    title: 'SyncShow — Prepare',
-    show: false,
+  if (!controlWindow || controlWindow.isDestroyed()) {
+    failMainOperation(
+      'COMMUNITY_PLANNER_UNAVAILABLE',
+      'The SyncShow window is not available for embedded Prepare.'
+    );
+  }
+  const planner = new WebContentsView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -7480,7 +7481,11 @@ async function openCommunityPlannerWindow() {
       partition: 'syncshow-community-planner'
     }
   });
-  communityPlannerWindow = planner;
+  planner.setBackgroundColor('#0b1220');
+  planner.setBounds({ x: 0, y: 0, width: 1, height: 1 });
+  planner.setVisible(false);
+  controlWindow.contentView.addChildView(planner);
+  communityPlannerView = planner;
   communityPlannerOrigin = plannerOrigin;
   const plannerSession = planner.webContents.session;
 
@@ -7524,28 +7529,24 @@ async function openCommunityPlannerWindow() {
       notifyCommunityPlannerState({ error });
     }
   );
-  planner.once('ready-to-show', () => {
-    if (!planner.isDestroyed()) {
-      planner.show();
-      planner.focus();
-      notifyCommunityPlannerState();
-    }
+  planner.webContents.on('did-finish-load', () => {
+    if (!planner.webContents.isDestroyed()) notifyCommunityPlannerState();
   });
-  planner.on('closed', () => {
+  planner.webContents.on('destroyed', () => {
     plannerSession.webRequest.onBeforeSendHeaders(null);
-    if (communityPlannerWindow === planner) {
-      communityPlannerWindow = null;
+    if (communityPlannerView === planner) {
+      communityPlannerView = null;
       communityPlannerOrigin = null;
       notifyCommunityPlannerState();
     }
   });
 
   try {
-    await planner.loadURL(plannerUrl.href);
+    await planner.webContents.loadURL(plannerUrl.href);
   } catch (_error) {
-    if (!planner.isDestroyed()) planner.destroy();
-    if (communityPlannerWindow === planner) {
-      communityPlannerWindow = null;
+    if (!planner.webContents.isDestroyed()) planner.webContents.close();
+    if (communityPlannerView === planner) {
+      communityPlannerView = null;
       communityPlannerOrigin = null;
     }
     failMainOperation(
@@ -7553,8 +7554,8 @@ async function openCommunityPlannerWindow() {
       'Community Prepare could not load. Check the connection and try again.'
     );
   }
-  if (!planner.isVisible()) planner.show();
-  planner.focus();
+  planner.setVisible(true);
+  planner.webContents.focus();
   notifyCommunityPlannerState();
   return {
     opened: true,
@@ -7562,6 +7563,45 @@ async function openCommunityPlannerWindow() {
     origin: plannerOrigin,
     serverName: connection.serverName || null
   };
+}
+
+function layoutCommunityPlannerView(request = {}) {
+  const allowedKeys = new Set(['visible', 'bounds']);
+  if (!request || typeof request !== 'object' || Array.isArray(request)
+    || Object.keys(request).some(key => !allowedKeys.has(key))) {
+    failMainOperation(
+      'COMMUNITY_PLANNER_LAYOUT_INVALID',
+      'Embedded Prepare received an invalid layout.'
+    );
+  }
+  const planner = communityPlannerView;
+  if (!planner || planner.webContents.isDestroyed()) {
+    return communityPlannerStatePayload();
+  }
+  const visible = request.visible === true;
+  if (visible) {
+    const raw = request.bounds;
+    const bounds = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? {
+          x: Math.round(Number(raw.x)),
+          y: Math.round(Number(raw.y)),
+          width: Math.round(Number(raw.width)),
+          height: Math.round(Number(raw.height))
+        }
+      : null;
+    const finite = bounds && Object.values(bounds).every(Number.isFinite);
+    if (!finite || bounds.x < 0 || bounds.y < 0
+      || bounds.width < 640 || bounds.height < 420
+      || bounds.width > 8192 || bounds.height > 8192) {
+      failMainOperation(
+        'COMMUNITY_PLANNER_LAYOUT_INVALID',
+        'Embedded Prepare needs a valid visible area.'
+      );
+    }
+    planner.setBounds(bounds);
+  }
+  planner.setVisible(visible);
+  return communityPlannerStatePayload();
 }
 
 function createControlWindow() {
@@ -7598,6 +7638,17 @@ function createControlWindow() {
   controlWindow.on('closed', () => {
     if (controlDisplayRefreshTimer) clearTimeout(controlDisplayRefreshTimer);
     controlDisplayRefreshTimer = null;
+    if (communityPlannerView) {
+      const planner = communityPlannerView;
+      communityPlannerView = null;
+      communityPlannerOrigin = null;
+      try {
+        planner.webContents.session.webRequest.onBeforeSendHeaders(null);
+        if (!planner.webContents.isDestroyed()) planner.webContents.close();
+      } catch (_error) {
+        // The parent window may already have destroyed its child view.
+      }
+    }
     controlWindow = null;
     destroyOutputWindows();
     app.quit();
@@ -17600,6 +17651,11 @@ ipcMain.handle('community:planner:open', async (event) => {
 ipcMain.handle('community:planner:state', async (event) => {
   requireControlSender(event);
   return communityIpcResult(async () => communityPlannerStatePayload());
+});
+
+ipcMain.handle('community:planner:layout', async (event, request = {}) => {
+  requireControlSender(event);
+  return communityIpcResult(async () => layoutCommunityPlannerView(request));
 });
 
 ipcMain.handle('community:serviceDocuments:list', async (event, request = {}) => {
