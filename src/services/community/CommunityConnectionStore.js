@@ -16,7 +16,7 @@ const PRE_SERVICE_DOCUMENT_CONNECTION_SCHEMA_VERSION = 4;
 const CONNECTION_SCHEMA_VERSION = 5;
 const MAX_STORE_BYTES = 2 * 1024 * 1024;
 const MAX_CONNECTIONS = 64;
-const DEFAULT_SECURE_STORAGE_TIMEOUT_MS = 3000;
+const DEFAULT_SECURE_STORAGE_TIMEOUT_MS = 15000;
 const CONNECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,99}$/;
 const SERVER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
@@ -429,7 +429,7 @@ class CommunityConnectionStore {
 
   _unavailableMessage() {
     if (this.platform === 'darwin') {
-      return 'Your Mac login keychain is locked or unavailable. Unlock it, fully quit SyncShow, then reopen it.';
+      return 'Approve any macOS Keychain prompt for SyncShow, then click Connect again. If no prompt appears, unlock the login keychain, fully quit SyncShow, and reopen it.';
     }
     return 'Secure credential storage is unavailable. Unlock the system credential store, then reopen SyncShow.';
   }

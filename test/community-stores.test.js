@@ -190,6 +190,31 @@ test('macOS bounds hanging async safeStorage availability and clears its timer',
   assert.equal(timers.scheduledCount(), timers.clearedCount());
 });
 
+test('macOS default secure-storage bound leaves time for an update approval prompt', async t => {
+  const root = await tempDirectory(t);
+  const storage = dualModeSafeStorage({ hangingOperation: 'availability' });
+  const timers = manualTimers();
+  const store = new CommunityConnectionStore({
+    storageRoot: path.join(root, 'connections'),
+    platform: 'darwin',
+    safeStorage: storage,
+    setTimeoutImpl: timers.setTimeout,
+    clearTimeoutImpl: timers.clearTimeout
+  });
+
+  const preflight = store.assertSecureStorageAvailable();
+  await nextTurn();
+  assert.deepEqual(timers.delays(), [15000]);
+  timers.fireOnly();
+  await assert.rejects(
+    preflight,
+    error => error instanceof CommunityConnectionStoreError
+      && error.code === 'SECURE_STORAGE_UNAVAILABLE'
+      && /Approve any macOS Keychain prompt/.test(error.message)
+  );
+  assert.equal(timers.activeCount(), 0);
+});
+
 test('macOS bounds hanging async safeStorage encryption and clears every timer', async t => {
   const root = await tempDirectory(t);
   const storage = dualModeSafeStorage({ hangingOperation: 'encrypt' });

@@ -2451,6 +2451,7 @@ async function startCommunityConnection(event) {
   let serverUrl;
   try {
     serverUrl = normalizeCommunityServerAddress(elements.communityServerUrl.value);
+    elements.communityServerUrl.value = serverUrl;
   } catch (_error) {
     state.community.error = 'Enter a Community server address such as community.example.org. SyncShow adds https:// automatically.';
     renderCommunitySettings();
@@ -2464,7 +2465,6 @@ async function startCommunityConnection(event) {
   renderCommunitySettings();
   try {
     const result = communityCheckedResult(await window.api.startCommunityConnection({ serverUrl, email }));
-    elements.communityServerUrl.value = serverUrl;
     applyCommunityStatus({
       serverUrl,
       adminEmail: email,
