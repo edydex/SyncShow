@@ -337,9 +337,9 @@ summary:focus-visible {
 .prepare-panel {
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 12px;
+  gap: 7px;
   min-height: 0;
-  padding: 14px 18px 18px;
+  padding: 7px 12px 12px;
   overflow: hidden;
 }
 
@@ -361,45 +361,33 @@ summary:focus-visible {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 9px;
   width: min(1540px, 100%);
   min-height: 0;
   margin: 0 auto;
 }
 
-.prepare-mode-bar {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  width: min(1540px, 100%);
-  margin: 0 auto;
-}
-
-.prepare-mode-bar h2 {
-  font-size: 1.08rem;
-}
-
 .prepare-mode-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(190px, 1fr));
-  gap: 5px;
-  padding: 4px;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(2, minmax(130px, 1fr));
+  gap: 3px;
+  width: min(330px, 100%);
+  margin: 0 auto;
+  padding: 3px;
   background: rgba(5, 11, 23, 0.55);
   border: 1px solid var(--border);
   border-radius: 12px;
 }
 
 .prepare-mode-tab {
-  padding: 8px 13px;
+  padding: 4px 9px;
   color: var(--text-secondary);
   background: transparent;
   border: 0;
   border-radius: 8px;
   cursor: pointer;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 800;
   text-align: left;
 }
@@ -408,7 +396,7 @@ summary:focus-visible {
   display: block;
   margin-top: 1px;
   color: var(--text-muted);
-  font-size: 0.58rem;
+  font-size: 0.55rem;
   font-weight: 600;
 }
 
@@ -433,24 +421,6 @@ summary:focus-visible {
   font-weight: 800;
 }
 
-.community-prepare-toolbar,
-.community-prepare-state-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.community-prepare-toolbar h2 {
-  font-size: 0.92rem;
-}
-
-.community-prepare-toolbar p,
-.community-prepare-state-row p {
-  color: var(--text-secondary);
-  font-size: 0.66rem;
-}
-
 .community-prepare-status {
   min-height: 1.5em;
   font-weight: 650;
@@ -466,16 +436,6 @@ summary:focus-visible {
 
 .community-prepare-status[data-kind="error"] {
   color: var(--danger);
-}
-
-.community-prepare-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-}
-
-.community-prepare-account-note {
-  text-align: right;
 }
 
 .community-planner-viewport {
@@ -10186,7 +10146,7 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
   }
 
   .prepare-panel {
-    padding: 16px 12px 24px;
+    padding: 6px 8px 10px;
   }
 
   .community-prepare-shell {
@@ -10196,14 +10156,6 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
 
   .community-prepare-mark {
     display: none;
-  }
-
-  .community-prepare-copy {
-    padding: 20px;
-  }
-
-  .community-prepare-actions .btn {
-    flex: 1 1 100%;
   }
 
   .prepare-intro {

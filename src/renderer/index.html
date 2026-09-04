@@ -47,44 +47,25 @@
     </header>
 
     <section id="preparePanel" class="prepare-panel" aria-labelledby="communityPrepareHeading">
-      <div class="prepare-mode-bar">
-        <div>
-          <p class="section-kicker">PREPARE</p>
-          <h2>Build the service</h2>
-        </div>
-        <nav class="prepare-mode-tabs" role="tablist" aria-label="Prepare location">
-          <button type="button" id="btnPrepareModeCommunity" class="prepare-mode-tab is-active" role="tab" aria-selected="true" aria-controls="communityPrepareShell">
-            Heritage Community
-            <small>Shared with the church</small>
-          </button>
-          <button type="button" id="btnPrepareModeLocal" class="prepare-mode-tab" role="tab" aria-selected="false" aria-controls="legacyPrepareShell">
-            This computer
-            <small>Works offline · import/export</small>
-          </button>
-        </nav>
-      </div>
+      <nav class="prepare-mode-tabs" role="tablist" aria-label="Prepare location">
+        <button type="button" id="btnPrepareModeCommunity" class="prepare-mode-tab is-active" role="tab" aria-selected="true" aria-controls="communityPrepareShell">
+          Heritage Community
+          <small>Online</small>
+        </button>
+        <button type="button" id="btnPrepareModeLocal" class="prepare-mode-tab" role="tab" aria-selected="false" aria-controls="legacyPrepareShell">
+          This computer
+          <small>Works offline</small>
+        </button>
+      </nav>
 
       <div id="communityPrepareShell" class="community-prepare-shell">
-        <div class="community-prepare-toolbar">
-          <div>
-            <h2 id="communityPrepareHeading" tabindex="-1">Community planner</h2>
-            <p id="communityPrepareServer">The same planner used by Heritage Community, shown inside SyncShow.</p>
-          </div>
-          <div class="community-prepare-actions">
-            <button type="button" id="btnOpenCommunityPlanner" class="btn btn-outline">Reload planner</button>
-            <button type="button" id="btnPrepareCommunitySettings" class="btn btn-secondary">Community settings</button>
-            <button type="button" id="btnPrepareGoToLoad" class="btn btn-quiet">Return to Load</button>
-          </div>
-        </div>
-        <div class="community-prepare-state-row">
-          <p id="communityPrepareStatus" class="community-prepare-status" role="status" aria-live="polite">Checking this computer’s Community connection…</p>
-          <p class="community-prepare-account-note">Uses only your Heritage Community admin account—never the computer’s system password.</p>
-        </div>
+        <h2 id="communityPrepareHeading" class="sr-only" tabindex="-1">Community planner</h2>
+        <p class="sr-only">This is the same planner used by Heritage Community, shown inside SyncShow. Uses only your Heritage Community admin account—never the computer’s system password.</p>
         <div id="communityPlannerViewport" class="community-planner-viewport" aria-label="Embedded Heritage Community service planner">
           <div class="community-planner-placeholder">
             <span class="community-prepare-mark" aria-hidden="true">H</span>
-            <strong>Loading the Community planner here…</strong>
-            <small>If Community is unavailable, choose This computer to keep working offline.</small>
+            <strong>Heritage Community Prepare</strong>
+            <small id="communityPrepareStatus" class="community-prepare-status" role="status" aria-live="polite">Checking this computer’s Community connection…</small>
           </div>
         </div>
       </div>

@@ -107,8 +107,10 @@ test('Prepare opens the single planner supplied by Heritage Community', () => {
   const communityShell = elementBlockById(preparePanel, 'communityPrepareShell');
 
   assert.match(preparePanel, /aria-labelledby="communityPrepareHeading"/);
-  assertContainsId(communityShell, 'btnOpenCommunityPlanner');
-  assertContainsId(communityShell, 'btnPrepareCommunitySettings');
+  assertContainsId(communityShell, 'communityPlannerViewport');
+  assert.doesNotMatch(communityShell, /btnOpenCommunityPlanner/u);
+  assert.doesNotMatch(communityShell, /btnPrepareCommunitySettings/u);
+  assert.doesNotMatch(communityShell, /btnPrepareGoToLoad/u);
   assert.match(communityShell, /same planner used by Heritage Community/);
   assert.match(communityShell, /shown inside SyncShow/);
   assertContainsId(communityShell, 'communityPlannerViewport');

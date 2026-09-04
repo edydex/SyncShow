@@ -180,11 +180,7 @@ const elements = {
   btnPrepareModeLocal: document.getElementById('btnPrepareModeLocal'),
   communityPlannerViewport: document.getElementById('communityPlannerViewport'),
   communityPrepareHeading: document.getElementById('communityPrepareHeading'),
-  communityPrepareServer: document.getElementById('communityPrepareServer'),
   communityPrepareStatus: document.getElementById('communityPrepareStatus'),
-  btnOpenCommunityPlanner: document.getElementById('btnOpenCommunityPlanner'),
-  btnPrepareCommunitySettings: document.getElementById('btnPrepareCommunitySettings'),
-  btnPrepareGoToLoad: document.getElementById('btnPrepareGoToLoad'),
   inputCards: document.getElementById('inputCards'),
   serviceFolderCard: document.getElementById('serviceFolderCard'),
   serviceFolderStateBadge: document.getElementById('serviceFolderStateBadge'),
@@ -588,14 +584,6 @@ function setupEventListeners() {
   elements.btnStageShow.addEventListener('click', () => navigateWorkflowStage('show'));
   elements.btnPrepareModeCommunity.addEventListener('click', () => activatePrepareMode('community'));
   elements.btnPrepareModeLocal.addEventListener('click', () => activatePrepareMode('local'));
-  elements.btnOpenCommunityPlanner.addEventListener('click', openCommunityPrepare);
-  elements.btnPrepareCommunitySettings.addEventListener('click', () => {
-    openSettings('community');
-  });
-  elements.btnPrepareGoToLoad.addEventListener('click', () => {
-    setWorkflowStage('load');
-    elements.btnStageLoad.focus();
-  });
   elements.btnOpenCommunityServiceFromLoad.addEventListener('click', async () => {
     elements.btnOpenCommunityServiceFromLoad.disabled = true;
     try {
@@ -2642,20 +2630,6 @@ function renderCommunitySettings() {
 function renderCommunityPrepare() {
   const available = typeof window.api?.openCommunityPlanner === 'function';
   const connected = available && communityIsConnected();
-  const connection = state.community.status?.connection || null;
-  const serverUrl = communityConnectionServerUrl();
-  const serverName = connection?.serverName || communityServerLabel();
-  elements.communityPrepareServer.textContent = connected
-    ? [serverName, serverUrl].filter(Boolean).join(' · ')
-    : 'Connect Heritage Community to begin';
-  elements.btnOpenCommunityPlanner.disabled = !available
-    || !connected
-    || state.community.plannerBusy;
-  elements.btnOpenCommunityPlanner.textContent = state.community.plannerBusy
-    ? 'Opening…'
-    : state.community.plannerOpen
-      ? 'Reload planner'
-      : 'Load planner';
 
   elements.communityPrepareStatus.dataset.kind = '';
   if (!available) {
@@ -2665,7 +2639,7 @@ function renderCommunityPrepare() {
   } else if (!connected) {
     elements.communityPrepareStatus.dataset.kind = 'warning';
     elements.communityPrepareStatus.textContent =
-      'Connect this computer from Community settings, then open Prepare.';
+      'Connect Heritage Community from Admin Settings on the Load page, or use This computer.';
   } else if (state.community.plannerError) {
     elements.communityPrepareStatus.dataset.kind = 'error';
     elements.communityPrepareStatus.textContent = state.community.plannerError;
@@ -2675,10 +2649,10 @@ function renderCommunityPrepare() {
   } else if (state.community.plannerOpen) {
     elements.communityPrepareStatus.dataset.kind = 'success';
     elements.communityPrepareStatus.textContent =
-      'Connected · the Community planner is embedded below.';
+      'Connected. Loading the shared planner…';
   } else {
     elements.communityPrepareStatus.textContent =
-      'The connected Community planner will appear here.';
+      'Loading the shared planner…';
   }
   scheduleCommunityPlannerLayout();
 }
