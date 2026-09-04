@@ -27,6 +27,12 @@ test('prepared service routing lives in tiered Screen Setup instead of the Load 
   assert.match(app, /more\.className = 'output-row-more'/u);
 });
 
+test('choosing the legacy PPTX tab reveals file inputs even when a native service is loaded', () => {
+  assert.match(app, /state\.workflowStage === 'load'[\s\S]*state\.loadMode === 'pptx'/u);
+  assert.match(app, /preparedService && !loadingLegacyPptx/u);
+  assert.match(app, /placeServiceInputCards\(\);[\s\S]*refreshLoadLocalServices/u);
+});
+
 test('generic reviewed-package filler is omitted while meaningful exceptions remain available', () => {
   assert.doesNotMatch(html, /No volunteer notes were recorded/u);
   assert.doesNotMatch(html, /All readiness checks passed without an exception/u);

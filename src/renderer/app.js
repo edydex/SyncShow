@@ -1222,6 +1222,7 @@ function activateLoadMode(mode, { focusTab = false } = {}) {
   elements.loadModePanels.forEach(panel => {
     panel.hidden = panel.dataset.loadPanel !== state.loadMode;
   });
+  placeServiceInputCards();
   if (state.loadMode === 'syncshow') refreshLoadLocalServices();
   if (focusTab) activeTab.focus();
 }
@@ -1855,12 +1856,14 @@ function placeServiceInputCards() {
     || Object.values(state.presentations).some(
       presentation => presentation?.loaded && presentation?.source === 'prepared'
     );
-  const target = preparedService
+  const loadingLegacyPptx = state.workflowStage === 'load'
+    && state.loadMode === 'pptx';
+  const target = preparedService && !loadingLegacyPptx
     ? elements.inputCardsHostScreens
     : elements.inputCardsHostLoad;
   if (elements.inputCards.parentElement !== target) target.appendChild(elements.inputCards);
-  elements.inputCardsHostScreens.hidden = !preparedService;
-  elements.inputCardsHostLoad.hidden = preparedService;
+  elements.inputCardsHostScreens.hidden = target !== elements.inputCardsHostScreens;
+  elements.inputCardsHostLoad.hidden = target !== elements.inputCardsHostLoad;
 }
 
 function handoffCueAt(index) {
