@@ -1,6 +1,6 @@
 {
   "name": "sync-show",
-  "version": "1.4.0-preview.21",
+  "version": "1.4.0-preview.23",
   "description": "Synchronized configurable presentation outputs for church services",
   "main": "main.js",
   "scripts": {
@@ -76,7 +76,7 @@
   "build": {
     "appId": "com.church.syncshow",
     "productName": "SyncShow",
-    "buildVersion": "140021",
+    "buildVersion": "140023",
     "beforePack": "scripts/beforePack.js",
     "afterPack": "scripts/afterPack.js",
     "copyright": "Copyright © 2026 Church Media Team",

@@ -1177,9 +1177,32 @@ test('Community approval polling is bounded, cancellable, and renderer-secret-fr
 
   const connect = functionBlock(appSource, 'startCommunityConnection');
   assert.match(connect, /startCommunityConnection\(\{ serverUrl, email \}\)/);
+  assert.match(connect, /normalizeCommunityServerAddress\(elements\.communityServerUrl\.value\)/);
   assert.doesNotMatch(connect, /\bpassword\b|\btoken\b/i);
   assert.match(functionBlock(appSource, 'communityCheckedResult'), /details\?\.message/);
   assert.match(functionBlock(appSource, 'communityCheckedResult'), /details\?\.code/);
+});
+
+test('Community server addresses accept a bare hostname and normalize pasted links to HTTPS origins', () => {
+  const addressInput = /<input id="communityServerUrl"[^>]+>/.exec(html)?.[0] || '';
+  assert.match(addressInput, /type="text"/);
+  assert.match(addressInput, /inputmode="url"/);
+  assert.match(addressInput, /placeholder="community\.example\.org"/);
+  assert.doesNotMatch(addressInput, /type="url"/);
+
+  const source = `${functionBlock(appSource, 'normalizeCommunityServerAddress')}; normalizeCommunityServerAddress`;
+  const normalize = vm.runInNewContext(source, { URL }, {
+    filename: 'community-server-address.js'
+  });
+  assert.equal(normalize('wotbc.heritage.faith'), 'https://wotbc.heritage.faith');
+  assert.equal(normalize('  https://wotbc.heritage.faith/  '), 'https://wotbc.heritage.faith');
+  assert.equal(
+    normalize('wotbc.heritage.faith/community/services/august-23?view=prepare#top'),
+    'https://wotbc.heritage.faith'
+  );
+  assert.equal(normalize('http://localhost:3000/admin'), 'http://localhost:3000');
+  assert.throws(() => normalize('http://wotbc.heritage.faith'), /HTTPS/);
+  assert.throws(() => normalize('https://user:secret@wotbc.heritage.faith'), /credentials/);
 });
 
 test('pending Community approval has an email-first public recovery path', () => {

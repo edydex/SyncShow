@@ -120,6 +120,27 @@ function parseIntegerOr(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizeCommunityServerAddress(value) {
+  const entered = String(value || '').trim();
+  if (!entered) throw new TypeError('Community server address is required');
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(entered)
+    ? entered
+    : `https://${entered}`;
+  const parsed = new URL(candidate);
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const loopback = hostname === 'localhost'
+    || hostname === '::1'
+    || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+  if (parsed.protocol !== 'https:'
+    && !(parsed.protocol === 'http:' && loopback)) {
+    throw new TypeError('Community server address must use HTTPS');
+  }
+  if (parsed.username || parsed.password) {
+    throw new TypeError('Community server address must not include credentials');
+  }
+  return parsed.origin;
+}
+
 function setSelectValuePreservingCustomOption(select, value, formatLabel) {
   const normalizedValue = String(value);
   for (const option of [...select.options]) {
@@ -2429,12 +2450,9 @@ async function startCommunityConnection(event) {
   if (!elements.communityConnectionForm.reportValidity()) return;
   let serverUrl;
   try {
-    const parsed = new URL(elements.communityServerUrl.value.trim());
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('unsupported');
-    parsed.hash = '';
-    serverUrl = parsed.toString().replace(/\/+$/, '');
+    serverUrl = normalizeCommunityServerAddress(elements.communityServerUrl.value);
   } catch (_error) {
-    state.community.error = 'Enter a complete Community server address beginning with https://.';
+    state.community.error = 'Enter a Community server address such as community.example.org. SyncShow adds https:// automatically.';
     renderCommunitySettings();
     elements.communityServerUrl.focus();
     return;
