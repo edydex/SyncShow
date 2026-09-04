@@ -105,12 +105,20 @@ async function run() {
     () => renderer(controlWindow, `(() => {
       const button = document.querySelector('#btnOpenCommunityServiceFromLoad');
       return document.body.classList.contains('load-stage') && button
-        ? { text: button.textContent.trim(), disabled: button.disabled }
+        ? {
+          title: button.querySelector('strong')?.textContent?.trim() || '',
+          detail: button.querySelector('small')?.textContent?.trim() || '',
+          disabled: button.disabled
+        }
         : null;
     })()`),
     'the Load Community service action'
   );
-  assert.equal(initialLoad.text, 'Open Community service…');
+  assert.deepEqual(initialLoad, {
+    title: 'Open from Heritage Community',
+    detail: 'Choose a service prepared by your church',
+    disabled: false
+  });
 
   await renderer(controlWindow, `document.querySelector('#btnOpenSettings').click()`);
   const settingsGate = await waitFor(
@@ -147,7 +155,7 @@ async function run() {
     'the Community device authorization',
     45_000
   );
-  assert.match(connection.detail, /Community-created services are available from Prepare and Load/);
+  assert.match(connection.detail, /Services prepared in Community are available from Load/);
   await renderer(controlWindow, `document.querySelector('#btnCloseAdminSettings').click()`);
   await waitFor(
     () => renderer(controlWindow, `!document.querySelector('#advancedSetupDetails')?.open`),
@@ -192,44 +200,50 @@ async function run() {
   const sharedListScreenshot = await capture(controlWindow, '01-community-service-list');
   await renderer(controlWindow, `document.querySelector('.shared-service-button[data-sync-id="service-2026-08-23"]').click()`);
 
-  let prepareSurface;
+  let loadSurface;
   try {
-    prepareSurface = await waitFor(
+    loadSurface = await waitFor(
       () => renderer(controlWindow, `(() => {
-        const dialog = document.querySelector('#sharedServicesDialog');
-        const heading = document.querySelector('#preparePlanningHeading')?.textContent?.trim() || '';
-        const rows = [...document.querySelectorAll('#prepareRundownList > [data-item-id]')];
-        const notice = document.querySelector('#prepareNotice')?.textContent?.trim() || '';
-        if (dialog?.open || !/Sunday Morning Service is open/.test(notice) || rows.length < 40) return null;
-        return {
-          heading,
-          notice,
-          projectCount: document.querySelector('#prepareProjectCount')?.textContent?.trim() || '',
-          visibleItemRows: rows.length,
-          publishDisabled: document.querySelector('#btnPublishServiceProject')?.disabled === true,
-          sharedStatus: document.querySelector('#prepareSharedServicesStatus')?.textContent?.trim() || ''
-        };
+        if (!document.body.classList.contains('load-stage')) return null;
+        const cards = [...document.querySelectorAll('#inputCards .deck-card')].map(card => ({
+          roleId: card.dataset.roleId,
+          title: card.querySelector('h3')?.textContent?.trim() || '',
+          state: card.querySelector('.status-text')?.textContent?.trim() || ''
+        }));
+        const handoff = document.querySelector('#loadServiceHandoff');
+        const start = document.querySelector('#btnStartPresentation');
+        return handoff && !handoff.hidden && cards.length === 3 && start && !start.disabled
+          ? {
+            title: document.querySelector('#loadServiceHandoffTitle')?.textContent?.trim() || '',
+            schedule: document.querySelector('#loadServiceHandoffSchedule')?.textContent?.trim() || '',
+            badge: document.querySelector('#loadServiceHandoffBadge')?.textContent?.trim() || '',
+            review: document.querySelector('#loadServiceHandoffReview')?.textContent?.trim() || '',
+            cards,
+            startDisabled: start.disabled
+          }
+          : null;
       })()`),
-      'the exact service in Prepare',
-      20_000
+      'the exact Community revision in Load',
+      60_000
     );
   } catch (error) {
     const diagnostic = await renderer(controlWindow, `(() => ({
       dialogOpen: document.querySelector('#sharedServicesDialog')?.open === true,
-      heading: document.querySelector('#preparePlanningHeading')?.textContent?.trim() || '',
-      rundownCount: document.querySelectorAll('#prepareRundownList > [data-item-id]').length,
-      rundownText: (document.querySelector('#prepareRundownList')?.textContent || '').trim().slice(0, 500),
-      notice: document.querySelector('#prepareNotice')?.textContent?.trim() || '',
-      projectCount: document.querySelector('#prepareProjectCount')?.textContent?.trim() || '',
-      publishDisabled: document.querySelector('#btnPublishServiceProject')?.disabled === true,
-      sharedNotice: document.querySelector('#sharedServicesNotice')?.textContent?.trim() || '',
+      handoffHidden: document.querySelector('#loadServiceHandoff')?.hidden !== false,
+      handoffTitle: document.querySelector('#loadServiceHandoffTitle')?.textContent?.trim() || '',
+      cardCount: document.querySelectorAll('#inputCards .deck-card').length,
+      startDisabled: document.querySelector('#btnStartPresentation')?.disabled === true,
       statusBar: document.querySelector('#statusMessage')?.textContent?.trim() || ''
     }))()`);
-    await capture(controlWindow, '00-prepare-failure');
+    await capture(controlWindow, '00-load-failure');
     throw new Error(`${error.message} Diagnostic: ${JSON.stringify(diagnostic)}`);
   }
-  assert.equal(prepareSurface.publishDisabled, false);
-  const prepareScreenshot = await capture(controlWindow, '02-prepare-aug23');
+  assert.deepEqual(loadSurface.cards.map(card => card.title), [
+    'Russian',
+    'English',
+    'Stage-Facing Screen (Media)'
+  ]);
+  const loadScreenshot = await capture(controlWindow, '02-load-aug23');
 
   const store = new ServiceProjectStore({
     rootPath: path.join(app.getPath('userData'), 'service-projects')
@@ -258,37 +272,6 @@ async function run() {
   assert.equal(offline.offline, true);
   const offlineProbe = await fetch(`${BASE_URL}.well-known/heritage-community.json`);
   assert.equal(offlineProbe.status, 503);
-
-  await renderer(controlWindow, `document.querySelector('#btnPublishServiceProject').click()`);
-  const loadSurface = await waitFor(
-    () => renderer(controlWindow, `(() => {
-      if (!document.body.classList.contains('load-stage')) return null;
-      const cards = [...document.querySelectorAll('#inputCards .deck-card')].map(card => ({
-        roleId: card.dataset.roleId,
-        title: card.querySelector('h3')?.textContent?.trim() || '',
-        state: card.querySelector('.status-text')?.textContent?.trim() || ''
-      }));
-      const handoff = document.querySelector('#loadServiceHandoff');
-      const start = document.querySelector('#btnStartPresentation');
-      return handoff && !handoff.hidden && cards.length === 3 && start && !start.disabled
-        ? {
-          title: document.querySelector('#loadServiceHandoffTitle')?.textContent?.trim() || '',
-          schedule: document.querySelector('#loadServiceHandoffSchedule')?.textContent?.trim() || '',
-          badge: document.querySelector('#loadServiceHandoffBadge')?.textContent?.trim() || '',
-          review: document.querySelector('#loadServiceHandoffReview')?.textContent?.trim() || '',
-          cards,
-          startDisabled: start.disabled
-        }
-        : null;
-    })()`),
-    'the offline prepared service in Load'
-  );
-  assert.deepEqual(loadSurface.cards.map(card => card.title), [
-    'Russian',
-    'English',
-    'Stage-Facing Screen (Media)'
-  ]);
-  const loadScreenshot = await capture(controlWindow, '03-load-offline');
 
   await renderer(controlWindow, `(() => {
     // The fixture intentionally rehearses a past service. Accept the same
@@ -341,8 +324,7 @@ async function run() {
     connection,
     connectionApiStatus,
     sharedList,
-    prepare: {
-      ...prepareSurface,
+    downloadedService: {
       projectRevision: stored.project.revision,
       revisionId: stored.revisionId,
       channels: Object.values(stored.project.channels),
@@ -353,7 +335,7 @@ async function run() {
     },
     offline: {
       serverStatusAfterDisconnect: offlineProbe.status,
-      packageBuiltAfterDisconnect: true
+      packageRemainedReadyAfterDisconnect: true
     },
     load: loadSurface,
     show: {
@@ -363,7 +345,6 @@ async function run() {
     },
     screenshots: {
       sharedList: sharedListScreenshot,
-      prepare: prepareScreenshot,
       load: loadScreenshot,
       show: showScreenshot
     }
