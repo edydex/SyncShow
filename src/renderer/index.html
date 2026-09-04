@@ -46,8 +46,28 @@
       </div>
     </header>
 
-    <section id="preparePanel" class="prepare-panel" aria-labelledby="prepareHeading">
-      <div class="prepare-shell">
+    <section id="preparePanel" class="prepare-panel" aria-labelledby="communityPrepareHeading">
+      <div id="communityPrepareShell" class="community-prepare-shell">
+        <div class="community-prepare-mark" aria-hidden="true">H</div>
+        <div class="community-prepare-copy">
+          <p class="section-kicker">HERITAGE COMMUNITY</p>
+          <h2 id="communityPrepareHeading" tabindex="-1">Prepare in the shared Community planner</h2>
+          <p>The Prepare window is the same planner used by Heritage Community. Its layout and tools now come directly from the connected Community server, so there is only one planner design to maintain.</p>
+          <div class="community-prepare-destination" aria-live="polite">
+            <span>Connected planner</span>
+            <strong id="communityPrepareServer">Connect Heritage Community to begin</strong>
+          </div>
+          <p id="communityPrepareStatus" class="community-prepare-status" role="status" aria-live="polite">Checking this computer’s Community connection…</p>
+          <div class="community-prepare-actions">
+            <button type="button" id="btnOpenCommunityPlanner" class="btn btn-primary">Open Prepare</button>
+            <button type="button" id="btnPrepareCommunitySettings" class="btn btn-secondary">Community settings</button>
+            <button type="button" id="btnPrepareGoToLoad" class="btn btn-quiet">Return to Load</button>
+          </div>
+          <p class="community-prepare-account-note">Sign in there with your Heritage Community account with admin access. SyncShow will never ask for this computer’s system password.</p>
+        </div>
+      </div>
+
+      <div id="legacyPrepareShell" class="prepare-shell" hidden>
         <div class="prepare-intro">
           <div>
             <p class="section-kicker">PREPARE</p>
@@ -1316,7 +1336,7 @@
       <div>
         <p class="section-kicker">HERITAGE COMMUNITY</p>
         <h2 id="sharedServicesTitle">Open the church’s shared service</h2>
-        <p id="sharedServicesDescription">Community and SyncShow edit the same service. A local copy remains available for offline preparation and Show; concurrent edits are reviewed before either copy is replaced.</p>
+        <p id="sharedServicesDescription">Choose the exact service prepared in Community. SyncShow downloads it, builds the offline Show package, and keeps concurrent local changes safe for review.</p>
       </div>
       <button type="button" id="btnCloseSharedServices" class="btn btn-quiet">Close</button>
     </div>
@@ -1333,7 +1353,7 @@
       <section class="community-service-plan-detail" aria-labelledby="sharedServiceDetailHeading">
         <div id="sharedServiceDetailEmpty" class="prepare-empty-state">
           <h3 id="sharedServiceDetailHeading">Choose a service</h3>
-          <p>Opening downloads the exact Community revision. It does not publish anything or change the service currently in Load or Show.</p>
+          <p>Opening downloads the exact Community revision and prepares it for offline Show. It replaces the service in Load only after the package is complete.</p>
         </div>
         <div id="sharedServiceConflict" hidden>
           <p class="section-kicker">CHANGE REVIEW</p>

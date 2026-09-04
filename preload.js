@@ -396,6 +396,8 @@ contextBridge.exposeInMainWorld('api', {
   // network requests stay in the main process; this bridge exposes only
   // connection summaries, sync results, and narrow song/sermon state.
   getCommunityStatus: () => ipcRenderer.invoke('community:status'),
+  openCommunityPlanner: () => ipcRenderer.invoke('community:planner:open'),
+  getCommunityPlannerState: () => ipcRenderer.invoke('community:planner:state'),
   startCommunityConnection: (request = {}) => ipcRenderer.invoke('community:connectStart', {
     serverUrl: request?.serverUrl,
     email: request?.email
@@ -1461,6 +1463,15 @@ contextBridge.exposeInMainWorld('api', {
     const listener = (_event, data) => callback(data);
     ipcRenderer.on('community:statusChanged', listener);
     return () => ipcRenderer.removeListener('community:statusChanged', listener);
+  },
+
+  onCommunityPlannerState: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('community:plannerStateChanged', listener);
+    return () => ipcRenderer.removeListener(
+      'community:plannerStateChanged',
+      listener
+    );
   },
 
   onCommunitySermonMediaProgress: (callback) => {

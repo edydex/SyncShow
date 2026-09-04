@@ -72,6 +72,9 @@ const state = {
   },
   community: {
     status: null,
+    plannerOpen: false,
+    plannerBusy: false,
+    plannerError: null,
     authorizationId: null,
     busy: false,
     syncing: false,
@@ -164,6 +167,14 @@ const elements = {
   btnStagePrepare: document.getElementById('btnStagePrepare'),
   btnStageLoad: document.getElementById('btnStageLoad'),
   btnStageShow: document.getElementById('btnStageShow'),
+  communityPrepareShell: document.getElementById('communityPrepareShell'),
+  legacyPrepareShell: document.getElementById('legacyPrepareShell'),
+  communityPrepareHeading: document.getElementById('communityPrepareHeading'),
+  communityPrepareServer: document.getElementById('communityPrepareServer'),
+  communityPrepareStatus: document.getElementById('communityPrepareStatus'),
+  btnOpenCommunityPlanner: document.getElementById('btnOpenCommunityPlanner'),
+  btnPrepareCommunitySettings: document.getElementById('btnPrepareCommunitySettings'),
+  btnPrepareGoToLoad: document.getElementById('btnPrepareGoToLoad'),
   inputCards: document.getElementById('inputCards'),
   serviceFolderCard: document.getElementById('serviceFolderCard'),
   serviceFolderStateBadge: document.getElementById('serviceFolderStateBadge'),
@@ -435,6 +446,7 @@ let prepareController = null;
 let sharedServiceController = null;
 let communityPollTimer = null;
 let communityStatusUnsubscribe = null;
+let communityPlannerStateUnsubscribe = null;
 
 function setTextIfChanged(element, value) {
   const text = String(value ?? '');
@@ -486,7 +498,8 @@ async function init() {
     sharedServiceController = window.SyncShowSharedServices.createController({
       api: window.api,
       prepareController,
-      onStatus: setStatus
+      onStatus: setStatus,
+      onLoaded: refreshPublishedProject
     }).initialize();
   }
   setupEventListeners();
@@ -525,11 +538,20 @@ async function init() {
     const unsubscribe = window.api.onCommunityStatus(handleCommunityStatusChanged);
     if (typeof unsubscribe === 'function') communityStatusUnsubscribe = unsubscribe;
   }
+  if (typeof window.api.onCommunityPlannerState === 'function') {
+    const unsubscribe = window.api.onCommunityPlannerState(
+      handleCommunityPlannerStateChanged
+    );
+    if (typeof unsubscribe === 'function') {
+      communityPlannerStateUnsubscribe = unsubscribe;
+    }
+  }
 
   // Register main-process listeners before requesting initial state so a
   // display-change notification cannot be lost during startup.
   await refreshPrivateDriveOAuthState();
   await refreshCommunityStatus();
+  await refreshCommunityPlannerState();
   await loadAppState();
   await refreshRemoteControl({ refreshBindings: true });
   await initializeServiceFolder();
@@ -541,10 +563,17 @@ function setupEventListeners() {
   elements.btnStagePrepare.addEventListener('click', () => navigateWorkflowStage('prepare'));
   elements.btnStageLoad.addEventListener('click', () => navigateWorkflowStage('load'));
   elements.btnStageShow.addEventListener('click', () => navigateWorkflowStage('show'));
+  elements.btnOpenCommunityPlanner.addEventListener('click', openCommunityPrepare);
+  elements.btnPrepareCommunitySettings.addEventListener('click', () => {
+    openSettings('community');
+  });
+  elements.btnPrepareGoToLoad.addEventListener('click', () => {
+    setWorkflowStage('load');
+    elements.btnStageLoad.focus();
+  });
   elements.btnOpenCommunityServiceFromLoad.addEventListener('click', async () => {
     elements.btnOpenCommunityServiceFromLoad.disabled = true;
     try {
-      await setWorkflowStage('prepare');
       const opened = await sharedServiceController?.open?.();
       if (!opened) {
         setStatus('Connect Heritage Community in Admin Settings to open a shared service');
@@ -1315,11 +1344,23 @@ function setWorkflowStage(stage) {
 
   let activation = Promise.resolve(true);
   if (stage === 'prepare') {
-    activation = prepareController?.activate(activationOptions).catch(error => {
-      console.error('[Prepare] Could not activate Prepare:', error);
-      setStatus(`Prepare could not open: ${error.message}`);
-      return false;
-    });
+    const localTools = activationOptions?.localTools === true;
+    elements.communityPrepareShell.hidden = localTools;
+    elements.legacyPrepareShell.hidden = !localTools;
+    elements.preparePanel.setAttribute(
+      'aria-labelledby',
+      localTools ? 'prepareHeading' : 'communityPrepareHeading'
+    );
+    if (localTools) {
+      activation = prepareController?.activate(activationOptions).catch(error => {
+        console.error('[Prepare] Could not activate local handoff tools:', error);
+        setStatus(`Local handoff tools could not open: ${error.message}`);
+        return false;
+      });
+    } else {
+      window.setTimeout(() => elements.communityPrepareHeading.focus(), 0);
+      activation = openCommunityPrepare();
+    }
   } else if (stage === 'load') {
     resumeServiceFolderScanOnLoad();
   }
@@ -1327,7 +1368,12 @@ function setWorkflowStage(stage) {
 }
 
 async function navigateWorkflowStage(stage) {
-  if (stage === state.workflowStage) return;
+  if (stage === state.workflowStage) {
+    if (stage === 'prepare' && !elements.communityPrepareShell.hidden) {
+      await openCommunityPrepare();
+    }
+    return;
+  }
   if (state.workflowStage === 'prepare' && prepareController?.isBusy?.()) {
     setStatus('Wait for the current Prepare change to finish before leaving this screen');
     return;
@@ -2189,6 +2235,7 @@ function applyCommunityStatus(rawStatus, { replace = false } = {}) {
   } catch (error) {
     state.community.error = communityErrorMessage(error, 'Community status is unavailable.');
     renderCommunitySettings();
+    renderCommunityPrepare();
     return false;
   }
   const status = projectCommunityStatus(rawPayload);
@@ -2226,6 +2273,7 @@ function applyCommunityStatus(rawStatus, { replace = false } = {}) {
     elements.communityAdminEmail.value = email;
   }
   renderCommunitySettings();
+  renderCommunityPrepare();
   return true;
 }
 
@@ -2394,6 +2442,116 @@ function renderCommunitySettings() {
   }
 }
 
+function renderCommunityPrepare() {
+  const available = typeof window.api?.openCommunityPlanner === 'function';
+  const connected = available && communityIsConnected();
+  const connection = state.community.status?.connection || null;
+  const serverUrl = communityConnectionServerUrl();
+  const serverName = connection?.serverName || communityServerLabel();
+  elements.communityPrepareServer.textContent = connected
+    ? [serverName, serverUrl].filter(Boolean).join(' · ')
+    : 'Connect Heritage Community to begin';
+  elements.btnOpenCommunityPlanner.disabled = !available
+    || !connected
+    || state.community.plannerBusy;
+  elements.btnOpenCommunityPlanner.textContent = state.community.plannerBusy
+    ? 'Opening…'
+    : state.community.plannerOpen
+      ? 'Bring Prepare to front'
+      : 'Open Prepare';
+
+  elements.communityPrepareStatus.dataset.kind = '';
+  if (!available) {
+    elements.communityPrepareStatus.dataset.kind = 'error';
+    elements.communityPrepareStatus.textContent =
+      'This SyncShow build cannot open the shared Community planner.';
+  } else if (!connected) {
+    elements.communityPrepareStatus.dataset.kind = 'warning';
+    elements.communityPrepareStatus.textContent =
+      'Connect this computer from Community settings, then open Prepare.';
+  } else if (state.community.plannerError) {
+    elements.communityPrepareStatus.dataset.kind = 'error';
+    elements.communityPrepareStatus.textContent = state.community.plannerError;
+  } else if (state.community.plannerBusy) {
+    elements.communityPrepareStatus.textContent =
+      'Opening the planner supplied by Heritage Community…';
+  } else if (state.community.plannerOpen) {
+    elements.communityPrepareStatus.dataset.kind = 'success';
+    elements.communityPrepareStatus.textContent =
+      'Community Prepare is open. Changes are saved in the shared service.';
+  } else {
+    elements.communityPrepareStatus.textContent =
+      'Prepare opens in a secure SyncShow window and stays current with Community.';
+  }
+}
+
+function handleCommunityPlannerStateChanged(payload = {}) {
+  state.community.plannerOpen = payload?.open === true;
+  state.community.plannerBusy = false;
+  state.community.plannerError = typeof payload?.error?.message === 'string'
+    ? payload.error.message
+    : null;
+  renderCommunityPrepare();
+}
+
+async function refreshCommunityPlannerState() {
+  if (typeof window.api?.getCommunityPlannerState !== 'function') {
+    renderCommunityPrepare();
+    return null;
+  }
+  try {
+    const payload = communityCheckedResult(
+      await window.api.getCommunityPlannerState()
+    );
+    handleCommunityPlannerStateChanged(payload);
+    return payload;
+  } catch (error) {
+    state.community.plannerError = communityErrorMessage(
+      error,
+      'Community Prepare status is unavailable.'
+    );
+    renderCommunityPrepare();
+    return null;
+  }
+}
+
+async function openCommunityPrepare() {
+  if (state.community.plannerBusy) return false;
+  if (!communityIsConnected()) {
+    state.community.plannerError = null;
+    renderCommunityPrepare();
+    setStatus('Connect Heritage Community before opening Prepare');
+    openSettings('community');
+    return false;
+  }
+  state.community.plannerBusy = true;
+  state.community.plannerError = null;
+  renderCommunityPrepare();
+  try {
+    const result = communityCheckedResult(
+      await window.api.openCommunityPlanner()
+    );
+    state.community.plannerOpen = result.opened === true;
+    const destination = result.serverName || communityServerLabel();
+    setStatus(`${destination} Prepare is open`);
+    return state.community.plannerOpen;
+  } catch (error) {
+    state.community.plannerOpen = false;
+    state.community.plannerError = communityErrorMessage(
+      error,
+      'Community Prepare could not open.'
+    );
+    setStatus(state.community.plannerError);
+    if (error?.code === 'COMMUNITY_RECONNECT_REQUIRED') {
+      openSettings('community');
+    }
+    return false;
+  } finally {
+    state.community.plannerBusy = false;
+    renderCommunityPrepare();
+  }
+}
+
 function handleCommunityStatusChanged(payload) {
   applyCommunityStatus(payload);
   resumeCommunityAuthorizationPolling();
@@ -2413,6 +2571,7 @@ async function refreshCommunityStatus() {
     state.community.status = null;
     state.community.error = null;
     renderCommunitySettings();
+    renderCommunityPrepare();
     return null;
   }
   try {
@@ -2424,6 +2583,7 @@ async function refreshCommunityStatus() {
   } catch (error) {
     state.community.error = communityErrorMessage(error, 'Community status is unavailable.');
     renderCommunitySettings();
+    renderCommunityPrepare();
     return null;
   }
 }
@@ -2785,6 +2945,10 @@ function disposeCommunityConnectionUi() {
   stopCommunityAuthorizationPolling({ clearAuthorization: true });
   if (typeof communityStatusUnsubscribe === 'function') communityStatusUnsubscribe();
   communityStatusUnsubscribe = null;
+  if (typeof communityPlannerStateUnsubscribe === 'function') {
+    communityPlannerStateUnsubscribe();
+  }
+  communityPlannerStateUnsubscribe = null;
 }
 
 function renderPrivateDriveOAuthDialog() {
@@ -7107,7 +7271,7 @@ async function savePostShowPlanningStatus(status, {
       setShowHandoffBusy(false);
       if (elements.showHandoffDialog.open) elements.showHandoffDialog.close();
       resetShowHandoffContext();
-      setWorkflowStage('prepare');
+      setWorkflowStage('prepare', { localTools: true });
       if (opened?.sermonOpened) {
         setStatus('Service marked Completed and its exact sermon handoff opened in Prepare');
       } else if (opened?.opened) {
@@ -7179,6 +7343,7 @@ async function openPostShowSermonHandoff() {
       if (elements.showHandoffDialog.open) elements.showHandoffDialog.close();
       resetShowHandoffContext();
       setWorkflowStage('prepare', {
+        localTools: true,
         exactPostShowHandoff: true
       });
       setStatus(result.sermonOpened
@@ -7220,7 +7385,7 @@ async function openPostShowSermonHandoff() {
     setShowHandoffBusy(false);
     if (elements.showHandoffDialog.open) elements.showHandoffDialog.close();
     resetShowHandoffContext();
-    setWorkflowStage('prepare');
+    setWorkflowStage('prepare', { localTools: true });
   }
 
   if (result?.sermonOpened) {

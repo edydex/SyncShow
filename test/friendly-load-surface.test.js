@@ -100,29 +100,19 @@ test('Load offers one clear Community path and one separate PPTX setup path', ()
   );
 });
 
-test('Prepare follows the Community planner workspace instead of a three-column dashboard', () => {
+test('Prepare opens the single planner supplied by Heritage Community', () => {
   const preparePanel = elementBlockById(html, 'preparePanel');
-  const serviceMenu = elementBlockById(preparePanel, 'prepareServiceMenu');
+  const communityShell = elementBlockById(preparePanel, 'communityPrepareShell');
 
-  assertContainsId(serviceMenu, 'prepareProjectList');
-  assertContainsId(serviceMenu, 'prepareSharedServices');
-  assertContainsId(serviceMenu, 'prepareCommunityPlans');
-  assert.match(preparePanel, /class="[^"]*\bprepare-rundown-pane\b/);
-  assert.match(preparePanel, /class="[^"]*\bprepare-library-pane\b/);
-  assert.doesNotMatch(preparePanel, /class="[^"]*\bprepare-projects-pane\b/,
-    'saved services must be in the compact service menu, not a permanent third column');
-
-  assertContainsId(preparePanel, 'preparePreviewTabs');
-  assert.match(preparePanel, /id="preparePreviewTabs"[^>]*role="tablist"/);
-  for (const label of ['Songs', 'Media', 'Scripture', 'Sermon templates', 'More slide types']) {
-    assert.match(preparePanel, new RegExp(`>${escapeRegExp(label)}<`));
-  }
-  assert.match(preparePanel, /data-prepare-add-tab="songs"/);
-  assert.match(preparePanel, /data-prepare-add-panel="songs"/);
-  assert.match(appSource, /function activatePrepareAddTab\(/);
-  assert.match(appSource, /function handlePrepareAddTabKeydown\(/);
-  assert.match(css, /\.prepare-preview-tab\[aria-selected="true"\]/);
-  assert.match(css, /\.prepare-add-panel\[hidden\]/);
+  assert.match(preparePanel, /aria-labelledby="communityPrepareHeading"/);
+  assertContainsId(communityShell, 'btnOpenCommunityPlanner');
+  assertContainsId(communityShell, 'btnPrepareCommunitySettings');
+  assert.match(communityShell, /same planner used by Heritage Community/);
+  assert.match(communityShell, /only one planner design to maintain/);
+  assert.match(preparePanel, /id="legacyPrepareShell"[^>]+hidden/,
+    'the older native handoff tools must not be the normal Prepare surface');
+  assert.match(appSource, /activation = openCommunityPrepare\(\)/);
+  assert.match(appSource, /window\.api\.openCommunityPlanner\(\)/);
 });
 
 test('folder, display, output, profile, input, output, and timing controls live in Admin Settings', () => {

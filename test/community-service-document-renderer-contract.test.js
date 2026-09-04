@@ -25,15 +25,11 @@ const prepare = fs.readFileSync(
 const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 
-test('Prepare presents canonical shared services instead of the legacy import card', () => {
-  assert.match(html, /id="prepareSharedServices"/u);
-  assert.match(html, />Prepared services</u);
-  assert.match(html, />Open prepared service…</u);
-  assert.match(html, /id="prepareCommunityPlans"[^>]+hidden/u);
-  assert.match(
-    html,
-    /Community and SyncShow edit the same service/u
-  );
+test('Load retains the Community service chooser and offline handoff', () => {
+  assert.match(html, /id="sharedServicesDialog"/u);
+  assert.match(html, />Open the church’s shared service</u);
+  assert.match(html, /builds the offline Show package/u);
+  assert.match(html, /replaces the service in Load only after the package is complete/u);
   assert.match(
     html,
     /<script src="community-service-document-controller\.js"><\/script>\s*<script src="app\.js"><\/script>/u
@@ -44,9 +40,15 @@ test('Load offers a direct route to the canonical Community service browser', ()
   assert.match(html, /id="btnOpenCommunityServiceFromLoad"/u);
   assert.match(html, />\s*Open from Heritage Community\s*</u);
   assert.match(app, /sharedServiceController\?\.open\?\.\(\)/u);
-  assert.match(app, /await setWorkflowStage\('prepare'\)/u);
+  assert.doesNotMatch(
+    app,
+    /btnOpenCommunityServiceFromLoad\.addEventListener\([\s\S]{0,400}setWorkflowStage\('prepare'\)/u,
+    'opening a Community service from Load must not route through the retired local planner'
+  );
   assert.match(controller, /open: browseServices/u);
   assert.match(controller, /elements\.dialog\.showModal\(\)/u);
+  assert.match(controller, /api\.publishServiceProject\(\{/u);
+  assert.match(controller, /await onLoaded\(published,/u);
 });
 
 test('multi-channel prepared services build the thumbnail grid once with deferred decoding', () => {

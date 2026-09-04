@@ -333,6 +333,8 @@ const sermonExtractionProposalCoordinator = new SermonSourceExtractionCoordinato
 
 // Keep references to prevent garbage collection
 let controlWindow = null;
+let communityPlannerWindow = null;
+let communityPlannerOrigin = null;
 let controlSettingsDraftState = { dirty: false, saving: false };
 let outputWindows = new Map();
 let outputSessionId = 0;
@@ -7320,6 +7322,185 @@ function guardControlWindowClose(event) {
     detail: 'The saved venue setup will stay unchanged.'
   });
   if (response !== 1) event.preventDefault();
+}
+
+function communityPlannerStatePayload({ error = null } = {}) {
+  const open = Boolean(
+    communityPlannerWindow
+    && !communityPlannerWindow.isDestroyed()
+  );
+  return {
+    open,
+    origin: open ? communityPlannerOrigin : null,
+    error: error && typeof error === 'object'
+      ? publicCommunityError(error)
+      : null
+  };
+}
+
+function notifyCommunityPlannerState(options = {}) {
+  if (!controlWindow || controlWindow.isDestroyed()) return;
+  controlWindow.webContents.send(
+    'community:plannerStateChanged',
+    communityPlannerStatePayload(options)
+  );
+}
+
+function safeCommunityPlannerUrl(baseUrl) {
+  let parsed;
+  try {
+    parsed = new URL(baseUrl);
+  } catch (_error) {
+    failMainOperation(
+      'COMMUNITY_PLANNER_URL_INVALID',
+      'The connected Community server address is invalid. Connect it again from Admin Settings.'
+    );
+  }
+  if (parsed.username || parsed.password) {
+    failMainOperation(
+      'COMMUNITY_PLANNER_URL_INVALID',
+      'The Community server address must not contain a username or password.'
+    );
+  }
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const loopback = hostname === 'localhost'
+    || hostname === '::1'
+    || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+  if (parsed.protocol !== 'https:'
+    && !(parsed.protocol === 'http:' && loopback)) {
+    failMainOperation(
+      'COMMUNITY_PLANNER_URL_INSECURE',
+      'Community Prepare requires HTTPS, except on this computer.'
+    );
+  }
+  parsed.pathname = '/admin/plan-service';
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed;
+}
+
+async function openCommunityPlannerWindow() {
+  const connection = await currentCommunityConnectionSummary({
+    refreshCapabilities: true
+  });
+  if (!connection || communityConnectionExpired(connection)) {
+    failMainOperation(
+      'COMMUNITY_RECONNECT_REQUIRED',
+      'Connect Heritage Community in Admin Settings before opening Prepare.'
+    );
+  }
+  if (communityReconnectRequired) {
+    failMainOperation(
+      'COMMUNITY_RECONNECT_REQUIRED',
+      communityReconnectRequired.message
+    );
+  }
+
+  const plannerUrl = safeCommunityPlannerUrl(connection.baseUrl);
+  const plannerOrigin = plannerUrl.origin;
+  if (communityPlannerWindow && !communityPlannerWindow.isDestroyed()) {
+    if (communityPlannerOrigin === plannerOrigin) {
+      if (communityPlannerWindow.isMinimized()) communityPlannerWindow.restore();
+      communityPlannerWindow.show();
+      communityPlannerWindow.focus();
+      return {
+        opened: true,
+        alreadyOpen: true,
+        origin: plannerOrigin,
+        serverName: connection.serverName || null
+      };
+    }
+    failMainOperation(
+      'COMMUNITY_PLANNER_ALREADY_OPEN',
+      'Close the existing Community Prepare window before opening a different Community server.'
+    );
+  }
+
+  const planner = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 1024,
+    minHeight: 680,
+    backgroundColor: '#111111',
+    title: 'SyncShow — Prepare',
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      partition: 'persist:syncshow-community-planner'
+    }
+  });
+  communityPlannerWindow = planner;
+  communityPlannerOrigin = plannerOrigin;
+
+  planner.webContents.session.setPermissionRequestHandler(
+    (_webContents, _permission, callback) => callback(false)
+  );
+  planner.webContents.session.setPermissionCheckHandler(() => false);
+  planner.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const preventUntrustedPlannerNavigation = (event, targetUrl) => {
+    let targetOrigin = null;
+    try {
+      targetOrigin = new URL(targetUrl).origin;
+    } catch (_error) {
+      // Invalid navigation is rejected below.
+    }
+    if (targetOrigin !== plannerOrigin) event.preventDefault();
+  };
+  planner.webContents.on('will-navigate', preventUntrustedPlannerNavigation);
+  planner.webContents.on('will-redirect', preventUntrustedPlannerNavigation);
+  planner.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, _description, validatedUrl, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3) return;
+      const error = new Error(
+        'Community Prepare could not load. Check the connection and try again.'
+      );
+      error.code = 'COMMUNITY_PLANNER_LOAD_FAILED';
+      console.warn(
+        `[CommunityPlanner] Load failed (${errorCode}) for ${validatedUrl || plannerOrigin}.`
+      );
+      notifyCommunityPlannerState({ error });
+    }
+  );
+  planner.once('ready-to-show', () => {
+    if (!planner.isDestroyed()) {
+      planner.show();
+      planner.focus();
+      notifyCommunityPlannerState();
+    }
+  });
+  planner.on('closed', () => {
+    if (communityPlannerWindow === planner) {
+      communityPlannerWindow = null;
+      communityPlannerOrigin = null;
+      notifyCommunityPlannerState();
+    }
+  });
+
+  try {
+    await planner.loadURL(plannerUrl.href);
+  } catch (_error) {
+    if (!planner.isDestroyed()) planner.destroy();
+    if (communityPlannerWindow === planner) {
+      communityPlannerWindow = null;
+      communityPlannerOrigin = null;
+    }
+    failMainOperation(
+      'COMMUNITY_PLANNER_LOAD_FAILED',
+      'Community Prepare could not load. Check the connection and try again.'
+    );
+  }
+  if (!planner.isVisible()) planner.show();
+  planner.focus();
+  notifyCommunityPlannerState();
+  return {
+    opened: true,
+    alreadyOpen: false,
+    origin: plannerOrigin,
+    serverName: connection.serverName || null
+  };
 }
 
 function createControlWindow() {
@@ -17348,6 +17529,16 @@ ipcMain.handle('community:status', async (event) => {
   return communityIpcResult(() => communityStatusPayload({
     refreshCapabilities: true
   }));
+});
+
+ipcMain.handle('community:planner:open', async (event) => {
+  requireControlSender(event);
+  return communityIpcResult(() => openCommunityPlannerWindow());
+});
+
+ipcMain.handle('community:planner:state', async (event) => {
+  requireControlSender(event);
+  return communityIpcResult(async () => communityPlannerStatePayload());
 });
 
 ipcMain.handle('community:serviceDocuments:list', async (event, request = {}) => {

@@ -640,7 +640,7 @@ test('the Prepare stage keeps the receipt-only activation mode after exact open'
   const action = functionSource(appSource, 'openPostShowSermonHandoff');
   assert.match(
     action,
-    /setWorkflowStage\('prepare', \{\s*exactPostShowHandoff: true\s*\}\)/
+    /setWorkflowStage\('prepare', \{\s*localTools: true,\s*exactPostShowHandoff: true\s*\}\)/
   );
 });
 

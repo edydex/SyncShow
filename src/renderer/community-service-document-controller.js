@@ -50,6 +50,9 @@
     const onStatus = typeof options.onStatus === 'function'
       ? options.onStatus
       : () => {};
+    const onLoaded = typeof options.onLoaded === 'function'
+      ? options.onLoaded
+      : async () => {};
     const elements = {
       card: byId('prepareSharedServices'),
       cardStatus: byId('prepareSharedServicesStatus'),
@@ -76,7 +79,8 @@
       'getCommunityServiceDocumentState',
       'openCommunityServiceDocument',
       'saveCommunityServiceDocument',
-      'flushCommunityServiceDocuments'
+      'flushCommunityServiceDocuments',
+      'publishServiceProject'
     ];
     const state = {
       available: false,
@@ -247,8 +251,30 @@
     }
 
     async function showOpenedService(syncId, result) {
-      const opened = await prepareController.openProjectById(syncId);
-      if (!opened) throw new Error('The shared service was saved locally but could not be opened.');
+      let opened = result?.project?.id === syncId && result?.revisionId
+        ? result
+        : null;
+      if (!opened && typeof prepareController?.openProjectById === 'function') {
+        const didOpen = await prepareController.openProjectById(syncId);
+        const current = didOpen ? prepareController.getCurrent?.() : null;
+        if (current?.project?.id === syncId && current?.revisionId) {
+          opened = current;
+        }
+      }
+      if (!opened) {
+        throw new Error(
+          'The shared service was saved locally but could not be prepared for Load.'
+        );
+      }
+      setNotice(`Building ${opened.project.title || 'the shared service'} for offline Show…`);
+      const published = checked(await api.publishServiceProject({
+        projectId: opened.project.id,
+        revisionId: opened.revisionId
+      }));
+      await onLoaded(published, {
+        project: opened.project,
+        revisionId: opened.revisionId
+      });
       state.conflict = null;
       elements.dialog.close();
       if (result.state === 'queued') {
@@ -410,9 +436,7 @@
     const controller = Object.freeze({
       initialize() {
         state.available = requiredMethods.every(method =>
-          typeof api[method] === 'function')
-          && typeof prepareController?.openProjectById === 'function'
-          && typeof prepareController?.getCurrent === 'function';
+          typeof api[method] === 'function');
         bindEvents();
         refreshCapability();
         return controller;
