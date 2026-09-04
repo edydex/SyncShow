@@ -27,8 +27,8 @@ const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 
 test('Prepare presents canonical shared services instead of the legacy import card', () => {
   assert.match(html, /id="prepareSharedServices"/u);
-  assert.match(html, />Shared services</u);
-  assert.match(html, />Open shared service…</u);
+  assert.match(html, />Prepared services</u);
+  assert.match(html, />Open prepared service…</u);
   assert.match(html, /id="prepareCommunityPlans"[^>]+hidden/u);
   assert.match(
     html,
@@ -42,7 +42,7 @@ test('Prepare presents canonical shared services instead of the legacy import ca
 
 test('Load offers a direct route to the canonical Community service browser', () => {
   assert.match(html, /id="btnOpenCommunityServiceFromLoad"/u);
-  assert.match(html, />\s*Open Community service…\s*</u);
+  assert.match(html, />\s*Open from Heritage Community\s*</u);
   assert.match(app, /sharedServiceController\?\.open\?\.\(\)/u);
   assert.match(app, /await setWorkflowStage\('prepare'\)/u);
   assert.match(controller, /open: browseServices/u);

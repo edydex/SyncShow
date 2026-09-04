@@ -68,7 +68,7 @@ test('Prepare exposes retry-safe loading, complete subtree warnings, and render 
 test('Load is the friendly startup surface and Start blockers have visible reasons', () => {
   assert.match(html, /<body class="friendly-mode load-stage">/);
   assert.match(html, /id="loadEssentials"/);
-  assert.match(html, /<h2 id="loadHeading">Today’s slideshows<\/h2>/);
+  assert.match(html, /<h2 id="loadHeading">Load today’s service<\/h2>/);
   assert.match(html, /id="loadAutoStatus"/);
   assert.match(html, /id="readinessIssues"/);
   assert.match(html, /id="btnRestorePrevious"[^>]+hidden/);

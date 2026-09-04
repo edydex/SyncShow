@@ -51,16 +51,63 @@
         <div class="prepare-intro">
           <div>
             <p class="section-kicker">PREPARE</p>
-            <h2 id="prepareHeading" tabindex="-1">Build the service in order</h2>
-            <p>Choose a saved service, add songs and simple slides, then send the finished rundown to Load.</p>
+            <h2 id="prepareHeading" tabindex="-1">Plan the service</h2>
+            <p>Arrange the service order, edit the selected item, and preview every output before sending the exact service to Load.</p>
           </div>
           <div class="prepare-primary-actions">
-            <button type="button" id="btnImportServiceProject" class="btn btn-quiet">Import service</button>
+            <button type="button" id="btnImportServiceProject" class="btn btn-quiet">Import file…</button>
             <button type="button" id="btnNewServiceProject" class="btn btn-secondary">New service</button>
             <button type="button" id="btnPlanNextService" class="btn btn-secondary" disabled>Plan next service…</button>
             <button type="button" id="btnPublishServiceProject" class="btn btn-primary" disabled>Save &amp; go to Load</button>
           </div>
         </div>
+
+        <details id="prepareServiceMenu" class="prepare-service-menu">
+          <summary>
+            <span class="prepare-service-menu-icon" aria-hidden="true">☰</span>
+            <span class="prepare-service-menu-copy">
+              <strong>Choose or switch service</strong>
+              <small>Saved on this computer or shared through Heritage Community</small>
+            </span>
+            <span class="prepare-detail-state" aria-hidden="true">Open service menu</span>
+          </summary>
+          <div class="prepare-service-menu-body">
+            <section class="prepare-service-menu-projects" aria-labelledby="prepareProjectsHeading">
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">THIS COMPUTER</p>
+                  <h3 id="prepareProjectsHeading">Saved services</h3>
+                </div>
+                <span id="prepareProjectCount" class="prepare-count">0</span>
+              </div>
+              <label class="prepare-search-field" for="prepareProjectSearch">
+                <span class="sr-only">Search saved services</span>
+                <input id="prepareProjectSearch" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="Search saved services">
+              </label>
+              <div id="prepareProjectList" class="prepare-list" role="list" aria-live="polite"></div>
+            </section>
+
+            <div class="prepare-service-menu-community">
+              <aside id="prepareSharedServices" class="prepare-community-plans-card" aria-labelledby="prepareSharedServicesHeading">
+                <div>
+                  <p class="section-kicker">HERITAGE COMMUNITY</p>
+                  <h3 id="prepareSharedServicesHeading">Prepared services</h3>
+                  <p id="prepareSharedServicesStatus" class="prepare-pane-subtitle" role="status" aria-live="polite">Checking this computer’s Community access…</p>
+                </div>
+                <button type="button" id="btnBrowseSharedServices" class="btn btn-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog" disabled>Open prepared service…</button>
+              </aside>
+
+              <aside id="prepareCommunityPlans" class="prepare-community-plans-card" aria-labelledby="prepareCommunityPlansHeading" hidden>
+                <div>
+                  <p class="section-kicker">HERITAGE COMMUNITY</p>
+                  <h3 id="prepareCommunityPlansHeading">Service plans</h3>
+                  <p id="prepareCommunityPlansStatus" class="prepare-pane-subtitle" role="status" aria-live="polite">Checking this computer’s Community access…</p>
+                </div>
+                <button type="button" id="btnBrowseCommunityPlans" class="btn btn-secondary" aria-haspopup="dialog" aria-controls="communityServicePlansDialog" disabled>Browse plans…</button>
+              </aside>
+            </div>
+          </div>
+        </details>
 
         <aside id="prepareCurrentServiceCompanion" class="prepare-current-service-card" hidden aria-labelledby="prepareCurrentServiceCompanionHeading">
           <div class="prepare-current-service-copy">
@@ -83,46 +130,13 @@
           Choose a service project to begin.
         </p>
 
-        <aside id="prepareSharedServices" class="prepare-community-plans-card" aria-labelledby="prepareSharedServicesHeading">
-          <div>
-            <p class="section-kicker">HERITAGE COMMUNITY</p>
-            <h3 id="prepareSharedServicesHeading">Shared services</h3>
-            <p id="prepareSharedServicesStatus" class="prepare-pane-subtitle" role="status" aria-live="polite">Checking this computer’s Community access…</p>
-          </div>
-          <button type="button" id="btnBrowseSharedServices" class="btn btn-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog" disabled>Open shared service…</button>
-        </aside>
-
-        <aside id="prepareCommunityPlans" class="prepare-community-plans-card" aria-labelledby="prepareCommunityPlansHeading" hidden>
-          <div>
-            <p class="section-kicker">HERITAGE COMMUNITY</p>
-            <h3 id="prepareCommunityPlansHeading">Shared service plans</h3>
-            <p id="prepareCommunityPlansStatus" class="prepare-pane-subtitle" role="status" aria-live="polite">Checking this computer’s Community access…</p>
-          </div>
-          <button type="button" id="btnBrowseCommunityPlans" class="btn btn-secondary" aria-haspopup="dialog" aria-controls="communityServicePlansDialog" disabled>Browse plans…</button>
-        </aside>
-
         <div class="prepare-workspace">
-          <aside class="prepare-column prepare-projects-pane" aria-labelledby="prepareProjectsHeading">
-            <div class="prepare-pane-heading">
-              <div>
-                <p class="section-kicker">SERVICES</p>
-                <h3 id="prepareProjectsHeading">Service projects</h3>
-              </div>
-              <span id="prepareProjectCount" class="prepare-count">0</span>
-            </div>
-            <label class="prepare-search-field" for="prepareProjectSearch">
-              <span class="sr-only">Search service projects</span>
-              <input id="prepareProjectSearch" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="Search services">
-            </label>
-            <div id="prepareProjectList" class="prepare-list" role="list" aria-live="polite"></div>
-          </aside>
-
           <section class="prepare-column prepare-rundown-pane" aria-labelledby="prepareRundownHeading">
             <div class="prepare-pane-heading prepare-rundown-heading">
               <div>
-                <p class="section-kicker">RUNDOWN</p>
+                <p class="section-kicker">SERVICE ORDER</p>
                 <h3 id="prepareRundownHeading">No service open</h3>
-                <p id="prepareProjectMeta" class="prepare-pane-subtitle">Select a service from the left.</p>
+                <p id="prepareProjectMeta" class="prepare-pane-subtitle">Choose a service above.</p>
               </div>
               <div class="prepare-rundown-tools">
                 <button type="button" id="btnUndoPrepareChange" class="btn btn-quiet btn-compact" title="Undo the last saved change" disabled>Undo</button>
@@ -242,7 +256,7 @@
             <ol id="prepareRundownList" class="prepare-rundown-list" aria-label="Service order"></ol>
           </section>
 
-          <aside class="prepare-column prepare-library-pane" aria-labelledby="prepareLibraryHeading">
+          <aside class="prepare-column prepare-library-pane" aria-label="Selected item and slide library">
             <section class="prepare-inspector" aria-labelledby="prepareInspectorHeading">
               <div class="prepare-pane-heading">
                 <div>
@@ -291,12 +305,13 @@
             <section id="prepareItemPreview" class="prepare-item-preview" aria-labelledby="prepareItemPreviewHeading" hidden>
               <div class="prepare-preview-heading">
                 <div>
-                  <p class="section-kicker">PREVIEW</p>
+                  <p class="section-kicker">OUTPUT PREVIEW</p>
                   <h4 id="prepareItemPreviewHeading">Selected slide</h4>
                 </div>
-                <label>
-                  <span class="sr-only">Preview output</span>
-                  <select id="preparePreviewChannel" class="display-dropdown" disabled></select>
+                <div id="preparePreviewTabs" class="prepare-preview-tabs" role="tablist" aria-label="Preview output"></div>
+                <label class="sr-only" aria-hidden="true">
+                  Preview output
+                  <select id="preparePreviewChannel" tabindex="-1" disabled></select>
                 </label>
               </div>
               <div class="prepare-preview-frame">
@@ -554,99 +569,116 @@
             <section class="prepare-add-section" aria-labelledby="prepareAddHeading">
               <div class="prepare-pane-heading">
                 <div>
-                  <p class="section-kicker">ADD</p>
-                  <h3 id="prepareAddHeading">Add to this service</h3>
+                  <p class="section-kicker">ADD SLIDES</p>
+                  <h3 id="prepareAddHeading">Add to the service order</h3>
                 </div>
               </div>
-              <div class="prepare-add-grid">
-                <button type="button" id="btnAddServiceText" class="prepare-add-button" disabled>
-                  <span aria-hidden="true">T</span><strong>Text</strong><small>Sermon point or notice</small>
-                </button>
-                <button type="button" id="btnAddServicePicture" class="prepare-add-button" disabled>
-                  <span aria-hidden="true">▧</span><strong>Picture</strong><small>PNG, JPEG, or WebP</small>
-                </button>
-                <button type="button" id="btnAddServiceVideo" class="prepare-add-button" disabled>
-                  <span aria-hidden="true">▶</span><strong>Video</strong><small>MP4 or WebM</small>
-                </button>
-                <button type="button" id="btnAddServiceSermon" class="prepare-add-button" disabled>
-                  <span aria-hidden="true">S</span><strong>Sermon</strong><small>Packet, text, slides, reading</small>
-                </button>
-                <button type="button" id="btnAddServiceGroup" class="prepare-add-button" disabled>
-                  <span aria-hidden="true">§</span><strong>Section</strong><small>Group songs, sermon notes, and pictures</small>
-                </button>
-              </div>
-            </section>
+              <nav class="prepare-add-tabs" role="tablist" aria-label="Slide library">
+                <button type="button" id="prepareAddTabSongs" role="tab" aria-selected="true" aria-controls="prepareAddPanelSongs" data-prepare-add-tab="songs" tabindex="0">Songs</button>
+                <button type="button" id="prepareAddTabMedia" role="tab" aria-selected="false" aria-controls="prepareAddPanelMedia" data-prepare-add-tab="media" tabindex="-1">Media</button>
+                <button type="button" id="prepareAddTabScripture" role="tab" aria-selected="false" aria-controls="prepareAddPanelScripture" data-prepare-add-tab="scripture" tabindex="-1">Scripture</button>
+                <button type="button" id="prepareAddTabSermon" role="tab" aria-selected="false" aria-controls="prepareAddPanelSermon" data-prepare-add-tab="sermon" tabindex="-1">Sermon templates</button>
+                <button type="button" id="prepareAddTabMore" role="tab" aria-selected="false" aria-controls="prepareAddPanelMore" data-prepare-add-tab="more" tabindex="-1">More slide types</button>
+              </nav>
 
-            <details id="prepareBibleDetails" class="prepare-bible-panel">
-              <summary>
-                <span class="prepare-bible-summary-icon" aria-hidden="true">B</span>
-                <span class="prepare-bible-summary-copy">
-                  <strong>Add Bible passage</strong>
-                  <small>Find a reference and add it to the rundown</small>
-                </span>
-                <span class="prepare-detail-state" aria-hidden="true">Open</span>
-              </summary>
-              <form id="prepareBibleForm" class="prepare-bible-form" aria-describedby="prepareBibleStatus">
-                <div class="prepare-bible-fields">
-                  <label class="prepare-bible-reference" for="prepareBibleReference">
-                    <span>Reference</span>
-                    <input id="prepareBibleReference" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="John 3:16 or 1 pet 1 4" disabled>
+              <div id="prepareAddPanelSongs" class="prepare-add-panel" role="tabpanel" aria-labelledby="prepareAddTabSongs" data-prepare-add-panel="songs" tabindex="0">
+                <section class="prepare-song-library" aria-labelledby="prepareLibraryHeading">
+                  <div class="prepare-pane-heading">
+                    <div>
+                      <p class="section-kicker">SONG LIBRARY</p>
+                      <h3 id="prepareLibraryHeading">Songs</h3>
+                    </div>
+                    <div class="prepare-library-actions">
+                      <button type="button" id="btnNewSongDocument" class="btn btn-secondary btn-compact" disabled>New song</button>
+                      <button type="button" id="btnImportSongDocument" class="btn btn-outline btn-compact" disabled>Import files</button>
+                    </div>
+                  </div>
+                  <label class="prepare-search-field" for="prepareSongSearch">
+                    <span class="sr-only">Search song library</span>
+                    <input id="prepareSongSearch" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="Search songs" disabled>
                   </label>
-                  <label for="prepareBibleTranslation">
-                    <span>Preview &amp; default</span>
-                    <select id="prepareBibleTranslation" class="display-dropdown" disabled>
-                      <option value="BSB" selected>BSB</option>
-                      <option value="LSV">LSV</option>
-                    </select>
-                  </label>
-                  <button type="button" id="btnLookupPrepareBible" class="btn btn-outline btn-compact" disabled>Find</button>
-                </div>
-
-                <p id="prepareBibleStatus" class="prepare-bible-status" role="status">Open a service before adding a passage.</p>
-
-                <section id="prepareBibleAmbiguity" class="prepare-bible-response" aria-labelledby="prepareBibleAmbiguityHeading" hidden>
-                  <h4 id="prepareBibleAmbiguityHeading">Which book did you mean?</h4>
-                  <div id="prepareBibleAmbiguityChoices" class="prepare-bible-choices" role="listbox" aria-label="Matching Bible books"></div>
+                  <div id="prepareSongList" class="prepare-list prepare-song-list" role="list" aria-live="polite"></div>
+                  <div class="prepare-song-pagination">
+                    <p id="prepareSongCount" class="prepare-song-count" role="status" aria-live="polite">0 families · 0 versions</p>
+                    <button type="button" id="btnLoadMoreSongs" class="btn btn-outline btn-compact" aria-controls="prepareSongList" hidden disabled>Load more songs</button>
+                  </div>
                 </section>
+              </div>
 
-                <section id="prepareBibleResult" class="prepare-bible-response prepare-bible-results" aria-labelledby="prepareBiblePreviewReference" hidden>
-                  <h4 id="prepareBiblePreviewReference">Passage preview</h4>
-                  <p id="prepareBiblePreviewText"></p>
-                </section>
-
-                <section id="prepareBibleOutputTreatments" class="prepare-bible-response prepare-bible-output-treatments" aria-labelledby="prepareBibleOutputsHeading" hidden>
-                  <h4 id="prepareBibleOutputsHeading">Output treatments</h4>
-                  <p class="prepare-pane-subtitle">Choose a translation or hide the passage on every output. SyncShow resolves each translation from the canonical Bible source when you add it.</p>
-                  <div id="prepareBibleOutputs" class="prepare-song-output-list" aria-label="Bible treatment for every output"></div>
-                </section>
-
-                <div class="prepare-bible-actions">
-                  <button type="button" id="btnAddBiblePassage" class="btn btn-primary btn-compact" disabled>Add passage to service</button>
-                </div>
-              </form>
-            </details>
-
-            <section class="prepare-song-library" aria-labelledby="prepareLibraryHeading">
-              <div class="prepare-pane-heading">
-                <div>
-                  <p class="section-kicker">LIBRARY</p>
-                  <h3 id="prepareLibraryHeading">Songs</h3>
-                </div>
-                <div class="prepare-library-actions">
-                  <button type="button" id="btnNewSongDocument" class="btn btn-secondary btn-compact" disabled>New song</button>
-                  <button type="button" id="btnImportSongDocument" class="btn btn-outline btn-compact" disabled>Import files</button>
+              <div id="prepareAddPanelMedia" class="prepare-add-panel" role="tabpanel" aria-labelledby="prepareAddTabMedia" data-prepare-add-panel="media" tabindex="0" hidden>
+                <div class="prepare-add-grid">
+                  <button type="button" id="btnAddServicePicture" class="prepare-add-button" disabled>
+                    <span aria-hidden="true">▧</span><strong>Picture</strong><small>PNG, JPEG, or WebP</small>
+                  </button>
+                  <button type="button" id="btnAddServiceVideo" class="prepare-add-button" disabled>
+                    <span aria-hidden="true">▶</span><strong>Video</strong><small>MP4 or WebM</small>
+                  </button>
                 </div>
               </div>
-              <label class="prepare-search-field" for="prepareSongSearch">
-                <span class="sr-only">Search song library</span>
-                <input id="prepareSongSearch" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="Search songs" disabled>
-              </label>
-              <div id="prepareSongList" class="prepare-list prepare-song-list" role="list" aria-live="polite"></div>
-              <div class="prepare-song-pagination">
-                <p id="prepareSongCount" class="prepare-song-count" role="status" aria-live="polite">0 families · 0 versions</p>
-                <button type="button" id="btnLoadMoreSongs" class="btn btn-outline btn-compact" aria-controls="prepareSongList" hidden disabled>
-                  Load more songs
-                </button>
+
+              <div id="prepareAddPanelScripture" class="prepare-add-panel" role="tabpanel" aria-labelledby="prepareAddTabScripture" data-prepare-add-panel="scripture" tabindex="0" hidden>
+                <details id="prepareBibleDetails" class="prepare-bible-panel" open>
+                  <summary>
+                    <span class="prepare-bible-summary-icon" aria-hidden="true">B</span>
+                    <span class="prepare-bible-summary-copy">
+                      <strong>Add Bible passage</strong>
+                      <small>Find a reference and add it to the service order</small>
+                    </span>
+                    <span class="prepare-detail-state" aria-hidden="true">Open</span>
+                  </summary>
+                  <form id="prepareBibleForm" class="prepare-bible-form" aria-describedby="prepareBibleStatus">
+                    <div class="prepare-bible-fields">
+                      <label class="prepare-bible-reference" for="prepareBibleReference">
+                        <span>Reference</span>
+                        <input id="prepareBibleReference" class="text-input" type="search" maxlength="120" autocomplete="off" placeholder="John 3:16 or 1 pet 1 4" disabled>
+                      </label>
+                      <label for="prepareBibleTranslation">
+                        <span>Preview &amp; default</span>
+                        <select id="prepareBibleTranslation" class="display-dropdown" disabled>
+                          <option value="BSB" selected>BSB</option>
+                          <option value="LSV">LSV</option>
+                        </select>
+                      </label>
+                      <button type="button" id="btnLookupPrepareBible" class="btn btn-outline btn-compact" disabled>Find</button>
+                    </div>
+                    <p id="prepareBibleStatus" class="prepare-bible-status" role="status">Open a service before adding a passage.</p>
+                    <section id="prepareBibleAmbiguity" class="prepare-bible-response" aria-labelledby="prepareBibleAmbiguityHeading" hidden>
+                      <h4 id="prepareBibleAmbiguityHeading">Which book did you mean?</h4>
+                      <div id="prepareBibleAmbiguityChoices" class="prepare-bible-choices" role="listbox" aria-label="Matching Bible books"></div>
+                    </section>
+                    <section id="prepareBibleResult" class="prepare-bible-response prepare-bible-results" aria-labelledby="prepareBiblePreviewReference" hidden>
+                      <h4 id="prepareBiblePreviewReference">Passage preview</h4>
+                      <p id="prepareBiblePreviewText"></p>
+                    </section>
+                    <section id="prepareBibleOutputTreatments" class="prepare-bible-response prepare-bible-output-treatments" aria-labelledby="prepareBibleOutputsHeading" hidden>
+                      <h4 id="prepareBibleOutputsHeading">Output treatments</h4>
+                      <p class="prepare-pane-subtitle">Choose a translation or hide the passage on every output. SyncShow resolves each translation from the canonical Bible source when you add it.</p>
+                      <div id="prepareBibleOutputs" class="prepare-song-output-list" aria-label="Bible treatment for every output"></div>
+                    </section>
+                    <div class="prepare-bible-actions">
+                      <button type="button" id="btnAddBiblePassage" class="btn btn-primary btn-compact" disabled>Add passage to service</button>
+                    </div>
+                  </form>
+                </details>
+              </div>
+
+              <div id="prepareAddPanelSermon" class="prepare-add-panel" role="tabpanel" aria-labelledby="prepareAddTabSermon" data-prepare-add-panel="sermon" tabindex="0" hidden>
+                <div class="prepare-add-grid">
+                  <button type="button" id="btnAddServiceSermon" class="prepare-add-button prepare-add-button-wide" disabled>
+                    <span aria-hidden="true">S</span><strong>Sermon</strong><small>Packet, text, slides, and congregational reading</small>
+                  </button>
+                </div>
+              </div>
+
+              <div id="prepareAddPanelMore" class="prepare-add-panel" role="tabpanel" aria-labelledby="prepareAddTabMore" data-prepare-add-panel="more" tabindex="0" hidden>
+                <div class="prepare-add-grid">
+                  <button type="button" id="btnAddServiceText" class="prepare-add-button" disabled>
+                    <span aria-hidden="true">T</span><strong>Text</strong><small>Sermon point or notice</small>
+                  </button>
+                  <button type="button" id="btnAddServiceGroup" class="prepare-add-button" disabled>
+                    <span aria-hidden="true">§</span><strong>Section</strong><small>Group songs, sermon notes, and pictures</small>
+                  </button>
+                </div>
               </div>
             </section>
           </aside>
@@ -660,17 +692,33 @@
           <div class="load-intro">
             <div>
               <p class="section-kicker">LOAD</p>
-              <h2 id="loadHeading">Today’s slideshows</h2>
-              <p>Synced files load automatically. If something is missing, choose it on its card.</p>
+              <h2 id="loadHeading">Load today’s service</h2>
+              <p>Open one prepared service from Heritage Community, or import the church’s PowerPoint files.</p>
             </div>
             <div class="load-intro-actions">
-              <button type="button" id="btnOpenCommunityServiceFromLoad" class="btn btn-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog">
-                Open Community service…
-              </button>
               <span id="loadAutoStatus" class="load-auto-status" role="status" aria-live="polite">
                 Checking automatic loading…
               </span>
             </div>
+          </div>
+
+          <div class="load-source-choices" aria-label="Ways to load a service">
+            <button type="button" id="btnOpenCommunityServiceFromLoad" class="load-source-choice is-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog">
+              <span class="load-source-choice-mark" aria-hidden="true">H</span>
+              <span>
+                <strong>Open from Heritage Community</strong>
+                <small>Choose a service prepared by your church</small>
+              </span>
+              <span class="load-source-choice-action" aria-hidden="true">Choose service&nbsp; →</span>
+            </button>
+            <button type="button" id="btnOpenPptxImportFromLoad" class="load-source-choice">
+              <span class="load-source-choice-mark" aria-hidden="true">P</span>
+              <span>
+                <strong>Import PPTXs</strong>
+                <small>Use Google Drive or a folder on this computer</small>
+              </span>
+              <span class="load-source-choice-action" aria-hidden="true">Open setup&nbsp; →</span>
+            </button>
           </div>
 
         <section id="loadServiceHandoff" class="load-service-handoff" aria-labelledby="loadServiceHandoffTitle" hidden>
@@ -709,13 +757,29 @@
             <header class="admin-settings-header">
               <div>
                 <p class="section-kicker">ADMIN SETTINGS</p>
-                <h2 id="adminSettingsHeading">Church connections and venue setup</h2>
-                <p>Configure Community, automatic loading, private sermon storage, slideshow names, output screens, and venue behavior here.</p>
+                <h2 id="adminSettingsHeading">Set up this SyncShow computer</h2>
+                <p>Choose the part you need. Community, PowerPoint loading, and venue screens are configured separately.</p>
               </div>
               <button type="button" id="btnCloseAdminSettings" class="btn btn-secondary">Done</button>
             </header>
 
+            <nav id="adminSettingsTabs" class="admin-settings-tabs" role="tablist" aria-label="Admin Settings sections">
+              <button type="button" id="settingsTabCommunity" class="admin-settings-tab" role="tab" aria-selected="true" aria-controls="settingsCommunityPanel" data-settings-tab="community" tabindex="0">
+                <span>Heritage Community</span>
+                <small>Account, services, and library sync</small>
+              </button>
+              <button type="button" id="settingsTabGoogleDrive" class="admin-settings-tab" role="tab" aria-selected="false" aria-controls="settingsGoogleDrivePanel" data-settings-tab="google-drive" tabindex="-1">
+                <span>Google Drive &amp; PPTX</span>
+                <small>Automatic PowerPoint loading</small>
+              </button>
+              <button type="button" id="settingsTabScreens" class="admin-settings-tab" role="tab" aria-selected="false" aria-controls="settingsScreensPanel" data-settings-tab="screens" tabindex="-1">
+                <span>Screen Setup</span>
+                <small>Venue screens and Show behavior</small>
+              </button>
+            </nav>
+
             <div class="admin-settings-scroll">
+              <section id="settingsGoogleDrivePanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabGoogleDrive" data-settings-panel="google-drive" tabindex="0" hidden>
               <section id="serviceFolderCard" class="service-folder-card" aria-labelledby="serviceFolderHeading">
                 <div class="service-folder-heading">
                   <div class="service-folder-title">
@@ -814,7 +878,9 @@
                   </div>
                 </div>
               </section>
+              </section>
 
+              <section id="settingsCommunityPanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabCommunity" data-settings-panel="community" tabindex="0">
               <section id="communityConnectionSection" class="settings-section community-settings-section" aria-labelledby="communityConnectionHeading">
                 <div class="settings-section-heading community-settings-heading">
                   <div>
@@ -922,7 +988,9 @@
                 </div>
                 <p id="sermonStorageActionStatus" class="settings-note" role="status" aria-live="polite">The check never removes files. Unreferenced files must remain continuously unreferenced for at least 90 days before removal can be offered.</p>
               </section>
+              </section>
 
+              <section id="settingsScreensPanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabScreens" data-settings-panel="screens" tabindex="0" hidden>
               <section class="settings-section display-tools-section" aria-labelledby="displayToolsHeading">
                 <div class="settings-section-heading">
                   <div>
@@ -982,10 +1050,10 @@
 
                 <div class="profile-source-grid">
                   <label class="field-group profile-service-folder-field">
-                    <span>Automatic loading source <small>Managed above</small></span>
+                    <span>Automatic loading source <small>Managed in Google Drive &amp; PPTX</small></span>
                     <span class="profile-folder-picker">
                       <input type="text" id="profileServiceFolder" class="text-input" readonly placeholder="No source linked">
-                      <button type="button" id="btnChooseProfileServiceFolder" class="btn btn-outline">Use local</button>
+                      <button type="button" id="btnChooseProfileServiceFolder" class="btn btn-outline">Open setup</button>
                     </span>
                   </label>
                   <label class="field-group">
@@ -1106,6 +1174,7 @@
               </section>
             </div>
           </div>
+              </section>
             </div>
           </div>
         </dialog>

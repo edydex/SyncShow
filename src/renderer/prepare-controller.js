@@ -7829,6 +7829,7 @@
       btnRemove: byId('btnRemovePrepareItem'),
       itemPreview: byId('prepareItemPreview'),
       previewChannel: byId('preparePreviewChannel'),
+      previewTabs: byId('preparePreviewTabs'),
       previewImage: byId('preparePreviewImage'),
       previewStatus: byId('preparePreviewStatus'),
       previewPosition: byId('preparePreviewPosition'),
@@ -16220,7 +16221,7 @@
       const rows = currentRows();
       if (!project) {
         elements.rundownHeading.textContent = 'No service open';
-        elements.projectMeta.textContent = 'Select a service from the left.';
+        elements.projectMeta.textContent = 'Choose a service from the menu above.';
       } else {
         elements.rundownHeading.textContent = project.title;
         elements.projectMeta.textContent = isPowerPointCompanionProject(project)
@@ -16239,7 +16240,7 @@
       const emptyCopy = elements.rundownEmpty.querySelector('p');
       if (!project) {
         emptyTitle.textContent = 'Choose or create a service';
-        emptyCopy.textContent = 'Saved service projects appear on the left. Load remains the default screen when SyncShow opens.';
+        emptyCopy.textContent = 'Open the service menu above to use a saved service or one prepared in Heritage Community. Load remains the default screen when SyncShow opens.';
       } else if (isPowerPointCompanionProject(project)) {
         emptyTitle.textContent = 'PowerPoint sermon handoff';
         emptyCopy.textContent =
@@ -16451,6 +16452,45 @@
       }
       state.previewChannelId = channels.includes(previousChannel) ? previousChannel : channels[0] || null;
       elements.previewChannel.value = state.previewChannelId || '';
+      elements.previewTabs.replaceChildren();
+      channels.forEach((channelId, index) => {
+        const channel = state.currentProject.channels?.[channelId];
+        const selected = channelId === state.previewChannelId;
+        const channelLabel = channel?.label?.trim().toLowerCase() === 'media'
+          ? 'Stage-Facing Screen'
+          : channel?.label || channelId;
+        const tab = createElement(
+          'button',
+          'prepare-preview-tab',
+          channelLabel
+        );
+        tab.type = 'button';
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        tab.dataset.channelId = channelId;
+        tab.addEventListener('click', () => {
+          if (state.previewChannelId === channelId) return;
+          state.previewChannelId = channelId;
+          elements.previewChannel.value = channelId;
+          loadSelectedPreview({ resetOffset: true });
+        });
+        tab.addEventListener('keydown', event => {
+          let nextIndex = index;
+          if (event.key === 'ArrowRight') nextIndex = (index + 1) % channels.length;
+          else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + channels.length) % channels.length;
+          else if (event.key === 'Home') nextIndex = 0;
+          else if (event.key === 'End') nextIndex = channels.length - 1;
+          else return;
+          event.preventDefault();
+          const nextTab = elements.previewTabs.querySelector(
+            `[data-channel-id="${CSS.escape(channels[nextIndex])}"]`
+          );
+          nextTab?.focus();
+          nextTab?.click();
+        });
+        elements.previewTabs.appendChild(tab);
+      });
 
       if (row.item.kind === 'group') {
         elements.previewImage.hidden = true;

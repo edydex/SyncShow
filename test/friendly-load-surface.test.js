@@ -8,6 +8,7 @@ const path = require('node:path');
 const rendererDirectory = path.join(__dirname, '..', 'src', 'renderer');
 const html = fs.readFileSync(path.join(rendererDirectory, 'index.html'), 'utf8');
 const appSource = fs.readFileSync(path.join(rendererDirectory, 'app.js'), 'utf8');
+const css = fs.readFileSync(path.join(rendererDirectory, 'styles.css'), 'utf8');
 const mainSource = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
 
@@ -85,6 +86,45 @@ test('Friendly Load keeps only operator essentials on the normal surface', () =>
     'folder setup must not appear among normal operator essentials');
 });
 
+test('Load offers one clear Community path and one separate PPTX setup path', () => {
+  const loadEssentials = elementBlockById(html, 'loadEssentials');
+
+  assertContainsId(loadEssentials, 'btnOpenCommunityServiceFromLoad');
+  assertContainsId(loadEssentials, 'btnOpenPptxImportFromLoad');
+  assert.match(loadEssentials, /Open from Heritage Community/);
+  assert.match(loadEssentials, /Import PPTXs/);
+  assert.match(
+    appSource,
+    /elements\.btnOpenPptxImportFromLoad\.addEventListener\('click', \(\) => \{\s*openSettings\('google-drive'\)/,
+    'Import PPTXs must open the independent Google Drive and PPTX settings tab'
+  );
+});
+
+test('Prepare follows the Community planner workspace instead of a three-column dashboard', () => {
+  const preparePanel = elementBlockById(html, 'preparePanel');
+  const serviceMenu = elementBlockById(preparePanel, 'prepareServiceMenu');
+
+  assertContainsId(serviceMenu, 'prepareProjectList');
+  assertContainsId(serviceMenu, 'prepareSharedServices');
+  assertContainsId(serviceMenu, 'prepareCommunityPlans');
+  assert.match(preparePanel, /class="[^"]*\bprepare-rundown-pane\b/);
+  assert.match(preparePanel, /class="[^"]*\bprepare-library-pane\b/);
+  assert.doesNotMatch(preparePanel, /class="[^"]*\bprepare-projects-pane\b/,
+    'saved services must be in the compact service menu, not a permanent third column');
+
+  assertContainsId(preparePanel, 'preparePreviewTabs');
+  assert.match(preparePanel, /id="preparePreviewTabs"[^>]*role="tablist"/);
+  for (const label of ['Songs', 'Media', 'Scripture', 'Sermon templates', 'More slide types']) {
+    assert.match(preparePanel, new RegExp(`>${escapeRegExp(label)}<`));
+  }
+  assert.match(preparePanel, /data-prepare-add-tab="songs"/);
+  assert.match(preparePanel, /data-prepare-add-panel="songs"/);
+  assert.match(appSource, /function activatePrepareAddTab\(/);
+  assert.match(appSource, /function handlePrepareAddTabKeydown\(/);
+  assert.match(css, /\.prepare-preview-tab\[aria-selected="true"\]/);
+  assert.match(css, /\.prepare-add-panel\[hidden\]/);
+});
+
 test('folder, display, output, profile, input, output, and timing controls live in Admin Settings', () => {
   const adminDialog = elementBlockById(html, 'advancedSetupDetails');
   assert.match(
@@ -123,6 +163,32 @@ test('folder, display, output, profile, input, output, and timing controls live 
     'the existing advanced-mode safety warning must be preserved');
 });
 
+test('Admin Settings separates Community, Google Drive, and screens into accessible tabs', () => {
+  const adminDialog = elementBlockById(html, 'advancedSetupDetails');
+  const communityPanel = elementBlockById(adminDialog, 'settingsCommunityPanel');
+  const drivePanel = elementBlockById(adminDialog, 'settingsGoogleDrivePanel');
+  const screensPanel = elementBlockById(adminDialog, 'settingsScreensPanel');
+
+  assert.match(adminDialog, /id="adminSettingsTabs"[^>]*role="tablist"/);
+  assert.match(adminDialog, /id="settingsTabCommunity"[^>]*role="tab"[^>]*aria-selected="true"[^>]*data-settings-tab="community"/);
+  assert.match(adminDialog, /id="settingsTabGoogleDrive"[^>]*role="tab"[^>]*data-settings-tab="google-drive"/);
+  assert.match(adminDialog, /id="settingsTabScreens"[^>]*role="tab"[^>]*data-settings-tab="screens"/);
+
+  assertContainsId(communityPanel, 'communityConnectionSection');
+  assertContainsId(communityPanel, 'sermonStorageSection');
+  assertDoesNotContainId(communityPanel, 'serviceFolderCard');
+  assertContainsId(drivePanel, 'serviceFolderCard');
+  assertDoesNotContainId(drivePanel, 'communityConnectionSection');
+  assertContainsId(screensPanel, 'btnRefreshDisplays');
+  assertContainsId(screensPanel, 'venueProfileSection');
+  assertDoesNotContainId(screensPanel, 'serviceFolderCard');
+
+  assert.match(appSource, /function activateSettingsTab\(/);
+  assert.match(appSource, /function handleSettingsTabKeydown\(/);
+  assert.match(css, /\.admin-settings-tab\[aria-selected="true"\]/);
+  assert.match(css, /\.admin-settings-tab-panel\[hidden\]/);
+});
+
 test('the clearly labeled Admin Settings button opens and closes the modal', () => {
   assert.match(
     html,
@@ -130,7 +196,7 @@ test('the clearly labeled Admin Settings button opens and closes the modal', () 
     'the header entry point must clearly say Admin Settings'
   );
   assert.match(appSource,
-    /elements\.btnOpenSettings\.addEventListener\('click', openSettings\)/);
+    /elements\.btnOpenSettings\.addEventListener\('click', \(\) => openSettings\(\)\)/);
   assert.match(appSource,
     /elements\.btnCloseAdminSettings\.addEventListener\('click', closeSettings\)/);
 

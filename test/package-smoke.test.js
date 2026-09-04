@@ -18,12 +18,13 @@ const {
   buildSharpSmokeSource,
   parseArguments: parseSharpArguments
 } = require('../scripts/verify-packaged-sharp');
+const sourceManifest = require('../package.json');
 
 const SOURCE_REVISION = 'a'.repeat(40);
 const APPLICATION = Object.freeze({
   name: 'sync-show',
   productName: 'SyncShow',
-  version: '1.4.0-preview.21'
+  version: sourceManifest.version
 });
 
 function binaryBytes(format, architecture) {

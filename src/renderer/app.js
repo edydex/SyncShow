@@ -28,6 +28,8 @@ const state = {
   friendlyMode: true,
   advancedWarningAcknowledged: false,
   advancedWarningAction: null,
+  settingsTab: 'community',
+  prepareAddTab: 'songs',
   cachedPresentations: null,
   cachedRestorePlan: null,
   restoreGroupId: null,
@@ -250,6 +252,7 @@ const elements = {
   syncMode: document.getElementById('syncMode'),
   friendlyMode: document.getElementById('friendlyMode'),
   btnOpenCommunityServiceFromLoad: document.getElementById('btnOpenCommunityServiceFromLoad'),
+  btnOpenPptxImportFromLoad: document.getElementById('btnOpenPptxImportFromLoad'),
   loadAutoStatus: document.getElementById('loadAutoStatus'),
   loadServiceHandoff: document.getElementById('loadServiceHandoff'),
   loadServiceHandoffTitle: document.getElementById('loadServiceHandoffTitle'),
@@ -259,6 +262,10 @@ const elements = {
   loadServiceHandoffRunSheet: document.getElementById('loadServiceHandoffRunSheet'),
   loadServiceHandoffTeam: document.getElementById('loadServiceHandoffTeam'),
   loadServiceHandoffReview: document.getElementById('loadServiceHandoffReview'),
+  adminSettingsTabs: Array.from(document.querySelectorAll('[data-settings-tab]')),
+  adminSettingsPanels: Array.from(document.querySelectorAll('[data-settings-panel]')),
+  prepareAddTabs: Array.from(document.querySelectorAll('[data-prepare-add-tab]')),
+  prepareAddPanels: Array.from(document.querySelectorAll('[data-prepare-add-panel]')),
   advancedSetupDetails: document.getElementById('advancedSetupDetails'),
   btnCloseAdminSettings: document.getElementById('btnCloseAdminSettings'),
   advancedWarningDialog: document.getElementById('advancedWarningDialog'),
@@ -541,17 +548,29 @@ function setupEventListeners() {
       const opened = await sharedServiceController?.open?.();
       if (!opened) {
         setStatus('Connect Heritage Community in Admin Settings to open a shared service');
+        openSettings('community');
       }
     } finally {
       elements.btnOpenCommunityServiceFromLoad.disabled = false;
     }
   });
+  elements.btnOpenPptxImportFromLoad.addEventListener('click', () => {
+    openSettings('google-drive');
+  });
 
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
   elements.btnIdentifyDisplays.addEventListener('click', identifyDisplays);
-  elements.btnOpenSettings.addEventListener('click', openSettings);
+  elements.btnOpenSettings.addEventListener('click', () => openSettings());
   elements.btnCloseAdminSettings.addEventListener('click', closeSettings);
+  elements.adminSettingsTabs.forEach(tab => {
+    tab.addEventListener('click', () => activateSettingsTab(tab.dataset.settingsTab));
+    tab.addEventListener('keydown', handleSettingsTabKeydown);
+  });
+  elements.prepareAddTabs.forEach(tab => {
+    tab.addEventListener('click', () => activatePrepareAddTab(tab.dataset.prepareAddTab));
+    tab.addEventListener('keydown', handlePrepareAddTabKeydown);
+  });
   elements.btnStartPresentation.addEventListener('click', startPresentation);
   elements.btnRestorePrevious.addEventListener('click', restoreCachedPresentations);
   elements.btnChooseServiceFolder.addEventListener('click', chooseAndLinkServiceFolder);
@@ -651,7 +670,9 @@ function setupEventListeners() {
       'Show handoff controls changed in the draft. Save to apply them to the next Show.'
     );
   });
-  elements.btnChooseProfileServiceFolder.addEventListener('click', chooseProfileServiceFolder);
+  elements.btnChooseProfileServiceFolder.addEventListener('click', () => {
+    activateSettingsTab('google-drive', { focusTab: true });
+  });
   elements.btnAddInputRole.addEventListener('click', addInputRoleDraft);
   elements.btnAddOutput.addEventListener('click', addOutputDraft);
   elements.btnResetProfileDraft.addEventListener('click', resetProfileDraft);
@@ -1084,7 +1105,80 @@ async function schedulePrivateSermonStorageCleanup() {
   }
 }
 
-function openSettings() {
+function activatePrepareAddTab(tabId, { focusTab = false } = {}) {
+  const requestedTab = typeof tabId === 'string' ? tabId : '';
+  const activeTab = elements.prepareAddTabs.find(
+    tab => tab.dataset.prepareAddTab === requestedTab
+  ) || elements.prepareAddTabs[0];
+  if (!activeTab) return;
+
+  const activeTabId = activeTab.dataset.prepareAddTab;
+  state.prepareAddTab = activeTabId;
+  elements.prepareAddTabs.forEach(tab => {
+    const selected = tab === activeTab;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  elements.prepareAddPanels.forEach(panel => {
+    panel.hidden = panel.dataset.prepareAddPanel !== activeTabId;
+  });
+  if (focusTab) activeTab.focus();
+}
+
+function handlePrepareAddTabKeydown(event) {
+  const tabs = elements.prepareAddTabs;
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex < 0) return;
+
+  let nextIndex = currentIndex;
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = tabs.length - 1;
+  else return;
+
+  event.preventDefault();
+  activatePrepareAddTab(tabs[nextIndex].dataset.prepareAddTab, { focusTab: true });
+}
+
+function activateSettingsTab(tabId, { focusTab = false } = {}) {
+  const requestedTab = typeof tabId === 'string' ? tabId : '';
+  const activeTab = elements.adminSettingsTabs.find(
+    tab => tab.dataset.settingsTab === requestedTab
+  ) || elements.adminSettingsTabs[0];
+  if (!activeTab) return;
+
+  const activeTabId = activeTab.dataset.settingsTab;
+  state.settingsTab = activeTabId;
+  elements.adminSettingsTabs.forEach(tab => {
+    const selected = tab === activeTab;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  elements.adminSettingsPanels.forEach(panel => {
+    panel.hidden = panel.dataset.settingsPanel !== activeTabId;
+  });
+  if (focusTab) activeTab.focus();
+}
+
+function handleSettingsTabKeydown(event) {
+  const tabs = elements.adminSettingsTabs;
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex < 0) return;
+
+  let nextIndex = currentIndex;
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = tabs.length - 1;
+  else return;
+
+  event.preventDefault();
+  activateSettingsTab(tabs[nextIndex].dataset.settingsTab, { focusTab: true });
+}
+
+function openSettings(tabId = state.settingsTab) {
+  activateSettingsTab(tabId);
   refreshCommunityStatus();
   if (elements.advancedSetupDetails.open) return;
   if (!state.advancedWarningAcknowledged) {
@@ -1211,7 +1305,7 @@ function setWorkflowStage(stage) {
   }
 
   const stageLabels = {
-    prepare: { title: 'SyncShow — Prepare', subtitle: 'Build the service in order' },
+    prepare: { title: 'SyncShow — Prepare', subtitle: 'Plan the service' },
     load: { title: 'SyncShow — Load', subtitle: 'Load today’s service' },
     show: { title: 'SyncShow — Show', subtitle: 'Control the live service' }
   };
@@ -2900,7 +2994,7 @@ async function refreshDriveStatus() {
 
 function requireCleanProfileForSourceChange() {
   if (!state.profileDirty) return true;
-  openSettings();
+  openSettings('screens');
   elements.profileEditorStatus.textContent = 'Save or discard the venue changes before changing the automatic loading source.';
   setStatus('Venue setup changes are waiting to be saved or discarded');
   return false;
