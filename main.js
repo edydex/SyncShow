@@ -7399,6 +7399,26 @@ function safeCommunityPlannerUrl(baseUrl) {
   return parsed;
 }
 
+function communityPlannerRequestHeaders(details, plannerOrigin, accessToken) {
+  let target = null;
+  try {
+    target = new URL(details.url);
+  } catch (_error) {
+    return details.requestHeaders;
+  }
+  const serviceDocumentApi = target.pathname === '/api/community/service-documents'
+    || target.pathname.startsWith('/api/community/service-documents/');
+  if (target.origin !== plannerOrigin || !serviceDocumentApi) {
+    return details.requestHeaders;
+  }
+  const requestHeaders = { ...details.requestHeaders };
+  for (const header of Object.keys(requestHeaders)) {
+    if (header.toLowerCase() === 'authorization') delete requestHeaders[header];
+  }
+  requestHeaders.Authorization = `SyncShow ${accessToken}`;
+  return requestHeaders;
+}
+
 async function openCommunityPlannerWindow() {
   const connection = await currentCommunityConnectionSummary({
     refreshCapabilities: true
@@ -7415,6 +7435,15 @@ async function openCommunityPlannerWindow() {
       communityReconnectRequired.message
     );
   }
+  if (connection.canReadServiceDocuments !== true
+    || connection.canWriteServiceDocuments !== true) {
+    failMainOperation(
+      'COMMUNITY_PLANNER_PERMISSION_REQUIRED',
+      'Reconnect Heritage Community with service planning permission before opening Prepare.'
+    );
+  }
+  const { connectionStore } = await getCommunityServices();
+  const authenticatedConnection = await connectionStore.getConnection(connection.id);
 
   const plannerUrl = safeCommunityPlannerUrl(connection.baseUrl);
   const plannerOrigin = plannerUrl.origin;
@@ -7453,11 +7482,22 @@ async function openCommunityPlannerWindow() {
   });
   communityPlannerWindow = planner;
   communityPlannerOrigin = plannerOrigin;
+  const plannerSession = planner.webContents.session;
 
-  planner.webContents.session.setPermissionRequestHandler(
+  plannerSession.setPermissionRequestHandler(
     (_webContents, _permission, callback) => callback(false)
   );
-  planner.webContents.session.setPermissionCheckHandler(() => false);
+  plannerSession.setPermissionCheckHandler(() => false);
+  plannerSession.webRequest.onBeforeSendHeaders(
+    { urls: ['<all_urls>'] },
+    (details, callback) => callback({
+      requestHeaders: communityPlannerRequestHeaders(
+        details,
+        plannerOrigin,
+        authenticatedConnection.accessToken
+      )
+    })
+  );
   planner.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   const preventUntrustedPlannerNavigation = (event, targetUrl) => {
     let targetOrigin = null;
@@ -7492,6 +7532,7 @@ async function openCommunityPlannerWindow() {
     }
   });
   planner.on('closed', () => {
+    plannerSession.webRequest.onBeforeSendHeaders(null);
     if (communityPlannerWindow === planner) {
       communityPlannerWindow = null;
       communityPlannerOrigin = null;

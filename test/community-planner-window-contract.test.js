@@ -32,6 +32,14 @@ test('Community planner window keeps Electron privileges and navigation locked d
   assert.match(main, /setPermissionRequestHandler\([\s\S]*callback\(false\)/u);
   assert.match(main, /setPermissionCheckHandler\(\(\) => false\)/u);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/u);
+  assert.match(main, /connection\.canReadServiceDocuments !== true[\s\S]*connection\.canWriteServiceDocuments !== true/u);
+  assert.match(main, /connectionStore\.getConnection\(connection\.id\)/u);
+  assert.match(main, /target\.origin !== plannerOrigin \|\| !serviceDocumentApi/u);
+  assert.match(main, /target\.pathname === '\/api\/community\/service-documents'/u);
+  assert.match(main, /target\.pathname\.startsWith\('\/api\/community\/service-documents\/'\)/u);
+  assert.match(main, /requestHeaders\.Authorization = `SyncShow \$\{accessToken\}`/u);
+  assert.match(main, /webRequest\.onBeforeSendHeaders\(null\)/u);
+  assert.doesNotMatch(main, /executeJavaScript\([\s\S]{0,300}accessToken/u);
   assert.match(main, /if \(targetOrigin !== plannerOrigin\) event\.preventDefault\(\)/u);
   assert.match(main, /on\('will-redirect', preventUntrustedPlannerNavigation\)/u);
   assert.match(main, /parsed\.protocol !== 'https:'/u);
