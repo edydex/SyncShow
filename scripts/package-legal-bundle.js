@@ -12,6 +12,12 @@ const { packageTarget } = require('./lib/package-targets');
 
 const LEGAL_SCHEMA_VERSION = 1;
 const MAX_NOTICE_BYTES = 32 * 1024 * 1024;
+const SHARP_LIBVIPS_NOTICE = Object.freeze({
+  projectPath: 'legal/upstream/sharp-libvips-1.3.2/THIRD-PARTY-NOTICES.md',
+  bundlePath: 'notices/sharp-libvips-1.3.2/THIRD-PARTY-NOTICES.md',
+  sha256: '25ffcfa69e28b1913ced27ec778b90f24911a1bb3021253577e8b0af55db0d49',
+  sourceUrl: 'https://github.com/lovell/sharp-libvips/blob/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/THIRD-PARTY-NOTICES.md'
+});
 const RELEASE_BLOCKERS = Object.freeze([
   Object.freeze({
     id: 'canvas-native-source-and-third-party-notices',
@@ -326,7 +332,8 @@ Target: ${target.key}
 
 This package contains third-party software under separate license terms.
 The files under notices/ are copied from the exact staged application or the
-matching installed Electron/native package used to make this target.
+matching installed Electron/native package used to make this target, with the
+pinned upstream libvips notice index included on its 1.3.2 package targets.
 
 Native artifact digests in manifest.json are pre-signing provenance. macOS and
 Windows signing may rewrite the native files after the afterPack hook. They are
@@ -339,6 +346,12 @@ Audited notice groups currently included:
 - target-specific sharp-libvips package provenance when applicable
 - Electron 43.2.0 and Chromium third-party notices
 - SyncShow's bundled Noto Sans font license
+
+${target.libvipsPackage ? `The libvips notice index is retained from:
+${SHARP_LIBVIPS_NOTICE.sourceUrl}
+Its bytes also match the official v1.3.2 npm-workspace release asset. The index
+identifies dependency license terms; it is not the complete license/source set.
+` : ''}
 
 This is intentionally not described as a complete notice inventory. See
 manifest.json for hashed evidence and the blockers that prevent distribution.
@@ -535,6 +548,17 @@ async function buildLegalBundle(context) {
     `notices/${target.sharpPackage}-${sharpTargetMetadata.version}/LICENSE`,
     path.join(sharpTargetRoot, 'LICENSE')
   ));
+  if (target.libvipsPackage) {
+    const notice = await copyBundleFile(
+      stagingRoot,
+      SHARP_LIBVIPS_NOTICE.bundlePath,
+      path.join(projectDir, SHARP_LIBVIPS_NOTICE.projectPath)
+    );
+    if (notice.sha256 !== SHARP_LIBVIPS_NOTICE.sha256) {
+      fail('UPSTREAM_NOTICE_CHANGED', 'The libvips notice differs from the reviewed upstream 1.3.2 release.');
+    }
+    notices.push(notice);
+  }
 
   const electronNoticeRoot = target.platform === 'darwin'
     ? path.join(projectDir, 'node_modules', 'electron', 'dist')
@@ -760,6 +784,7 @@ module.exports = {
   LegalBundleError,
   PDFJS_NOTICE_PATHS,
   RELEASE_BLOCKERS,
+  SHARP_LIBVIPS_NOTICE,
   buildLegalBundle,
   resolveInside,
   sha256File

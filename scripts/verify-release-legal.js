@@ -8,6 +8,7 @@ const {
   LEGAL_SCHEMA_VERSION,
   PDFJS_NOTICE_PATHS,
   RELEASE_BLOCKERS,
+  SHARP_LIBVIPS_NOTICE,
   resolveInside,
   sha256File
 } = require('./package-legal-bundle');
@@ -392,6 +393,7 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
     'notices/napi-rs-canvas-1.0.3/LICENSE',
     'notices/sharp-0.35.3/LICENSE',
     `notices/${target.sharpPackage}-0.35.3/LICENSE`,
+    ...(target.libvipsPackage ? [SHARP_LIBVIPS_NOTICE.bundlePath] : []),
     'notices/electron-43.2.0/LICENSE',
     'notices/electron-43.2.0/LICENSES.chromium.html',
     'notices/fonts/NotoSans-OFL.txt'
@@ -408,6 +410,11 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
   ];
   exactRecordPaths(manifest.documents, expectedDocumentPaths, 'document');
   exactRecordPaths(manifest.notices, expectedNoticePaths, 'notice');
+  if (target.libvipsPackage && manifest.notices.find(record => (
+    record.path === SHARP_LIBVIPS_NOTICE.bundlePath
+  ))?.sha256 !== SHARP_LIBVIPS_NOTICE.sha256) {
+    fail('UPSTREAM_NOTICE_CHANGED', 'The libvips notice differs from the reviewed upstream 1.3.2 release.');
+  }
   exactRecordPaths(manifest.provenance, expectedProvenancePaths, 'provenance');
   const legalRecords = [];
   const seenPaths = new Set();

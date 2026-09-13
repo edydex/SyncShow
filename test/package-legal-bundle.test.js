@@ -12,6 +12,7 @@ const { Arch } = require('builder-util');
 const {
   PDFJS_NOTICE_PATHS,
   RELEASE_BLOCKERS,
+  SHARP_LIBVIPS_NOTICE,
   buildLegalBundle
 } = require('../scripts/package-legal-bundle');
 const {
@@ -153,6 +154,9 @@ async function legalFixture(t, {
   );
 
   await writeFile(projectDir, 'LICENSE.txt', 'SyncShow MIT license\n');
+  await writeFile(projectDir, SHARP_LIBVIPS_NOTICE.projectPath, await fs.readFile(
+    path.resolve(__dirname, '..', SHARP_LIBVIPS_NOTICE.projectPath)
+  ));
   await writeJson(projectDir, 'node_modules/electron/package.json', {
     name: 'electron',
     version: '43.2.0'
@@ -263,6 +267,12 @@ test('afterPack legal evidence is target-specific, complete for its stated scope
     RELEASE_BLOCKERS.map(blocker => blocker.id)
   );
   assert.equal(built.manifest.target.key, 'darwin-arm64');
+  const libvipsNotice = built.manifest.notices.find(record => (
+    record.path === 'notices/sharp-libvips-1.3.2/THIRD-PARTY-NOTICES.md'
+  ));
+  assert.equal(libvipsNotice.sha256, '25ffcfa69e28b1913ced27ec778b90f24911a1bb3021253577e8b0af55db0d49');
+  const noticeText = await fs.readFile(path.join(built.legalRoot, libvipsNotice.path), 'utf8');
+  assert.match(noticeText, /\| libvips\s+\| LGPLv3/u);
   assert.equal(
     built.manifest.nativeArtifacts.some(record => (
       record.package === 'electron-ffmpeg'
@@ -310,6 +320,23 @@ test('afterPack legal evidence is target-specific, complete for its stated scope
   await assert.rejects(
     verifyLegalBundle(fixture.manifestPath, { requireComplete: false }),
     error => error.code === 'LEGAL_EVIDENCE_CHANGED'
+  );
+});
+
+test('legal packaging rejects changed upstream libvips notice bytes', async t => {
+  const fixture = await legalFixture(t);
+  await fs.appendFile(path.join(fixture.context.packager.projectDir, SHARP_LIBVIPS_NOTICE.projectPath), 'changed\n');
+  await assert.rejects(buildLegalBundle(fixture.context), error => error.code === 'UPSTREAM_NOTICE_CHANGED');
+});
+
+test('legal verification rejects a libvips notice hash substituted in the manifest', async t => {
+  const fixture = await legalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  built.manifest.notices.find(record => record.path === SHARP_LIBVIPS_NOTICE.bundlePath).sha256 = '0'.repeat(64);
+  await fs.writeFile(fixture.manifestPath, JSON.stringify(built.manifest));
+  await assert.rejects(
+    verifyLegalBundle(fixture.manifestPath, { requireComplete: false }),
+    error => error.code === 'UPSTREAM_NOTICE_CHANGED'
   );
 });
 
