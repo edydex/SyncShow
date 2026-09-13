@@ -18,6 +18,12 @@ const SHARP_LIBVIPS_NOTICE = Object.freeze({
   sha256: '25ffcfa69e28b1913ced27ec778b90f24911a1bb3021253577e8b0af55db0d49',
   sourceUrl: 'https://github.com/lovell/sharp-libvips/blob/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/THIRD-PARTY-NOTICES.md'
 });
+const LIBVIPS_SOURCE_NOTICES = Object.freeze({
+  projectRoot: 'legal/upstream/sharp-libvips-1.3.2/source-notices',
+  bundleRoot: 'notices/sharp-libvips-1.3.2/source-archives',
+  manifestSha256: 'f89d1575be7b4388491605991a38a5255a02141c1abf4a1becb171e4e2e64615'
+});
+
 const RELEASE_BLOCKERS = Object.freeze([
   Object.freeze({
     id: 'canvas-native-source-and-third-party-notices',
@@ -304,6 +310,26 @@ function installedPackageRecord(lock, packageName, expectedVersion) {
   };
 }
 
+async function libvipsSourceNoticeRecords(projectDir) {
+  const projectRoot = path.join(projectDir, LIBVIPS_SOURCE_NOTICES.projectRoot);
+  const manifestPath = path.join(projectRoot, 'manifest.json');
+  await regularFile(manifestPath);
+  const bytes = await fsp.readFile(manifestPath);
+  if (crypto.createHash('sha256').update(bytes).digest('hex') !== LIBVIPS_SOURCE_NOTICES.manifestSha256) {
+    fail('UPSTREAM_SOURCE_NOTICE_CHANGED', 'The libvips source-notice inventory differs from the reviewed archive set.');
+  }
+  const inventory = JSON.parse(bytes.toString('utf8'));
+  return [
+    { path: 'manifest.json', size: bytes.length, sha256: LIBVIPS_SOURCE_NOTICES.manifestSha256 },
+    ...inventory.files
+  ].map(record => ({
+    projectPath: resolveInside(projectRoot, record.path),
+    bundlePath: `${LIBVIPS_SOURCE_NOTICES.bundleRoot}/${record.path}`,
+    size: record.size,
+    sha256: record.sha256
+  }));
+}
+
 function legalIndexHtml(appVersion, target) {
   const blockers = RELEASE_BLOCKERS
     .map(blocker => `<li><code>${blocker.id}</code>: ${blocker.summary}</li>`)
@@ -350,7 +376,10 @@ Audited notice groups currently included:
 ${target.libvipsPackage ? `The libvips notice index is retained from:
 ${SHARP_LIBVIPS_NOTICE.sourceUrl}
 Its bytes also match the official v1.3.2 npm-workspace release asset. The index
-identifies dependency license terms; it is not the complete license/source set.
+identifies dependency license terms. Source-archive license texts and their
+archive provenance are also included under source-archives/. That collection
+may include test/build notices and does not assert all listed code is linked.
+The full transitive license/source set and replacement acceptance remain open.
 ` : ''}
 
 This is intentionally not described as a complete notice inventory. See
@@ -558,6 +587,13 @@ async function buildLegalBundle(context) {
       fail('UPSTREAM_NOTICE_CHANGED', 'The libvips notice differs from the reviewed upstream 1.3.2 release.');
     }
     notices.push(notice);
+    for (const expected of await libvipsSourceNoticeRecords(projectDir)) {
+      const copied = await copyBundleFile(stagingRoot, expected.bundlePath, expected.projectPath);
+      if (copied.sha256 !== expected.sha256 || copied.size !== expected.size) {
+        fail('UPSTREAM_SOURCE_NOTICE_CHANGED', 'A libvips license text differs from its retained source archive.');
+      }
+      notices.push(copied);
+    }
   }
 
   const electronNoticeRoot = target.platform === 'darwin'
@@ -785,6 +821,8 @@ module.exports = {
   PDFJS_NOTICE_PATHS,
   RELEASE_BLOCKERS,
   SHARP_LIBVIPS_NOTICE,
+  LIBVIPS_SOURCE_NOTICES,
+  libvipsSourceNoticeRecords,
   buildLegalBundle,
   resolveInside,
   sha256File

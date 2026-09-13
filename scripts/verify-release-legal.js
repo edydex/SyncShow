@@ -9,6 +9,7 @@ const {
   PDFJS_NOTICE_PATHS,
   RELEASE_BLOCKERS,
   SHARP_LIBVIPS_NOTICE,
+  libvipsSourceNoticeRecords,
   resolveInside,
   sha256File
 } = require('./package-legal-bundle');
@@ -385,6 +386,9 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
     'SOURCE_AVAILABILITY.txt',
     'THIRD_PARTY_NOTICES.txt'
   ];
+  const sourceNotices = target.libvipsPackage
+    ? await libvipsSourceNoticeRecords(path.resolve(__dirname, '..'))
+    : [];
   const expectedNoticePaths = [
     'notices/syncshow/LICENSE.txt',
     ...PDFJS_NOTICE_PATHS.map(relativePath => (
@@ -394,6 +398,7 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
     'notices/sharp-0.35.3/LICENSE',
     `notices/${target.sharpPackage}-0.35.3/LICENSE`,
     ...(target.libvipsPackage ? [SHARP_LIBVIPS_NOTICE.bundlePath] : []),
+    ...sourceNotices.map(record => record.bundlePath),
     'notices/electron-43.2.0/LICENSE',
     'notices/electron-43.2.0/LICENSES.chromium.html',
     'notices/fonts/NotoSans-OFL.txt'
@@ -414,6 +419,12 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
     record.path === SHARP_LIBVIPS_NOTICE.bundlePath
   ))?.sha256 !== SHARP_LIBVIPS_NOTICE.sha256) {
     fail('UPSTREAM_NOTICE_CHANGED', 'The libvips notice differs from the reviewed upstream 1.3.2 release.');
+  }
+  for (const expected of sourceNotices) {
+    const actual = manifest.notices.find(record => record.path === expected.bundlePath);
+    if (actual?.sha256 !== expected.sha256 || actual?.size !== expected.size) {
+      fail('UPSTREAM_SOURCE_NOTICE_CHANGED', 'A libvips source-notice hash differs from its reviewed archive.');
+    }
   }
   exactRecordPaths(manifest.provenance, expectedProvenancePaths, 'provenance');
   const legalRecords = [];

@@ -13,6 +13,7 @@ const {
   PDFJS_NOTICE_PATHS,
   RELEASE_BLOCKERS,
   SHARP_LIBVIPS_NOTICE,
+  LIBVIPS_SOURCE_NOTICES,
   buildLegalBundle
 } = require('../scripts/package-legal-bundle');
 const {
@@ -209,6 +210,12 @@ async function legalFixture(t, {
     packages
   });
 
+  await fs.cp(
+    path.resolve(__dirname, '..', LIBVIPS_SOURCE_NOTICES.projectRoot),
+    path.join(projectDir, LIBVIPS_SOURCE_NOTICES.projectRoot),
+    { recursive: true }
+  );
+
   const context = {
     appOutDir,
     electronPlatformName: 'darwin',
@@ -338,6 +345,31 @@ test('legal verification rejects a libvips notice hash substituted in the manife
     verifyLegalBundle(fixture.manifestPath, { requireComplete: false }),
     error => error.code === 'UPSTREAM_NOTICE_CHANGED'
   );
+});
+
+test('libvips source notices include the actual LGPL text behind the GLib symlink', async t => {
+  const fixture = await legalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  const record = built.manifest.notices.find(item => item.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt'));
+  assert.ok(record);
+  assert.match(await fs.readFile(path.join(built.legalRoot, record.path), 'utf8'), /GNU LESSER GENERAL PUBLIC LICENSE/u);
+});
+
+test('libvips source notice generation rejects changed text and inventory bytes', async t => {
+  for (const relativePath of ['glib/LICENSES/LGPL-2.1-or-later.txt', 'manifest.json']) {
+    const fixture = await legalFixture(t);
+    await fs.appendFile(path.join(fixture.context.packager.projectDir, LIBVIPS_SOURCE_NOTICES.projectRoot, relativePath), 'changed\n');
+    await assert.rejects(buildLegalBundle(fixture.context), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
+  }
+});
+
+test('libvips source notice verification rejects substituted archive hashes', async t => {
+  const fixture = await legalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  const record = built.manifest.notices.find(item => item.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt'));
+  record.sha256 = '0'.repeat(64);
+  await fs.writeFile(fixture.manifestPath, JSON.stringify(built.manifest));
+  await assert.rejects(verifyLegalBundle(fixture.manifestPath, { requireComplete: false }), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
 });
 
 test('legal verification reads the evolving application version from packaged app.asar', async t => {

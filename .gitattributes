@@ -1,2 +1,5 @@
 # Canonical source and contract fixtures must have identical bytes on every OS.
 * text=auto eol=lf
+
+# Preserve imported license bytes, including upstream CRLF and whitespace.
+legal/upstream/sharp-libvips-1.3.2/source-notices/** -text -whitespace
