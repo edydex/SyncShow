@@ -58,3 +58,19 @@ test('discovery adds explicitly advertised translation control without granting 
   assert.equal(enabled.scopes.includes('syncshow:translation:control'), true);
   await assert.rejects(discover({ ...descriptor, accessPath: 'https://other.example.test/access' }));
 });
+
+test('prepared-service credentials stay on exact owned Community reads and writes', () => {
+  const base = { url: `${origin}/api/community/translation/plans`, method: 'GET', webContentsId: 12, requestHeaders: {} };
+  for (const changes of [{}, { method: 'PUT' }, { url: `${base.url}?serviceId=service-2026:morning` }]) {
+    assert.equal(operatorRequestHeaders({ ...base, ...changes }, origin, 'private-token', 12).Authorization, 'SyncShow private-token');
+  }
+  for (const changes of [{ method: 'POST' }, { method: 'DELETE' }, { webContentsId: 13 },
+    { url: `${base.url}?redirect=1` }, { url: `${base.url}?serviceId=one&serviceId=two` },
+    { url: `${base.url}?serviceId=../other` }, { url: `${base.url}/extra` },
+    { method: 'PUT', url: `${base.url}?serviceId=one` },
+    { url: 'https://other.example/api/community/translation/plans' }]) {
+    const headers = operatorRequestHeaders({ ...base, ...changes, requestHeaders: { authorization: 'SyncShow private-token' } }, origin, 'private-token', 12);
+    assert.equal(headers.Authorization, undefined);
+    assert.equal(headers.authorization, undefined);
+  }
+});

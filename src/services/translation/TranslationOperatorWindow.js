@@ -2,6 +2,7 @@
 const { communityOrigin } = require('./TranslationFeed');
 
 const ACCESS_PATH = '/api/community/translation/access';
+const PLANS_PATH = '/api/community/translation/plans';
 const OPERATOR_PATH = '/admin/live-translation';
 
 function operatorPage(url, origin) {
@@ -15,15 +16,20 @@ function operatorRequestHeaders(details, origin, accessToken, webContentsId) {
   const headers = { ...details.requestHeaders };
   const target = new URL(details.url);
   // Retain the operator's short-lived lease only on its same-origin processor
-  // API. Permanent device credentials belong only to the lease exchange.
+  // API. Permanent device credentials stay on narrowly scoped Community endpoints.
   for (const key of Object.keys(headers)) {
     if (key.toLowerCase() !== 'authorization') continue;
     if (target.origin !== origin || !target.pathname.startsWith('/translation/api/')
       || typeof headers[key] !== 'string' || !headers[key].startsWith('Bearer mlg1.')) delete headers[key];
   }
-  if (details.webContentsId === webContentsId && details.method === 'POST'
-    && target.origin === origin && target.pathname === ACCESS_PATH
-    && !target.search && !target.username && !target.password) {
+  const serviceIds = target.searchParams.getAll('serviceId');
+  const planQuery = [...target.searchParams.keys()].every(key => key === 'serviceId')
+    && serviceIds.length <= 1 && serviceIds.every(id => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id));
+  const communityRequest = (details.method === 'POST' && target.pathname === ACCESS_PATH && !target.search)
+    || (target.pathname === PLANS_PATH && ((details.method === 'GET' && planQuery)
+      || (details.method === 'PUT' && !target.search)));
+  if (details.webContentsId === webContentsId && communityRequest
+    && target.origin === origin && !target.username && !target.password) {
     headers.Authorization = `SyncShow ${accessToken}`;
   }
   return headers;

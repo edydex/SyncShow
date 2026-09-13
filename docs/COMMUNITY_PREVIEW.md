@@ -1,4 +1,6 @@
-# Community integration preview — 1.4.0-preview.26
+# Community integration preview — 1.4.0-preview.27
+
+Prepared services can now supply saved language, Quality/Economy, translated-speech and sermon-note choices in the shared translation console. Select a service in Live translation; Community also links there from its service editor. Saving does not start translation. Economy note sharing remains an explicit choice for each session. Update the unified Community/Multilinguum server set to enable this workflow.
 
 This development preview includes shared Heritage live-translation controls, tablet teaching, and translation-only screens that work without loading a presentation.
 
