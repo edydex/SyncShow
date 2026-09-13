@@ -398,6 +398,8 @@ contextBridge.exposeInMainWorld('api', {
   getTranslationState: () => ipcRenderer.invoke('translation:state'),
   connectTranslation: () => ipcRenderer.invoke('translation:connect'),
   openTranslationOperator: () => ipcRenderer.invoke('translation:operator'),
+  openTranslationScreen: (request = {}) => ipcRenderer.invoke('translation:screen:open', { outputId: request?.outputId }),
+  closeTranslationScreen: (request = {}) => ipcRenderer.invoke('translation:screen:close', { outputId: request?.outputId }),
   configureTranslationOutput: (request = {}) => ipcRenderer.invoke('translation:configure', {
     outputId: request?.outputId, settings: request?.settings
   }),

@@ -8,6 +8,7 @@
 .translation-row select, .translation-manual select, .translation-manual textarea { width: 100%; background: #1c293b; color: #fff; border: 1px solid #52657d; border-radius: 7px; padding: 9px; font: inherit; }
 .translation-output-name { display: grid; gap: 5px; align-self: center; overflow-wrap: anywhere; }
 .translation-output-name small { color: #9eb0c5; }
+.translation-screen-actions { display: grid; gap: 8px; }
 .translation-preview { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0; }
 .translation-preview p { max-height: 100px; overflow: auto; white-space: pre-wrap; margin-bottom: 0; }
 .translation-manual { margin-top: 24px; border-top: 1px solid #334155; padding-top: 18px; }

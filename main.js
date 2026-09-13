@@ -18,6 +18,7 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const QRCode = require('qrcode');
 const { TranslationProjection } = require('./src/services/translation/TranslationProjection');
+const { TranslationScreens } = require('./src/services/translation/TranslationScreens');
 const { TeachingSurface } = require('./src/services/show/TeachingSurface');
 const { TranslationPreferences } = require('./src/services/translation/TranslationPreferences');
 const { TranslationFeed } = require('./src/services/translation/TranslationFeed');
@@ -347,6 +348,16 @@ let outputWindows = new Map();
 let translationPreferencesVenue = null;
 let translationSettingsQueue = Promise.resolve();
 const translationProjection = new TranslationProjection();
+const translationScreens = new TranslationScreens({
+  BrowserWindow, projection: translationProjection, changed: notifyTranslationChanged,
+  context: () => ({
+    outputs: activeVenueProfile?.outputs || [],
+    displays: screen.getAllDisplays().map(display => ({ ...display,
+      fingerprint: appState.displays.find(item => item.id === display.id)?.fingerprint })),
+    controlDisplayId: getControlDisplayId(),
+    showActive: Boolean(appState.activeLaunchPlan || displayStartInProgress)
+  })
+});
 const teachingPainted = new Map();
 const teachingSurface = new TeachingSurface({ readContext: readTeachingContext, changed: sendTeachingFrames });
 const translationFeed = new TranslationFeed({ projection: translationProjection, changed: notifyTranslationChanged });
@@ -1371,6 +1382,10 @@ function normalizeUserSettings(settings) {
 function applyVenueProfile(profile) {
   const previousSignature = serviceProfileSignature(activeVenueProfile);
   const nextSignature = serviceProfileSignature(profile);
+  if (activeVenueProfile?.id !== profile.id
+    || JSON.stringify(activeVenueProfile?.outputs) !== JSON.stringify(profile.outputs)) {
+    translationScreens.closeAll();
+  }
   if (activeVenueProfile?.id !== profile.id) {
     translationPreferencesVenue = null;
     translationProjection.outputs.clear();
@@ -8109,6 +8124,7 @@ function showOutputWindow(win) {
 }
 
 function destroyOutputWindows() {
+  translationScreens.closeAll();
   liveCueTransitionCoordinator?.cancel(
     'The output session ended while changing cues.',
     'OUTPUT_SESSION_REPLACED'
@@ -8168,6 +8184,7 @@ function destroyOutputWindows() {
 
   if (hadBibleOverlay) notifyBibleStateChanged({ publish: false });
   showGateway?.endSession('session-ended');
+  notifyTranslationChanged();
 }
 
 function handleUnexpectedOutputWindowClose(outputId, reason = 'output-closed') {
@@ -8575,6 +8592,8 @@ function updateDisplayList() {
   if (controlWindow && !controlWindow.isDestroyed()) {
     controlWindow.webContents.send('displays:updated', appState.displays);
   }
+  translationScreens.reconcile();
+  notifyTranslationChanged();
 }
 
 function closeIdentifyWindows() {
@@ -17744,10 +17763,16 @@ async function ensureTranslationPreferences() {
 function translationOutputs() {
   return (appState.activeLaunchPlan?.outputs || activeVenueProfile?.outputs || [])
     .filter(output => output.enabled !== false)
-    .map(output => ({ id: output.id, name: output.name || output.id,
-      stageFacing: output.mode === 'singer' || output.renderer === 'singer',
-      active: Boolean(outputWindows.get(output.id)?.win && !outputWindows.get(output.id).win.isDestroyed()),
-      ...translationProjection.frame(output.id) }));
+    .map(output => {
+      const standalone = translationScreens.availability(output.id);
+      const showScreen = Boolean(outputWindows.get(output.id)?.win && !outputWindows.get(output.id).win.isDestroyed());
+      return { id: output.id, name: output.name || output.id,
+      stageFacing: output.kind === 'singer' || output.renderer === 'singer-current-next',
+      active: showScreen || standalone.open,
+      standalone: standalone.open, screenReady: standalone.ready,
+      screenUnavailable: standalone.reason,
+      ...translationProjection.frame(output.id) };
+    });
 }
 
 function translationStatePayload() {
@@ -17765,6 +17790,7 @@ function notifyTranslationChanged() {
       entry.win.webContents.send('translation:frame', translationProjection.frame(outputId));
     }
   }
+  translationScreens.sendFrames();
 }
 
 async function connectTranslation({ control = false } = {}) {
@@ -17802,6 +17828,25 @@ ipcMain.handle('translation:connect', event => {
 ipcMain.handle('translation:operator', event => {
   requireControlSender(event);
   return communityIpcResult(() => serializeCommunityOperation(() => connectTranslation({ control: true })));
+});
+ipcMain.handle('translation:screen:open', (event, request = {}) => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    communityRequestKeys(request, ['outputId'], 'Translation screen');
+    updateDisplayList();
+    await ensureTranslationPreferences();
+    await translationScreens.open(request.outputId);
+    return translationStatePayload();
+  });
+});
+ipcMain.handle('translation:screen:close', (event, request = {}) => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    communityRequestKeys(request, ['outputId'], 'Translation screen');
+    requireTranslationOutput(request.outputId);
+    translationScreens.close(request.outputId);
+    return translationStatePayload();
+  });
 });
 ipcMain.handle('translation:configure', (event, request = {}) => {
   requireControlSender(event);
@@ -26227,6 +26272,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   };
   } finally {
     displayStartInProgress = false;
+    notifyTranslationChanged();
   }
 });
 
@@ -27255,6 +27301,7 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on('will-quit', () => {
+  translationScreens.closeAll();
   closeSermonRecordingPlayer().catch(() => {});
   cancelGoogleDriveOperations().catch(() => {});
   cancelCommunityTransientOperations().catch(() => {});

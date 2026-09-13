@@ -67,14 +67,26 @@
         const hide = document.createElement('button'); hide.type = 'button'; hide.className = 'btn btn-secondary'; hide.textContent = 'Hide';
         hide.setAttribute('aria-label', `Hide translation on ${output.name}`);
         hide.addEventListener('click', () => configure(output.id, row, true));
-        row.append(hide); rows.append(row); manualOutput.add(new Option(output.name, output.id));
+        const screen = document.createElement('button'); screen.type = 'button'; screen.className = 'btn btn-secondary';
+        screen.dataset.field = 'screen';
+        screen.addEventListener('click', () => action(() => state.outputs.find(item => item.id === output.id)?.standalone
+          ? window.api.closeTranslationScreen({ outputId: output.id })
+          : window.api.openTranslationScreen({ outputId: output.id })));
+        const actions = document.createElement('div'); actions.className = 'translation-screen-actions';
+        actions.append(screen, hide);
+        row.append(actions); rows.append(row); manualOutput.add(new Option(output.name, output.id));
       }
     }
     for (const row of rows.children) {
       const output = next.outputs.find(item => item.id === row.dataset.outputId);
       for (const field of ['language', 'layout', 'fontScale']) row.querySelector(`[data-field="${field}"]`).value = String(output[field]);
       row.querySelector('[data-field="detail"]').textContent = output.manual ? 'Manual text on this screen'
-        : output.active ? 'Screen open' : 'Applies when Show starts';
+        : output.standalone ? output.screenReady ? 'Translation-only screen open' : 'Opening translation screen…'
+        : output.active ? 'Show screen open' : output.screenUnavailable || 'Ready to open without slides';
+      const screen = row.querySelector('[data-field="screen"]');
+      screen.textContent = output.standalone ? 'Close screen' : 'Open screen';
+      screen.setAttribute('aria-label', `${output.standalone ? 'Close' : 'Open'} translation screen for ${output.name}`);
+      screen.disabled = !output.standalone && Boolean(output.screenUnavailable);
     }
   }
 

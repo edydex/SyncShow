@@ -1,9 +1,11 @@
-# Community integration preview — 1.4.0-preview.25
+# Community integration preview — 1.4.0-preview.26
 
-This development preview brings the shared Heritage live-translation controls and tablet teaching into the desktop app.
+This development preview includes shared Heritage live-translation controls, tablet teaching, and translation-only screens that work without loading a presentation.
 
 - Open **Live translation** after connecting to an approved Heritage Community. The shared console selects English/Russian, Quality/Economy, optional sermon notes and translated speech. Connect the mixer only on the computer receiving the source audio.
-- Choose full-screen translation, lower third, ticker or hidden for each configured output. Manual caption overrides and venue preferences are available.
+- Choose full-screen translation, lower third, ticker or hidden for each configured output. **Open screen** shows captions on its saved venue screen without loading slides. **Hide** leaves that screen black; **Close screen** returns to the desktop. These controls never start or stop microphone capture, translated voice, or provider work.
+- During a slide Show, translation uses the Show's existing outputs. Starting Show takes over translation-only screens after its preflight succeeds. Translation-only windows close on changed output assignments or a disconnected display; the operator screen and ambiguous saved display matches are excluded.
+- Manual caption overrides and venue preferences are available. Manual text is not retained after app restart. Full-screen, lower-third and ticker outputs contain captions only, with no pulpit video.
 - Pair a tablet through **Remote Control**, expand **Teach**, and annotate the selected congregation screen with pen or highlighter. See [tablet teaching](TABLET_TEACHING.md).
 - The macOS package now includes the microphone purpose declaration required for optional mixer input. Camera and system-audio capture remain unavailable in the translation console. Turning translated speech off does not remove the need for source audio when producing live text.
 

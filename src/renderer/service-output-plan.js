@@ -95,11 +95,27 @@
     return normalized.mode;
   }
 
+  function resolveOutputDisplay(output, displays) {
+    if (!output) return null;
+    const hasLegacyId = output.legacyDisplayId !== null && output.legacyDisplayId !== undefined;
+    const byId = hasLegacyId
+      ? displays.find(display => String(display.id) === String(output.legacyDisplayId))
+      : null;
+    if (output.displayFingerprint) {
+      const matches = displays.filter(display => display.fingerprint === output.displayFingerprint);
+      if (byId && byId.fingerprint === output.displayFingerprint) return byId;
+      if (matches.length === 1) return matches[0];
+      return null;
+    }
+    return byId;
+  }
+
   return Object.freeze({
     createOnlyRoleDecisions,
     decisionToRouteValue,
     filterDecisionsForOutputs,
     resolveDecision,
+    resolveOutputDisplay,
     routeValueToDecision
   });
 }));

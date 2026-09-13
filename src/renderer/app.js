@@ -4646,18 +4646,7 @@ function populateSingerSourceOptions(selectedRoleId) {
 }
 
 function resolveOutputDisplay(output) {
-  if (!output) return null;
-  const hasLegacyId = output.legacyDisplayId !== null && output.legacyDisplayId !== undefined;
-  const byId = hasLegacyId
-    ? state.displays.find(display => String(display.id) === String(output.legacyDisplayId))
-    : null;
-  if (output.displayFingerprint) {
-    const matches = state.displays.filter(display => display.fingerprint === output.displayFingerprint);
-    if (byId && byId.fingerprint === output.displayFingerprint) return byId;
-    if (matches.length === 1) return matches[0];
-    return null;
-  }
-  return byId;
+  return window.SyncShowServiceOutputPlan.resolveOutputDisplay(output, state.displays);
 }
 
 function createEditorField(labelText, control) {
