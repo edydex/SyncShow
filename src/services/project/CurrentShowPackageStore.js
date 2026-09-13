@@ -8,6 +8,7 @@ const { isValidIsoDate } = require('../service-set/ServiceDate');
 const {
   atomicWriteFile,
   ensurePrivateDirectory,
+  flushPublishedFile,
   fsyncDirectory,
   readFileNoFollow,
   withExclusiveFileLock
@@ -372,6 +373,12 @@ class CurrentShowPackageStore {
         && visible.activationId === pointer.activationId
       ) {
         try {
+          // Visibility alone is not proof that the post-rename file flush
+          // succeeded, especially when Windows cannot flush its directory.
+          await flushPublishedFile(
+            this._pointerPath(),
+            Buffer.from(serializeCurrentShowPackagePointer(pointer), 'utf8')
+          );
           await this.syncDirectory(this.rootPath);
           return receipt;
         } catch (durabilityError) {

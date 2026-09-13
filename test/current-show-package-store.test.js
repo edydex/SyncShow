@@ -330,3 +330,43 @@ test('a post-rename write error is reconciled as success after a fresh durabilit
   assert.equal(injected, true);
   assert.deepEqual(await store.read(), receipt.pointer);
 });
+
+
+test('recovery cannot report success when the published pointer cannot be flushed', async t => {
+  const workspace = await tempDirectory(t, 'syncshow-current-pointer-flush-');
+  const originalOpen = fs.open;
+  let flushAttempts = 0;
+  const store = new CurrentShowPackageStore({
+    rootPath: path.join(workspace, 'prepared-service'),
+    clock: () => new Date(NOW),
+    randomUUID: () => ACTIVATION_A,
+    atomicWrite: async (filePath, bytes) => {
+      await fs.writeFile(filePath, bytes);
+      fs.open = async (candidate, ...args) => {
+        const handle = await originalOpen(candidate, ...args);
+        if (candidate !== filePath) return handle;
+        return {
+          stat: (...values) => handle.stat(...values),
+          read: (...values) => handle.read(...values),
+          readFile: (...values) => handle.readFile(...values),
+          close: () => handle.close(),
+          sync: async () => {
+            flushAttempts += 1;
+            throw Object.assign(new Error('simulated file flush failure'), { code: 'EIO' });
+          }
+        };
+      };
+      throw Object.assign(new Error('simulated report after rename'), { code: 'EIO' });
+    },
+    // Windows can legitimately have no directory-flush operation.
+    syncDirectory: async () => false
+  });
+  try {
+    await assert.rejects(store.activateWithReceipt(activation()), {
+      code: 'CURRENT_SHOW_PACKAGE_ACTIVATION_UNCERTAIN'
+    });
+    assert.equal(flushAttempts, 1);
+  } finally {
+    fs.open = originalOpen;
+  }
+});
