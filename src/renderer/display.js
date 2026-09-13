@@ -535,7 +535,7 @@ async function swapToNativeCue(layerIndex, revealAt, navigationVersion) {
 function scheduleReveal(revealAt, navigationVersion, applyReveal) {
   if (!isCurrentNavigation(navigationVersion)) return Promise.resolve(false);
 
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const request = {
       settled: false,
       timer: null,
@@ -553,13 +553,14 @@ function scheduleReveal(revealAt, navigationVersion, applyReveal) {
         resolve(false);
       }
     };
-    const finish = result => {
+    const finish = (result, error = null) => {
       if (request.settled) return;
       request.settled = true;
       if (displayState.pendingReveal === request) displayState.pendingReveal = null;
       displayState.revealTimer = null;
       displayState.revealFrame = null;
-      resolve(result);
+      if (error) reject(error);
+      else resolve(result);
     };
     const applyInFrame = () => {
       if (!isCurrentNavigation(navigationVersion)) {
@@ -573,7 +574,8 @@ function scheduleReveal(revealAt, navigationVersion, applyReveal) {
           finish(false);
           return;
         }
-        applyReveal();
+        try { applyReveal(); }
+        catch (error) { finish(false, error); return; }
         // Give Chromium one more paint opportunity after the active layer is
         // applied before main is allowed to expose a startup window.
         request.paintFrame = requestAnimationFrame(() => {
@@ -747,7 +749,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-window.addEventListener('resize', () => {
+new ResizeObserver(() => {
   if (displayState.renderer !== 'native-cue') return;
   if (displayState.revealFrame) return;
   displayState.revealFrame = requestAnimationFrame(() => {
@@ -766,7 +768,7 @@ window.addEventListener('resize', () => {
       });
     }
   });
-});
+}).observe(elements.container);
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', init);

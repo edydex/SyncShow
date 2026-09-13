@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
   <title>SyncShow</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="translation-controls.css">
 </head>
 <body class="friendly-mode load-stage">
   <div class="app-container">
@@ -37,6 +38,7 @@
       </nav>
 
       <div class="header-right header-load-actions">
+        <button type="button" class="btn btn-secondary" data-open-translation aria-haspopup="dialog" aria-controls="translationDialog">Translation</button>
         <button id="btnOpenSettings" class="btn btn-secondary" aria-controls="advancedSetupDetails">
           Admin Settings
         </button>
@@ -1320,6 +1322,10 @@
           </div>
 
           <div class="live-tools-box" aria-label="Live tools">
+            <button type="button" class="live-tool-button" data-open-translation aria-haspopup="dialog" aria-controls="translationDialog">
+              <span class="live-tool-icon" aria-hidden="true">T</span>
+              <span><strong>Translation</strong><small>Captions and spoken translation</small></span>
+            </button>
             <button id="btnOpenBible" class="live-tool-button" type="button" aria-haspopup="dialog" aria-controls="bibleDialog">
               <span class="live-tool-icon" aria-hidden="true">B</span>
               <span><strong>Bible</strong><small>Show a passage now</small></span>
@@ -3014,6 +3020,32 @@
     </div>
   </dialog>
 
+  <dialog id="translationDialog" class="translation-dialog" aria-labelledby="translationTitle">
+    <h2 id="translationTitle">Live translation</h2>
+    <p id="translationStatus" role="status">Checking the church connection…</p>
+    <div class="translation-toolbar">
+      <button type="button" id="translationOperator" class="btn btn-primary">Open microphone &amp; session controls</button>
+      <button type="button" id="translationConnect" class="btn btn-secondary">Reconnect captions</button>
+      <button type="button" id="translationClose" class="btn btn-secondary">Done</button>
+    </div>
+    <p id="translationError" role="alert"></p>
+    <p>Choose what each screen shows. Hiding captions here keeps translation running for phone listeners. Clear blacks out the Show screens.</p>
+    <div id="translationOutputs"></div>
+    <div class="translation-preview">
+      <section><strong>English · incoming text</strong><p id="translationPreview-en"></p></section>
+      <section><strong>Russian · incoming text</strong><p id="translationPreview-ru"></p></section>
+    </div>
+    <details class="translation-manual">
+      <summary>Replace text on one screen</summary>
+      <label>Output<select id="translationManualOutput"></select></label>
+      <label>Manual text<textarea id="translationManualText" maxlength="1000" placeholder="Type the text to show on this screen"></textarea></label>
+      <div class="translation-toolbar">
+        <button type="button" id="translationSendManual" class="btn btn-secondary">Show manual text</button>
+        <button type="button" id="translationResume" class="btn btn-secondary">Return to live captions</button>
+      </div>
+    </details>
+  </dialog>
+
   <script src="error-messages.js"></script>
   <script src="google-drive-oauth-state.js"></script>
   <script src="service-output-plan.js"></script>
@@ -3026,5 +3058,6 @@
   <script src="prepare-controller.js"></script>
   <script src="community-service-document-controller.js"></script>
   <script src="app.js"></script>
+  <script src="translation-controls.js"></script>
 </body>
 </html>

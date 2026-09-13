@@ -126,7 +126,8 @@ const KNOWN_SCOPES = new Set([
   ...SERMON_PUBLICATION_SCOPES,
   ...SERMON_MEDIA_SCOPES,
   ...SERVICE_PLAN_SCOPES,
-  ...SERVICE_DOCUMENT_SCOPES
+  ...SERVICE_DOCUMENT_SCOPES,
+  'syncshow:translation:control'
 ]);
 const VISIBILITIES = new Set(['private', 'public', 'scheduled-public']);
 const SONG_RIGHTS_STATUSES = new Set([
@@ -686,6 +687,19 @@ function normalizeSermonPublicationResource(value, {
     }),
     scopes: Object.freeze(scopes)
   });
+}
+
+function normalizeTranslationResource(value) {
+  if (!value || value.schemaVersion !== 1
+    || value.operatorPath !== '/admin/live-translation'
+    || value.accessPath !== '/api/community/translation/access'
+    || value.eventsPath !== '/translation/api/public/events'
+    || !Array.isArray(value.scopes) || value.scopes.length !== 1
+    || value.scopes[0] !== 'syncshow:translation:control') {
+    fail('INVALID_DISCOVERY', 'This Community server advertises an unsupported live translation connection.');
+  }
+  return Object.freeze({ schemaVersion: 1, scopes: Object.freeze([...value.scopes]),
+    operatorPath: value.operatorPath, accessPath: value.accessPath, eventsPath: value.eventsPath });
 }
 
 function normalizeSermonMediaResource(value, {
@@ -1801,6 +1815,8 @@ class CommunityClient {
         apiPath
       })
       : null;
+    const translationResource = schemaVersion === 2 && resources.translation !== undefined
+      ? normalizeTranslationResource(resources.translation) : null;
     const sermonMediaResource = schemaVersion === 2
       ? normalizeSermonMediaResource(resources.sermonMedia, {
         origin: this.baseUrl.origin,
@@ -1831,7 +1847,8 @@ class CommunityClient {
       && !sermonPublicationResource
       && !sermonMediaResource
       && !servicePlanResource
-      && !serviceDocumentResource) {
+      && !serviceDocumentResource
+      && !translationResource) {
       fail(
         'SYNC_UNSUPPORTED',
         'This Community server has not enabled a supported SyncShow resource.'
@@ -1846,7 +1863,8 @@ class CommunityClient {
       ...(sermonPublicationResource?.scopes || []),
       ...(sermonMediaResource?.scopes || []),
       ...(servicePlanResource?.scopes || []),
-      ...(serviceDocumentResource?.scopes || [])
+      ...(serviceDocumentResource?.scopes || []),
+      ...(translationResource?.scopes || [])
     ], {
       code: 'INVALID_DISCOVERY'
     });
@@ -1878,6 +1896,7 @@ class CommunityClient {
         sermonPublications: sermonPublicationResource !== null,
         sermonMedia: sermonMediaResource !== null,
         servicePlans: servicePlanResource !== null,
+        translation: translationResource !== null,
         serviceDocuments: serviceDocumentResource !== null
       }),
       resources: Object.freeze({
@@ -1887,7 +1906,8 @@ class CommunityClient {
         sermonPublications: sermonPublicationResource,
         sermonMedia: sermonMediaResource,
         servicePlans: servicePlanResource,
-        serviceDocuments: serviceDocumentResource
+        serviceDocuments: serviceDocumentResource,
+        translation: translationResource
       }),
       endpoints: Object.freeze({
         deviceStart: pinnedUrl(endpoints.deviceStart, {

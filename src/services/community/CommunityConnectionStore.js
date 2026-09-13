@@ -41,7 +41,8 @@ const KNOWN_SCOPES = new Set([
   'syncshow:sermon-media:write',
   'syncshow:service-plans:read',
   'syncshow:service-documents:read',
-  'syncshow:service-documents:write'
+  'syncshow:service-documents:write',
+  'syncshow:translation:control'
 ]);
 
 class CommunityConnectionStoreError extends Error {
@@ -313,6 +314,7 @@ function sanitize(record) {
     scopes: Object.freeze([...record.scopes]),
     advertisedScopes: Object.freeze([...record.advertisedScopes]),
     effectiveScopes: Object.freeze(effectiveScopes),
+    canControlTranslation: effectiveScopes.includes('syncshow:translation:control'),
     canReadSongs: effectiveScopes.includes('syncshow:songs:read'),
     canWriteSongs: effectiveScopes.includes('syncshow:songs:write'),
     canReadSongPublicLinks:

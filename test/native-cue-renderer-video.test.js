@@ -134,3 +134,23 @@ test('native video renderer arms, plays, pauses, replays, stops, and destroys sa
   assert.equal(video.src, '');
   assert.equal(video.loadCalls, 1);
 });
+
+test('text-only scenes have no video control target and can be left safely', async () => {
+  const context = vm.createContext({ window: {}, document: {
+    createElement: tagName => new FakeElement(tagName), createTextNode: text => ({ text })
+  }, requestAnimationFrame: callback => callback() });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/renderer/native-cue-renderer.js'), 'utf8'), context);
+  for (const [kind, presetId] of [['sermon', 'sermon-notes'], ['song', 'song-title']]) {
+    const scene = compileNativeCueScene({ id: `cue-text-${kind}`, kind, title: 'Text cue', presetId,
+      channels: { primary: { mode: 'content', blocks: [
+        { type: 'text', role: 'title', text: 'Text title', spans: [] },
+        { type: 'text', role: 'body', text: 'Text remains independent from video controls.', spans: [] }
+      ] } } }, 'primary', { width: 1920, height: 1080 });
+    const renderer = context.window.SyncShowNativeCueRenderer.buildScene(scene);
+    assert.equal(renderer.videoState(), 'not-video');
+    assert.equal(renderer.pauseVideo(), false);
+    assert.equal(renderer.stopVideo(), false);
+    assert.equal(await renderer.playVideo(), false);
+    assert.doesNotThrow(() => renderer.destroy());
+  }
+});

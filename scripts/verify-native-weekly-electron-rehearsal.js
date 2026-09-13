@@ -43,19 +43,19 @@ const SERMON_READING_OUTPUTS = Object.freeze([
   })
 ]);
 const BSB_READING_BODY = [
-  '10 His purpose was that now, through the church, the manifold wisdom of God should be made known to the rulers and authorities in the heavenly realms,',
-  '11 according to the eternal purpose that He accomplished in Christ Jesus our Lord.',
-  '12 In Him and through faith in Him we may enter God’s presence with boldness and confidence.'
-].join('\n');
+  '¹⁰ His purpose was that now, through the church, the manifold wisdom of God should be made known to the rulers and authorities in the heavenly realms,',
+  '¹¹ according to the eternal purpose that He accomplished in Christ Jesus our Lord.',
+  '¹² In Him and through faith in Him we may enter God’s presence with boldness and confidence.'
+].join(' ');
 const LSV_READING_BODY = [
-  '10 that there might be made known now to the principalities and the authorities in the heavenly [places], through the Assembly, the manifold wisdom of God,',
-  '11 according to a purpose of the ages, which He made in Christ Jesus our Lord,',
-  '12 in whom we have the freedom and the access in confidence through the faith of Him,'
-].join('\n');
+  '¹⁰ that there might be made known now to the principalities and the authorities in the heavenly [places], through the Assembly, the manifold wisdom of God,',
+  '¹¹ according to a purpose of the ages, which He made in Christ Jesus our Lord,',
+  '¹² in whom we have the freedom and the access in confidence through the faith of Him,'
+].join(' ');
 const BSB_READING_SHA256 =
-  '96f81e43fa93a52726a565f8f26856ea99d0893d369beefbbe38ef3811273f08';
+  '89816606a4a1819988c7b51b21060d832934490f23c2fe041a1e86f2c18ab284';
 const LSV_READING_SHA256 =
-  'a6b5b9fb98bfdeca7987e07fecb19dcba80092271e484e61b7021d24da642fb1';
+  'd9a7ce0ec5ea0f430fad3589763bacb19bbaa22d9bd545447112a5acfb9004d1';
 const PRIMARY_SERMON_SOURCE_TEXT =
   'Церковь показывает Божью мудрость.';
 const CONDENSED_SERMON_TEXT = 'The church displays God’s wisdom.';
@@ -174,6 +174,7 @@ function boundedCollector(stream) {
   let value = '';
   stream.setEncoding('utf8');
   stream.on('data', chunk => {
+    if (process.env.SYNCSHOW_REHEARSAL_TRACE === '1') process.stdout.write(chunk);
     value = `${value}${chunk}`;
     if (Buffer.byteLength(value, 'utf8') > MAX_CHILD_LOG_BYTES) {
       value = value.slice(-MAX_CHILD_LOG_BYTES);
@@ -206,7 +207,7 @@ function runElectron({
     const child = spawn(electronPath, [
       entryPath,
       '--syncshow-test-user-data',
-      '--headless'
+      ...(process.env.SYNCSHOW_REHEARSAL_VISIBLE === '1' ? [] : ['--headless'])
     ], {
       cwd: path.resolve(__dirname, '..'),
       env: childEnvironment,
@@ -285,7 +286,7 @@ function verifyElectronResult(result, resolution) {
   assert.equal(result.route, 'direct');
   assert.equal(result.isolatedProfile, true);
   assert.equal(result.physicalDisplayRoutingUsed, false);
-  assert.equal(result.visibleWindowCount, 0);
+  assert.equal(result.visibleWindowCount, process.env.SYNCSHOW_REHEARSAL_VISIBLE === '1' ? 3 : 0);
   assert.equal(result.browserWindowCount, 3);
   assert.equal(result.width, resolution.width);
   assert.equal(result.height, resolution.height);
@@ -336,7 +337,7 @@ function verifyDerivedSingerResult(result, resolution) {
   assert.equal(result.route, 'derived-singer');
   assert.equal(result.isolatedProfile, true);
   assert.equal(result.physicalDisplayRoutingUsed, false);
-  assert.equal(result.visibleWindowCount, 0);
+  assert.equal(result.visibleWindowCount, process.env.SYNCSHOW_REHEARSAL_VISIBLE === '1' ? 3 : 0);
   assert.equal(result.browserWindowCount, 3);
   assert.equal(result.width, resolution.width);
   assert.equal(result.height, resolution.height);
@@ -399,7 +400,7 @@ function verifyDerivedSingerResult(result, resolution) {
   );
   assert.equal(
     result.derivedSingerChecks[4].next.text,
-    '10 His purpose was that now, through the church, the manifold wisdom of God should be made known to the rulers and authorities in the heavenly realms,'
+    BSB_READING_BODY
   );
   assert.equal(
     result.derivedSingerChecks[6].next.text,
@@ -472,7 +473,7 @@ async function main() {
     );
     console.log(
       `${RESOLUTION_MATRIX.map(item => `${item.width}×${item.height}`).join(' + ')}; `
-      + `9 cues × 3 hidden BrowserWindows × ${results.length} resolutions `
+      + `9 cues × 3 ${process.env.SYNCSHOW_REHEARSAL_VISIBLE === '1' ? 'visible' : 'hidden'} BrowserWindows × ${results.length} resolutions `
       + `= ${acknowledgementCount} sender-bound ACKs`
     );
     console.log(
@@ -511,7 +512,7 @@ async function main() {
     console.log('Real Electron derived Singer resolution matrix passed.');
     console.log(
       `${RESOLUTION_MATRIX.map(item => `${item.width}×${item.height}`).join(' + ')}; `
-      + `9 cues × 3 hidden BrowserWindows × ${derivedResults.length} resolutions `
+      + `9 cues × 3 ${process.env.SYNCSHOW_REHEARSAL_VISIBLE === '1' ? 'visible' : 'hidden'} BrowserWindows × ${derivedResults.length} resolutions `
       + `= ${derivedAcknowledgementCount} sender-bound ACKs`
     );
     console.log(

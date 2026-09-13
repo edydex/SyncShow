@@ -830,13 +830,18 @@
       children.push({
         relayout(scale) {
           next.style.borderTopWidth = `${Math.max(4, scene.canvas.height * 0.011 * scale)}px`;
-          // The current scene has already fitted its text. Keep that exact
-          // on-screen typography and let CSS ellipsize the next line's prefix.
+          // Prefer the current cue's typography, bounded by the next-line
+          // region when the presentation is reduced above a caption band.
           const primary = currentHost.querySelector('.native-scene-body')
             || currentHost.querySelector('.native-song-title-text')
             || currentHost.querySelector('.native-scene-title');
           const typography = primary ? global.getComputedStyle(primary) : null;
-          nextText.style.fontSize = typography?.fontSize || `${scene.canvas.height * 0.075 * scale}px`;
+          const preferred = Number.parseFloat(typography?.fontSize) || scene.canvas.height * 0.075 * scale;
+          const nextStyle = global.getComputedStyle(next);
+          const availableHeight = next.clientHeight
+            - (Number.parseFloat(nextStyle.paddingTop) || 0)
+            - (Number.parseFloat(nextStyle.paddingBottom) || 0);
+          nextText.style.fontSize = `${Math.max(1, Math.min(preferred, Math.floor(availableHeight / 1.15)))}px`;
           nextText.style.fontWeight = typography?.fontWeight || '600';
           nextText.style.fontFamily = typography?.fontFamily || 'inherit';
         }
@@ -867,7 +872,7 @@
 
     async function playVideo() {
       if (scene.layout !== 'video') {
-        const nested = children.find(child => child.videoState?.() !== 'not-video');
+        const nested = children.find(child => typeof child.videoState === 'function' && child.videoState() !== 'not-video');
         return nested ? nested.playVideo() : false;
       }
       const video = videos[0];
@@ -884,7 +889,7 @@
 
     function pauseVideo() {
       if (scene.layout !== 'video') {
-        const nested = children.find(child => child.videoState?.() !== 'not-video');
+        const nested = children.find(child => typeof child.videoState === 'function' && child.videoState() !== 'not-video');
         return nested ? nested.pauseVideo() : false;
       }
       const video = videos[0];
@@ -895,7 +900,7 @@
 
     function stopVideo() {
       if (scene.layout !== 'video') {
-        const nested = children.find(child => child.videoState?.() !== 'not-video');
+        const nested = children.find(child => typeof child.videoState === 'function' && child.videoState() !== 'not-video');
         return nested ? nested.stopVideo() : false;
       }
       const video = videos[0];
@@ -925,7 +930,7 @@
       relayout,
       videoState: () => {
         if (scene.layout === 'video') return videoState;
-        const nested = children.find(child => child.videoState?.() !== 'not-video');
+        const nested = children.find(child => typeof child.videoState === 'function' && child.videoState() !== 'not-video');
         return nested ? nested.videoState() : 'not-video';
       },
       playVideo,

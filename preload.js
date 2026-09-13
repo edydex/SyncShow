@@ -395,6 +395,25 @@ contextBridge.exposeInMainWorld('api', {
   // Heritage Community library integration. Approval credentials and
   // network requests stay in the main process; this bridge exposes only
   // connection summaries, sync results, and narrow song/sermon state.
+  getTranslationState: () => ipcRenderer.invoke('translation:state'),
+  connectTranslation: () => ipcRenderer.invoke('translation:connect'),
+  openTranslationOperator: () => ipcRenderer.invoke('translation:operator'),
+  configureTranslationOutput: (request = {}) => ipcRenderer.invoke('translation:configure', {
+    outputId: request?.outputId, settings: request?.settings
+  }),
+  overrideTranslationOutput: (request = {}) => ipcRenderer.invoke('translation:override', {
+    outputId: request?.outputId, text: request?.text
+  }),
+  onTranslationState: callback => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('translation:stateChanged', listener);
+    return () => ipcRenderer.removeListener('translation:stateChanged', listener);
+  },
+  onTranslationFrame: callback => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('translation:frame', listener);
+    return () => ipcRenderer.removeListener('translation:frame', listener);
+  },
   getCommunityStatus: () => ipcRenderer.invoke('community:status'),
   openCommunityPlanner: () => ipcRenderer.invoke('community:planner:open'),
   getCommunityPlannerState: () => ipcRenderer.invoke('community:planner:state'),

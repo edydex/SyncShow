@@ -13,6 +13,11 @@ const {
   ipcMain
 } = require('electron');
 
+// These test outputs overlap on one desktop; physical venue outputs do not.
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+
 const {
   ShowPackagePublisher
 } = require('../../src/services/project');
@@ -39,7 +44,20 @@ const RESULT_PATH_ENV = 'SYNCSHOW_ELECTRON_REHEARSAL_RESULT';
 const WIDTH_ENV = 'SYNCSHOW_ELECTRON_REHEARSAL_WIDTH';
 const HEIGHT_ENV = 'SYNCSHOW_ELECTRON_REHEARSAL_HEIGHT';
 const ROUTE_ENV = 'SYNCSHOW_ELECTRON_REHEARSAL_ROUTE';
+const VISIBLE_REHEARSAL = process.env.SYNCSHOW_REHEARSAL_VISIBLE === '1';
+const TRANSLATION_BAND = process.env.SYNCSHOW_REHEARSAL_TRANSLATION_BAND === '1';
 const ROUTES = new Set(['direct', 'derived-singer']);
+
+const BSB_READING_BODY = [
+  '¹⁰ His purpose was that now, through the church, the manifold wisdom of God should be made known to the rulers and authorities in the heavenly realms,',
+  '¹¹ according to the eternal purpose that He accomplished in Christ Jesus our Lord.',
+  '¹² In Him and through faith in Him we may enter God’s presence with boldness and confidence.'
+].join(' ');
+const LSV_READING_BODY = [
+  '¹⁰ that there might be made known now to the principalities and the authorities in the heavenly [places], through the Assembly, the manifold wisdom of God,',
+  '¹¹ according to a purpose of the ages, which He made in Christ Jesus our Lord,',
+  '¹² in whom we have the freedom and the access in confidence through the faith of Him,'
+].join(' ');
 const DERIVED_SINGER_NEXT = Object.freeze([
   Object.freeze({
     state: 'text',
@@ -56,7 +74,7 @@ const DERIVED_SINGER_NEXT = Object.freeze([
   Object.freeze({ state: 'blank', text: '' }),
   Object.freeze({
     state: 'text',
-    text: '10 His purpose was that now, through the church, the manifold wisdom of God should be made known to the rulers and authorities in the heavenly realms,'
+    text: BSB_READING_BODY
   }),
   Object.freeze({
     state: 'text',
@@ -69,20 +87,10 @@ const DERIVED_SINGER_NEXT = Object.freeze([
   Object.freeze({ state: 'blank', text: '' }),
   Object.freeze({ state: 'end', text: '' })
 ]);
-const BSB_READING_BODY = [
-  '10 His purpose was that now, through the church, the manifold wisdom of God should be made known to the rulers and authorities in the heavenly realms,',
-  '11 according to the eternal purpose that He accomplished in Christ Jesus our Lord.',
-  '12 In Him and through faith in Him we may enter God’s presence with boldness and confidence.'
-].join('\n');
-const LSV_READING_BODY = [
-  '10 that there might be made known now to the principalities and the authorities in the heavenly [places], through the Assembly, the manifold wisdom of God,',
-  '11 according to a purpose of the ages, which He made in Christ Jesus our Lord,',
-  '12 in whom we have the freedom and the access in confidence through the faith of Him,'
-].join('\n');
 const BSB_READING_SHA256 =
-  '96f81e43fa93a52726a565f8f26856ea99d0893d369beefbbe38ef3811273f08';
+  '89816606a4a1819988c7b51b21060d832934490f23c2fe041a1e86f2c18ab284';
 const LSV_READING_SHA256 =
-  'a6b5b9fb98bfdeca7987e07fecb19dcba80092271e484e61b7021d24da642fb1';
+  'd9a7ce0ec5ea0f430fad3589763bacb19bbaa22d9bd545447112a5acfb9004d1';
 const PRIMARY_SERMON_SOURCE_TEXT =
   'Церковь показывает Божью мудрость.';
 const PUBLISH_NOW = '2026-08-09T17:00:00.000Z';
@@ -395,9 +403,13 @@ async function createHiddenOutput(output, presentation) {
       backgroundThrottling: false
     }
   });
+  win.webContents.on('console-message', (...args) => {
+    if (process.env.SYNCSHOW_REHEARSAL_TRACE === '1') console.log('[Renderer]', output.id, args[0]?.message || args[2]);
+  });
   win.setIgnoreMouseEvents(true);
   await win.loadFile(DISPLAY_PAGE);
-  assert.equal(win.isVisible(), false);
+  if (VISIBLE_REHEARSAL) win.showInactive();
+  assert.equal(win.isVisible(), VISIBLE_REHEARSAL);
   assert.equal(win.isFullScreen(), false);
 
   const rendererContract = await win.webContents.executeJavaScript(`(() => ({
@@ -426,6 +438,13 @@ async function createHiddenOutput(output, presentation) {
     syncMode: false,
     fontPath: FONT_PATH
   });
+
+  if (TRANSLATION_BAND) {
+    win.webContents.send('translation:frame', { outputId: output.id,
+      language: output.sourceRoleId === 'translation' ? 'ru' : 'en', layout: 'lower-third', fontScale: 1,
+      status: 'live', sessionId: 'rehearsal', manual: false, moving: true,
+      phrases: [{ key: 'rehearsal:1', revision: 0, final: true, text: 'Live captions · Живой перевод' }] });
+  }
 
   return {
     output,
@@ -961,7 +980,7 @@ async function runRehearsal() {
   assert.equal(fs.existsSync(DISPLAY_PAGE), true);
   assert.equal(fs.existsSync(PRELOAD_PATH), true);
 
-  if (process.platform === 'darwin' && app.dock) app.dock.hide();
+  if (!VISIBLE_REHEARSAL && process.platform === 'darwin' && app.dock) app.dock.hide();
 
   const profilePath = fs.realpathSync(app.getPath('userData'));
   const workspace = path.join(profilePath, 'native-weekly-workspace');
@@ -1133,8 +1152,8 @@ async function runRehearsal() {
       ));
     }
     assert.equal(BrowserWindow.getAllWindows().length, plan.outputs.length);
-    assert.equal(entries.every(entry => !entry.win.isVisible()), true);
-    console.log('[Electron rehearsal] Three hidden BrowserWindows are ready.');
+    assert.equal(entries.every(entry => entry.win.isVisible() === VISIBLE_REHEARSAL), true);
+    console.log(`[Electron rehearsal] Three ${VISIBLE_REHEARSAL ? 'visible' : 'hidden'} BrowserWindows are ready.`);
 
     for (let cueIndex = 0; cueIndex < plan.totalSlides; cueIndex += 1) {
       const pending = entries.map(entry =>
@@ -1154,7 +1173,14 @@ async function runRehearsal() {
           assetPaths: payload.assetPaths
         });
       }
+      const probe = process.env.SYNCSHOW_REHEARSAL_TRACE === '1' ? setTimeout(() => {
+        for (const entry of entries) entry.win.webContents.executeJavaScript(`({ visibility: document.visibilityState,
+          slide: displayState.currentSlide, navigation: displayState.navigationVersion,
+          frame: displayState.revealFrame, fonts: document.fonts.status,
+          layer: displayState.nativeActiveLayer, pending: !!displayState.pendingReveal })`).then(value => console.log('[Pending]', entry.output.id, cueIndex, value)).catch(() => {});
+      }, 1500) : null;
       const cueAcks = await Promise.all(pending);
+      clearTimeout(probe);
       assert.equal(cueAcks.length, plan.outputs.length);
       acknowledgements.push({
         cueId: opened.manifest.cueIds[cueIndex],
@@ -1168,9 +1194,7 @@ async function runRehearsal() {
           || cueIndex === sermonCueIndex
         )
       ) {
-        captures.push(...await Promise.all(
-          entries.map(entry => captureRenderedFrame(entry, cueIndex))
-        ));
+        for (const entry of entries) captures.push(await captureRenderedFrame(entry, cueIndex));
       }
       if (ROUTE === 'derived-singer') {
         const singerEntry = entries.find(

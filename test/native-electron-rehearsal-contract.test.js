@@ -41,11 +41,11 @@ test('real Electron native rehearsal proves the generated BSB, LSV, and hidden r
   assert.match(fixtureSource, /assert\.deepEqual\(bibleCueIndexes, \[5\]\)/);
   assert.match(
     fixtureSource,
-    /96f81e43fa93a52726a565f8f26856ea99d0893d369beefbbe38ef3811273f08/
+    /89816606a4a1819988c7b51b21060d832934490f23c2fe041a1e86f2c18ab284/
   );
   assert.match(
     fixtureSource,
-    /a6b5b9fb98bfdeca7987e07fecb19dcba80092271e484e61b7021d24da642fb1/
+    /d9a7ce0ec5ea0f430fad3589763bacb19bbaa22d9bd545447112a5acfb9004d1/
   );
   assert.match(fixtureSource, /readingItem\.sermonReading\.outputs/);
   assert.match(fixtureSource, /translationId, 'BSB'/);

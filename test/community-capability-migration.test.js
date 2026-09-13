@@ -212,7 +212,8 @@ test('legacy discovery keeps root scopes song-only and does not invent sermon su
     sermonPublications: false,
     sermonMedia: false,
     servicePlans: false,
-    serviceDocuments: false
+    serviceDocuments: false,
+    translation: false
   });
   assert.equal(
     new URL(found.endpoints.songs).pathname,
@@ -251,7 +252,8 @@ test('protocol v2 accepts a sermon-only resource without inventing a song lane',
     sermonPublications: false,
     sermonMedia: false,
     servicePlans: false,
-    serviceDocuments: false
+    serviceDocuments: false,
+    translation: false
   });
 });
 
@@ -280,7 +282,8 @@ test('protocol v2 normalizes song-only and combined resource lanes independently
     sermonPublications: false,
     sermonMedia: false,
     servicePlans: false,
-    serviceDocuments: false
+    serviceDocuments: false,
+    translation: false
   });
 
   const combined = await clientFor(resourceDiscovery({
@@ -304,7 +307,8 @@ test('protocol v2 normalizes song-only and combined resource lanes independently
     sermonPublications: false,
     sermonMedia: false,
     servicePlans: false,
-    serviceDocuments: false
+    serviceDocuments: false,
+    translation: false
   });
 });
 
