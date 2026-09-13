@@ -193,6 +193,7 @@ function gatewayError(error) {
 class RemoteControlServer extends EventEmitter {
   constructor({
     showGateway,
+    teachingGateway = null,
     staticRoutes = {},
     authority = new RemoteAuthority(),
     bindingCatalog = new NetworkBindingCatalog(),
@@ -222,6 +223,7 @@ class RemoteControlServer extends EventEmitter {
     }
 
     this.showGateway = showGateway;
+    this.teachingGateway = teachingGateway;
     this.staticRoutes = normalizedStaticRoutes(staticRoutes);
     this.authority = authority;
     this.bindingCatalog = bindingCatalog;
@@ -245,13 +247,13 @@ class RemoteControlServer extends EventEmitter {
     this.pendingCommands = 0;
 
     this.requestIpLimiter = new SlidingWindowRateLimiter({
-      limit: limits.requestPerIp ?? 360,
+      limit: limits.requestPerIp ?? (teachingGateway ? 1200 : 360),
       windowMs: limits.requestWindowMs ?? 60 * 1000,
       maxKeys: 512,
       now
     });
     this.requestGlobalLimiter = new SlidingWindowRateLimiter({
-      limit: limits.requestGlobal ?? 1200,
+      limit: limits.requestGlobal ?? (teachingGateway ? 3600 : 1200),
       windowMs: limits.requestWindowMs ?? 60 * 1000,
       maxKeys: 1,
       now
@@ -270,13 +272,13 @@ class RemoteControlServer extends EventEmitter {
       now
     });
     this.apiIpLimiter = new SlidingWindowRateLimiter({
-      limit: limits.apiPerIp ?? 180,
+      limit: limits.apiPerIp ?? (teachingGateway ? 1200 : 180),
       windowMs: limits.apiWindowMs ?? 60 * 1000,
       maxKeys: 512,
       now
     });
     this.apiGlobalLimiter = new SlidingWindowRateLimiter({
-      limit: limits.apiGlobal ?? 600,
+      limit: limits.apiGlobal ?? (teachingGateway ? 3600 : 600),
       windowMs: limits.apiWindowMs ?? 60 * 1000,
       maxKeys: 1,
       now
@@ -510,6 +512,36 @@ class RemoteControlServer extends EventEmitter {
       this._enforceRate(this.apiIpLimiter, this._peerAddress(request));
       this._enforceRate(this.apiGlobalLimiter, 'global');
       const device = this.authority.authenticate(request.headers.cookie);
+      if (this.teachingGateway && (pathname === '/api/v1/teaching' || pathname === '/api/v1/teaching/preview')) {
+        this._enforceRate(this.commandDeviceLimiter, device.id);
+        this._enforceRate(this.commandGlobalLimiter, 'global');
+        const entries = [...parsedUrl.searchParams.entries()];
+        const keys = new Set(entries.map(([key]) => key));
+        if (keys.size !== entries.length || entries.length > 2 || entries.some(([key, value]) =>
+          !['outputId', 'frameId'].includes(key) || !/^[A-Za-z0-9:._-]{1,80}$/.test(value)))
+          throw new RemoteProtocolError('INVALID_REQUEST', 'Invalid teaching output.', 400);
+        const outputId = parsedUrl.searchParams.get('outputId');
+        if (method === 'GET' && pathname === '/api/v1/teaching' && !keys.has('frameId')) {
+          return this._sendJson(response, 200, this.teachingGateway.state(outputId));
+        }
+        if (method === 'GET' && pathname === '/api/v1/teaching/preview' && outputId && keys.has('frameId')) {
+          const data = await this.teachingGateway.preview(outputId, parsedUrl.searchParams.get('frameId'));
+          this._assertCurrentDevice(device, generation);
+          if (!Buffer.isBuffer(data) || !data.length || data.length > 2 * 1024 * 1024)
+            throw new RemoteProtocolError('INVALID_PREVIEW', 'Teaching preview unavailable.', 502);
+          response.writeHead(200, { ...DEFAULT_SECURITY_HEADERS, 'Content-Type': 'image/jpeg', 'Content-Length': data.length });
+          return response.end(data);
+        }
+        if (method === 'POST' && pathname === '/api/v1/teaching' && !entries.length) {
+          const body = await readJsonBody(request, 64 * 1024);
+          return this._enqueueCommand(async () => {
+            this._assertCurrentDevice(device, generation);
+            const state = await this.teachingGateway.apply(body);
+            this._sendJson(response, 200, state);
+          });
+        }
+        throw new RemoteProtocolError('INVALID_REQUEST', 'Invalid teaching request.', 400);
+      }
       if (pathname === '/api/v1/state' && method === 'GET' && parsedUrl.search === '') {
         return this._handleState(response, device, generation);
       }

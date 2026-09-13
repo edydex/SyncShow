@@ -6,9 +6,10 @@
   <meta name="theme-color" content="#0b1020">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>SyncShow Remote</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/teaching.css">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Skip to Show controls</a>
@@ -71,6 +72,26 @@
       </section>
 
       <section id="showView" class="show-view" aria-labelledby="showTitle" hidden>
+        <details id="teachingPanel" class="teaching-panel">
+          <summary>Teach · Draw on the current slide</summary>
+          <p>Choose the screen whose text you want to mark. Ink stays on that screen and slide during this Show. Stage-facing screens keep their own view.</p>
+          <div class="teaching-toolbar">
+            <label>Screen<select id="teachingOutput" aria-label="Teaching screen"></select></label>
+            <label>Tool<select id="teachingTool"><option value="pen">Pen</option><option value="highlight">Highlighter</option></select></label>
+            <label>Color<select id="teachingColor"><option value="#ef4444">Red</option><option value="#2563eb">Blue</option><option value="#16a34a">Green</option><option value="#eab308">Yellow</option><option value="#ffffff">White</option><option value="#111827">Black</option></select></label>
+            <label>Pen size<select id="teachingWidth"><option value="0.004">Fine</option><option value="0.008" selected>Medium</option><option value="0.016">Bold</option></select></label>
+            <label><input type="checkbox" id="teachingPenOnly" aria-describedby="teachingPenHelp">Stylus only</label>
+            <button id="teaching-undo" type="button">Undo ink</button>
+            <button id="teaching-clear" type="button">Clear ink</button>
+          </div>
+          <p id="teachingPenHelp">Stylus only ignores finger and mouse drawing. Leave it off if your tablet does not recognize your pen.</p>
+          <p id="teachingStatus" role="status">Open Teaching to connect to the current slide.</p>
+          <div id="teachingCanvasWrap" class="teaching-canvas-wrap" data-ready="false">
+            <img id="teachingImage" alt="Current output with teacher annotations">
+            <canvas id="teachingCanvas" aria-label="Draw on the current slide"></canvas>
+          </div>
+          <p>Draw with a pen or finger. Use the existing Next / Previous controls below to change slides. Ending the Show discards ink.</p>
+        </details>
         <div class="show-overview">
           <div>
             <p class="eyebrow">CURRENT SHOW</p>
@@ -174,5 +195,6 @@
   </dialog>
 
   <script src="/app.js" defer></script>
+  <script src="/teaching.js" defer></script>
 </body>
 </html>

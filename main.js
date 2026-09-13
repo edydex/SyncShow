@@ -18,6 +18,7 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const QRCode = require('qrcode');
 const { TranslationProjection } = require('./src/services/translation/TranslationProjection');
+const { TeachingSurface } = require('./src/services/show/TeachingSurface');
 const { TranslationPreferences } = require('./src/services/translation/TranslationPreferences');
 const { TranslationFeed } = require('./src/services/translation/TranslationFeed');
 const { TranslationOperatorWindow } = require('./src/services/translation/TranslationOperatorWindow');
@@ -346,6 +347,8 @@ let outputWindows = new Map();
 let translationPreferencesVenue = null;
 let translationSettingsQueue = Promise.resolve();
 const translationProjection = new TranslationProjection();
+const teachingPainted = new Map();
+const teachingSurface = new TeachingSurface({ readContext: readTeachingContext, changed: sendTeachingFrames });
 const translationFeed = new TranslationFeed({ projection: translationProjection, changed: notifyTranslationChanged });
 const translationOperator = new TranslationOperatorWindow({ BrowserWindow, changed: notifyTranslationChanged });
 let outputSessionId = 0;
@@ -2374,7 +2377,58 @@ function readShowRuntimeState() {
 }
 
 function publishShowState(reason) {
+  teachingSurface.sync();
   return showGateway ? showGateway.publish(reason) : null;
+}
+
+function readTeachingContext() {
+  const state = readShowRuntimeState();
+  let authorized = true;
+  try { authorizeRemoteShowCommand('teaching.draw'); } catch (_) { authorized = false; }
+  const outputs = state.outputs.filter(output => output.renderer !== 'singer-current-next'
+    && outputWindows.get(output.id)?.output.nativeVariant !== 'singer-current-next'
+    && activeVenueProfile?.outputs.find(item => item.id === output.id)?.kind !== 'singer'
+    && output.status === 'healthy' && output.visible).map(output => ({
+      id: output.id, name: output.name,
+      size: outputWindows.get(output.id).win.getContentSize()
+    }));
+  return {
+    sessionId: state.hasActiveShow ? String(outputSessionId) : null,
+    cueKey: JSON.stringify([state.currentSlide, state.bible.phase, state.bible.reference, state.bible.translationId,
+      [...translationProjection.outputs.entries()]]),
+    cueLabel: state.bible.phase === 'live' ? state.bible.reference : state.currentCue?.label,
+    outputs,
+    ready: authorized && state.phase === 'live' && !state.navigationPending && state.bible.phase !== 'preparing' && outputs.length > 0,
+    message: 'Teaching needs a visible slide output. Wait for slide changes, or restore the Show.'
+  };
+}
+
+function sendTeachingFrames(surface, context) {
+  for (const [id, entry] of outputWindows) {
+    if (!entry.win.isDestroyed() && entry.output.renderer !== 'singer-current-next') {
+      entry.win.webContents.send('teaching:frame', surface.frame(id, context));
+    }
+  }
+}
+
+ipcMain.on('teaching:painted', (event, frameId) => {
+  const entry = [...outputWindows.values()].find(item => item.win.webContents === event.sender);
+  if (entry && typeof frameId === 'string' && frameId.length < 100) teachingPainted.set(entry.output.id, { sender: event.sender, frameId });
+});
+
+async function readTeachingPreview(outputId, expectedFrameId) {
+  const { frame, available } = teachingSurface.state(outputId);
+  const entry = outputWindows.get(outputId);
+  const fail = () => { throw new (require('./src/services/remote/RemoteProtocol').RemoteProtocolError)('TEACHING_REJECTED', 'The slide changed. Refresh the teaching preview.', 409); };
+  if (!available || !frame.visible || frame.frameId !== expectedFrameId || !entry || entry.win.isDestroyed()) return fail();
+  const started = Date.now();
+  while (teachingPainted.get(outputId)?.frameId !== frame.frameId || teachingPainted.get(outputId)?.sender !== entry.win.webContents) {
+    if (Date.now() - started > 1200 || entry.win.isDestroyed() || teachingSurface.frame(outputId).frameId !== frame.frameId) return fail();
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+  const image = await entry.win.webContents.capturePage();
+  if (teachingSurface.frame(outputId).frameId !== frame.frameId) return fail();
+  return image.resize({ width: Math.min(image.getSize().width, 1600) }).toJPEG(85);
 }
 
 function scheduleShowStatePublish(reason, sessionId = outputSessionId) {
@@ -2709,6 +2763,7 @@ function stopRemoteForShow(reason) {
 remoteAuthority = new RemoteAuthority();
 remoteServer = new RemoteControlServer({
   showGateway,
+  teachingGateway: { state: id => teachingSurface.state(id), apply: request => teachingSurface.apply(request), preview: readTeachingPreview },
   authority: remoteAuthority,
   bindingCatalog: new NetworkBindingCatalog(),
   staticRoutes: {
@@ -2723,6 +2778,14 @@ remoteServer = new RemoteControlServer({
     '/app.js': {
       filePath: path.join(__dirname, 'src', 'remote', 'remote.js'),
       contentType: 'text/javascript; charset=utf-8'
+    },
+    '/teaching.js': {
+      filePath: path.join(__dirname, 'src', 'remote', 'teaching.js'),
+      contentType: 'text/javascript; charset=utf-8'
+    },
+    '/teaching.css': {
+      filePath: path.join(__dirname, 'src', 'remote', 'teaching.css'),
+      contentType: 'text/css; charset=utf-8'
     }
   }
 });

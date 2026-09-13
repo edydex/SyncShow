@@ -142,6 +142,7 @@ test('local and remote command classifications are explicit and fail closed', ()
     'remote.manage': 'privileged'
   });
   assert.deepEqual(REMOTE_COMMANDS, {
+    'teaching.draw': 'standard',
     'cue.next': 'standard',
     'cue.previous': 'privileged',
     'cue.jump': 'privileged',

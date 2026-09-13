@@ -414,6 +414,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('translation:frame', listener);
     return () => ipcRenderer.removeListener('translation:frame', listener);
   },
+  onTeachingFrame: callback => {
+    const listener = (_event, frame) => callback(frame);
+    ipcRenderer.on('teaching:frame', listener);
+    return () => ipcRenderer.removeListener('teaching:frame', listener);
+  },
+  teachingFramePainted: frameId => ipcRenderer.send('teaching:painted', frameId),
   getCommunityStatus: () => ipcRenderer.invoke('community:status'),
   openCommunityPlanner: () => ipcRenderer.invoke('community:planner:open'),
   getCommunityPlannerState: () => ipcRenderer.invoke('community:planner:state'),

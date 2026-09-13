@@ -23,7 +23,7 @@ A cross-platform desktop application for planning and running synchronized churc
 - **Flexible venue profiles**: Persist custom input/output names, counts, ordering, routes, preview preferences, and conservative monitor bindings
 - **Missing-Media preflight**: Upload Media, derive a next-text view, mirror an existing deck as-is, or turn the output off for one service
 - **Live Bible passages**: Heritage-style shortcuts and explicit numbered-book choices, with bundled BSB/LSV text, preview, selected outputs, Send Live, and exact Return to slides
-- **Show-only phone Remote**: Explicitly enable a trusted local network, pair by QR or six-digit code, then use current/next previews, Previous/Next, jump, Restore, and Clear without exposing files or Settings
+- **Show Remote and tablet teaching**: Explicitly enable a trusted local network, pair by QR or six-digit code, then use current/next previews, Previous/Next, jump, Restore, and Clear. The tablet teaching view adds colored pen/highlighter annotations to a selected congregation screen; see [tablet teaching](docs/TABLET_TEACHING.md).
 - **Singer Screen Support**: Any configured output can explicitly derive current-plus-next lyrics from another output, with distinct next-text, intentional-blank, and end-of-presentation states
 - **Keyboard Shortcuts**: Navigate with arrow keys, space bar, Home/End keys
 - **Hardware Accelerated**: Uses Chromium GPU rendering when available

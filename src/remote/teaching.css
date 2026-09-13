@@ -1,0 +1,11 @@
+.teaching-panel { margin: 24px 0; padding: 18px; border: 1px solid #cbd5e1; border-radius: 16px; background: #fff; color: #172033; }
+.teaching-panel summary { font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+.teaching-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; padding: 16px 0; }
+.teaching-toolbar label { display: grid; gap: 4px; font-size: .85rem; }
+.teaching-toolbar select, .teaching-toolbar button { min-height: 44px; padding: 8px 12px; border: 1px solid #a5b1c4; border-radius: 8px; background: white; color: #172033; font: inherit; }
+.teaching-canvas-wrap { position: relative; width: 100%; background: #111827; line-height: 0; }
+.teaching-canvas-wrap img { width: 100%; height: auto; display: block; }
+.teaching-canvas-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.teaching-canvas-wrap[data-ready="false"] canvas { pointer-events: none; }
+.teaching-panel p { line-height: 1.5; font-size: .9rem; }
+.teaching-panel button:disabled { opacity: .5; }
