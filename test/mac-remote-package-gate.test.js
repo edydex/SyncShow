@@ -13,6 +13,7 @@ const {
 } = require('../scripts/afterPack');
 const {
   MAC_LOCAL_NETWORK_USAGE_DESCRIPTION,
+  MAC_MICROPHONE_USAGE_DESCRIPTION,
   MAC_UNRELATED_DEVICE_USAGE_KEYS,
   readPlistValue,
   verifyMacRemoteNetworkMetadata
@@ -56,6 +57,7 @@ test('macOS package config and afterPack bind the exact local-network privacy co
   );
   assert.equal(mac.extendInfo.NSAppTransportSecurity.NSAllowsArbitraryLoads, false);
   assert.equal(mac.extendInfo.NSAppTransportSecurity.NSAllowsLocalNetworking, true);
+  assert.equal(mac.extendInfo.NSMicrophoneUsageDescription, MAC_MICROPHONE_USAGE_DESCRIPTION);
 
   const calls = [];
   applyMacRemoteNetworkMetadata('/private/tmp/SyncShow.app/Contents/Info.plist', {
@@ -76,6 +78,14 @@ test('macOS package config and afterPack bind the exact local-network privacy co
       infoPlistPath: '/private/tmp/SyncShow.app/Contents/Info.plist',
       command: `Set :NSLocalNetworkUsageDescription ${MAC_LOCAL_NETWORK_USAGE_DESCRIPTION}`
     },
+    {
+      infoPlistPath: '/private/tmp/SyncShow.app/Contents/Info.plist',
+      command: 'Delete :NSMicrophoneUsageDescription'
+    },
+    {
+      infoPlistPath: '/private/tmp/SyncShow.app/Contents/Info.plist',
+      command: `Add :NSMicrophoneUsageDescription string ${MAC_MICROPHONE_USAGE_DESCRIPTION}`
+    },
     ...MAC_UNRELATED_DEVICE_USAGE_KEYS.map(key => ({
       infoPlistPath: '/private/tmp/SyncShow.app/Contents/Info.plist',
       command: `Delete :${key}`
@@ -87,7 +97,8 @@ test('packaged plist verification fails closed on missing or drifted metadata', 
   const infoPlistPath = '/private/tmp/SyncShow.app/Contents/Info.plist';
   const values = new Map([
     ['NSAppTransportSecurity.NSAllowsLocalNetworking', 'true'],
-    ['NSLocalNetworkUsageDescription', MAC_LOCAL_NETWORK_USAGE_DESCRIPTION]
+    ['NSLocalNetworkUsageDescription', MAC_LOCAL_NETWORK_USAGE_DESCRIPTION],
+    ['NSMicrophoneUsageDescription', MAC_MICROPHONE_USAGE_DESCRIPTION]
   ]);
   const execFileSyncImpl = (executable, args) => {
     assert.equal(executable, '/usr/bin/plutil');
@@ -102,7 +113,8 @@ test('packaged plist verification fails closed on missing or drifted metadata', 
     verifyMacRemoteNetworkMetadata(infoPlistPath, { execFileSyncImpl }),
     {
       allowsLocalNetworking: true,
-      usageDescription: MAC_LOCAL_NETWORK_USAGE_DESCRIPTION
+      usageDescription: MAC_LOCAL_NETWORK_USAGE_DESCRIPTION,
+      microphoneUsageDescription: MAC_MICROPHONE_USAGE_DESCRIPTION
     }
   );
 
@@ -126,6 +138,17 @@ test('packaged plist verification fails closed on missing or drifted metadata', 
   );
 
   values.set('NSLocalNetworkUsageDescription', MAC_LOCAL_NETWORK_USAGE_DESCRIPTION);
+  values.delete('NSMicrophoneUsageDescription');
+  assert.throws(
+    () => verifyMacRemoteNetworkMetadata(infoPlistPath, { execFileSyncImpl }),
+    error => error.code === 'MAC_REMOTE_METADATA_MISSING'
+  );
+  values.set('NSMicrophoneUsageDescription', 'Unexplained microphone use');
+  assert.throws(
+    () => verifyMacRemoteNetworkMetadata(infoPlistPath, { execFileSyncImpl }),
+    error => error.code === 'MAC_TRANSLATION_MICROPHONE_DESCRIPTION_MISMATCH'
+  );
+  values.set('NSMicrophoneUsageDescription', MAC_MICROPHONE_USAGE_DESCRIPTION);
   values.set('NSAudioCaptureUsageDescription', 'This app needs access to audio capture');
   assert.throws(
     () => verifyMacRemoteNetworkMetadata(infoPlistPath, { execFileSyncImpl }),
@@ -165,7 +188,8 @@ test('afterPack produces metadata accepted by the real macOS plist reader', {
   applyMacRemoteNetworkMetadata(infoPlistPath);
   assert.deepEqual(verifyMacRemoteNetworkMetadata(infoPlistPath), {
     allowsLocalNetworking: true,
-    usageDescription: MAC_LOCAL_NETWORK_USAGE_DESCRIPTION
+    usageDescription: MAC_LOCAL_NETWORK_USAGE_DESCRIPTION,
+    microphoneUsageDescription: MAC_MICROPHONE_USAGE_DESCRIPTION
   });
   for (const key of MAC_UNRELATED_DEVICE_USAGE_KEYS) {
     assert.throws(

@@ -24,6 +24,8 @@ if (!process.versions.electron) {
   app.commandLine.appendSwitch('disable-background-timer-throttling');
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+  // Chromium supplies synthetic devices; this rehearsal never opens hardware.
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream');
   const windows = new Map();
   let feed, server;
   const peers = new Set();
@@ -171,6 +173,19 @@ if (!process.versions.electron) {
       assert.equal(leaseRequests, 1); assert.equal(scopedRequests, 1);
       assert.equal(await operator.window.webContents.executeJavaScript("typeof require + ':' + typeof window.api"), 'undefined:undefined');
       results.push({ name: 'sandboxed operator window exchanges device token and preserves scoped lease', passed: true });
+      const media = await operator.window.webContents.executeJavaScript(`(async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+        const tracks = stream.getTracks();
+        const result = { count: tracks.length, kind: tracks[0]?.kind, label: tracks[0]?.label, active: stream.active };
+        tracks.forEach(track => track.stop());
+        result.stopped = tracks.every(track => track.readyState === 'ended');
+        try { const video = await navigator.mediaDevices.getUserMedia({video:true}); video.getTracks().forEach(track => track.stop()); result.videoDenied=false; }
+        catch { result.videoDenied=true; }
+        return result;
+      })()`, true);
+      assert.equal(media.count, 1); assert.equal(media.kind, 'audio'); assert.equal(media.active, true);
+      assert.match(media.label, /fake/i); assert.equal(media.stopped, true); assert.equal(media.videoDenied, true);
+      results.push({ name: 'actual Chromium synthetic audio input succeeds, stops, and camera remains denied', passed: true });
     } finally { operator.close(); }
     fs.writeFileSync(path.join(evidence, 'result.json'), JSON.stringify({ passed: true, connections, results }, null, 2));
     console.log(JSON.stringify({ passed: true, evidence, results }));
