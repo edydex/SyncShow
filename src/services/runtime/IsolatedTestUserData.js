@@ -49,11 +49,12 @@ function configureIsolatedTestUserData({
   let profilePath;
   let profileStats;
   try {
-    rootPath = fsModule.realpathSync(path.resolve(temporaryRoot));
+    const realpath = fsModule.realpathSync.native || fsModule.realpathSync;
+    rootPath = realpath(path.resolve(temporaryRoot));
     const requestedResolved = path.resolve(requestedPath);
     profileStats = fsModule.lstatSync(requestedResolved);
     if (profileStats.isSymbolicLink()) fail();
-    profilePath = fsModule.realpathSync(requestedResolved);
+    profilePath = realpath(requestedResolved);
   } catch (_error) {
     fail();
   }

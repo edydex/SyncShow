@@ -78,6 +78,14 @@ async function fsyncDirectory(directoryPath) {
   try {
     handle = await fs.open(directoryPath, nativeFs.constants.O_RDONLY);
     await handle.sync();
+    return true;
+  } catch (error) {
+    // Node cannot flush a directory handle on Windows. Published files are
+    // independently reopened and flushed by atomicWriteFile; keep this optional
+    // metadata barrier consistent for pointer recovery and retention cleanup.
+    if (process.platform === 'win32'
+      && ['EINVAL', 'EPERM', 'EBADF', 'EACCES'].includes(error.code)) return false;
+    throw error;
   } finally {
     await handle?.close().catch(() => {});
   }

@@ -107,18 +107,6 @@ function requireRoleId(value, field) {
   return value;
 }
 
-async function syncRegularFile(filePath) {
-  // Windows requires a writable handle for FlushFileBuffers, which is what
-  // FileHandle.sync() uses. These thumbnail files were just created by the
-  // publisher, so opening them read/write keeps the durability guarantee
-  // without turning a supported Windows publish into EPERM.
-  const handle = await fs.open(filePath, 'r+');
-  try {
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
 
 class ShowPackagePublisher {
   constructor(options = {}) {
@@ -938,11 +926,17 @@ class ShowPackagePublisher {
                   nextCue
                 )
               : await renderer.renderCue(cue, channelId);
-            await this.sharp(rendered.info.data)
+            const thumbnail = await this.sharp(rendered.info.data)
               .resize(renderOptions.thumbnailWidth, null, { fit: 'inside', withoutEnlargement: true })
               .jpeg({ quality: 85 })
-              .toFile(thumbPath);
-            await syncRegularFile(thumbPath);
+              .toBuffer();
+            // Use Node's long-path support instead of passing a potentially
+            // >260-character staging path to the native image library.
+            await atomicWriteFile(thumbPath, thumbnail, {
+              maximumBytes: MAX_RASTER_ARTIFACT_BYTES,
+              mode: 0o600,
+              rootPath: stagingPath
+            });
             for (const fileName of [sceneName, thumbName]) {
               const filePath = path.join(channelPath, fileName);
               const stats = await fs.stat(filePath);

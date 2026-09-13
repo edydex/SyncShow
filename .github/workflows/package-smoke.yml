@@ -96,6 +96,12 @@ jobs:
         if: matrix.platform != 'linux'
         run: npm run build:verify-app-launch -- --root dist
 
+      - name: Configure the Linux sandbox helper for unpacked-app QA
+        if: matrix.platform == 'linux'
+        run: |
+          sudo chown root:root dist/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 dist/linux-unpacked/chrome-sandbox
+
       - name: Launch the packaged application under Xvfb
         if: matrix.platform == 'linux'
         run: xvfb-run -a npm run build:verify-app-launch -- --root dist

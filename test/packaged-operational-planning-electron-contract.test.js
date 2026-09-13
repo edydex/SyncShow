@@ -95,7 +95,11 @@ test('packaged planning verifier requires exact app, retained proof, hash, and o
   }
 });
 
-test('proof root is a dedicated empty owner-only directory', async t => {
+test('proof root is a dedicated empty owner-only directory', {
+  skip: process.platform === 'win32'
+    ? 'The macOS-only lifecycle verifier requires POSIX modes and canonical paths.'
+    : false
+}, async t => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'syncshow-proof-root-contract-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   fs.chmodSync(base, 0o700);
@@ -123,7 +127,11 @@ test('proof root is a dedicated empty owner-only directory', async t => {
   );
 });
 
-test('evidence result is disjoint from immutable and temporary inputs', async t => {
+test('evidence result is disjoint from immutable and temporary inputs', {
+  skip: process.platform === 'win32'
+    ? 'The macOS-only lifecycle verifier requires POSIX modes and canonical paths.'
+    : false
+}, async t => {
   const result = '/private/tmp/evidence/packaged-operational-planning-restart.json';
   assert.equal(verifier.assertEvidenceResultDisjoint(result, [
     { label: 'shared-ancestor sibling', path: '/private/tmp/frozen' }
@@ -347,7 +355,11 @@ test('the source-side fixture is labeled setup and cannot replace packaged Main'
   assert.ok(seedIndex >= 0 && launchIndex > seedIndex);
 });
 
-test('seed raw pointer and revision identity are independently no-follow bound', async t => {
+test('seed raw pointer and revision identity are independently no-follow bound', {
+  skip: process.platform === 'win32'
+    ? 'The macOS-only lifecycle verifier requires POSIX modes and canonical paths.'
+    : false
+}, async t => {
   for (const seedContract of [
     'readStableNoFollow',
     'nativeFs.constants.O_RDONLY | nativeFs.constants.O_NOFOLLOW',
@@ -804,7 +816,11 @@ test('prepared Load state separates installed cue count from the live Show count
   );
 });
 
-test('restart stale DevToolsActivePort is removed only after group absence', async t => {
+test('restart stale DevToolsActivePort is removed only after group absence', {
+  skip: process.platform === 'win32'
+    ? 'The macOS-only lifecycle verifier requires POSIX modes and canonical paths.'
+    : false
+}, async t => {
   const profilePath = fs.realpathSync(fs.mkdtempSync(path.join(
     os.tmpdir(),
     'syncshow-stale-devtools-contract-'
@@ -919,7 +935,11 @@ test('cleanup is confined, status-bearing, and written into non-overwriting evid
   );
 });
 
-test('evidence publication is complete, owner-only, atomic, and no-overwrite', async t => {
+test('evidence publication is complete, owner-only, atomic, and no-overwrite', {
+  skip: process.platform === 'win32'
+    ? 'The macOS-only lifecycle verifier requires POSIX modes and canonical paths.'
+    : false
+}, async t => {
   const proofRoot = fs.mkdtempSync(path.join(
     os.tmpdir(),
     'syncshow-packaged-evidence-contract-'

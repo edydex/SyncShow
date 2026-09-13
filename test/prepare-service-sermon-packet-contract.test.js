@@ -447,7 +447,7 @@ function loadServicePacketHandlers({
               events.push(`import:${options.id}`);
               await onImport(options);
               const serviceInput = options.kind === 'slide-notes'
-                ? Object.values(currentManifest.inputs).find(input => input.pinnedPath === options.sourcePath)
+                ? Object.values(currentManifest.inputs).find(input => path.resolve(input.pinnedPath) === path.resolve(options.sourcePath))
                 : null;
               const expectedSha = serviceInput?.sha256 || inspectedManuscript.sha256;
               const expectedSize = serviceInput?.size || inspectedManuscript.sizeBytes;
