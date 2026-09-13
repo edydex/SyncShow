@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const asar = require('@electron/asar');
+const asar = require('./lib/asar');
 
 const { packageTarget } = require('./lib/package-targets');
 const { verifyLegalBundle } = require('./verify-release-legal');

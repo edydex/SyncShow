@@ -10,7 +10,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 
-const asar = require('@electron/asar');
+const asar = require('./lib/asar');
 
 const sourceManifest = require('../package.json');
 const { readPlistValue } = require('./lib/mac-network-privacy');

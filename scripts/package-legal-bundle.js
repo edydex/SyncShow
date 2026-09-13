@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-const asar = require('@electron/asar');
+const asar = require('./lib/asar');
 const { Arch } = require('builder-util');
 
 const { packageTarget } = require('./lib/package-targets');

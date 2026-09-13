@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const asar = require('@electron/asar');
+const asar = require('./lib/asar');
 
 const DISCOVERY_TIMEOUT_MS = 45_000;
 const EXIT_TIMEOUT_MS = 15_000;

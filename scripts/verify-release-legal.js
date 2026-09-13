@@ -2,7 +2,7 @@
 
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const asar = require('@electron/asar');
+const asar = require('./lib/asar');
 
 const {
   LEGAL_SCHEMA_VERSION,

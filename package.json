@@ -183,7 +183,10 @@
       "assets/**/*",
       "!assets/google-drive-config.json",
       "node_modules/**/*",
-      "!node_modules/@img/sharp-wasm32/**"
+      "!node_modules/@img/sharp-wasm32/**",
+      "!node_modules/@napi-rs/canvas-linux-*-musl/**",
+      "!node_modules/@img/sharp-linuxmusl-*/**",
+      "!node_modules/@img/sharp-libvips-linuxmusl-*/**"
     ],
     "asarUnpack": [
       "assets/fonts/**",
