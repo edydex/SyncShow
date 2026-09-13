@@ -81,7 +81,22 @@ jobs:
         run: npm ci
 
       - name: Build ordinary QA packages
+        # Mac matrix commands explicitly select identity=-. These are local ad-hoc
+        # signatures, with no signing certificate, secret, or public publishing.
+        env:
+          CSC_FOR_PULL_REQUEST: 'true'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: ${{ matrix.build_command }}
+
+      - name: Verify the Mac preview bundle signature
+        if: matrix.platform == 'darwin'
+        run: |
+          python3 - <<'PYCODE'
+          import pathlib, subprocess
+          apps = list(pathlib.Path('dist').glob('mac*/SyncShow.app'))
+          assert len(apps) == 1, apps
+          subprocess.run(['codesign', '--verify', '--deep', '--strict', str(apps[0])], check=True)
+          PYCODE
 
       - name: Verify packaged PDF engine
         run: npm run build:verify-pdf-engine -- --root dist
