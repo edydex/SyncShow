@@ -14,6 +14,7 @@ const {
   RELEASE_BLOCKERS,
   SHARP_LIBVIPS_NOTICE,
   LIBVIPS_SOURCE_NOTICES,
+  WINDOWS_LIBVIPS_SOURCE_NOTICES,
   buildLegalBundle
 } = require('../scripts/package-legal-bundle');
 const {
@@ -243,6 +244,59 @@ async function legalFixture(t, {
   };
 }
 
+async function windowsLegalFixture(t) {
+  const fixture = await legalFixture(t);
+  const { appOutDir, context } = fixture;
+  const { projectDir } = context.packager;
+  const resourcesRoot = path.join(appOutDir, 'resources');
+  await fs.rename(fixture.resourcesRoot, resourcesRoot);
+  await fs.rm(path.join(appOutDir, 'SyncShow.app'), { recursive: true });
+  const unpackedRoot = path.join(resourcesRoot, 'app.asar.unpacked');
+  for (const relativePath of [
+    'node_modules/@napi-rs/canvas-darwin-arm64',
+    'node_modules/@img/sharp-darwin-arm64',
+    'node_modules/@img/sharp-libvips-darwin-arm64'
+  ]) {
+    await fs.rm(path.join(unpackedRoot, relativePath), { recursive: true });
+  }
+  const target = packageTarget('win32', 'x64');
+  for (const [name, version] of [
+    [`@napi-rs/${target.canvasPackage}`, '1.0.3'],
+    [`@img/${target.sharpPackage}`, '0.35.3']
+  ]) {
+    await writeJson(unpackedRoot, `node_modules/${name}/package.json`, { name, version });
+    await writeFile(unpackedRoot, `node_modules/${name}/LICENSE`, 'Windows fixture license\n');
+    await writeFile(projectDir, `node_modules/${name}/README.md`, 'Windows fixture provenance\n');
+  }
+  for (const artifact of target.nativePackageArtifacts) {
+    await writeFile(unpackedRoot, artifact.suffix, 'Windows native fixture\n');
+  }
+  await writeJson(projectDir, `node_modules/@img/${target.sharpPackage}/versions.json`, {
+    vips: '8.18.3', cairo: '1.18.4'
+  });
+  await writeFile(appOutDir, 'ffmpeg.dll', 'Windows FFmpeg fixture\n');
+  await writeFile(appOutDir, 'LICENSE.electron.txt', 'Electron MIT license\n');
+  await writeFile(appOutDir, 'LICENSES.chromium.html', '<html>Chromium notices</html>\n');
+  const lockPath = path.join(projectDir, 'package-lock.json');
+  const lock = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+  lock.packages[`node_modules/@napi-rs/${target.canvasPackage}`] = lockRecord('1.0.3');
+  lock.packages[`node_modules/@img/${target.sharpPackage}`] = lockRecord('0.35.3');
+  await fs.writeFile(lockPath, JSON.stringify(lock));
+  await fs.cp(
+    path.resolve(__dirname, '..', WINDOWS_LIBVIPS_SOURCE_NOTICES.projectRoot),
+    path.join(projectDir, WINDOWS_LIBVIPS_SOURCE_NOTICES.projectRoot),
+    { recursive: true }
+  );
+  context.electronPlatformName = 'win32';
+  context.arch = Arch.x64;
+  context.packager.getResourcesDir = () => resourcesRoot;
+  return {
+    ...fixture,
+    resourcesRoot,
+    manifestPath: path.join(resourcesRoot, 'legal', 'manifest.json')
+  };
+}
+
 test('package target map is exact for every supported release architecture', () => {
   assert.deepEqual(Object.keys(PACKAGE_TARGETS).sort(), [
     'darwin-arm64',
@@ -368,6 +422,38 @@ test('libvips source notice verification rejects substituted archive hashes', as
   const built = await buildLegalBundle(fixture.context);
   const record = built.manifest.notices.find(item => item.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt'));
   record.sha256 = '0'.repeat(64);
+  await fs.writeFile(fixture.manifestPath, JSON.stringify(built.manifest));
+  await assert.rejects(verifyLegalBundle(fixture.manifestPath, { requireComplete: false }), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
+});
+
+test('Windows packages its own checked source notices and preserves the unresolved archive', async t => {
+  const fixture = await windowsLegalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  const prefix = `${WINDOWS_LIBVIPS_SOURCE_NOTICES.bundleRoot}/`;
+  assert.equal(built.manifest.notices.filter(record => record.path.startsWith(prefix)).length, 105);
+  assert.equal(built.manifest.notices.some(record => record.path.startsWith('notices/sharp-libvips-1.3.2/')), false);
+  const inventory = JSON.parse(await fs.readFile(path.join(built.legalRoot, prefix, 'manifest.json'), 'utf8'));
+  assert.equal(inventory.sourceArchives.length, 27);
+  assert.deepEqual(inventory.unresolvedSourceArchives.map(record => record.id), ['imagequant']);
+  assert.equal(inventory.files.some(record => record.sourceArchive === 'imagequant'), false);
+  const glib = built.manifest.notices.find(record => record.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt'));
+  assert.match(await fs.readFile(path.join(built.legalRoot, glib.path), 'utf8'), /GNU LESSER GENERAL PUBLIC LICENSE/u);
+  assert.equal((await verifyLegalBundle(fixture.manifestPath, { requireComplete: false })).evidenceVerification, 'passed');
+  await assert.rejects(verifyLegalBundle(fixture.manifestPath), error => error.code === 'RELEASE_LEGAL_BLOCKED');
+});
+
+test('Windows notice generation rejects changed source text and inventory', async t => {
+  for (const relativePath of ['glib/LICENSES/LGPL-2.1-or-later.txt', 'manifest.json']) {
+    const fixture = await windowsLegalFixture(t);
+    await fs.appendFile(path.join(fixture.context.packager.projectDir, WINDOWS_LIBVIPS_SOURCE_NOTICES.projectRoot, relativePath), 'changed\n');
+    await assert.rejects(buildLegalBundle(fixture.context), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
+  }
+});
+
+test('Windows notice verification rejects a substituted source hash', async t => {
+  const fixture = await windowsLegalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  built.manifest.notices.find(record => record.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt')).sha256 = '0'.repeat(64);
   await fs.writeFile(fixture.manifestPath, JSON.stringify(built.manifest));
   await assert.rejects(verifyLegalBundle(fixture.manifestPath, { requireComplete: false }), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
 });

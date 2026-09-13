@@ -386,9 +386,7 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
     'SOURCE_AVAILABILITY.txt',
     'THIRD_PARTY_NOTICES.txt'
   ];
-  const sourceNotices = target.libvipsPackage
-    ? await libvipsSourceNoticeRecords(path.resolve(__dirname, '..'))
-    : [];
+  const sourceNotices = await libvipsSourceNoticeRecords(path.resolve(__dirname, '..'), target);
   const expectedNoticePaths = [
     'notices/syncshow/LICENSE.txt',
     ...PDFJS_NOTICE_PATHS.map(relativePath => (

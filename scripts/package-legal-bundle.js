@@ -23,6 +23,11 @@ const LIBVIPS_SOURCE_NOTICES = Object.freeze({
   bundleRoot: 'notices/sharp-libvips-1.3.2/source-archives',
   manifestSha256: 'f89d1575be7b4388491605991a38a5255a02141c1abf4a1becb171e4e2e64615'
 });
+const WINDOWS_LIBVIPS_SOURCE_NOTICES = Object.freeze({
+  projectRoot: 'legal/upstream/libvips-windows-8.18.3/source-notices',
+  bundleRoot: 'notices/libvips-windows-8.18.3/source-archives',
+  manifestSha256: '8f535e95d9fade8d8a3921689f29615d03361bed7b5aa44a0f77c99ef9de7212'
+});
 
 const RELEASE_BLOCKERS = Object.freeze([
   Object.freeze({
@@ -310,21 +315,24 @@ function installedPackageRecord(lock, packageName, expectedVersion) {
   };
 }
 
-async function libvipsSourceNoticeRecords(projectDir) {
-  const projectRoot = path.join(projectDir, LIBVIPS_SOURCE_NOTICES.projectRoot);
+async function libvipsSourceNoticeRecords(projectDir, target) {
+  const sourceNotices = target.platform === 'win32'
+    ? WINDOWS_LIBVIPS_SOURCE_NOTICES
+    : LIBVIPS_SOURCE_NOTICES;
+  const projectRoot = path.join(projectDir, sourceNotices.projectRoot);
   const manifestPath = path.join(projectRoot, 'manifest.json');
   await regularFile(manifestPath);
   const bytes = await fsp.readFile(manifestPath);
-  if (crypto.createHash('sha256').update(bytes).digest('hex') !== LIBVIPS_SOURCE_NOTICES.manifestSha256) {
+  if (crypto.createHash('sha256').update(bytes).digest('hex') !== sourceNotices.manifestSha256) {
     fail('UPSTREAM_SOURCE_NOTICE_CHANGED', 'The libvips source-notice inventory differs from the reviewed archive set.');
   }
   const inventory = JSON.parse(bytes.toString('utf8'));
   return [
-    { path: 'manifest.json', size: bytes.length, sha256: LIBVIPS_SOURCE_NOTICES.manifestSha256 },
+    { path: 'manifest.json', size: bytes.length, sha256: sourceNotices.manifestSha256 },
     ...inventory.files
   ].map(record => ({
     projectPath: resolveInside(projectRoot, record.path),
-    bundlePath: `${LIBVIPS_SOURCE_NOTICES.bundleRoot}/${record.path}`,
+    bundlePath: `${sourceNotices.bundleRoot}/${record.path}`,
     size: record.size,
     sha256: record.sha256
   }));
@@ -380,7 +388,13 @@ identifies dependency license terms. Source-archive license texts and their
 archive provenance are also included under source-archives/. That collection
 may include test/build notices and does not assert all listed code is linked.
 The full transitive license/source set and replacement acceptance remain open.
-` : ''}
+` : `Windows source-archive license texts and provenance are included under
+notices/libvips-windows-8.18.3/source-archives/. These cover 27 direct archives
+checked against the Windows build recipes. The libimagequant source archive
+remains unresolved because its version tag changed after the pinned release.
+Source-tree test/build notices may be included; not all listed code is linked.
+The full transitive license/source set and replacement acceptance remain open.
+`}
 
 This is intentionally not described as a complete notice inventory. See
 manifest.json for hashed evidence and the blockers that prevent distribution.
@@ -587,13 +601,13 @@ async function buildLegalBundle(context) {
       fail('UPSTREAM_NOTICE_CHANGED', 'The libvips notice differs from the reviewed upstream 1.3.2 release.');
     }
     notices.push(notice);
-    for (const expected of await libvipsSourceNoticeRecords(projectDir)) {
-      const copied = await copyBundleFile(stagingRoot, expected.bundlePath, expected.projectPath);
-      if (copied.sha256 !== expected.sha256 || copied.size !== expected.size) {
-        fail('UPSTREAM_SOURCE_NOTICE_CHANGED', 'A libvips license text differs from its retained source archive.');
-      }
-      notices.push(copied);
+  }
+  for (const expected of await libvipsSourceNoticeRecords(projectDir, target)) {
+    const copied = await copyBundleFile(stagingRoot, expected.bundlePath, expected.projectPath);
+    if (copied.sha256 !== expected.sha256 || copied.size !== expected.size) {
+      fail('UPSTREAM_SOURCE_NOTICE_CHANGED', 'A libvips license text differs from its retained source archive.');
     }
+    notices.push(copied);
   }
 
   const electronNoticeRoot = target.platform === 'darwin'
@@ -822,6 +836,7 @@ module.exports = {
   RELEASE_BLOCKERS,
   SHARP_LIBVIPS_NOTICE,
   LIBVIPS_SOURCE_NOTICES,
+  WINDOWS_LIBVIPS_SOURCE_NOTICES,
   libvipsSourceNoticeRecords,
   buildLegalBundle,
   resolveInside,
