@@ -733,6 +733,7 @@ class RemoteControlServer extends EventEmitter {
             try {
               return await this.showGateway.execute(gatewayEnvelope, {
                 deviceId: device.id,
+                deviceName: device.name,
                 source: 'lan-remote'
               });
             } catch (error) {

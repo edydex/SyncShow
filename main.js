@@ -2437,12 +2437,16 @@ async function readTeachingPreview(outputId, expectedFrameId) {
   const fail = () => { throw new (require('./src/services/remote/RemoteProtocol').RemoteProtocolError)('TEACHING_REJECTED', 'The slide changed. Refresh the teaching preview.', 409); };
   if (!available || !frame.visible || frame.frameId !== expectedFrameId || !entry || entry.win.isDestroyed()) return fail();
   const started = Date.now();
-  while (teachingPainted.get(outputId)?.frameId !== frame.frameId || teachingPainted.get(outputId)?.sender !== entry.win.webContents) {
+  // Never bake a transient pointer into the tablet's still-image background.
+  while (teachingSurface.frame(outputId).trails.length || teachingPainted.get(outputId)?.frameId !== frame.frameId || teachingPainted.get(outputId)?.sender !== entry.win.webContents) {
     if (Date.now() - started > 1200 || entry.win.isDestroyed() || teachingSurface.frame(outputId).frameId !== frame.frameId) return fail();
     await new Promise(resolve => setTimeout(resolve, 15));
   }
+  // Allow the pointer's final animation frame to clear before taking a still.
+  await new Promise(resolve => setTimeout(resolve, 50));
+  if (teachingSurface.frame(outputId).trails.length || teachingSurface.frame(outputId).frameId !== frame.frameId) return fail();
   const image = await entry.win.webContents.capturePage();
-  if (teachingSurface.frame(outputId).frameId !== frame.frameId) return fail();
+  if (teachingSurface.frame(outputId).frameId !== frame.frameId || teachingSurface.frame(outputId).trails.length) return fail();
   return image.resize({ width: Math.min(image.getSize().width, 1600) }).toJPEG(85);
 }
 
@@ -2483,6 +2487,9 @@ async function restoreOutputsForRemote() {
 liveCueTransitionCoordinator = new LiveCueTransitionCoordinator();
 
 showGateway = new RemoteCommandAdapter({
+  onRemoteNavigation: notice => {
+    if (controlWindow && !controlWindow.isDestroyed()) controlWindow.webContents.send('remote:navigated', notice);
+  },
   readRuntimeState: readShowRuntimeState,
   readShowPolicyState: () => ({ mode: activeShowControlMode }),
   authorizeShowCommand: request =>
@@ -2796,6 +2803,10 @@ remoteServer = new RemoteControlServer({
     },
     '/teaching.js': {
       filePath: path.join(__dirname, 'src', 'remote', 'teaching.js'),
+      contentType: 'text/javascript; charset=utf-8'
+    },
+    '/teaching-trail.js': {
+      filePath: path.join(__dirname, 'src', 'renderer', 'teaching-trail.js'),
       contentType: 'text/javascript; charset=utf-8'
     },
     '/teaching.css': {

@@ -37,3 +37,34 @@ test('rejects invalid coordinates, arbitrary colors, unsupported outputs and unb
   assert.throws(() => surface.apply(request({outputId:'stage'})), /available slide output/);
   assert.equal(surface.frame('en').strokes.length,0);
 });
+test('pointer expires per point without consuming ink or returning on an earlier slide', () => {
+  const {surface, request, context} = fixture();
+  let now = 10000; surface.now = () => now;
+  surface.apply(request());
+  const revision = surface.revision;
+  const pointer = request({stroke: stroke({tool:'pointer', ages:[700,0]})});
+  surface.apply(pointer);
+  assert.equal(surface.revision, revision);
+  assert.equal(surface.state('en').frame.strokeCount, 1);
+  assert.deepEqual(surface.frame('en').trails[0].times, [9300,10000]);
+  assert.equal(surface.frame('ru').trails.length, 0);
+  now += 1001;
+  assert.equal(surface.frame('en').trails.length, 0);
+  now += 1000; surface.apply(pointer);
+  context.cueKey='cue-2'; surface.sync(); context.cueKey='cue-1';
+  assert.equal(surface.frame('en').trails.length, 0);
+  assert.equal(surface.frame('en').strokes.length, 1);
+  for (const ages of [[0,20],[NaN,0],[-1,0],[1001,0],[0]])
+    assert.throws(() => surface.apply(request({stroke:stroke({tool:'pointer',ages})})), /pointer timing/);
+});
+test('pointer renderer clips expired fragments and stops scheduling after one second', () => {
+  const {paintTrail} = require('../src/renderer/teaching-trail');
+  const lines = [];
+  const context = {beginPath(){},moveTo(x,y){lines.push([x,y]);},lineTo(x,y){lines.push([x,y]);},stroke(){},arc(){},fill(){}};
+  const trail = {color:'#ef4444',width:.008,points:[[0,.5],[.5,.5],[1,.5]],times:[0,500,1000]};
+  assert.equal(paintTrail(context,trail,100,100,1750),true);
+  assert.deepEqual(lines,[[75,50],[100,50]],'only the most recent quarter of the line remains');
+  lines.length=0;
+  assert.equal(paintTrail(context,trail,100,100,2000),false);
+  assert.equal(lines.length,0);
+});

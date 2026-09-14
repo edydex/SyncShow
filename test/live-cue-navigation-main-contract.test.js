@@ -187,7 +187,7 @@ test('Remote commands and trusted local IPC route through acknowledged navigatio
 
   const execute = section(
     remoteAdapterSource,
-    '  async execute(envelope) {',
+    '  async execute(envelope, origin = {}) {',
     '  _validateEnvelope(envelope) {'
   );
   assert.match(

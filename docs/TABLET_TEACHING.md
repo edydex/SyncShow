@@ -5,7 +5,12 @@ Use a paired tablet browser to underline, circle, connect and highlight text on 
 1. Prepare and Load the service, then start Show.
 2. Open Remote Control, select the trusted local network, and pair the tablet with its QR code or six-digit code.
 3. On the tablet, expand **Teach · Draw on the current slide** and select the congregation screen to annotate.
-4. Choose Pen or Highlighter, a color and pen size, then draw on the captured output preview. Use **Undo ink** or **Clear ink** as needed. Existing Previous/Next, Clear-to-black and Restore controls remain below the teaching view.
+4. Choose **Pen**, **Highlighter** or **Trailing pointer · 1 second**, a color and size, then draw on the output preview. Use **Undo ink** or **Clear ink** as needed.
+5. Use Previous/Next beside the teaching controls, or open **Slide gallery**. It starts with the current slide and up to three on either side. **Show all slides** opens the full cue catalog. Selecting a slide changes the Show after the host confirms it.
+
+The trailing pointer fades each fragment progressively over approximately one second, even while the same gesture continues. Earlier parts disappear before later ones. It works well for temporary emphasis; pen and highlighter remain useful for marks you want to discuss later. Pointer trails do not consume saved-ink capacity and are never restored on an earlier slide. They use a bounded point buffer and animate only while a trail is visible; ordinary slide/ink rendering does not run every animation frame. A new preview waits for a quiet pointer so the captured background cannot retain a trail.
+
+Every paired remote's confirmed Previous, Next or gallery change shows a wide banner across the host's control window, including the device name and destination slide. It clears after six seconds or can be dismissed. It does not cover congregation or stage screens. Rejected commands, repeated requests and selecting the current slide do not produce a false change notice.
 
 **Stylus only** is optional and off by default. The browser reports whether pointer input comes from a pen, touch or mouse. When enabled, drawing accepts only input reported as a pen; fingers can still operate toolbar controls. Turn it off if your browser does not recognize the stylus. This filter is not a guarantee of hardware palm rejection. Physical tablet/stylus acceptance is still required.
 
@@ -17,6 +22,6 @@ The tablet uses the same paired Show authority and revocation as Remote Control.
 
 ## Verification
 
-Run `node scripts/verify-teaching-electron.js` for an opt-in source-app rehearsal. It creates a temporary profile, synthetic displays and service, and a loopback-only paired browser. It checks actual pointer input, output rendering, per-screen routing, highlighter/Undo, navigation, blackout/restore, browser reconnect, Clear ink and Show end. It saves screenshots and an explicit evidence report.
+Run `node scripts/verify-teaching-electron.js` for an opt-in source-app rehearsal. It creates a temporary profile, synthetic displays and service, and a loopback-only paired browser. It checks actual pointer input, output rendering, per-screen routing, highlighter/Undo, navigation, blackout/restore, browser reconnect, Clear ink and Show end. It also selects a slide from the nearby gallery, toggles all slides, checks host-only notifications and measures old versus recent pointer pixels during one continuous gesture. It saves screenshots and an explicit evidence report.
 
 This is not physical tablet, venue Wi-Fi, or packaged-release acceptance. Saving annotations as a reusable lesson, export/replay, and aligned multilingual word annotations remain future work.

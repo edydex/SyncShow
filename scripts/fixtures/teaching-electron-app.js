@@ -168,7 +168,8 @@ async function createAndPublishService(control) {
     'Acknowledged cue one',
     AUTHORITATIVE_RESTORE_TEXT,
     STALE_TIMEOUT_TEXT,
-    'Acknowledged cue four'
+    'Acknowledged cue four',
+    ...Array.from({length:6}, (_value,index) => `Gallery cue ${index+5}`)
   ];
   for (const [index, text] of cueBodies.entries()) {
     current = await rendererInvoke(control, `
@@ -191,7 +192,7 @@ async function createAndPublishService(control) {
     });
   `);
   assert.equal(current.readiness.ready, true);
-  assert.equal(current.readiness.cueCount, 4);
+  assert.equal(current.readiness.cueCount, 10);
   const published = await rendererInvoke(control, `
     return window.api.publishServiceProject({
       projectId: ${JSON.stringify(current.project.id)},
@@ -285,6 +286,9 @@ app.whenReady().then(async () => {
     await rendererInvoke(tablet, "document.getElementById('btnNext').click();");
     await waitFor(() => state().frame.surfaceId !== first && state().available, 'next'); await ready();
     assert.equal(state().frame.strokeCount, 0);
+    await waitFor(() => rendererInvoke(control, "return !document.getElementById('remoteNavigationNotice').hidden && document.getElementById('remoteNavigationCopy').textContent.includes('Teaching rehearsal changed to slide 2');"), 'confirmed remote host notice');
+    for (const win of windows) assert.equal(await rendererInvoke(win, "return !!document.getElementById('remoteNavigationNotice');"), false, 'host notice never reaches a congregation output');
+    fs.writeFileSync(path.join(evidence,'remote-host-notice.png'), (await control.webContents.capturePage()).toPNG());
     await rendererInvoke(tablet, "document.getElementById('btnPrevious').click();");
     await waitFor(() => state().frame.strokeCount === 1, 'previous restores ink'); await ready();
     await rendererInvoke(tablet, "document.getElementById('btnClear').click();");
@@ -299,10 +303,35 @@ app.whenReady().then(async () => {
     await rendererInvoke(tablet, "document.getElementById('teaching-clear').click();");
     await waitFor(() => state().frame.strokeCount === 0, 'clear ink'); await ready();
     assert.ok((await Promise.all(windows.map(inkPixels))).every(n => n===0));
+    await rendererInvoke(tablet, "document.getElementById('btnTeachingGallery').click();");
+    await waitFor(() => rendererInvoke(tablet, "return document.getElementById('jumpDialog').open && document.querySelectorAll('[data-cue-index]').length===4;"), 'nearby slide gallery');
+    fs.writeFileSync(path.join(evidence,'tablet-gallery.png'), (await tablet.webContents.capturePage()).toPNG());
+    await rendererInvoke(tablet, "document.getElementById('galleryAll').click();");
+    assert.equal(await rendererInvoke(tablet, "return document.querySelectorAll('[data-cue-index]').length;"),10,'all slides remain available');
+    await rendererInvoke(tablet, "document.getElementById('galleryAll').click();");
+    assert.equal(await rendererInvoke(tablet, "return document.querySelectorAll('[data-cue-index]').length;"),4,'default gallery is bounded around current slide');
+    await rendererInvoke(tablet, "document.querySelector('[data-cue-index=\"2\"]').click();");
+    await waitFor(() => rendererInvoke(control, "return document.getElementById('remoteNavigationCopy').textContent.includes('slide 3');"), 'gallery selection changes actual Show');
+    await ready();
+    await rendererInvoke(tablet, "document.getElementById('teachingTool').value='pointer'; document.getElementById('teachingColor').value='#ef4444'; document.getElementById('teachingCanvas').scrollIntoView({block:'center'});");
+    const box = await rendererInvoke(tablet, "const r=document.getElementById('teachingCanvas').getBoundingClientRect(); return {x:Math.round(r.x+r.width*.1),y:Math.round(r.y+r.height*.4),width:Math.round(r.width*.8)};");
+    tablet.webContents.sendInputEvent({type:'mouseDown',x:box.x,y:box.y,button:'left',clickCount:1});
+    for (let i=1;i<=30;i++) {
+      tablet.webContents.sendInputEvent({type:'mouseMove',x:Math.round(box.x+box.width*i/30),y:box.y}); await pause(55);
+    }
+    const pointerPixels = win => rendererInvoke(win, `const c=document.querySelector('.teaching-pointer'),data=c.getContext('2d').getImageData(0,0,c.width,c.height).data; let early=0,recent=0; for(let y=0;y<c.height;y++) for(let x=0;x<c.width;x++) if(data[(y*c.width+x)*4+3]) {if(x<c.width*.25) early++; else recent++;} return {early,recent};`);
+    const pointerPaint = await Promise.all(windows.map(pointerPixels));
+    assert.ok(pointerPaint.every(p => p.early===0), 'old fragments disappear while the same gesture continues');
+    assert.equal(pointerPaint.filter(p => p.recent>100).length,1,'recent fragments stay on selected output only');
+    fs.writeFileSync(path.join(evidence,'progressive-pointer.png'), (await windows[pointerPaint.findIndex(p=>p.recent>100)].webContents.capturePage()).toPNG());
+    tablet.webContents.sendInputEvent({type:'mouseUp',x:box.x+box.width,y:box.y,button:'left',clickCount:1});
+    await pause(1300);
+    assert.ok((await Promise.all(windows.map(pointerPixels))).every(p=>p.early===0&&p.recent===0),'trail fully expires');
+    assert.equal(state().frame.strokeCount,0,'pointer is never stored as ink');
     await rendererInvoke(control, 'return window.api.endPresentation();');
     assert.equal(state().available,false);
     const result={passed:true,productionMainPreloadOutputRemote:true,isolatedProfile:true,loopbackOnly:true,
-      checks:['paired browser and captured preview','actual pointer drawing reaches one output','stage output excluded','stylus-only rejects mouse','highlighter and Undo','cue navigation restores ink','Clear to black and Restore','browser reconnect','Clear ink','Show end'],
+      checks:['paired browser and captured preview','actual pointer drawing reaches one output','stage output excluded','stylus-only rejects mouse','highlighter and Undo','cue navigation restores ink','Clear to black and Restore','browser reconnect','Clear ink','nearby slide gallery selects actual slide','host-wide notification excludes all projection outputs','progressive expiry during a continuous gesture','pointer fully expires without saved ink','Show end'],
       limitations:['No physical tablet or stylus','Synthetic local service and displays','Source app, not packaged release']};
     fs.writeFileSync(path.join(evidence,'teaching.json'), JSON.stringify(result,null,2));
     console.log(JSON.stringify({...result,evidence})); app.exit(0);

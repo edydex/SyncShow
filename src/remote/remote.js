@@ -56,6 +56,7 @@ const client = {
 };
 
 const elements = {};
+let galleryNeedsCenter = false, galleryReturnFocus = null;
 
 function setTextIfChanged(element, value) {
   const text = String(value ?? '');
@@ -102,7 +103,8 @@ function bindElements() {
     'currentCueImageFallback', 'currentCueText', 'nextCueCard', 'nextCueHeading',
     'nextCueNumber', 'nextCueImage', 'nextCueImageFallback', 'nextCueText',
     'commandStatus', 'commandError', 'btnOpenJump', 'btnPrevious', 'btnNext',
-    'btnRestore', 'btnClear', 'jumpDialog', 'btnCloseJump', 'jumpCueList'
+    'btnRestore', 'btnClear', 'jumpDialog', 'btnCloseJump', 'jumpCueList',
+    'btnTeachingPrevious', 'btnTeachingNext', 'btnTeachingGallery', 'galleryAll'
   ];
 
   for (const id of ids) elements[id] = document.getElementById(id);
@@ -131,6 +133,10 @@ function setupEventListeners() {
   ));
 
   elements.btnOpenJump.addEventListener('click', openJumpDialog);
+  elements.btnTeachingGallery.addEventListener('click', openJumpDialog);
+  elements.btnTeachingPrevious.addEventListener('click', () => elements.btnPrevious.click());
+  elements.btnTeachingNext.addEventListener('click', () => elements.btnNext.click());
+  elements.galleryAll.addEventListener('change', renderJumpCues);
   elements.btnCloseJump.addEventListener('click', closeJumpDialog);
   elements.jumpDialog.addEventListener('cancel', event => {
     event.preventDefault();
@@ -424,6 +430,8 @@ function applyStatePayload(payload, { allowNewSession = false } = {}) {
   if (catalogIdentityChanged) resetCueCatalog(state.outputSessionId, state.totalCues);
 
   client.outputSessionId = state.outputSessionId;
+  const teachingViewChanged = client.state?.currentCue?.index !== state.currentCue?.index
+    || client.state?.phase !== state.phase;
   client.state = state;
   client.paired = true;
 
@@ -434,6 +442,7 @@ function applyStatePayload(payload, { allowNewSession = false } = {}) {
 
   showShowView();
   renderState();
+  if (teachingViewChanged) document.dispatchEvent(new Event('syncshow:slide-changed'));
 }
 
 function validateState(value) {
@@ -674,6 +683,9 @@ function renderCommandAvailability() {
   elements.btnPrevious.disabled = !available || !controls.previous || !(currentIndex > 0);
   elements.btnNext.disabled = !available || !controls.next || !state?.nextCue;
   elements.btnOpenJump.disabled = !available || !controls.jump || state.totalCues === 0;
+  elements.btnTeachingPrevious.disabled = elements.btnPrevious.disabled;
+  elements.btnTeachingNext.disabled = elements.btnNext.disabled;
+  elements.btnTeachingGallery.disabled = elements.btnOpenJump.disabled;
   elements.btnRestore.disabled = !available || !controls.restore;
   elements.btnClear.disabled = !available || !controls.clear;
 
@@ -890,6 +902,7 @@ function renderJumpCues() {
 
   const fragment = document.createDocumentFragment();
   for (const cue of client.cueCatalog) {
+    if (!elements.galleryAll.checked && Math.abs(cue.index - (state.currentCue?.index ?? 0)) > 3) continue;
     const wrapper = document.createElement('div');
     wrapper.setAttribute('role', 'listitem');
 
@@ -920,7 +933,7 @@ function renderJumpCues() {
     const copy = document.createElement('span');
     copy.className = 'jump-cue-copy';
     const heading = document.createElement('strong');
-    heading.textContent = `${cue.number}. ${cue.label}`;
+    heading.textContent = `${cue.index === state.currentCue?.index ? 'Current · ' : ''}${cue.number}. ${cue.label}`;
     const detail = document.createElement('span');
     detail.textContent = cue.text || 'No extracted text';
     copy.append(heading, detail);
@@ -947,11 +960,17 @@ function renderJumpCues() {
     if (replacement && !replacement.disabled) replacement.focus({ preventScroll: true });
   } else if (retryWasFocused) {
     elements.jumpCueList.querySelector('button[data-jump-retry]')?.focus({ preventScroll: true });
+  } else if (elements.jumpDialog.open && galleryNeedsCenter && client.cueCatalogStatus === 'ready') {
+    galleryNeedsCenter = false;
+    elements.jumpCueList.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'center' });
   }
 }
 
 function openJumpDialog() {
   if (elements.btnOpenJump.disabled) return;
+  galleryReturnFocus = document.activeElement;
+  galleryNeedsCenter = true;
+  elements.galleryAll.checked = false;
   renderJumpCues();
   elements.jumpDialog.showModal();
   void loadCueCatalog();
@@ -964,7 +983,7 @@ function openJumpDialog() {
 
 function closeJumpDialog() {
   if (elements.jumpDialog.open) elements.jumpDialog.close();
-  elements.btnOpenJump.focus();
+  (galleryReturnFocus || elements.btnOpenJump).focus();
 }
 
 async function handleJumpCueClick(event) {

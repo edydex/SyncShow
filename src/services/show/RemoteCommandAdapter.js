@@ -177,7 +177,8 @@ class RemoteCommandAdapter {
     readShowPolicyState = () => ({ mode: 'full' }),
     authorizeShowCommand = authorizeVolunteerShowCommand,
     commands = {},
-    createSessionId
+    createSessionId,
+    onRemoteNavigation = () => {}
   } = {}) {
     if (typeof readRuntimeState !== 'function') {
       throw new TypeError('RemoteCommandAdapter requires readRuntimeState');
@@ -198,6 +199,7 @@ class RemoteCommandAdapter {
     this.readShowPolicyState = readShowPolicyState;
     this.authorizeShowCommand = authorizeShowCommand;
     this.commands = commands;
+    this.onRemoteNavigation = onRemoteNavigation;
     this.createSessionId = typeof createSessionId === 'function'
       ? createSessionId
       : () => crypto.randomUUID();
@@ -391,7 +393,7 @@ class RemoteCommandAdapter {
     return thumbnail;
   }
 
-  async execute(envelope) {
+  async execute(envelope, origin = {}) {
     const command = this._validateEnvelope(envelope);
     const before = this.getState();
 
@@ -487,10 +489,18 @@ class RemoteCommandAdapter {
     }
     if (this.stateRevision === revisionBeforeCommand) this.publish(`remote:${command.type}`);
 
+    const after = this.getState();
+    if (isNavigation && after.currentCue?.index !== before.currentCue?.index) {
+      try {
+        this.onRemoteNavigation({ deviceName: boundedText(origin.deviceName, 48) || 'Remote control',
+          cueNumber: after.currentCue?.number, cueLabel: after.currentCue?.label || '',
+          outputSessionId: after.outputSessionId });
+      } catch (error) { console.error('[Remote] Could not notify the host:', error); }
+    }
     return {
       success: true,
       applied: true,
-      state: this.getState()
+      state: after
     };
   }
 

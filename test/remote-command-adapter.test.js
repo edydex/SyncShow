@@ -16,7 +16,8 @@ function cue(index, text = `Cue ${index + 1}`) {
 function createHarness({
   readCueThumbnail,
   readShowPolicyState,
-  authorizeShowCommand
+  authorizeShowCommand,
+  onRemoteNavigation
 } = {}) {
   const runtime = {
     hasActiveShow: true,
@@ -53,6 +54,7 @@ function createHarness({
     readCueThumbnail,
     readShowPolicyState,
     authorizeShowCommand,
+    onRemoteNavigation,
     createSessionId: () => 'session-1234567890abcdef',
     commands: {
       previous: () => {
@@ -106,6 +108,20 @@ async function rejectsCode(promise, code) {
     return true;
   });
 }
+test('host notices describe confirmed navigation from any remote, never no-op, stale or visibility commands', async () => {
+  const notices = [];
+  const {adapter} = createHarness({onRemoteNavigation: notice => notices.push(notice)});
+  const send = (command, origin, extra = {}) => adapter.execute(envelope(adapter.getState(), command, extra), origin);
+  await send({type:'cue.next'}, {deviceName:'Pastor tablet'}, {expectedCueIndex:0});
+  await send({type:'cue.previous'}, {deviceName:'Second phone'}, {expectedCueIndex:1});
+  await send({type:'cue.jump',cueIndex:2}, {});
+  assert.deepEqual(notices.map(n => [n.deviceName,n.cueNumber]), [['Pastor tablet',2],['Second phone',1],['Remote control',3]]);
+  await send({type:'cue.jump',cueIndex:2});
+  await send({type:'output.clear'});
+  await send({type:'output.restore'});
+  await assert.rejects(send({type:'cue.previous'}, {}, {expectedCueIndex:1}));
+  assert.equal(notices.length,3);
+});
 
 test('show state is revisioned, session-scoped, and strips local implementation details', async () => {
   const { adapter } = createHarness();

@@ -5,6 +5,22 @@
   const canvas = document.createElement('canvas');
   canvas.className = 'teaching-ink'; canvas.setAttribute('aria-label', 'Teacher annotations');
   parent.append(canvas);
+  const trailCanvas = document.createElement('canvas');
+  trailCanvas.className = 'teaching-ink teaching-pointer'; parent.append(trailCanvas);
+  let trails = [], animation = null;
+  function paintTrails() {
+    if (animation) cancelAnimationFrame(animation);
+    animation = null;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    if (trailCanvas.width !== innerWidth * ratio || trailCanvas.height !== innerHeight * ratio) {
+      trailCanvas.width = innerWidth * ratio; trailCanvas.height = innerHeight * ratio;
+    }
+    const context = trailCanvas.getContext('2d');
+    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, innerWidth, innerHeight);
+    trailCanvas.hidden = !frame?.visible;
+    trails = frame?.visible ? trails.filter(trail => window.SyncShowTeachingTrail.paintTrail(context, trail, innerWidth, innerHeight, performance.now())) : [];
+    if (trails.length) animation = requestAnimationFrame(paintTrails);
+  }
   let frame;
   function paint() {
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -24,6 +40,13 @@
     }
     if (frame) { const frameId = frame.frameId; requestAnimationFrame(() => window.api.teachingFramePainted(frameId)); }
   }
-  window.api.onTeachingFrame(value => { frame = value; paint(); });
-  addEventListener('resize', paint);
+  window.api.onTeachingFrame(value => {
+    const changed = frame?.frameId !== value.frameId || frame?.visible !== value.visible;
+    frame = value;
+    const now = performance.now();
+    trails = (value.trails || []).map(trail => ({ ...trail, times: trail.times.map(time => now - (value.serverNow - time)) }));
+    if (changed) paint();
+    paintTrails();
+  });
+  addEventListener('resize', () => { paint(); paintTrails(); });
 })();

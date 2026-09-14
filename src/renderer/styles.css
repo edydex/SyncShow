@@ -11059,3 +11059,13 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
     width: 100%;
   }
 }
+/* Confirmed remote changes are visible across the operator window only. */
+.remote-navigation-notice {
+  position: fixed; inset: 0 0 auto; z-index: 10000; display: flex; align-items: center;
+  justify-content: space-between; gap: 20px; padding: 18px 24px; min-height: 76px;
+  background: #fcd34d; color: #172033; box-shadow: 0 4px 24px #0008;
+  font-size: 20px; font-weight: 700;
+}
+.remote-navigation-notice[hidden] { display: none; }
+.remote-navigation-notice button { width: 44px; height: 44px; flex-shrink: 0;
+  border: 1px solid #17203355; border-radius: 8px; background: transparent; color: inherit; font-size: 28px; cursor: pointer; }

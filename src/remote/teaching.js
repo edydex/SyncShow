@@ -12,6 +12,7 @@
   const status = document.getElementById('teachingStatus');
   let state, stroke, pointer, pending, sending = false, ready = false, imageFrame = '', refreshBusy = false, previewBusy = false;
   let lastSend = 0, scheduled;
+  let localTrail = null, animation = null;
   const shown = () => panel.open && !document.getElementById('showView').hidden;
   const setReady = value => { ready = value; wrap.dataset.ready = String(value); };
   async function json(url, body) {
@@ -21,9 +22,13 @@
     if (!response.ok) throw new Error(value.error?.message || value.message || (typeof value.error === 'string' ? value.error : 'SyncShow could not confirm this drawing.'));
     return value;
   }
-  function clearDraft() {
+  function clearDraft(keepTrail = false) {
     stroke = null; pointer = null; pending = null;
+    if (!keepTrail) localTrail = null;
+    if (animation) cancelAnimationFrame(animation);
+    animation = null;
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    if (localTrail) paint();
   }
   function accept(next) {
     if (state?.frame && next.frame && state.frame.surfaceId === next.frame.surfaceId && state.frame.outputId === next.frame.outputId
@@ -76,17 +81,25 @@
     if (wait > 0) { scheduled = setTimeout(flush, wait); return; }
     const request = pending; pending = null; sending = true; lastSend = Date.now();
     try {
+      if (request.stroke.tool === 'pointer') {
+        const now = Date.now();
+        request.stroke.ages = request.stroke.times.map(time => Math.min(1000, Math.max(0, now - time)));
+        delete request.stroke.times;
+      }
       const next = await json('/api/v1/teaching', request);
       if (state?.frame?.surfaceId !== request.surfaceId || output.value !== request.outputId) return;
       accept(next);
-      if (request.stroke.finished && stroke?.id === request.stroke.id) { clearDraft(); setReady(false); }
+      if (request.stroke.finished && stroke?.id === request.stroke.id) {
+        const transient = stroke.tool === 'pointer';
+        clearDraft(transient); if (!transient) setReady(false);
+      }
     } catch (error) { clearDraft(); setReady(false); status.textContent = `${error.message} Refreshing; this stroke will not be resent.`; }
     finally { sending = false; if (pending) void flush(); else void preview(); }
   }
   function queue() {
     if (!stroke || !state?.frame) return;
     pending = { operation: 'stroke', outputId: output.value, surfaceId: state.frame.surfaceId,
-      stroke: { ...stroke, points: stroke.points.map(point => [...point]) } };
+      stroke: { ...stroke, points: stroke.points.map(point => [...point]), ...(stroke.times ? { times: [...stroke.times] } : {}) } };
     void flush();
   }
   function point(event) {
@@ -94,7 +107,15 @@
     return [Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)), Math.max(0, Math.min(1, (event.clientY - box.top) / box.height))];
   }
   function paint() {
+    if (animation) cancelAnimationFrame(animation);
+    animation = null;
     const context = canvas.getContext('2d'); context.clearRect(0, 0, canvas.width, canvas.height);
+    if (localTrail) {
+      if (window.SyncShowTeachingTrail.paintTrail(context, localTrail, canvas.width, canvas.height, Date.now()))
+        animation = requestAnimationFrame(paint);
+      else localTrail = null;
+    }
+    if (!stroke || stroke.tool === 'pointer') return;
     context.strokeStyle = stroke.color; context.globalAlpha = stroke.tool === 'highlight' ? .3 : 1;
     context.lineWidth = stroke.width * Math.min(canvas.width, canvas.height); context.lineCap = 'round'; context.lineJoin = 'round'; context.beginPath();
     stroke.points.forEach(([x, y], index) => index ? context.lineTo(x * canvas.width, y * canvas.height) : context.moveTo(x * canvas.width, y * canvas.height));
@@ -110,13 +131,20 @@
     const hex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
     stroke = { id: `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`,
       tool: tool.value, color: color.value, width: tool.value === 'highlight' ? .035 : Number(width.value), points: [point(event)], finished: false };
+    if (stroke.tool === 'pointer') { stroke.times = [Date.now()]; localTrail = stroke; }
     pointer = event.pointerId; canvas.setPointerCapture(pointer); event.preventDefault(); paint(); queue();
   });
   canvas.addEventListener('pointermove', event => {
     if (!stroke || pointer !== event.pointerId || stroke.finished) return;
     const next = point(event), last = stroke.points.at(-1);
     if (Math.hypot(next[0] - last[0], next[1] - last[1]) < .0015) return;
-    if (stroke.points.length < 1024) stroke.points.push(next);
+    if (stroke.tool === 'pointer') {
+      const now = Date.now();
+      while (stroke.points.length >= 128 || (stroke.times.length > 1 && stroke.times[1] < now - 1000)) {
+        stroke.points.shift(); stroke.times.shift();
+      }
+      stroke.points.push(next); stroke.times.push(now); localTrail = stroke;
+    } else if (stroke.points.length < 1024) stroke.points.push(next);
     else stroke.finished = true;
     paint(); queue();
   });
@@ -130,6 +158,9 @@
     finally { sending = false; void preview(); }
   });
   output.addEventListener('change', () => { clearDraft(); setReady(false); imageFrame = ''; void refresh(); });
+  document.addEventListener('syncshow:slide-changed', () => {
+    clearDraft(); setReady(false); state = null; image.onload = null; imageFrame = ''; void refresh();
+  });
   panel.addEventListener('toggle', () => { if (panel.open) void refresh(); else { clearDraft(); setReady(false); } });
   setInterval(() => { if (shown()) void refresh(); else if (stroke) clearDraft(); }, 1500);
 })();
