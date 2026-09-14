@@ -1,4 +1,6 @@
-# Community integration preview — 1.4.0-preview.27
+# Community integration preview — 1.4.0-preview.28
+
+Preview 28 adds the progressively fading pointer, a nearby-slide gallery and a full-width host notification after any paired remote changes slides. This version distinguishes the pastor-controls milestone from earlier Preview 27 installers. Pen/highlighter ink remains per-slide, while pointer fragments fade after about one second. See [tablet teaching](TABLET_TEACHING.md) for the controls and limitations.
 
 Prepared services can now supply saved language, Quality/Economy, translated-speech and sermon-note choices in the shared translation console. Select a service in Live translation; Community also links there from its service editor. Saving does not start translation. Economy note sharing remains an explicit choice for each session. Update the unified Community/Multilinguum server set to enable this workflow.
 
