@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncShow volunteer controls visual fixture</title>
+  <link rel="stylesheet" href="../../src/renderer/styles.css">
+</head>
+<body class="friendly-mode show-stage volunteer-show-locked">
+  <p class="sr-only" role="note">
+    Static visual fixture. These controls illustrate the implemented layout and
+    are intentionally noninteractive.
+  </p>
+  <div class="app-container">
+    <header class="header" id="setupHeader">
+      <div class="header-left">
+        <div class="app-mark" aria-hidden="true">S</div>
+        <div>
+          <div class="app-title-row">
+            <h1 class="app-title">SyncShow</h1>
+            <span class="preview-label">Preview</span>
+          </div>
+          <span class="app-subtitle">Run today’s service</span>
+        </div>
+      </div>
+
+      <nav class="workflow-steps" aria-label="Service workflow">
+        <button type="button" class="workflow-step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">1</span>
+          <span class="workflow-label">Prepare</span>
+        </button>
+        <button type="button" class="workflow-step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">2</span>
+          <span class="workflow-label">Load</span>
+        </button>
+        <button type="button" class="workflow-step active" aria-current="step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">3</span>
+          <span class="workflow-label">Show</span>
+        </button>
+      </nav>
+
+      <div class="header-right header-load-actions" aria-hidden="true">
+        <button class="btn btn-secondary" type="button" tabindex="-1" aria-disabled="true">Admin Settings</button>
+        <button class="btn btn-primary btn-start" type="button" tabindex="-1" aria-disabled="true">Start Show</button>
+      </div>
+    </header>
+
+    <main class="main-content" id="mainContent">
+      <div class="main-horizontal-layout">
+        <section class="thumbnails-section" aria-labelledby="allSlidesHeading">
+          <div class="thumbnails-header">
+            <div>
+              <p class="section-kicker">SHOW</p>
+              <h2 id="allSlidesHeading">All slides</h2>
+            </div>
+          </div>
+          <div class="thumbnails-grid" aria-label="Slides"></div>
+        </section>
+
+        <aside class="controls-column" aria-label="Show controls">
+          <div class="show-heading">
+            <p class="section-kicker">LIVE CONTROL</p>
+            <h2>Show</h2>
+          </div>
+
+          <section class="volunteer-control-bar" aria-labelledby="volunteerControlTitle">
+            <span class="volunteer-control-icon" aria-hidden="true">✓</span>
+            <span class="volunteer-control-copy">
+              <strong id="volunteerControlTitle">Volunteer controls locked</strong>
+              <small>
+                Advance with Right arrow or Space. Clear stays available for
+                emergencies. Every cue passed and the exact-show receipt was saved.
+              </small>
+            </span>
+            <button class="btn btn-outline btn-compact" type="button" tabindex="-1" aria-disabled="true">Unlock controls…</button>
+          </section>
+
+          <div class="show-output-state" data-phase="live" role="status">
+            <span class="show-output-state-dot" aria-hidden="true"></span>
+            <span class="show-output-state-copy">
+              <strong>Outputs live</strong>
+              <small>Showing slide 18 of 42.</small>
+            </span>
+          </div>
+
+          <div class="slide-counter-box" aria-label="Current slide">
+            <span>18</span>
+            <span class="divider">/</span>
+            <span>42</span>
+          </div>
+
+          <section class="show-cue-context" aria-labelledby="showCueContextTitle">
+            <p class="section-kicker">RUN SHEET</p>
+            <p class="show-cue-context-path">Sermon · Romans 8:1–11</p>
+            <h3 id="showCueContextTitle">No condemnation in Christ</h3>
+            <div class="show-cue-context-next">
+              <span>Next</span>
+              <strong>Life in the Spirit</strong>
+            </div>
+          </section>
+
+          <div class="nav-box">
+            <button id="btnPrevSlide" class="nav-btn-full" type="button" tabindex="-1" aria-disabled="true">
+              <span aria-hidden="true">←</span> Previous
+            </button>
+            <button id="btnNextSlide" class="nav-btn-full nav-btn-primary" type="button" tabindex="-1" aria-disabled="true">
+              Next <span aria-hidden="true">→</span>
+            </button>
+          </div>
+
+          <div class="live-tools-box" aria-label="Live tools">
+            <button id="btnOpenBible" class="live-tool-button" type="button" tabindex="-1" aria-disabled="true">
+              <span class="live-tool-icon" aria-hidden="true">B</span>
+              <span><strong>Bible</strong><small>Show a passage now</small></span>
+            </button>
+            <button id="btnOpenRemote" class="live-tool-button remote-tool-button" type="button" tabindex="-1" aria-disabled="true">
+              <span class="live-tool-icon live-tool-icon-remote" aria-hidden="true">R</span>
+              <span><strong>Remote Control</strong><small>Off · Control this Show from a phone</small></span>
+              <span class="live-tool-status">Off</span>
+            </button>
+          </div>
+
+          <div class="display-controls-box">
+            <button id="btnShowDisplays" class="btn btn-primary btn-full" type="button" tabindex="-1" aria-disabled="true">Show / Restore outputs</button>
+            <button id="btnClearDisplays" class="btn btn-secondary btn-full" type="button" tabindex="-1" aria-disabled="true">Clear to black</button>
+            <button id="btnStopDisplays" class="btn btn-warning btn-full" type="button" tabindex="-1" aria-disabled="true">Stop outputs</button>
+          </div>
+
+          <p class="hints-box">Right arrow or Space advances · Esc clears</p>
+          <button id="btnBackToSetup" class="btn btn-quiet btn-full" type="button" tabindex="-1" aria-disabled="true">Back to Load</button>
+        </aside>
+      </div>
+    </main>
+
+    <footer class="status-bar">
+      <div class="status-left">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>Volunteer-ready · Every cue acknowledged on every routed output</span>
+      </div>
+      <div class="status-right">
+        <span class="keyboard-shortcuts">Right / Space Next · Esc Clear</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,14 +1,17 @@
 'use strict';
+const { singerSourceCue, singerNextLine } = require('../project/SingerPresentation');
 
 const {
-  cueTextForChannel,
   meaningfulFirstLine,
+  nativeCueSingerNext,
   normalizeSafeTextSpans,
+  singerNextFromText,
   splitLeadingScriptureReference
 } = require('../project/NativeSlideRenderer');
 const { resolveNativeTextPreset } = require('../project/NativePresetCatalog');
+const { scriptureFlowText } = require('../bible/ScriptureText');
 
-const NATIVE_CUE_SCENE_SCHEMA_VERSION = 2;
+const NATIVE_CUE_SCENE_SCHEMA_VERSION = 3;
 const NATIVE_CUE_SCENE_KIND = 'syncshow-native-cue-scene';
 const MAX_NATIVE_SCENE_BYTES = 256 * 1024;
 const MAX_SCENE_TEXT = 12000;
@@ -21,8 +24,9 @@ const TEXT_WEIGHTS = new Set(['400', '500', '600', '650', '700']);
 const TEXT_ALIGNMENTS = new Set(['left', 'center', 'right']);
 const BODY_POSITIONS = new Set(['center', 'top']);
 const IMAGE_FITS = new Set(['fit', 'fill', 'stretch']);
-const SCENE_LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'singer-current-next']);
-const SOURCE_KINDS = new Set(['song', 'bible', 'sermon', 'picture', 'notice', 'blank', 'slide']);
+const SCENE_LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'video', 'singer-current-next']);
+const SOURCE_KINDS = new Set(['song', 'bible', 'sermon', 'picture', 'video', 'notice', 'blank', 'slide']);
+const SINGER_NEXT_STATES = new Set(['text', 'blank', 'end']);
 
 class NativeCueSceneError extends Error {
   constructor(code, message, details = {}) {
@@ -150,17 +154,47 @@ function normalizeTextStyle(raw) {
   if (!BODY_POSITIONS.has(raw.bodyPosition)) {
     fail('INVALID_NATIVE_SCENE', 'scene.style has an unsupported vertical position.');
   }
+  const titleSize = boundedInteger(
+    raw.titleSize,
+    'scene.style.titleSize',
+    14,
+    160
+  );
+  const titleMinimumSize = boundedInteger(
+    raw.titleMinimumSize,
+    'scene.style.titleMinimumSize',
+    14,
+    160
+  );
+  const bodySize = boundedInteger(
+    raw.bodySize,
+    'scene.style.bodySize',
+    14,
+    240
+  );
+  const bodyMinimumSize = boundedInteger(
+    raw.bodyMinimumSize,
+    'scene.style.bodyMinimumSize',
+    14,
+    240
+  );
+  if (titleMinimumSize > titleSize || bodyMinimumSize > bodySize) {
+    fail(
+      'INVALID_NATIVE_SCENE',
+      'scene.style minimum text sizes cannot exceed their preferred sizes.'
+    );
+  }
   return {
     showTitle: raw.showTitle,
-    titleSize: boundedInteger(raw.titleSize, 'scene.style.titleSize', 14, 160),
-    titleMinimumSize: boundedInteger(raw.titleMinimumSize, 'scene.style.titleMinimumSize', 14, 160),
+    titleSize,
+    titleMinimumSize,
     titleForeground: safeColor(raw.titleForeground, 'scene.style.titleForeground'),
     titleWeight: safeWeight(raw.titleWeight, 'scene.style.titleWeight'),
     titleAlign: raw.titleAlign,
     titleWidthPercent: boundedInteger(raw.titleWidthPercent, 'scene.style.titleWidthPercent', 50, 100),
     titleTopPercent: boundedInteger(raw.titleTopPercent, 'scene.style.titleTopPercent', 0, 80),
-    bodySize: boundedInteger(raw.bodySize, 'scene.style.bodySize', 14, 240),
-    bodyMinimumSize: boundedInteger(raw.bodyMinimumSize, 'scene.style.bodyMinimumSize', 14, 240),
+    bodySize,
+    bodyMinimumSize,
     bodyForeground: safeColor(raw.bodyForeground, 'scene.style.bodyForeground'),
     bodyWeight: safeWeight(raw.bodyWeight, 'scene.style.bodyWeight'),
     bodyAlign: raw.bodyAlign,
@@ -281,6 +315,41 @@ function normalizePicture(raw) {
   };
 }
 
+function normalizeVideo(raw) {
+  exactKeys(raw, ['assetId', 'fit', 'muted'], 'scene.video');
+  if (!ASSET_ID_PATTERN.test(raw.assetId || '')) {
+    fail('INVALID_NATIVE_SCENE', 'scene.video.assetId is invalid.');
+  }
+  if (!IMAGE_FITS.has(raw.fit)) {
+    fail('INVALID_NATIVE_SCENE', 'scene.video.fit is unsupported.');
+  }
+  if (typeof raw.muted !== 'boolean') {
+    fail('INVALID_NATIVE_SCENE', 'scene.video.muted must be true or false.');
+  }
+  return {
+    assetId: raw.assetId,
+    fit: raw.fit,
+    muted: raw.muted
+  };
+}
+
+function normalizeSingerNext(raw, field = 'scene.next') {
+  exactKeys(raw, ['state', 'text'], field);
+  const state = boundedString(raw.state, `${field}.state`, 12, { required: true });
+  const text = boundedString(raw.text, `${field}.text`, 2000);
+  if (!SINGER_NEXT_STATES.has(state)) {
+    fail('INVALID_NATIVE_SCENE', `${field}.state is unsupported.`);
+  }
+  if (state === 'text') {
+    if (!text.trim() || text !== text.trim() || /[\r\n]/.test(text)) {
+      fail('INVALID_NATIVE_SCENE', `${field}.text must be one nonblank trimmed line.`);
+    }
+  } else if (text !== '') {
+    fail('INVALID_NATIVE_SCENE', `${field}.text must be empty for ${state} state.`);
+  }
+  return { state, text };
+}
+
 function commonScene(raw, expected = {}) {
   if (!isRecord(raw)) fail('INVALID_NATIVE_SCENE', 'A native cue scene must be an object.');
   if (raw.schemaVersion !== NATIVE_CUE_SCENE_SCHEMA_VERSION
@@ -316,6 +385,8 @@ function normalizeNativeCueScene(raw, expected = {}) {
   }
   if (common.layout === 'text') {
     exactKeys(raw, [
+      ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
+      ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
       'background',
       'body',
       'bodySpans',
@@ -338,6 +409,8 @@ function normalizeNativeCueScene(raw, expected = {}) {
       title,
       body,
       bodySpans: normalizeSceneSpans(raw.bodySpans, body),
+      ...(raw.titleSpans !== undefined ? { titleSpans: normalizeSceneSpans(raw.titleSpans, title, 'scene.titleSpans') } : {}),
+      ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: ASSET_ID_PATTERN.test(raw.backgroundAssetId) ? raw.backgroundAssetId : fail('INVALID_NATIVE_SCENE', 'Invalid background image.') } : {}),
       style: normalizeTextStyle(raw.style)
     };
   }
@@ -376,6 +449,19 @@ function normalizeNativeCueScene(raw, expected = {}) {
     ], 'scene');
     return { ...common, picture: normalizePicture(raw.picture) };
   }
+  if (common.layout === 'video') {
+    exactKeys(raw, [
+      'background',
+      'canvas',
+      'cueId',
+      'kind',
+      'layout',
+      'schemaVersion',
+      'sourceKind',
+      'video'
+    ], 'scene');
+    return { ...common, video: normalizeVideo(raw.video) };
+  }
   exactKeys(raw, [
     'background',
     'canvas',
@@ -383,7 +469,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
     'current',
     'kind',
     'layout',
-    'nextLine',
+    'next',
     'schemaVersion',
     'sourceKind'
   ], 'scene');
@@ -397,7 +483,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
   return {
     ...common,
     current,
-    nextLine: boundedString(raw.nextLine, 'scene.nextLine', 2000)
+    next: normalizeSingerNext(raw.next)
   };
 }
 
@@ -423,7 +509,8 @@ function referenceSpans(value, preset) {
   return spans;
 }
 
-function resolvedTextStyle(preset, hasTitle) {
+function resolvedTextStyle(preset, hasTitle, presetId = '') {
+  const churchLayout = presetId.startsWith('wotbc-');
   return {
     showTitle: hasTitle,
     titleSize: preset.titleSize,
@@ -431,7 +518,7 @@ function resolvedTextStyle(preset, hasTitle) {
     titleForeground: preset.titleForeground || '#93b4ff',
     titleWeight: preset.titleWeight || '650',
     titleAlign: preset.titleAlign || 'center',
-    titleWidthPercent: 82,
+    titleWidthPercent: churchLayout ? 98 : 82,
     titleTopPercent: preset.titleTopPercent === undefined ? 9 : preset.titleTopPercent,
     bodySize: preset.bodySize,
     bodyMinimumSize: preset.bodyMinimumSize,
@@ -441,7 +528,7 @@ function resolvedTextStyle(preset, hasTitle) {
     bodyWidthPercent: preset.bodyWidthPercent || 82,
     bodyHeight: preset.bodyHeight,
     bodyTopPercent: preset.bodyTopPercent === undefined ? (hasTitle ? 26 : 10) : preset.bodyTopPercent,
-    bodyRegionHeightPercent: hasTitle ? 66 : 80,
+    bodyRegionHeightPercent: churchLayout ? Math.min(90, Math.round(preset.bodyHeight / 1080 * 100)) : hasTitle ? 66 : 80,
     bodyPosition: preset.bodyPosition || 'center',
     lineSpacingPercent: preset.lineSpacingPercent === undefined ? 18 : preset.lineSpacingPercent,
     paragraphGap: preset.paragraphGap === true
@@ -461,16 +548,16 @@ function songTitleScene(cue, title, subtitle, credit, canvas) {
     subtitle,
     credit,
     style: {
-      titleSize: 128,
+      titleSize: cue.presetId === 'wotbc-song-title' ? 144 : 128,
       titleMinimumSize: 52,
       titleForeground: '#ffffff',
       titleWeight: '700',
       titleWidthPercent: 94,
       titleTopPercent: 10,
       titleRegionHeightPercent: 70,
-      subtitleSize: 92,
+      subtitleSize: cue.presetId === 'wotbc-song-title' ? 128 : 92,
       subtitleMinimumSize: 36,
-      subtitleForeground: '#ffff00',
+      subtitleForeground: cue.presetId === 'wotbc-song-title' ? '#ffc000' : '#ffff00',
       subtitleWeight: '500',
       subtitleWidthPercent: 90,
       creditSize: 56,
@@ -492,7 +579,8 @@ function textScene(cue, channel, canvas) {
   let bodySpans = [];
   if (bibleBlock) {
     title = bibleBlock.reference;
-    body = bibleBlock.verses.map(verse => `${verse.number} ${verse.text}`).join('\n');
+    body = scriptureFlowText(bibleBlock.verses);
+    bodySpans = bibleBlock.spans || [];
   } else {
     const localizedTitle = textBlocks.find(block => block.role === 'title')?.text || '';
     if (cue.kind === 'song' && localizedTitle) {
@@ -501,10 +589,11 @@ function textScene(cue, channel, canvas) {
       return songTitleScene(cue, localizedTitle, subtitle, credit, canvas);
     }
     const bodyParts = [];
+    const bodySeparator = cue.presetId === 'wotbc-song-stacked' ? '\n' : '\n\n';
     let bodyOffset = 0;
     for (const block of textBlocks.filter(candidate => candidate.role !== 'title')) {
       if (!block.text) continue;
-      if (bodyParts.length > 0) bodyOffset += 2;
+      if (bodyParts.length > 0) bodyOffset += bodySeparator.length;
       bodyParts.push(block.text);
       for (const span of block.spans || []) {
         bodySpans.push({
@@ -515,7 +604,7 @@ function textScene(cue, channel, canvas) {
       }
       bodyOffset += block.text.length;
     }
-    body = bodyParts.join('\n\n');
+    body = bodyParts.join(bodySeparator);
     title = cue.kind === 'song'
       ? ''
       : (cue.kind === 'sermon' || cue.kind === 'notice'
@@ -541,7 +630,9 @@ function textScene(cue, channel, canvas) {
     title,
     body,
     bodySpans,
-    style: resolvedTextStyle(preset, hasTitle)
+    ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
+    ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId } : {}),
+    style: resolvedTextStyle(preset, hasTitle, cue.presetId)
   });
 }
 
@@ -571,12 +662,14 @@ function compileNativeCueScene(cue, channelId, options = {}) {
     );
   }
   if (channel.mode === 'condensed' && channel.sourceChannelId) {
-    const current = compileNativeCueScene(cue, channel.sourceChannelId, options);
-    const nextLine = meaningfulFirstLine(cueTextForChannel(options.nextCue, channel.sourceChannelId));
-    return deriveNativeSingerScene(current, nextLine);
+    const current = compileNativeCueScene(singerSourceCue(cue, channel.sourceChannelId), channel.sourceChannelId, options);
+    return deriveNativeSingerScene(
+      current,
+      nativeCueSingerNext(options.nextCue, channel.sourceChannelId)
+    );
   }
   const imageBlock = channel.blocks?.find(block => block.type === 'image');
-  if (imageBlock) {
+  if (imageBlock && imageBlock.role !== 'background') {
     return normalizeNativeCueScene({
       schemaVersion: NATIVE_CUE_SCENE_SCHEMA_VERSION,
       kind: NATIVE_CUE_SCENE_KIND,
@@ -594,11 +687,29 @@ function compileNativeCueScene(cue, channelId, options = {}) {
       }
     });
   }
+  const videoBlock = channel.blocks?.find(block => block.type === 'video');
+  if (videoBlock) {
+    return normalizeNativeCueScene({
+      schemaVersion: NATIVE_CUE_SCENE_SCHEMA_VERSION,
+      kind: NATIVE_CUE_SCENE_KIND,
+      cueId: cue.id,
+      sourceKind: cue.kind,
+      canvas,
+      layout: 'video',
+      background: '#000000',
+      video: {
+        assetId: videoBlock.assetId,
+        fit: videoBlock.fit,
+        muted: videoBlock.muted
+      }
+    });
+  }
   return textScene(cue, channel, canvas);
 }
 
-function deriveNativeSingerScene(scene, nextLine = '') {
+function deriveNativeSingerScene(scene, next) {
   const current = normalizeNativeCueScene(scene);
+  const normalizedNext = normalizeSingerNext(next);
   if (current.layout === 'singer-current-next') return current;
   return normalizeNativeCueScene({
     schemaVersion: NATIVE_CUE_SCENE_SCHEMA_VERSION,
@@ -609,7 +720,7 @@ function deriveNativeSingerScene(scene, nextLine = '') {
     layout: 'singer-current-next',
     background: '#000000',
     current,
-    nextLine: String(nextLine || '').slice(0, 2000)
+    next: normalizedNext
   });
 }
 
@@ -631,9 +742,20 @@ function nativeSceneSingerLine(scene) {
   return meaningfulFirstLine(semanticText);
 }
 
+function nativeSceneSingerNext(nextScene) {
+  return singerNextFromText(
+    nextScene !== null && nextScene !== undefined,
+    nextScene === null || nextScene === undefined
+      ? ''
+      : singerNextLine(nativeSceneSingerLine(nextScene))
+  );
+}
+
 function sceneAssetIds(scene) {
   const normalized = normalizeNativeCueScene(scene);
+  if (normalized.layout === 'text' && normalized.backgroundAssetId) return [normalized.backgroundAssetId];
   if (normalized.layout === 'picture') return [normalized.picture.assetId];
+  if (normalized.layout === 'video') return [normalized.video.assetId];
   if (normalized.layout === 'singer-current-next') return sceneAssetIds(normalized.current);
   return [];
 }
@@ -659,7 +781,9 @@ module.exports = {
   NativeCueSceneError,
   compileNativeCueScene,
   deriveNativeSingerScene,
+  nativeCueSingerNext,
   nativeSceneSingerLine,
+  nativeSceneSingerNext,
   normalizeNativeCueScene,
   sceneAssetIds,
   serializeNativeCueScene

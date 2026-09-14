@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>SyncShow native weekly authoring — static workflow illustration</title>
+  <style>
+    :root {
+      --ink: #f4f7ff;
+      --muted: #9aa9c3;
+      --quiet: #71809c;
+      --canvas: #07101d;
+      --panel: #0e1a2d;
+      --panel-2: #111f35;
+      --line: rgba(173, 197, 235, 0.16);
+      --blue: #7da7ff;
+      --blue-strong: #4d7cff;
+      --cyan: #67ddd2;
+      --green: #70d6a5;
+      --gold: #f0c66d;
+      --red: #ff979d;
+      --shadow: 0 24px 72px rgba(0, 0, 0, 0.38);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 6%, rgba(77, 124, 255, 0.2), transparent 25rem),
+        radial-gradient(circle at 94% 85%, rgba(103, 221, 210, 0.1), transparent 28rem),
+        var(--canvas);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    button,
+    select {
+      font: inherit;
+    }
+
+    .shell {
+      width: min(1480px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 34px;
+    }
+
+    .notice {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+      padding: 11px 14px;
+      border: 1px solid rgba(240, 198, 109, 0.32);
+      border-radius: 12px;
+      color: #f5dca5;
+      background: rgba(80, 57, 16, 0.25);
+      font-size: 0.78rem;
+    }
+
+    .notice strong {
+      color: #ffe7b3;
+    }
+
+    .notice span:last-child {
+      color: #cfb982;
+      text-align: right;
+    }
+
+    .app {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(9, 18, 33, 0.96);
+      box-shadow: var(--shadow);
+    }
+
+    .app-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      min-height: 68px;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(15, 28, 49, 0.96);
+    }
+
+    .brand,
+    .mode,
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 10px;
+      background: linear-gradient(145deg, var(--blue-strong), #7357ee);
+      font-weight: 900;
+    }
+
+    .brand-copy {
+      display: grid;
+      gap: 1px;
+    }
+
+    .brand-copy strong {
+      font-size: 0.92rem;
+    }
+
+    .brand-copy span,
+    .status {
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .mode span {
+      padding: 7px 11px;
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .mode .active {
+      color: white;
+      background: rgba(77, 124, 255, 0.22);
+      box-shadow: inset 0 0 0 1px rgba(125, 167, 255, 0.32);
+    }
+
+    .body {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      min-height: 760px;
+    }
+
+    .rundown {
+      padding: 20px 16px;
+      border-right: 1px solid var(--line);
+      background: rgba(9, 17, 31, 0.88);
+    }
+
+    .kicker {
+      margin: 0 0 5px;
+      color: var(--cyan);
+      font-size: 0.64rem;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 4px;
+      font-size: 1.15rem;
+    }
+
+    .rundown > small {
+      display: block;
+      margin-bottom: 18px;
+      color: var(--muted);
+    }
+
+    .item {
+      display: grid;
+      grid-template-columns: 30px 1fr auto;
+      gap: 9px;
+      align-items: center;
+      width: 100%;
+      margin: 0 0 7px;
+      padding: 11px 10px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      color: var(--ink);
+      background: transparent;
+      text-align: left;
+    }
+
+    .item.selected {
+      border-color: rgba(125, 167, 255, 0.42);
+      background: rgba(77, 124, 255, 0.13);
+      box-shadow: inset 3px 0 var(--blue);
+    }
+
+    .item.section {
+      grid-template-columns: 1fr auto;
+      margin-top: 15px;
+      color: #cbd7ea;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .num {
+      color: var(--quiet);
+      font-variant-numeric: tabular-nums;
+      font-size: 0.72rem;
+    }
+
+    .copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .copy strong {
+      overflow: hidden;
+      font-size: 0.82rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .copy small,
+    .kind {
+      color: var(--muted);
+      font-size: 0.64rem;
+    }
+
+    .workspace {
+      padding: 22px;
+    }
+
+    .workspace-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 22px;
+      margin-bottom: 18px;
+    }
+
+    .workspace-heading h2 {
+      margin-bottom: 5px;
+      font-size: 1.45rem;
+    }
+
+    .workspace-heading p {
+      max-width: 740px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .ready {
+      flex: 0 0 auto;
+      padding: 7px 11px;
+      border: 1px solid rgba(112, 214, 165, 0.32);
+      border-radius: 999px;
+      color: #a8eccb;
+      background: rgba(36, 112, 79, 0.18);
+      font-size: 0.7rem;
+      font-weight: 850;
+    }
+
+    .panes {
+      display: grid;
+      grid-template-columns: minmax(280px, 0.9fr) minmax(430px, 1.25fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: linear-gradient(160deg, rgba(18, 33, 56, 0.97), rgba(12, 24, 42, 0.97));
+    }
+
+    .panel h3 {
+      margin-bottom: 5px;
+      font-size: 0.98rem;
+    }
+
+    .panel > p {
+      color: var(--muted);
+      font-size: 0.73rem;
+    }
+
+    .library-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      margin-top: 9px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: rgba(4, 11, 23, 0.42);
+    }
+
+    .library-row strong {
+      display: block;
+      font-size: 0.78rem;
+    }
+
+    .library-row span {
+      color: var(--muted);
+      font-size: 0.64rem;
+    }
+
+    .actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .button {
+      min-height: 31px;
+      padding: 6px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: #dbe6f8;
+      background: rgba(255, 255, 255, 0.035);
+      font-size: 0.64rem;
+      font-weight: 800;
+    }
+
+    .button.primary {
+      border-color: rgba(125, 167, 255, 0.42);
+      color: white;
+      background: rgba(77, 124, 255, 0.25);
+    }
+
+    .transaction {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-top: 14px;
+      padding: 13px;
+      border: 1px solid rgba(103, 221, 210, 0.22);
+      border-radius: 12px;
+      background: rgba(18, 91, 88, 0.11);
+    }
+
+    .transaction div {
+      min-width: 0;
+    }
+
+    .transaction small {
+      display: block;
+      color: var(--muted);
+      font-size: 0.62rem;
+    }
+
+    .transaction strong {
+      display: block;
+      overflow: hidden;
+      margin-top: 2px;
+      font-size: 0.74rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .arrow {
+      color: var(--cyan);
+      font-size: 1.15rem;
+    }
+
+    .atomic-note {
+      margin: 12px 0 0;
+      padding-left: 12px;
+      border-left: 2px solid var(--green);
+      color: #b8c7dc;
+      font-size: 0.68rem;
+    }
+
+    .mapping {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0 14px;
+    }
+
+    .mapping label {
+      display: grid;
+      gap: 5px;
+      color: #c7d4e8;
+      font-size: 0.64rem;
+      font-weight: 800;
+    }
+
+    select {
+      width: 100%;
+      min-width: 0;
+      padding: 8px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: #dce6f5;
+      background: #0b1627;
+      font-size: 0.65rem;
+    }
+
+    .review-row {
+      display: grid;
+      grid-template-columns: 78px minmax(0, 1fr) minmax(0, 1fr) 92px;
+      gap: 8px;
+      align-items: stretch;
+      margin-top: 8px;
+      padding: 9px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: rgba(4, 11, 23, 0.42);
+    }
+
+    .review-row.insert {
+      border-color: rgba(125, 167, 255, 0.32);
+      background: rgba(77, 124, 255, 0.08);
+    }
+
+    .decision,
+    .paragraph,
+    .receipt {
+      min-width: 0;
+      padding: 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .decision strong,
+    .paragraph strong,
+    .receipt strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 0.64rem;
+    }
+
+    .decision span,
+    .paragraph span,
+    .receipt span {
+      display: -webkit-box;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 0.59rem;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+    }
+
+    .decision strong {
+      color: var(--blue);
+    }
+
+    .receipt strong {
+      color: var(--green);
+    }
+
+    .review-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 13px;
+      padding-top: 13px;
+      border-top: 1px solid var(--line);
+    }
+
+    .review-footer p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.66rem;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .legend span {
+      padding: 6px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+      font-size: 0.62rem;
+    }
+
+    .legend strong {
+      color: #dce6f5;
+    }
+
+    @media (max-width: 1000px) {
+      .body,
+      .panes {
+        grid-template-columns: 1fr;
+      }
+
+      .rundown {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .review-row {
+        grid-template-columns: 78px 1fr 1fr;
+      }
+
+      .receipt {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .shell {
+        width: min(100% - 18px, 1480px);
+      }
+
+      .notice,
+      .app-bar,
+      .workspace-heading,
+      .review-footer {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .mode {
+        display: none;
+      }
+
+      .mapping,
+      .review-row {
+        grid-template-columns: 1fr;
+      }
+
+      .receipt {
+        grid-column: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="notice">
+      <span><strong>Static workflow illustration.</strong> Built from the implemented native contracts; not a live Electron or venue screenshot.</span>
+      <span>PowerPoint remains available only as a legacy/fallback route.</span>
+    </div>
+
+    <section class="app" aria-label="Illustrated SyncShow native weekly authoring workflow">
+      <header class="app-bar">
+        <div class="brand">
+          <span class="mark" aria-hidden="true">S</span>
+          <span class="brand-copy">
+            <strong>SyncShow</strong>
+            <span>Sunday Service · August 2, 2026</span>
+          </span>
+        </div>
+        <nav class="mode" aria-label="Application workflow">
+          <span>Load</span>
+          <span class="active">Prepare</span>
+          <span>Show</span>
+        </nav>
+        <div class="status"><span aria-hidden="true">●</span> Native service revision saved</div>
+      </header>
+
+      <div class="body">
+        <aside class="rundown">
+          <p class="kicker">Service rundown</p>
+          <h1>Plan next service</h1>
+          <small>Last week’s order is a starting point, not a locked deck.</small>
+
+          <button class="item section" type="button">
+            <span class="copy"><strong>Communal Singing</strong><small>Section · 3 children</small></span>
+            <span class="kind">SECTION</span>
+          </button>
+          <button class="item" type="button">
+            <span class="num">01</span>
+            <span class="copy"><strong>Come Behold the Wondrous Mystery</strong><small>Default arrangement · 7 cues</small></span>
+            <span class="kind">SONG</span>
+          </button>
+          <button class="item selected" type="button" aria-current="true">
+            <span class="num">02</span>
+            <span class="copy"><strong>All I Have Is Christ</strong><small>Selected for in-place replacement</small></span>
+            <span class="kind">SONG</span>
+          </button>
+          <button class="item" type="button">
+            <span class="num">03</span>
+            <span class="copy"><strong>His Mercy Is More</strong><small>Default arrangement · 8 cues</small></span>
+            <span class="kind">SONG</span>
+          </button>
+          <button class="item section" type="button">
+            <span class="copy"><strong>Sermon</strong><small>Exact canonical packet linked</small></span>
+            <span class="kind">SECTION</span>
+          </button>
+          <button class="item" type="button">
+            <span class="num">04</span>
+            <span class="copy"><strong>Ephesians 3:14–21</strong><small>BSB · primary reading</small></span>
+            <span class="kind">BIBLE</span>
+          </button>
+          <button class="item" type="button">
+            <span class="num">05</span>
+            <span class="copy"><strong>The Prayer That Transforms the Church</strong><small>Reviewed native sermon slides</small></span>
+            <span class="kind">SERMON</span>
+          </button>
+        </aside>
+
+        <section class="workspace">
+          <div class="workspace-heading">
+            <div>
+              <p class="kicker">Native weekly workflow</p>
+              <h2>Edit the plan people will actually run.</h2>
+              <p>Each action stays inside the semantic service project, produces one saved revision, and can be reviewed before Load or Show changes.</p>
+            </div>
+            <span class="ready">Native-first checkpoint</span>
+          </div>
+
+          <div class="panes">
+            <article class="panel">
+              <p class="kicker">1 · Song library</p>
+              <h3>Replace the selected song in place</h3>
+              <p>The parent section and exact service position stay put. The replacement gets fresh item and arrangement identities; one Undo restores the former song.</p>
+
+              <div class="library-row">
+                <div>
+                  <strong>Christ Our Hope in Life and Death</strong>
+                  <span>English · Original · 5 sections</span>
+                </div>
+                <div class="actions">
+                  <button class="button" type="button">Edit</button>
+                  <button class="button primary" type="button">Replace selected</button>
+                  <button class="button" type="button">Add</button>
+                </div>
+              </div>
+
+              <div class="library-row">
+                <div>
+                  <strong>Христос — Надежда в Жизни и Смерти</strong>
+                  <span>Russian · Linked translation · 5 sections</span>
+                </div>
+                <div class="actions">
+                  <button class="button" type="button">Edit</button>
+                  <button class="button primary" type="button">Replace selected</button>
+                  <button class="button" type="button">Add</button>
+                </div>
+              </div>
+
+              <div class="transaction" aria-label="In-place song replacement result">
+                <div>
+                  <small>Before · position 02</small>
+                  <strong>All I Have Is Christ</strong>
+                </div>
+                <span class="arrow" aria-hidden="true">→</span>
+                <div>
+                  <small>After · position 02</small>
+                  <strong>Christ Our Hope in Life and Death</strong>
+                </div>
+              </div>
+              <p class="atomic-note">One compare-and-swap save · one history entry · no Load/Show change · no Community write.</p>
+            </article>
+
+            <article class="panel">
+              <p class="kicker">2 · Canonical sermon text</p>
+              <h3>Choose Exact, Condensed, or Hidden for every output</h3>
+              <p>Outputs are mapped explicitly to canonical body entries. Condensed service text is written and confirmed by a person; SyncShow never summarizes or pairs languages automatically.</p>
+
+              <div class="mapping" aria-label="Explicit output mappings">
+                <label>
+                  Front · Russian audience
+                  <select>
+                    <option>Manuscript · Russian · exact revision</option>
+                  </select>
+                </label>
+                <label>
+                  Translation · English audience
+                  <select>
+                    <option>Manuscript · English · exact revision</option>
+                  </select>
+                </label>
+                <label>
+                  Singer / stage
+                  <select>
+                    <option>Hidden for this sermon</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="review-row insert">
+                <div class="decision"><strong>INSERT</strong><span>New native cue</span></div>
+                <div class="paragraph"><strong>FRONT · EXACT</strong><span>Церковь показывает Божью мудрость.</span></div>
+                <div class="paragraph"><strong>TRANSLATION · CONDENSED</strong><span>The church displays God’s wisdom. · human-authored projected text</span></div>
+                <div class="receipt"><strong>V2 EVIDENCE</strong><span>Source + projected hashes · Singer Hidden</span></div>
+              </div>
+
+              <div class="review-row">
+                <div class="decision"><strong>SKIP</strong><span>No cue created</span></div>
+                <div class="paragraph"><strong>Russian · paragraph 2</strong><span>Pastoral transition reviewed but intentionally not projected.</span></div>
+                <div class="paragraph"><strong>English · explicit skip</strong><span>No hidden automatic pairing, summary, or copied text.</span></div>
+                <div class="receipt"><strong>REVIEWED</strong><span>Skip is recorded</span></div>
+              </div>
+
+              <div class="review-row insert">
+                <div class="decision"><strong>UPDATE</strong><span>Chosen direct cue</span></div>
+                <div class="paragraph"><strong>FRONT · EXACT</strong><span>Во Христе мы с дерзновением приходим к Богу.</span></div>
+                <div class="paragraph"><strong>TRANSLATION · EXACT</strong><span>In Christ we approach God with confidence.</span></div>
+                <div class="receipt"><strong>V1 EVIDENCE</strong><span>Exact-only bytes unchanged · Singer Hidden</span></div>
+              </div>
+
+              <div class="review-footer">
+                <p>Every paragraph is used once or explicitly skipped. Condensed words affect only the projected cue; the canonical sermon record is never rewritten.</p>
+                <button class="button primary" type="button">Apply 1 Exact + Condensed cue</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="legend" aria-label="Workflow boundaries">
+            <span><strong>Native project:</strong> editable songs, text, Scripture, pictures</span>
+            <span><strong>Human review:</strong> no inferred translation pairing</span>
+            <span><strong>One save:</strong> exact revision conflict protection</span>
+            <span><strong>Legacy:</strong> PPTX remains a fallback, not the authoring model</span>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

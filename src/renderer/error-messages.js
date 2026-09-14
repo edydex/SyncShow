@@ -8,6 +8,8 @@
 (function exposeErrorMessages(root) {
   'use strict';
 
+  const CLOSE_POWERPOINT_AND_RETRY_ACTION = 'close-powerpoint-and-retry';
+
   function humanizeIpcError(error, fallback = 'SyncShow could not complete that action.') {
     let message = typeof error?.message === 'string' ? error.message.trim() : '';
     let previous;
@@ -26,7 +28,42 @@
     return message || fallback;
   }
 
-  const api = Object.freeze({ humanizeIpcError });
+  function normalizePresentationConversionFailure(
+    result,
+    fallback = 'The presentation could not be converted.'
+  ) {
+    const structured = result?.success === false
+      && result.error
+      && typeof result.error === 'object'
+      && !Array.isArray(result.error)
+      && result.error.schemaVersion === 1;
+    const rawError = structured
+      ? result.error
+      : { message: typeof result?.error === 'string' ? result.error : '' };
+    const code = structured
+      && typeof rawError.code === 'string'
+      && /^[A-Z][A-Z0-9_]{1,79}$/.test(rawError.code)
+      ? rawError.code
+      : 'PRESENTATION_CONVERSION_FAILED';
+    const recoveryAction = structured
+      && rawError.retryable === true
+      && rawError.recoveryAction === CLOSE_POWERPOINT_AND_RETRY_ACTION
+      ? CLOSE_POWERPOINT_AND_RETRY_ACTION
+      : null;
+
+    return Object.freeze({
+      code,
+      message: humanizeIpcError(rawError, fallback),
+      retryable: recoveryAction !== null,
+      recoveryAction
+    });
+  }
+
+  const api = Object.freeze({
+    CLOSE_POWERPOINT_AND_RETRY_ACTION,
+    humanizeIpcError,
+    normalizePresentationConversionFailure
+  });
   root.SyncShowErrorMessages = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis === 'undefined' ? window : globalThis);

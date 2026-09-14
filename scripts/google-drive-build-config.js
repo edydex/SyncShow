@@ -162,7 +162,7 @@ async function findPackagedAppArchives(rootPath) {
 
 function loadAsarModule() {
   try {
-    return require('@electron/asar');
+    return require('./lib/asar');
   } catch (_error) {
     const appBuilderRoot = path.dirname(require.resolve('app-builder-lib/package.json'));
     return require(require.resolve('@electron/asar', { paths: [appBuilderRoot] }));

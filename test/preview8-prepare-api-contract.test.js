@@ -232,6 +232,7 @@ test('Preview 8 preload narrows song authoring and item mutation payloads', asyn
     fit: 'fit',
     attribution: 'Heritage Church',
     operatorNotes: 'Advance after announcements',
+    plannedDurationSeconds: 300,
     childIds: ['hostile-child']
   });
   await api.updatePictureOutput({
@@ -305,7 +306,8 @@ test('Preview 8 preload narrows song authoring and item mutation payloads', asyn
         altText: 'Welcome notice',
         fit: 'fit',
         attribution: 'Heritage Church',
-        operatorNotes: 'Advance after announcements'
+        operatorNotes: 'Advance after announcements',
+        plannedDurationSeconds: 300
       }
     },
     {
@@ -376,7 +378,10 @@ test('project history restore and portable exchange stay trusted and revision-pi
   const exportHandler = assertTrustedHandler('prepare:projects:export');
   assert.match(exportHandler, /prepareId\(request\.projectId/);
   assert.match(exportHandler, /prepareRevision\(request\.revisionId/);
-  assert.match(exportHandler, /serviceProjectExchange\.exportBundle\(projectId,\s*revisionId\)/);
+  assert.match(
+    exportHandler,
+    /serviceProjectExchange\.exportBundle\(\s*projectId,\s*revisionId\s*\)/
+  );
   assert.match(exportHandler, /dialog\.showSaveDialog\(/);
   assert.match(exportHandler, /writePortableExport\(targetPath,\s*exported\.buffer\)/);
   assertNoRendererNativeInput(exportHandler, 'prepare:projects:export');
@@ -388,13 +393,15 @@ test('project history restore and portable exchange stay trusted and revision-pi
   assert.match(importHandler, /serviceProjectExchange\.importBundle\(read\.buffer\)/);
   assert.match(importHandler, /songLibrary:\s*imported\.songLibrary/,
     'portable import must return bounded library hydration counts and warnings');
+  assert.match(importHandler, /sermonLibrary:\s*imported\.sermonLibrary/,
+    'portable import must return bounded sermon hydration counts and warnings');
   assert.doesNotMatch(importHandler, /\brequest\b/,
     'portable import must not accept any renderer-selected path or bytes');
 
   assert.match(
     mainSource,
-    /new ServiceProjectExchange\(\{\s*projectStore:\s*serviceProjectStore,\s*songLibrary:\s*localSongLibrary,/,
-    'the trusted main process must inject its LocalSongLibrary into portable imports'
+    /new ServiceProjectExchange\(\{\s*projectStore:\s*serviceProjectStore,\s*songLibrary:\s*localSongLibrary,\s*sermonLibrary:\s*localSermonLibrary,/,
+    'the trusted main process must inject both local content libraries into portable imports'
   );
 
   const importProjectStart = prepareSource.indexOf('async function importProject');
@@ -402,8 +409,12 @@ test('project history restore and portable exchange stay trusted and revision-pi
   const rendererImport = prepareSource.slice(importProjectStart, importProjectEnd);
   assert.match(rendererImport, /loadSongs\(\)/,
     'portable imports must refresh the visible local Song Library');
+  assert.match(rendererImport, /loadSermons\(\)/,
+    'portable imports must refresh the visible local Sermon Library');
   assert.match(rendererImport, /songImport\.conflicts/);
   assert.match(rendererImport, /imported service keeps its own pinned copy/);
+  assert.match(rendererImport, /sermonImport\.conflicts/);
+  assert.match(rendererImport, /imported service keeps its own exact pinned packet/);
 
   const writerStart = mainSource.indexOf('async function writePortableExport');
   const writerEnd = mainSource.indexOf('function prepareId', writerStart);
@@ -438,7 +449,7 @@ test('native item preview pins the checked revision, renders 1920x1080, then dow
   assert.match(expectedRead, /'PROJECT_CONFLICT'/);
 });
 
-test('Prepare exposes separated song credits, titled separators, and direct rundown reordering', () => {
+test('Prepare exposes separated song credits, semantic groups, and direct rundown reordering', () => {
   for (const id of [
     'songDocumentAuthors',
     'songDocumentTranslators',
@@ -455,7 +466,16 @@ test('Prepare exposes separated song credits, titled separators, and direct rund
 
   assert.match(rendererIndex, /Add a titled separator/);
   assert.match(rendererIndex, /id="addServiceGroupKind" type="hidden" value="section"/);
-  assert.match(prepareSource, /titled separator, never projected/);
+  assert.match(prepareSource, /section:\s*'Section'/);
+  assert.match(prepareSource, /sermon:\s*'Sermon packet'/);
+  assert.match(prepareSource, /point:\s*'Sermon point'/);
+  assert.match(prepareSource, /subpoint:\s*'Sermon subpoint'/);
+  assert.match(
+    prepareSource,
+    /createElement\('span', 'prepare-item-kind', presentation\.kindLabel\)/
+  );
+  assert.match(prepareSource, /Exact sermon packet linked/);
+  assert.match(prepareSource, /Anchor not projected/);
 
   assert.match(prepareSource, /listItem\.draggable = !locked/);
   assert.match(prepareSource, /moveItemRelative\(sourceItemId, row\.item\.id, placement\)/);
@@ -539,6 +559,8 @@ test('item update and duplicate are narrow CAS mutations', () => {
   assert.match(update, /titlesByChannel\s*=\s*Object\.keys\(projectedTitles\)\.length > 0 \? projectedTitles : null/);
   assert.match(update, /A projected title needs body text on the same output/);
   assert.match(update, /prepareSpansByChannel\(\s*request\.spansByChannel/);
+  assert.match(update, /updateProjectItemTiming\(next,/);
+  assert.match(update, /plannedDurationSeconds:\s*request\.plannedDurationSeconds/);
   assert.doesNotMatch(update, /request\.(?:childIds|variants|arrangement|resourceId)\b/);
 
   const spansStart = mainSource.indexOf('function prepareSpansByChannel');
@@ -660,7 +682,7 @@ test('Prepare activation preserves a recovery warning from the project opener', 
 
   assert.match(
     source,
-    /state\.currentProject\s*&&\s*elements\.notice\.dataset\.kind\s*!==\s*'error'/,
+    /\['error', 'warning'\]\.includes\(elements\.notice\.dataset\.kind\)/,
     'successful activation must not overwrite a recovery or corruption warning'
   );
 });

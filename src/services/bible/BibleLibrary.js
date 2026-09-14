@@ -20,6 +20,13 @@ const DEFAULT_MAX_VERSES = 12;
 const ABSOLUTE_MAX_VERSES = 100;
 const SIMPLE_REFERENCE_PART = /^\d+(?:[\s:.]\d+)?$/;
 const RANGE_SEPARATOR = /^(.*\d)\s*[-–—]\s*(\d+)\s*$/u;
+const CANONICAL_RANGE_FIELDS = Object.freeze([
+  'book',
+  'startChapter',
+  'startVerse',
+  'endChapter',
+  'endVerse'
+]);
 
 class BibleDataError extends Error {
   constructor(code, message, details = {}) {
@@ -48,6 +55,113 @@ function formatReference(reference) {
     return `${chapterReference}:${reference.verseStart}`;
   }
   return `${chapterReference}:${reference.verseStart}–${reference.verseEnd}`;
+}
+
+function formatCanonicalRangeReference(range) {
+  const start = `${range.book} ${range.startChapter}:${range.startVerse}`;
+  if (range.startChapter === range.endChapter) {
+    if (range.startVerse === range.endVerse) return start;
+    return `${start}–${range.endVerse}`;
+  }
+  return `${start}–${range.endChapter}:${range.endVerse}`;
+}
+
+function normalizeCanonicalRangeInput(input) {
+  const isPlainObject = input
+    && typeof input === 'object'
+    && !Array.isArray(input)
+    && (
+      Object.getPrototypeOf(input) === Object.prototype
+      || Object.getPrototypeOf(input) === null
+    );
+  if (!isPlainObject) {
+    return errorResult(
+      'invalid-canonical-range',
+      'Canonical Bible range must be a plain object.'
+    );
+  }
+
+  const keys = Object.keys(input);
+  if (
+    keys.length !== CANONICAL_RANGE_FIELDS.length
+    || CANONICAL_RANGE_FIELDS.some(field => !Object.hasOwn(input, field))
+    || keys.some(field => !CANONICAL_RANGE_FIELDS.includes(field))
+  ) {
+    return errorResult(
+      'invalid-canonical-range',
+      'Canonical Bible range must contain only book, startChapter, startVerse, endChapter, and endVerse.'
+    );
+  }
+
+  if (
+    typeof input.book !== 'string'
+    || !input.book.trim()
+    || input.book.trim().length > 80
+  ) {
+    return errorResult(
+      'invalid-canonical-book',
+      'Canonical Bible range needs a full book name or canonical abbreviation.'
+    );
+  }
+  const requestedBook = input.book.trim().normalize('NFKC').toLowerCase();
+  const book = bibleBooks.find(candidate =>
+    candidate.name.normalize('NFKC').toLowerCase() === requestedBook
+    || candidate.abbr.normalize('NFKC').toLowerCase() === requestedBook);
+  if (!book) {
+    return errorResult(
+      'invalid-canonical-book',
+      `"${input.book.trim()}" is not a canonical Bible book name or abbreviation.`
+    );
+  }
+
+  for (const field of CANONICAL_RANGE_FIELDS.slice(1)) {
+    if (!Number.isSafeInteger(input[field]) || input[field] < 1) {
+      return errorResult(
+        'invalid-canonical-range',
+        `${field} must be a positive integer.`,
+        { field }
+      );
+    }
+  }
+
+  if (input.startChapter > book.chapters) {
+    return errorResult(
+      'chapter-not-found',
+      `${book.name} ${input.startChapter} is not a canonical chapter.`,
+      { missingChapter: input.startChapter }
+    );
+  }
+  if (input.endChapter > book.chapters) {
+    return errorResult(
+      'chapter-not-found',
+      `${book.name} ${input.endChapter} is not a canonical chapter.`,
+      { missingChapter: input.endChapter }
+    );
+  }
+  if (
+    input.endChapter < input.startChapter
+    || (
+      input.endChapter === input.startChapter
+      && input.endVerse < input.startVerse
+    )
+  ) {
+    return errorResult(
+      'invalid-canonical-range',
+      'Canonical Bible range end must not come before its start.'
+    );
+  }
+
+  return deepFreeze({
+    status: 'resolved',
+    range: {
+      book: book.name,
+      bookAbbr: book.abbr,
+      startChapter: input.startChapter,
+      startVerse: input.startVerse,
+      endChapter: input.endChapter,
+      endVerse: input.endVerse
+    }
+  });
 }
 
 function splitRangeSuffix(input) {
@@ -396,6 +510,153 @@ class BibleLibrary {
 
     return deepFreeze({ status: 'ok', passage });
   }
+
+  /**
+   * Load a trusted, already-canonicalized same-book range. This deliberately
+   * does not invoke the shorthand parser: callers must provide an exact book
+   * name/abbreviation and both verse-qualified endpoints.
+   *
+   * @param {{
+   *   book: string,
+   *   startChapter: number,
+   *   startVerse: number,
+   *   endChapter: number,
+   *   endVerse: number
+   * }} input
+   * @param {{ translationId?: 'BSB'|'LSV' }} options
+   */
+  async lookupCanonicalRange(input, options = {}) {
+    const translationId = normalizeTranslationId(
+      options.translationId || DEFAULT_TRANSLATION_ID
+    );
+    const translation = getTranslationById(translationId);
+    if (!translation) {
+      return errorResult(
+        'unsupported-translation',
+        `Translation "${translationId || options.translationId}" is not available.`
+      );
+    }
+
+    const resolution = normalizeCanonicalRangeInput(input);
+    if (resolution.status !== 'resolved') return resolution;
+    const range = resolution.range;
+    const reference = formatCanonicalRangeReference(range);
+
+    let book;
+    try {
+      book = await this._loadBook(translationId, range.book);
+    } catch (error) {
+      if (!(error instanceof BibleDataError)) throw error;
+      return errorResult(
+        'translation-data-unavailable',
+        `The ${translation.abbr} text could not be loaded.`,
+        { dataErrorCode: error.code }
+      );
+    }
+
+    const chaptersByNumber = new Map(
+      book.chapters.map(chapter => [chapter.number, chapter])
+    );
+    const verses = [];
+    for (
+      let chapterNumber = range.startChapter;
+      chapterNumber <= range.endChapter;
+      chapterNumber += 1
+    ) {
+      const chapter = chaptersByNumber.get(chapterNumber);
+      if (!chapter || !Array.isArray(chapter.verses)) {
+        return errorResult(
+          'chapter-not-found',
+          `${range.book} ${chapterNumber} is not available in ${translation.abbr}.`,
+          { reference: range, missingChapter: chapterNumber }
+        );
+      }
+
+      const versesByNumber = new Map(
+        chapter.verses.map(verse => [verse.number, verse])
+      );
+      const lastVerse = chapter.verses.reduce(
+        (maximum, verse) => Math.max(maximum, verse.number),
+        0
+      );
+      const verseStart = chapterNumber === range.startChapter
+        ? range.startVerse
+        : 1;
+      const verseEnd = chapterNumber === range.endChapter
+        ? range.endVerse
+        : lastVerse;
+
+      for (const endpoint of new Set([verseStart, verseEnd])) {
+        if (!versesByNumber.has(endpoint)) {
+          return errorResult(
+            'verse-not-found',
+            `${range.book} ${chapterNumber}:${endpoint} is not available in ${translation.abbr}.`,
+            {
+              reference: range,
+              missingChapter: chapterNumber,
+              missingVerse: endpoint
+            }
+          );
+        }
+      }
+
+      for (let number = verseStart; number <= verseEnd; number += 1) {
+        if (verses.length >= this.maxVerses) {
+          return errorResult(
+            'range-too-large',
+            `Choose ${this.maxVerses} verses or fewer so the passage remains readable on screen.`,
+            { maxVerses: this.maxVerses, reference: range }
+          );
+        }
+        const verse = versesByNumber.get(number);
+        if (!verse) {
+          return errorResult(
+            'verse-not-found',
+            `${range.book} ${chapterNumber}:${number} is not available in ${translation.abbr}.`,
+            {
+              reference: range,
+              missingChapter: chapterNumber,
+              missingVerse: number
+            }
+          );
+        }
+        if (typeof verse.text !== 'string' || !verse.text.trim()) {
+          return errorResult(
+            'verse-text-unavailable',
+            `${translation.abbr} does not include text for ${range.book} ${chapterNumber}:${number}. Choose another verse or translation.`,
+            {
+              reference: range,
+              missingChapter: chapterNumber,
+              missingVerse: number
+            }
+          );
+        }
+        verses.push({
+          chapter: chapterNumber,
+          number,
+          text: verse.text.trim()
+        });
+      }
+    }
+
+    const passage = {
+      translation,
+      book: range.book,
+      bookAbbr: range.bookAbbr,
+      start: {
+        chapter: range.startChapter,
+        verse: range.startVerse
+      },
+      end: {
+        chapter: range.endChapter,
+        verse: range.endVerse
+      },
+      reference,
+      verseCount: verses.length,
+      verses
+    };
+    return deepFreeze({ status: 'ok', passage });
+  }
 }
 
 const defaultLibrary = new BibleLibrary();
@@ -404,12 +665,17 @@ function lookupPassage(query, options) {
   return defaultLibrary.lookup(query, options);
 }
 
+function lookupCanonicalRange(input, options) {
+  return defaultLibrary.lookupCanonicalRange(input, options);
+}
+
 module.exports = {
   ABSOLUTE_MAX_VERSES,
   BibleDataError,
   BibleLibrary,
   DEFAULT_MAX_VERSES,
   formatReference,
+  lookupCanonicalRange,
   lookupPassage,
   resolvePassageReference
 };

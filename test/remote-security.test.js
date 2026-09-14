@@ -143,6 +143,27 @@ test('command protocol is a strict allow-list with sequence, command ID, and cue
 test('remote state sanitizer keeps only the public Show contract', () => {
   const sanitized = sanitizeRemoteState(state({
     secretPath: '/Users/operator/private.pptx',
+    serviceHandoff: {
+      planning: {
+        teamNotes: 'Local volunteer detail',
+        serving: {
+          assignments: [{
+            role: 'Slides',
+            personName: 'Maria S.',
+            note: 'Private serving note'
+          }]
+        }
+      },
+      runSheet: {
+        expectedFinish: { time: '12:00:00' }
+      }
+    },
+    operator: {
+      mode: 'volunteer',
+      authority: 'unlocked',
+      unlockToken: 'local-only-secret',
+      rehearsal: { status: 'ready' }
+    },
     currentCue: {
       id: 'cue-1',
       index: 0,
@@ -179,6 +200,11 @@ test('remote state sanitizer keeps only the public Show contract', () => {
   }]);
   assert.equal(JSON.stringify(sanitized).includes('/private'), false);
   assert.equal(Object.hasOwn(sanitized, 'secretPath'), false);
+  assert.equal(Object.hasOwn(sanitized, 'serviceHandoff'), false);
+  assert.equal(Object.hasOwn(sanitized, 'operator'), false);
+  assert.equal(JSON.stringify(sanitized).includes('local-only-secret'), false);
+  assert.equal(JSON.stringify(sanitized).includes('Maria S.'), false);
+  assert.equal(JSON.stringify(sanitized).includes('Private serving note'), false);
 
   const catalog = sanitizeCueCatalog(state().cues, 3);
   assert.equal(catalog.length, 3);

@@ -1,0 +1,13 @@
+{
+  "name": "@syncshow/service-core",
+  "version": "0.2.0-pilot.1",
+  "description": "Shared Heritage Community and SyncShow native service core",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./node": "./node.js"
+  },
+  "type": "commonjs",
+  "sideEffects": false,
+  "license": "MIT"
+}

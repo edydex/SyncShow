@@ -5,11 +5,14 @@ const os = require('os');
 const path = require('path');
 
 const { parseBibleReference } = require('../bible/BibleReferenceParser');
+const { scriptureFlowText } = require('../bible/ScriptureText');
 const { resolveNativeTextPreset } = require('./NativePresetCatalog');
+const { singerSourceCue, singerNextLine } = require('./SingerPresentation');
 const { MAX_IMAGE_PIXELS } = require('./ServiceProject');
 
 const MAX_RENDER_PIXELS = 3840 * 2160;
 const MAX_TEXT_SPANS = 256;
+const MAX_SINGER_NEXT_TEXT = 2000;
 const SAFE_PANGO_COLOR_PATTERN = /^#[a-fA-F0-9]{6}$/;
 const COMPILED_SPAN_COLOR_PATTERN = /^#[a-f0-9]{6}$/;
 const SAFE_PANGO_WEIGHT_PATTERN = /^[1-9]00$/;
@@ -95,7 +98,24 @@ function escapePango(value) {
 }
 
 function meaningfulFirstLine(value) {
-  return String(value || '').split(/\r?\n/).map(line => line.trim()).find(Boolean) || '';
+  return String(value || '').split(/\r\n|\r|\n/).map(line => line.trim()).find(Boolean) || '';
+}
+
+function boundedSingerNextLine(value) {
+  const line = meaningfulFirstLine(value);
+  if (line.length <= MAX_SINGER_NEXT_TEXT) return line;
+  let bounded = line.slice(0, MAX_SINGER_NEXT_TEXT);
+  const lastCodeUnit = bounded.charCodeAt(bounded.length - 1);
+  if (lastCodeUnit >= 0xD800 && lastCodeUnit <= 0xDBFF) bounded = bounded.slice(0, -1);
+  return bounded;
+}
+
+function singerNextFromText(hasNext, value = '') {
+  if (hasNext !== true) return { state: 'end', text: '' };
+  const text = boundedSingerNextLine(value);
+  return text
+    ? { state: 'text', text }
+    : { state: 'blank', text: '' };
 }
 
 function normalizeScriptureBookToken(value) {
@@ -162,7 +182,7 @@ function normalizeSafeTextSpans(value, rawSpans) {
       throw invalidTextSpans(`Compiled text span ${index + 1} must be an object.`);
     }
     const keys = Object.keys(raw).sort();
-    if (keys.some(key => !['end', 'foreground', 'start', 'weight'].includes(key))) {
+    if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale', 'italic', 'underline'].includes(key))) {
       throw invalidTextSpans(`Compiled text span ${index + 1} has an unsupported field.`);
     }
     const { start, end } = raw;
@@ -190,7 +210,17 @@ function normalizeSafeTextSpans(value, rawSpans) {
       }
       span.weight = raw.weight;
     }
-    if (!span.foreground && !span.weight) {
+    if (raw.fontScale !== undefined) {
+      if (!Number.isFinite(raw.fontScale) || raw.fontScale < 0.5 || raw.fontScale > 2) throw invalidTextSpans('Invalid text font scale.');
+      span.fontScale = raw.fontScale;
+    }
+    for (const key of ['italic', 'underline']) {
+      if (raw[key] !== undefined) {
+        if (typeof raw[key] !== 'boolean') throw invalidTextSpans('Invalid inline text style.');
+        span[key] = raw[key];
+      }
+    }
+    if (!span.foreground && !span.weight && !span.fontScale && span.italic === undefined && span.underline === undefined) {
       throw invalidTextSpans(`Compiled text span ${index + 1} has no presentation style.`);
     }
     previousEnd = end;
@@ -254,10 +284,13 @@ function markupTextSpans(value, rawSpans = [], options = {}) {
     if (options.paragraphGap === true) {
       escaped = escaped.replace(/\r\n|\r|\n/g, '\n\n');
     }
-    if (foreground || weight) {
+    if (foreground || weight || explicit?.fontScale || explicit?.italic !== undefined || explicit?.underline !== undefined) {
       const attributes = [
         foreground ? `foreground="${foreground}"` : '',
-        weight ? `weight="${weight}"` : ''
+        weight ? `weight="${weight}"` : '',
+        explicit?.fontScale ? `size="${Math.round(explicit.fontScale * 100)}%"` : '',
+        explicit?.italic !== undefined ? `style="${explicit.italic ? 'italic' : 'normal'}"` : '',
+        explicit?.underline !== undefined ? `underline="${explicit.underline ? 'single' : 'none'}"` : ''
       ].filter(Boolean).join(' ');
       escaped = `<span ${attributes}>${escaped}</span>`;
     }
@@ -281,10 +314,62 @@ function cueTextForChannel(cue, channelId) {
   return (channel.blocks || []).map(block => {
     if (block.type === 'text') return block.text || '';
     if (block.type === 'bible') {
-      return (block.verses || []).map(verse => `${verse.number} ${verse.text}`).join('\n');
+      return scriptureFlowText(block.verses);
     }
     return '';
   }).filter(Boolean).join('\n\n');
+}
+
+function nativeCueSingerNext(nextCue, channelId) {
+  return singerNextFromText(
+    nextCue !== null && nextCue !== undefined,
+    singerNextLine(cueTextForChannel(singerSourceCue(nextCue, channelId), channelId))
+  );
+}
+
+function cueMetadataForChannel(cue, channelId) {
+  const channel = cue?.channels?.[channelId];
+  let text = '';
+  if (
+    channel
+    && channel.mode !== 'hide'
+    && !channel.blocks?.some(block => block.type === 'blank')
+  ) {
+    const imageBlock = channel.blocks?.find(block => block.type === 'image');
+    const bibleBlock = channel.blocks?.find(block => block.type === 'bible');
+    const textBlocks = channel.blocks?.filter(block => block.type === 'text') || [];
+    if (imageBlock && imageBlock.role !== 'background') {
+      text = imageBlock.altText || '';
+    } else if (bibleBlock) {
+      text = scriptureFlowText(bibleBlock.verses);
+    } else {
+      const localizedTitle = textBlocks.find(block => block.role === 'title')?.text || '';
+      text = cue.kind === 'song' && localizedTitle
+        ? localizedTitle
+        : textBlocks
+          .filter(block => block.role !== 'title' && block.role !== 'credit')
+          .map(block => block.text || '')
+          .filter(Boolean)
+          .join('\n\n');
+    }
+  }
+  return {
+    cueId: cue.id,
+    title: cue.title,
+    kind: cue.kind,
+    groupPath: [...(cue.groupPath || [])],
+    text,
+    firstLine: meaningfulFirstLine(text) || cue.title
+  };
+}
+
+function singerCueMetadata(cue, sourceChannelId, nextCue = null) {
+  return {
+    ...cueMetadataForChannel(singerSourceCue(cue, sourceChannelId), sourceChannelId),
+    layout: 'singer-current-next',
+    sourceChannelId,
+    next: nativeCueSingerNext(nextCue, sourceChannelId)
+  };
 }
 
 function focalGravity(focalPoint = { x: 0.5, y: 0.5 }) {
@@ -358,8 +443,10 @@ class NativeSlideRenderer {
     const fontStyle = options.italic === true ? 'italic' : 'normal';
     const markup =
       `<span foreground="${foreground}" weight="${weight}" style="${fontStyle}">${contentMarkup}</span>`;
-    let last = null;
-    for (let size = preferred; size >= minimum; size -= 2) {
+    const sizes = [];
+    for (let size = preferred; size > minimum; size -= 2) sizes.push(size);
+    sizes.push(minimum);
+    for (const size of sizes) {
       let rendered;
       try {
         const spacing = options.lineSpacingPercent === undefined
@@ -383,14 +470,45 @@ class NativeSlideRenderer {
         error.details = { width, maxHeight, fontSize: size };
         throw error;
       }
-      last = rendered;
-      if (rendered.info.height <= maxHeight) return rendered;
+      if (rendered.info.height <= maxHeight + 2) return { ...rendered, fontSize: size, fontWeight: weight };
     }
-    if (last && last.info.height <= maxHeight * 1.08) return last;
     const error = new Error('This cue has more text than the selected preset can display safely.');
     error.code = 'TEXT_OVERFLOW';
     error.details = { width, maxHeight, minimumFontSize: minimum };
     throw error;
+  }
+
+  async _singleLineLayer(value, options) {
+    const text = singerNextLine(value);
+    if (!text) return null;
+    const fontSize = options.fontSize;
+    const fontWeight = options.weight || '600';
+    const measure = async (displayText) => {
+      const image = this.sharp({ text: {
+        text: `<span foreground="${options.foreground || '#f8fafc'}" weight="${fontWeight}" style="${options.italic ? 'italic' : 'normal'}">${escapePango(displayText)}</span>`,
+        font: `Noto Sans ${fontSize}`,
+        fontfile: this.fontPath,
+        rgba: true,
+        wrap: 'none'
+      } });
+      return { image, info: await image.metadata(), displayText };
+    };
+    let fitted = await measure(text);
+    if (fitted.info.width > options.width) {
+      // Font metrics, not character counts: a wide W and a narrow i consume
+      // different space. Never split a combining character or emoji sequence.
+      const characters = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text), entry => entry.segment);
+      let low = 0, high = characters.length;
+      fitted = await measure('…');
+      while (low < high) {
+        const count = Math.ceil((low + high) / 2);
+        const candidate = await measure(characters.slice(0, count).join('') + '…');
+        if (candidate.info.width <= options.width) { low = count; fitted = candidate; }
+        else high = count - 1;
+      }
+    }
+    const rendered = await fitted.image.png().toBuffer({ resolveWithObject: true });
+    return { ...rendered, fontSize, fontWeight, displayText: fitted.displayText };
   }
 
   _background(color) {
@@ -408,27 +526,33 @@ class NativeSlideRenderer {
     title = '',
     body = '',
     bodySpans = [],
-    presetId = 'notice-text'
+    titleSpans = [],
+    backgroundAssetId = null,
+    backgroundDimOpacity = 0.55,
+    presetId = 'notice-text',
+    onTypography = () => {}
   }) {
     const preset = resolveNativeTextPreset(presetId).render;
+    const churchLayout = presetId.startsWith('wotbc-');
     const composites = [];
     const hasTitle = Boolean(String(title || '').trim()) && preset.showTitle;
     const resolutionScale = Math.min(1, this.width / 1920, this.height / 1080);
     let titleBottom = 0;
     if (hasTitle) {
-      const titleWidth = this.width * 0.82;
+      const titleWidth = this.width * (churchLayout ? 0.98 : 0.82);
       const titleAlign = preset.titleAlign || 'center';
       const titleLayer = await this._textLayer(title, {
         width: titleWidth,
         maxHeight: this.height * 0.16,
-        fontSize: preset.titleSize,
+        fontSize: churchLayout ? preset.titleSize * resolutionScale : preset.titleSize,
         minimumFontSize: Math.max(
           14,
           Math.round(preset.titleMinimumSize * resolutionScale)
         ),
         foreground: preset.titleForeground || '#93b4ff',
         weight: preset.titleWeight || '650',
-        align: titleAlign
+        align: titleAlign,
+        spans: titleSpans
       });
       if (titleLayer) {
         const titleTop = preset.titleTopPercent === undefined
@@ -453,9 +577,11 @@ class NativeSlideRenderer {
       ? oldAvailableTop
       : Math.round(this.height * preset.bodyTopPercent / 100);
     const availableTop = preset.bodyPosition === 'top' && titleBottom > 0
-      ? Math.max(configuredBodyTop, titleBottom + Math.round(this.height * 0.04))
+      ? Math.max(configuredBodyTop, titleBottom + Math.round(this.height * (churchLayout ? 0.02 : 0.04)))
       : configuredBodyTop;
-    const bodyMaximumHeight = preset.bodyPosition === 'top'
+    const bodyMaximumHeight = churchLayout
+      ? Math.min(preset.bodyHeight * resolutionScale, this.height - availableTop - this.height * 0.02)
+      : preset.bodyPosition === 'top'
       ? Math.min(
           preset.bodyHeight,
           Math.max(50, this.height - availableTop - Math.round(this.height * 0.06))
@@ -466,7 +592,7 @@ class NativeSlideRenderer {
     const bodyLayer = await this._textLayer(body || title, {
       width: bodyWidth,
       maxHeight: bodyMaximumHeight,
-      fontSize: preset.bodySize,
+      fontSize: churchLayout ? preset.bodySize * resolutionScale : preset.bodySize,
       minimumFontSize: Math.max(
         14,
         Math.round(preset.bodyMinimumSize * resolutionScale)
@@ -486,6 +612,7 @@ class NativeSlideRenderer {
       spans: bodySpans
     });
     if (bodyLayer) {
+      onTypography({ fontSize: bodyLayer.fontSize, fontWeight: bodyLayer.fontWeight });
       composites.push({
         input: bodyLayer.data,
         left: alignedLayerLeft(
@@ -496,23 +623,31 @@ class NativeSlideRenderer {
         ),
         top: preset.bodyPosition === 'top'
           ? availableTop
-          : availableTop + Math.max(0, Math.round((oldAvailableHeight - bodyLayer.info.height) / 2))
+          : availableTop + Math.max(0, Math.round(((churchLayout ? bodyMaximumHeight : oldAvailableHeight) - bodyLayer.info.height) / 2))
       });
     }
-    return this._background(preset.background).composite(composites);
+    let background = this._background(preset.background);
+    if (backgroundAssetId) {
+      background = await this._renderPicture({ assetId: backgroundAssetId, fit: 'fill', focalPoint: { x: 0.5, y: 0.5 }, attribution: '' });
+      const opacity = Math.max(0, Math.min(1, Number.isFinite(backgroundDimOpacity) ? backgroundDimOpacity : 0.55));
+      if (opacity) composites.unshift({ input: Buffer.from(`<svg width="${this.width}" height="${this.height}"><rect width="100%" height="100%" fill="black" opacity="${opacity}"/></svg>`), left: 0, top: 0 });
+    }
+    return background.composite(composites);
   }
 
   async _renderSongTitleSlide({
     title,
     subtitle = '',
-    credit = ''
+    credit = '',
+    presetId = 'song-title',
+    onTypography = () => {}
   }) {
     const composites = [];
     const logicalScale = Math.min(this.width / 1920, this.height / 1080);
     const titleLayer = await this._textLayer(title, {
       width: this.width * 0.94,
       maxHeight: this.height * (subtitle ? 0.42 : 0.7),
-      fontSize: Math.round(128 * logicalScale),
+      fontSize: Math.round((presetId === 'wotbc-song-title' ? 144 : 128) * logicalScale),
       minimumFontSize: Math.round(52 * logicalScale),
       foreground: '#ffffff',
       weight: '700',
@@ -522,14 +657,15 @@ class NativeSlideRenderer {
     const subtitleLayer = await this._textLayer(subtitle, {
       width: this.width * 0.9,
       maxHeight: this.height * 0.25,
-      fontSize: Math.round(92 * logicalScale),
+      fontSize: Math.round((presetId === 'wotbc-song-title' ? 128 : 92) * logicalScale),
       minimumFontSize: Math.round(36 * logicalScale),
-      foreground: '#ffff00',
+      foreground: presetId === 'wotbc-song-title' ? '#ffc000' : '#ffff00',
       weight: '500',
       align: 'center',
       lineSpacingPercent: 14
     });
     if (titleLayer) {
+      onTypography({ fontSize: titleLayer.fontSize, fontWeight: titleLayer.fontWeight });
       const regionTop = Math.round(this.height * 0.1);
       const regionHeight = Math.round(this.height * 0.7);
       const gap = subtitleLayer ? Math.round(this.height * 0.025) : 0;
@@ -620,10 +756,13 @@ class NativeSlideRenderer {
     const channel = cue.channels?.[channelId];
     let pipeline;
     let textValue = '';
+    let typography = null;
+    const onTypography = value => { typography = value; };
     if (!channel || channel.mode === 'hide' || channel.blocks?.some(block => block.type === 'blank')) {
       pipeline = this._background('#000000');
     } else {
       const imageBlock = channel.blocks?.find(block => block.type === 'image');
+      const videoBlock = channel.blocks?.find(block => block.type === 'video');
       const bibleBlock = channel.blocks?.find(block => block.type === 'bible');
       const textBlocks = channel.blocks?.filter(block => block.type === 'text') || [];
       const legacyBlock = channel.blocks?.find(block => block.type === 'legacy-deck');
@@ -632,14 +771,21 @@ class NativeSlideRenderer {
         error.code = 'LEGACY_DECK_REQUIRES_RENDER';
         throw error;
       }
-      if (imageBlock) {
+      if (videoBlock) {
+        // Show-package thumbnails are static previews. The live native scene
+        // owns video decoding and starts paused on its first available frame.
+        pipeline = this._background('#000000');
+        textValue = 'Video';
+      } else if (imageBlock && imageBlock.role !== 'background') {
         pipeline = await this._renderPicture(imageBlock);
         textValue = imageBlock.altText;
       } else if (bibleBlock) {
-        textValue = bibleBlock.verses.map(verse => `${verse.number} ${verse.text}`).join('\n');
+        textValue = scriptureFlowText(bibleBlock.verses);
         pipeline = await this._renderTextSlide({
           title: bibleBlock.reference,
           body: textValue,
+          bodySpans: bibleBlock.spans || [],
+          onTypography,
           presetId: cue.presetId || 'scripture-text'
         });
       } else {
@@ -651,17 +797,20 @@ class NativeSlideRenderer {
           pipeline = await this._renderSongTitleSlide({
             title: localizedTitle,
             subtitle,
-            credit
+            credit,
+            onTypography,
+            presetId: cue.presetId
           });
         } else {
           const bodyParts = [];
+          const bodySeparator = cue.presetId === 'wotbc-song-stacked' ? '\n' : '\n\n';
           const bodySpans = [];
           let bodyOffset = 0;
           for (const block of textBlocks.filter(
             candidate => candidate.role !== 'title' && candidate.role !== 'credit'
           )) {
             if (!block.text) continue;
-            if (bodyParts.length > 0) bodyOffset += 2;
+            if (bodyParts.length > 0) bodyOffset += bodySeparator.length;
             const blockText = String(block.text);
             bodyParts.push(blockText);
             for (const span of block.spans || []) {
@@ -673,7 +822,7 @@ class NativeSlideRenderer {
             }
             bodyOffset += blockText.length;
           }
-          textValue = bodyParts.join('\n\n');
+          textValue = bodyParts.join(bodySeparator);
           pipeline = await this._renderTextSlide({
             // Sermon/notice rundown titles are operator-facing. Only an explicit
             // per-output title block belongs on those projected slides.
@@ -682,8 +831,12 @@ class NativeSlideRenderer {
               : (cue.kind === 'sermon' || cue.kind === 'notice'
                   ? localizedTitle
                   : (localizedTitle || cue.title)),
-            body: textValue || localizedTitle,
+            body: textValue || (cue.kind === 'sermon' || cue.kind === 'notice' ? '' : localizedTitle),
             bodySpans: textValue ? bodySpans : [],
+            titleSpans: textBlocks.find(block => block.role === 'title')?.spans || [],
+            backgroundAssetId: imageBlock?.role === 'background' ? imageBlock.assetId : null,
+            backgroundDimOpacity: imageBlock?.dimOpacity ?? 0.55,
+            onTypography,
             presetId: cue.presetId
           });
         }
@@ -704,18 +857,13 @@ class NativeSlideRenderer {
     }
     return {
       info,
-      metadata: {
-        cueId: cue.id,
-        title: cue.title,
-        kind: cue.kind,
-        groupPath: [...(cue.groupPath || [])],
-        text: textValue,
-        firstLine: meaningfulFirstLine(textValue) || cue.title
-      }
+      typography,
+      metadata: cueMetadataForChannel(cue, channelId)
     };
   }
 
   async renderSingerPreview(cue, sourceChannelId, nextCue = null, outputPath = null) {
+    cue = singerSourceCue(cue, sourceChannelId);
     const current = await this.renderCue(cue, sourceChannelId);
     const padding = Math.max(8, Math.round(this.width * 0.012));
     const footerHeight = Math.max(68, Math.round(this.height * 0.19));
@@ -732,15 +880,20 @@ class NativeSlideRenderer {
       .jpeg({ quality: this.jpegQuality, chromaSubsampling: '4:4:4' })
       .toBuffer();
 
-    const nextLine = meaningfulFirstLine(cueTextForChannel(nextCue, sourceChannelId));
-    const footerText = nextLine || 'End of song';
-    const nextLayer = await this._textLayer(footerText, {
+    const next = nativeCueSingerNext(nextCue, sourceChannelId);
+    const footerText = next.state === 'text'
+      ? next.text
+      : next.state === 'end' ? 'End of presentation' : '';
+    const currentScale = Math.min(currentWidth / this.width, currentHeight / this.height);
+    const nextFontSize = current.typography
+      ? Math.round(current.typography.fontSize * currentScale)
+      : Math.round(this.height * 0.075);
+    const nextLayer = await this._singleLineLayer(footerText, {
       width: this.width * 0.88,
-      maxHeight: footerHeight - dividerThickness - padding,
-      fontSize: Math.max(20, Math.round(this.height * 0.043)),
-      minimumFontSize: Math.max(14, Math.round(this.height * 0.026)),
-      foreground: nextLine ? '#f8fafc' : '#6b7280',
-      weight: nextLine ? '500' : '400'
+      fontSize: nextFontSize,
+      foreground: next.state === 'end' ? '#6b7280' : '#f8fafc',
+      weight: current.typography?.fontWeight || '600',
+      italic: next.state === 'end'
     });
     const dashWidth = Math.max(12, Math.round(this.width * 0.025));
     const dashGap = Math.max(8, Math.round(dashWidth * 0.62));
@@ -788,11 +941,11 @@ class NativeSlideRenderer {
     }
     return {
       info,
-      metadata: {
-        ...current.metadata,
-        layout: 'singer-current-next',
-        sourceChannelId,
-        nextLine
+      metadata: singerCueMetadata(cue, sourceChannelId, nextCue),
+      singerTypography: {
+        currentFontSize: current.typography ? current.typography.fontSize * currentScale : null,
+        nextFontSize, nextText: nextLayer?.displayText || '',
+        nextWidth: nextLayer?.info.width || 0, nextHeight: nextLayer?.info.height || 0
       }
     };
   }
@@ -801,6 +954,7 @@ class NativeSlideRenderer {
 module.exports = {
   MAX_RENDER_PIXELS,
   NativeSlideRenderer,
+  cueMetadataForChannel,
   cueTextForChannel,
   escapePango,
   focalGravity,
@@ -808,6 +962,9 @@ module.exports = {
   markupTextSpans,
   normalizeSafeTextSpans,
   normalizeScriptureBookToken,
+  nativeCueSingerNext,
+  singerNextFromText,
+  singerCueMetadata,
   splitLeadingScriptureReference,
   meaningfulFirstLine
 };

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file:;">
   <title>SyncShow - Singer Screen</title>
+  <link rel="stylesheet" href="translation-display.css">
   <style>
     * {
       margin: 0;
@@ -112,6 +113,18 @@
     
     /* Cleared/black screen state */
     .singer-container.cleared .main-content {
+      display: none;
+    }
+
+    .output-restore-guard {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: #000;
+      pointer-events: none;
+    }
+
+    .output-restore-guard[hidden] {
       display: none;
     }
 
@@ -243,9 +256,12 @@
         <span class="bible-attribution" id="bibleAttributionStaging"></span>
       </footer>
     </section>
+
+    <div class="output-restore-guard" id="outputRestoreGuard" aria-hidden="true" hidden></div>
   </div>
   
   <script src="bible-overlay.js"></script>
   <script src="singer.js"></script>
+  <script src="translation-display.js"></script>
 </body>
 </html>

@@ -9,10 +9,10 @@
  * tokens plus validated colors/weights/alignment.
  */
 (function exposeNativeCueRenderer(global) {
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
   const KIND = 'syncshow-native-cue-scene';
-  const LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'singer-current-next']);
-  const SOURCE_KINDS = new Set(['song', 'bible', 'sermon', 'picture', 'notice', 'blank', 'slide']);
+  const LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'video', 'singer-current-next']);
+  const SOURCE_KINDS = new Set(['song', 'bible', 'sermon', 'picture', 'video', 'notice', 'blank', 'slide']);
   const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
   const ASSET_ID_PATTERN = /^sha256:[a-f0-9]{64}$/;
   const COLOR_PATTERN = /^#[a-f0-9]{6}$/;
@@ -20,6 +20,7 @@
   const ALIGNMENTS = new Set(['left', 'center', 'right']);
   const POSITIONS = new Set(['center', 'top']);
   const FITS = new Set(['fit', 'fill', 'stretch']);
+  const SINGER_NEXT_STATES = new Set(['text', 'blank', 'end']);
 
   function record(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -55,6 +56,23 @@
     return value;
   }
 
+  function singerNext(value) {
+    exactKeys(value, ['state', 'text'], 'scene.next');
+    const state = string(value.state, 'scene.next.state', 12, true);
+    const text = string(value.text, 'scene.next.text', 2000);
+    if (!SINGER_NEXT_STATES.has(state)) {
+      throw new TypeError('scene.next.state is invalid');
+    }
+    if (state === 'text') {
+      if (!text.trim() || text !== text.trim() || /[\r\n]/.test(text)) {
+        throw new TypeError('scene.next.text must be one nonblank trimmed line');
+      }
+    } else if (text !== '') {
+      throw new TypeError(`scene.next.text must be empty for ${state} state`);
+    }
+    return { state, text };
+  }
+
   function color(value, field) {
     if (typeof value !== 'string' || !COLOR_PATTERN.test(value)) {
       throw new TypeError(`${field} is invalid`);
@@ -86,7 +104,7 @@
     return value.map((candidate, index) => {
       if (!record(candidate)) throw new TypeError(`scene.bodySpans[${index}] is invalid`);
       const keys = Object.keys(candidate).sort();
-      if (keys.some(key => !['end', 'foreground', 'start', 'weight'].includes(key))) {
+      if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale', 'italic', 'underline'].includes(key))) {
         throw new TypeError(`scene.bodySpans[${index}] has an unsupported field`);
       }
       const start = integer(candidate.start, `scene.bodySpans[${index}].start`, 0, text.length);
@@ -105,7 +123,17 @@
         if (!WEIGHTS.has(candidate.weight)) throw new TypeError('scene body span weight is invalid');
         normalized.weight = candidate.weight;
       }
-      if (!normalized.foreground && !normalized.weight) throw new TypeError('scene body span has no style');
+      if (candidate.fontScale !== undefined) {
+        if (!Number.isFinite(candidate.fontScale) || candidate.fontScale < 0.5 || candidate.fontScale > 2) throw new TypeError('scene body span font scale is invalid');
+        normalized.fontScale = candidate.fontScale;
+      }
+      for (const key of ['italic', 'underline']) {
+        if (candidate[key] !== undefined) {
+          if (typeof candidate[key] !== 'boolean') throw new TypeError('Invalid inline text style');
+          normalized[key] = candidate[key];
+        }
+      }
+      if (!normalized.foreground && !normalized.weight && !normalized.fontScale && normalized.italic === undefined && normalized.underline === undefined) throw new TypeError('scene body span has no style');
       previousEnd = end;
       return normalized;
     });
@@ -144,17 +172,34 @@
       || !WEIGHTS.has(value.bodyWeight)) {
       throw new TypeError('scene text style contains an unsupported value');
     }
+    const titleSize = integer(value.titleSize, 'scene.style.titleSize', 14, 160);
+    const titleMinimumSize = integer(
+      value.titleMinimumSize,
+      'scene.style.titleMinimumSize',
+      14,
+      160
+    );
+    const bodySize = integer(value.bodySize, 'scene.style.bodySize', 14, 240);
+    const bodyMinimumSize = integer(
+      value.bodyMinimumSize,
+      'scene.style.bodyMinimumSize',
+      14,
+      240
+    );
+    if (titleMinimumSize > titleSize || bodyMinimumSize > bodySize) {
+      throw new TypeError('scene style minimum sizes are invalid');
+    }
     return {
       showTitle: value.showTitle,
-      titleSize: integer(value.titleSize, 'scene.style.titleSize', 14, 160),
-      titleMinimumSize: integer(value.titleMinimumSize, 'scene.style.titleMinimumSize', 14, 160),
+      titleSize,
+      titleMinimumSize,
       titleForeground: color(value.titleForeground, 'scene.style.titleForeground'),
       titleWeight: value.titleWeight,
       titleAlign: value.titleAlign,
       titleWidthPercent: integer(value.titleWidthPercent, 'scene.style.titleWidthPercent', 50, 100),
       titleTopPercent: integer(value.titleTopPercent, 'scene.style.titleTopPercent', 0, 80),
-      bodySize: integer(value.bodySize, 'scene.style.bodySize', 14, 240),
-      bodyMinimumSize: integer(value.bodyMinimumSize, 'scene.style.bodyMinimumSize', 14, 240),
+      bodySize,
+      bodyMinimumSize,
       bodyForeground: color(value.bodyForeground, 'scene.style.bodyForeground'),
       bodyWeight: value.bodyWeight,
       bodyAlign: value.bodyAlign,
@@ -284,6 +329,8 @@
     }
     if (raw.layout === 'text') {
       exactKeys(raw, [
+        ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
+        ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
         'background',
         'body',
         'bodySpans',
@@ -297,12 +344,15 @@
         'title'
       ], 'scene');
       const body = string(raw.body, 'scene.body', 12000, true);
+      if (raw.backgroundAssetId !== undefined && !ASSET_ID_PATTERN.test(raw.backgroundAssetId)) throw new TypeError('Invalid slide background image');
       if (body.split(/\r\n|\r|\n/).length > 240) throw new TypeError('scene.body has too many lines');
       return {
         ...common,
         title: string(raw.title, 'scene.title', 500),
         body,
         bodySpans: spans(raw.bodySpans, body),
+        ...(raw.titleSpans !== undefined ? { titleSpans: spans(raw.titleSpans, raw.title) } : {}),
+        ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: raw.backgroundAssetId } : {}),
         style: textStyle(raw.style)
       };
     }
@@ -358,6 +408,32 @@
         }
       };
     }
+    if (raw.layout === 'video') {
+      exactKeys(raw, [
+        'background',
+        'canvas',
+        'cueId',
+        'kind',
+        'layout',
+        'schemaVersion',
+        'sourceKind',
+        'video'
+      ], 'scene');
+      exactKeys(raw.video, ['assetId', 'fit', 'muted'], 'scene.video');
+      if (!ASSET_ID_PATTERN.test(raw.video.assetId || '')
+        || !FITS.has(raw.video.fit)
+        || typeof raw.video.muted !== 'boolean') {
+        throw new TypeError('scene.video is invalid');
+      }
+      return {
+        ...common,
+        video: {
+          assetId: raw.video.assetId,
+          fit: raw.video.fit,
+          muted: raw.video.muted
+        }
+      };
+    }
     exactKeys(raw, [
       'background',
       'canvas',
@@ -365,7 +441,7 @@
       'current',
       'kind',
       'layout',
-      'nextLine',
+      'next',
       'schemaVersion',
       'sourceKind'
     ], 'scene');
@@ -379,7 +455,7 @@
     return {
       ...common,
       current,
-      nextLine: string(raw.nextLine, 'scene.nextLine', 2000)
+      next: singerNext(raw.next)
     };
   }
 
@@ -394,6 +470,9 @@
       const element = document.createElement('span');
       if (span.foreground) element.style.color = span.foreground;
       if (span.weight) element.style.fontWeight = span.weight;
+      if (span.italic !== undefined) element.style.fontStyle = span.italic ? 'italic' : 'normal';
+      if (span.underline !== undefined) element.style.textDecoration = span.underline ? 'underline' : 'none';
+      if (span.fontScale) element.style.fontSize = `${span.fontScale}em`;
       element.appendChild(document.createTextNode(rendered));
       target.appendChild(element);
     };
@@ -414,22 +493,55 @@
     return scale;
   }
 
+  function logicalCanvasScale(logicalCanvas) {
+    return Math.min(
+      logicalCanvas.width / 1920,
+      logicalCanvas.height / 1080
+    );
+  }
+
+  function scaledTextMinimum(minimum, logicalCanvas) {
+    return Math.max(
+      14,
+      Math.round(minimum * Math.min(1, logicalCanvasScale(logicalCanvas)))
+    );
+  }
+
+  function scaledSongTextRange(preferred, minimum, logicalCanvas) {
+    const logicalScale = logicalCanvasScale(logicalCanvas);
+    const selectedPreferred = Math.max(18, Math.round(preferred * logicalScale));
+    return {
+      preferred: selectedPreferred,
+      minimum: Math.max(
+        14,
+        Math.min(selectedPreferred, Math.round(minimum * logicalScale))
+      )
+    };
+  }
+
   function fitText(element, preferred, minimum, scale) {
-    let selected = preferred;
-    for (let size = preferred; size >= minimum; size -= 2) {
-      selected = size;
+    const fits = () => (
+      element.scrollWidth <= element.clientWidth + 2
+      && element.scrollHeight <= element.clientHeight + 2
+    );
+    for (let size = preferred; size > minimum; size -= 2) {
       element.style.fontSize = `${size * scale}px`;
-      if (element.scrollWidth <= element.clientWidth + 2
-        && element.scrollHeight <= element.clientHeight + 2) {
-        return size;
-      }
+      if (fits()) return size;
     }
-    element.style.fontSize = `${selected * scale}px`;
-    if (element.scrollWidth > element.clientWidth + 2
-      || element.scrollHeight > element.clientHeight + Math.max(2, 0.08 * element.clientHeight)) {
+    element.style.fontSize = `${minimum * scale}px`;
+    if (!fits()) {
       throw new Error('Native cue text does not fit the selected preset');
     }
-    return selected;
+    return minimum;
+  }
+
+  function settleFittedTextHeight(element, maximumHeight) {
+    element.style.height = 'auto';
+    element.style.maxHeight = 'none';
+    const naturalHeight = element.scrollHeight;
+    const boundedMaximum = Math.max(0, Math.ceil(maximumHeight));
+    element.style.height = `${Math.min(naturalHeight, boundedMaximum)}px`;
+    element.style.maxHeight = `${boundedMaximum}px`;
   }
 
   function imageReady(image) {
@@ -446,6 +558,16 @@
     });
   }
 
+  function videoReady(video) {
+    if (video.readyState >= 2) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      video.addEventListener('loadeddata', () => resolve(), { once: true });
+      video.addEventListener('error', () => reject(new Error('Native cue video could not be loaded')), {
+        once: true
+      });
+    });
+  }
+
   function buildScene(rawScene, options = {}) {
     const scene = validateScene(rawScene);
     const host = document.createElement('div');
@@ -456,14 +578,44 @@
     host.appendChild(surface);
     const children = [];
     const images = [];
+    const videos = [];
+    let videoState = scene.layout === 'video' ? 'armed' : 'not-video';
+
+    function publishVideoState(nextState, error = '') {
+      if (scene.layout !== 'video') return;
+      videoState = nextState;
+      options.onVideoState?.({
+        cueId: scene.cueId,
+        state: nextState,
+        error
+      });
+    }
 
     if (scene.layout === 'text') {
+      if (scene.backgroundAssetId) {
+        const source = options.resolveAssetUrl?.(scene.backgroundAssetId);
+        if (!source) throw new Error('Slide background image is unavailable');
+        const background = document.createElement('img');
+        background.className = 'native-scene-background';
+        background.alt = '';
+        background.src = source;
+        surface.appendChild(background);
+        images.push(background);
+      }
       const style = scene.style;
+      const titleMinimumSize = scaledTextMinimum(
+        style.titleMinimumSize,
+        scene.canvas
+      );
+      const bodyMinimumSize = scaledTextMinimum(
+        style.bodyMinimumSize,
+        scene.canvas
+      );
       let title = null;
       if (style.showTitle && scene.title) {
         title = document.createElement('div');
         title.className = 'native-scene-title';
-        title.textContent = scene.title;
+        appendStyledText(title, scene.title, scene.titleSpans || [], false);
         title.style.color = style.titleForeground;
         title.style.fontWeight = style.titleWeight;
         title.style.textAlign = style.titleAlign;
@@ -487,11 +639,11 @@
             title.style.left = `${(100 - style.titleWidthPercent) / 2}%`;
             title.style.top = `${style.titleTopPercent}%`;
             title.style.width = `${style.titleWidthPercent}%`;
-            title.style.height = `${scene.canvas.height * 0.16 * scale}px`;
+            const titleMaximumHeight = scene.canvas.height * 0.16 * scale;
+            title.style.height = `${titleMaximumHeight}px`;
             title.style.lineHeight = '1.18';
-            fitText(title, style.titleSize, style.titleMinimumSize, scale);
-            title.style.height = 'auto';
-            title.style.maxHeight = '16%';
+            fitText(title, style.titleSize, titleMinimumSize, scale);
+            settleFittedTextHeight(title, titleMaximumHeight);
             titleBottom = (title.offsetTop + title.offsetHeight) / scale;
           }
           const configuredBodyTop = scene.canvas.height * style.bodyTopPercent / 100;
@@ -517,14 +669,29 @@
           bodyRegion.style.width = `${style.bodyWidthPercent}%`;
           bodyRegion.style.height = `${logicalRegionHeight * scale}px`;
           body.style.lineHeight = String(1 + style.lineSpacingPercent / 100);
-          body.style.height = `${logicalFitHeight * scale}px`;
-          fitText(body, style.bodySize, style.bodyMinimumSize, scale);
-          body.style.height = 'auto';
-          body.style.maxHeight = `${logicalFitHeight * scale}px`;
+          const bodyMaximumHeight = logicalFitHeight * scale;
+          body.style.height = `${bodyMaximumHeight}px`;
+          fitText(body, style.bodySize, bodyMinimumSize, scale);
+          settleFittedTextHeight(body, bodyMaximumHeight);
         }
       });
     } else if (scene.layout === 'song-title') {
       const style = scene.style;
+      const titleSizes = scaledSongTextRange(
+        style.titleSize,
+        style.titleMinimumSize,
+        scene.canvas
+      );
+      const subtitleSizes = scaledSongTextRange(
+        style.subtitleSize,
+        style.subtitleMinimumSize,
+        scene.canvas
+      );
+      const creditSizes = scaledSongTextRange(
+        style.creditSize,
+        style.creditMinimumSize,
+        scene.canvas
+      );
       const titleRegion = document.createElement('div');
       titleRegion.className = 'native-song-title-region';
       const title = document.createElement('div');
@@ -561,27 +728,34 @@
           titleRegion.style.gap = `${scene.canvas.height * 0.025 * scale}px`;
           const titleShare = subtitle ? 0.58 : 1;
           title.style.width = `${style.titleWidthPercent}%`;
-          title.style.height =
-            `${scene.canvas.height * style.titleRegionHeightPercent / 100 * titleShare * scale}px`;
-          fitText(title, style.titleSize, style.titleMinimumSize, scale);
-          title.style.height = 'auto';
-          title.style.maxHeight = subtitle ? '58%' : '100%';
+          const titleMaximumHeight =
+            scene.canvas.height * style.titleRegionHeightPercent / 100
+            * titleShare * scale;
+          title.style.height = `${titleMaximumHeight}px`;
+          fitText(title, titleSizes.preferred, titleSizes.minimum, scale);
+          settleFittedTextHeight(title, titleMaximumHeight);
           if (subtitle) {
             subtitle.style.width = `${style.subtitleWidthPercent}%`;
-            subtitle.style.height =
-              `${scene.canvas.height * style.titleRegionHeightPercent / 100 * 0.36 * scale}px`;
-            fitText(subtitle, style.subtitleSize, style.subtitleMinimumSize, scale);
-            subtitle.style.height = 'auto';
-            subtitle.style.maxHeight = '36%';
+            const subtitleMaximumHeight =
+              scene.canvas.height * style.titleRegionHeightPercent / 100
+              * 0.36 * scale;
+            subtitle.style.height = `${subtitleMaximumHeight}px`;
+            fitText(
+              subtitle,
+              subtitleSizes.preferred,
+              subtitleSizes.minimum,
+              scale
+            );
+            settleFittedTextHeight(subtitle, subtitleMaximumHeight);
           }
           if (credit) {
             credit.style.right = `${style.creditRightPercent}%`;
             credit.style.bottom = `${style.creditBottomPercent}%`;
             credit.style.width = `${style.creditWidthPercent}%`;
-            credit.style.height = `${scene.canvas.height * 0.18 * scale}px`;
-            fitText(credit, style.creditSize, style.creditMinimumSize, scale);
-            credit.style.height = 'auto';
-            credit.style.maxHeight = '18%';
+            const creditMaximumHeight = scene.canvas.height * 0.18 * scale;
+            credit.style.height = `${creditMaximumHeight}px`;
+            fitText(credit, creditSizes.preferred, creditSizes.minimum, scale);
+            settleFittedTextHeight(credit, creditMaximumHeight);
           }
         }
       });
@@ -611,6 +785,29 @@
           }
         });
       }
+    } else if (scene.layout === 'video') {
+      const source = options.resolveAssetUrl?.(scene.video.assetId);
+      if (typeof source !== 'string' || !source.startsWith('file:')) {
+        throw new Error('Native cue video asset is unavailable');
+      }
+      const video = document.createElement('video');
+      video.className = 'native-scene-video';
+      video.src = source;
+      video.preload = 'auto';
+      video.playsInline = true;
+      video.controls = false;
+      video.muted = scene.video.muted;
+      video.style.objectFit = scene.video.fit === 'stretch'
+        ? 'fill'
+        : scene.video.fit === 'fill' ? 'cover' : 'contain';
+      video.addEventListener('playing', () => publishVideoState('playing'));
+      video.addEventListener('pause', () => {
+        if (!video.ended && videoState !== 'armed') publishVideoState('paused');
+      });
+      video.addEventListener('ended', () => publishVideoState('ended'));
+      video.addEventListener('error', () => publishVideoState('error', 'Video playback failed'));
+      surface.appendChild(video);
+      videos.push(video);
     } else if (scene.layout === 'singer-current-next') {
       const currentHost = document.createElement('div');
       currentHost.className = 'native-singer-current';
@@ -618,21 +815,35 @@
       currentHost.appendChild(current.element);
       const next = document.createElement('div');
       next.className = 'native-singer-next';
-      next.textContent = scene.nextLine || 'End of song';
-      next.classList.toggle('native-singer-end', !scene.nextLine);
-      next.style.color = scene.nextLine ? '#f8fafc' : '#6b7280';
-      next.style.fontWeight = scene.nextLine ? '500' : '400';
+      const nextText = document.createElement('span');
+      nextText.className = 'native-singer-next-text';
+      next.appendChild(nextText);
+      next.classList.add(`native-singer-${scene.next.state}`);
+      next.dataset.nextState = scene.next.state;
+      nextText.textContent = scene.next.state === 'text'
+        ? scene.next.text
+        : scene.next.state === 'end' ? 'End of presentation' : '';
+      next.style.color = scene.next.state === 'end' ? '#6b7280' : '#f8fafc';
+      next.style.fontWeight = scene.next.state === 'end' ? '400' : '500';
       surface.append(currentHost, next);
       children.push(current);
       children.push({
         relayout(scale) {
           next.style.borderTopWidth = `${Math.max(4, scene.canvas.height * 0.011 * scale)}px`;
-          fitText(
-            next,
-            Math.max(20, Math.round(scene.canvas.height * 0.043)),
-            Math.max(14, Math.round(scene.canvas.height * 0.026)),
-            scale
-          );
+          // Prefer the current cue's typography, bounded by the next-line
+          // region when the presentation is reduced above a caption band.
+          const primary = currentHost.querySelector('.native-scene-body')
+            || currentHost.querySelector('.native-song-title-text')
+            || currentHost.querySelector('.native-scene-title');
+          const typography = primary ? global.getComputedStyle(primary) : null;
+          const preferred = Number.parseFloat(typography?.fontSize) || scene.canvas.height * 0.075 * scale;
+          const nextStyle = global.getComputedStyle(next);
+          const availableHeight = next.clientHeight
+            - (Number.parseFloat(nextStyle.paddingTop) || 0)
+            - (Number.parseFloat(nextStyle.paddingBottom) || 0);
+          nextText.style.fontSize = `${Math.max(1, Math.min(preferred, Math.floor(availableHeight / 1.15)))}px`;
+          nextText.style.fontWeight = typography?.fontWeight || '600';
+          nextText.style.fontFamily = typography?.fontFamily || 'inherit';
         }
       });
     }
@@ -646,20 +857,86 @@
     }
 
     async function prepare() {
-      await Promise.all(images.map(imageReady));
+      await Promise.all([
+        ...images.map(imageReady),
+        ...videos.map(videoReady)
+      ]);
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       relayout();
       await Promise.all(children
         .filter(child => typeof child.prepare === 'function')
         .map(child => child.prepare()));
       relayout();
+      if (scene.layout === 'video') publishVideoState('armed');
+    }
+
+    async function playVideo() {
+      if (scene.layout !== 'video') {
+        const nested = children.find(child => typeof child.videoState === 'function' && child.videoState() !== 'not-video');
+        return nested ? nested.playVideo() : false;
+      }
+      const video = videos[0];
+      if (video.ended) video.currentTime = 0;
+      try {
+        await video.play();
+        publishVideoState('playing');
+        return true;
+      } catch (error) {
+        publishVideoState('error', error instanceof Error ? error.message : 'Video playback failed');
+        throw error;
+      }
+    }
+
+    function pauseVideo() {
+      if (scene.layout !== 'video') {
+        const nested = children.find(child => typeof child.videoState === 'function' && child.videoState() !== 'not-video');
+        return nested ? nested.pauseVideo() : false;
+      }
+      const video = videos[0];
+      video.pause();
+      if (!video.ended && videoState !== 'armed') publishVideoState('paused');
+      return true;
+    }
+
+    function stopVideo() {
+      if (scene.layout !== 'video') {
+        const nested = children.find(child => typeof child.videoState === 'function' && child.videoState() !== 'not-video');
+        return nested ? nested.stopVideo() : false;
+      }
+      const video = videos[0];
+      video.pause();
+      try {
+        video.currentTime = 0;
+      } catch (_error) {
+        // A media element may reject seeking while it is being detached.
+      }
+      publishVideoState('armed');
+      return true;
+    }
+
+    function destroy() {
+      for (const video of videos) {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      }
+      for (const child of children) child.destroy?.();
     }
 
     return {
       element: host,
       scene,
       prepare,
-      relayout
+      relayout,
+      videoState: () => {
+        if (scene.layout === 'video') return videoState;
+        const nested = children.find(child => typeof child.videoState === 'function' && child.videoState() !== 'not-video');
+        return nested ? nested.videoState() : 'not-video';
+      },
+      playVideo,
+      pauseVideo,
+      stopVideo,
+      destroy
     };
   }
 

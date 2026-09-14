@@ -1,11 +1,15 @@
 /**
  * SyncShow Converter Module
  *
- * Converts PPTX presentations to JPEG images using LibreOffice and MuPDF.
+ * Converts PPTX presentations to JPEG images using PowerPoint/LibreOffice,
+ * the shared PDF.js engine, native canvas, and sharp.
  */
 
 const Converter = require('./Converter');
 const PlatformDetector = require('./PlatformDetector');
+const {
+  serializeConversionFailure
+} = require('./ConversionFailure');
 
 /**
  * Convenience function for one-off conversions
@@ -22,5 +26,6 @@ async function convert(inputPath, outputDir, options = {}, restoreContext = null
 module.exports = {
   Converter,
   PlatformDetector,
-  convert
+  convert,
+  serializeConversionFailure
 };

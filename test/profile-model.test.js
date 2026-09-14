@@ -7,6 +7,7 @@ const {
   CURRENT_PROFILE_SCHEMA_VERSION,
   MAX_FILENAME_MATCHERS_PER_ROLE,
   MAX_FILENAME_MATCHER_LENGTH,
+  SHOW_CONTROL_MODES,
   VenueProfileError,
   createStableId,
   normalizeVenueProfile,
@@ -28,6 +29,9 @@ function customProfile() {
     id: 'chapel',
     name: 'Upstairs Chapel',
     friendlyModeDefault: true,
+    operator: {
+      showControlMode: 'volunteer'
+    },
     inputRoles: [
       { id: 'main-language', label: 'Main Language', kind: 'deck' },
       { id: 'translation', label: 'Spanish', kind: 'deck' },
@@ -70,7 +74,8 @@ function customProfile() {
 test('custom profiles preserve editable names, stable IDs, routing, and display hints', () => {
   const profile = normalizeVenueProfile(customProfile());
 
-  assert.equal(profile.schemaVersion, 1);
+  assert.equal(profile.schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
+  assert.equal(profile.operator.showControlMode, 'volunteer');
   assert.deepEqual(profile.inputRoles.map(role => role.id), [
     'main-language',
     'translation',
@@ -127,11 +132,35 @@ test('resolved profiles are detached deeply frozen snapshots', () => {
   assert.ok(Object.isFrozen(snapshot.outputs));
   assert.ok(Object.isFrozen(snapshot.outputs[1].fallback));
   assert.ok(Object.isFrozen(snapshot.singer));
+  assert.ok(Object.isFrozen(snapshot.operator));
 
   source.name = 'Changed after resolution';
   source.outputs[0].name = 'Changed output';
   assert.equal(snapshot.name, 'Upstairs Chapel');
   assert.equal(snapshot.outputs[0].name, 'Center Projector');
+});
+
+test('show control modes default to full, preserve volunteer mode, and fail closed', () => {
+  assert.deepEqual(SHOW_CONTROL_MODES, ['full', 'volunteer']);
+  assert.ok(Object.isFrozen(SHOW_CONTROL_MODES));
+  assert.equal(normalizeVenueProfile({}).operator.showControlMode, 'full');
+  assert.equal(
+    normalizeVenueProfile({
+      operator: { showControlMode: 'volunteer' }
+    }).operator.showControlMode,
+    'volunteer'
+  );
+
+  expectCode('INVALID_ENUM', () => normalizeVenueProfile({
+    operator: { showControlMode: 'presenter' }
+  }));
+
+  const invalidCanonicalProfile = normalizeVenueProfile({});
+  invalidCanonicalProfile.operator.showControlMode = 'presenter';
+  expectCode(
+    'INVALID_SHOW_CONTROL_MODE',
+    () => validateVenueProfile(invalidCanonicalProfile)
+  );
 });
 
 test('unknown role references, duplicate IDs, and mirror cycles fail closed', () => {

@@ -13,6 +13,7 @@ const {
   focalGravity,
   markupLeadingScriptureReferences,
   markupTextSpans,
+  nativeCueSingerNext,
   normalizeSafeTextSpans,
   normalizeScriptureBookToken,
   splitLeadingScriptureReference,
@@ -570,7 +571,10 @@ test('Singer Prepare preview keeps every current lyric line, adds its divider, a
   assert.equal(preview.info.height, 360);
   assert.equal(preview.metadata.layout, 'singer-current-next');
   assert.equal(preview.metadata.text, 'Current one\nCurrent two\nCurrent three\nCurrent four');
-  assert.equal(preview.metadata.nextLine, 'Next slide first line');
+  assert.deepEqual(preview.metadata.next, {
+    state: 'text',
+    text: 'Next slide first line'
+  });
 
   const decoded = await sharp(preview.info.data).raw().toBuffer({ resolveWithObject: true });
   let cyanPixels = 0;
@@ -584,4 +588,45 @@ test('Singer Prepare preview keeps every current lyric line, adds its divider, a
     }
   }
   assert.ok(cyanPixels > 100, 'the Singer-style cyan separator must be present');
+});
+
+test('Singer Prepare preview keeps intentional blank distinct from presentation end', async () => {
+  const renderer = new NativeSlideRenderer({
+    width: 640,
+    height: 360,
+    fontPath: FONT_PATH,
+    jpegQuality: 92
+  });
+  const currentCue = textCue('Current lyric', {
+    id: 'cue-singer-state-current',
+    kind: 'song',
+    title: 'Song — Verse 1',
+    presetId: 'song-lyrics'
+  });
+  const blankCue = textCue('must not appear', {
+    id: 'cue-singer-state-blank',
+    kind: 'blank',
+    channels: {
+      primary: { mode: 'content', blocks: [{ type: 'blank' }] }
+    }
+  });
+
+  assert.deepEqual(nativeCueSingerNext(blankCue, 'primary'), {
+    state: 'blank',
+    text: ''
+  });
+  assert.deepEqual(nativeCueSingerNext(null, 'primary'), {
+    state: 'end',
+    text: ''
+  });
+
+  const blank = await renderer.renderSingerPreview(currentCue, 'primary', blankCue);
+  const end = await renderer.renderSingerPreview(currentCue, 'primary', null);
+  assert.deepEqual(blank.metadata.next, { state: 'blank', text: '' });
+  assert.deepEqual(end.metadata.next, { state: 'end', text: '' });
+  assert.equal(
+    blank.info.data.equals(end.info.data),
+    false,
+    'only the terminal state should paint the End of presentation label'
+  );
 });

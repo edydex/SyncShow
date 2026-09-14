@@ -13,6 +13,24 @@ const {
 } = require('../src/services/remote');
 
 const OUTPUT_SESSION_ID = '4c480506-4436-4e72-90d2-6e3fca88e775';
+const { TeachingSurface } = require('../src/services/show/TeachingSurface');
+
+test('teaching routes require pairing, validate strokes, fence stale slides and revoke access', async t => {
+  let cueKey='one';
+  const surface = new TeachingSurface({ readContext: () => ({ sessionId: OUTPUT_SESSION_ID, cueKey, ready:true, outputs:[{id:'main',name:'Main'}] }) });
+  const server = new RemoteControlServer({showGateway:new FakeShowGateway(), teachingGateway:{state:id=>surface.state(id), apply:body=>surface.apply(body), preview:async()=>Buffer.from('fixture image')} });
+  t.after(()=>server.destroy()); const status=await server.startLoopback(), port=status.binding.port, origin=status.origin;
+  assert.equal((await request(port,{requestPath:'/api/v1/teaching?outputId=main'})).status,401);
+  const grant=server.openPairing();
+  const paired=await request(port,{requestPath:'/api/v1/pair',method:'POST',origin,body:{version:1,deviceName:'Teaching tablet',ticket:grant.ticket}});
+  const cookie=cookieFrom(paired);
+  const state=await request(port,{requestPath:'/api/v1/teaching?outputId=main',cookie}); assert.equal(state.status,200);
+  const body={surfaceId:state.json.frame.surfaceId,outputId:'main',operation:'stroke',stroke:{id:'11111111-1111-4111-8111-111111111111',tool:'highlight',color:'#eab308',width:.035,points:[[.1,.2],[.8,.2]],finished:true}};
+  const draw=()=>request(port,{requestPath:'/api/v1/teaching',method:'POST',origin,cookie,body});
+  assert.equal((await draw()).status,200); assert.equal(surface.frame('main').strokes.length,1);
+  cueKey='two'; assert.equal((await draw()).status,409); assert.equal(surface.frame('main').strokes.length,0);
+  server.authority.revokeAll('test'); assert.equal((await draw()).status,401);
+});
 
 function cue(index) {
   return {

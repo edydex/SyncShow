@@ -11,6 +11,7 @@ const {
   DEFAULT_TRANSLATION_ID,
   TRANSLATION_DATA_ROOT,
   getTranslationById,
+  lookupCanonicalRange,
   lookupPassage,
   resolvePassageReference,
   translations
@@ -127,6 +128,170 @@ test('loads LSV independently and accepts Unicode range separators', async () =>
   );
 });
 
+test('loads a canonical cross-chapter range with chapter-qualified immutable verses', async () => {
+  const result = await lookupCanonicalRange({
+    book: 'Eph',
+    startChapter: 3,
+    startVerse: 20,
+    endChapter: 4,
+    endVerse: 2
+  });
+
+  assert.equal(result.status, 'ok');
+  assert.equal(result.passage.translation.id, 'BSB');
+  assert.equal(result.passage.book, 'Ephesians');
+  assert.equal(result.passage.bookAbbr, 'Eph');
+  assert.deepEqual(result.passage.start, { chapter: 3, verse: 20 });
+  assert.deepEqual(result.passage.end, { chapter: 4, verse: 2 });
+  assert.equal(result.passage.reference, 'Ephesians 3:20–4:2');
+  assert.equal(result.passage.verseCount, 4);
+  assert.deepEqual(
+    result.passage.verses.map(verse => `${verse.chapter}:${verse.number}`),
+    ['3:20', '3:21', '4:1', '4:2']
+  );
+  assert.match(result.passage.verses[0].text, /immeasurably more/i);
+  assert.ok(Object.isFrozen(result));
+  assert.ok(Object.isFrozen(result.passage));
+  assert.ok(Object.isFrozen(result.passage.start));
+  assert.ok(Object.isFrozen(result.passage.end));
+  assert.ok(Object.isFrozen(result.passage.verses));
+  assert.ok(Object.isFrozen(result.passage.verses[0]));
+});
+
+test('canonical range lookup accepts a full book name and an explicit LSV option', async () => {
+  const result = await lookupCanonicalRange({
+    book: 'Ephesians',
+    startChapter: 4,
+    startVerse: 1,
+    endChapter: 4,
+    endVerse: 2
+  }, { translationId: 'lsv' });
+
+  assert.equal(result.status, 'ok');
+  assert.equal(result.passage.translation.id, 'LSV');
+  assert.equal(result.passage.reference, 'Ephesians 4:1–2');
+  assert.deepEqual(
+    result.passage.verses.map(verse => [verse.chapter, verse.number]),
+    [[4, 1], [4, 2]]
+  );
+});
+
+test('canonical range lookup enforces maxVerses across chapter boundaries', async () => {
+  const range = {
+    book: 'Eph',
+    startChapter: 3,
+    startVerse: 20,
+    endChapter: 4,
+    endVerse: 2
+  };
+  const result = await new BibleLibrary({ maxVerses: 3 }).lookupCanonicalRange(
+    range,
+    { translationId: 'BSB' }
+  );
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.code, 'range-too-large');
+  assert.equal(result.maxVerses, 3);
+
+  const exactLimit = await new BibleLibrary({ maxVerses: 4 }).lookupCanonicalRange(
+    range,
+    { translationId: 'BSB' }
+  );
+  assert.equal(exactLimit.status, 'ok');
+  assert.equal(exactLimit.passage.verseCount, 4);
+});
+
+test('canonical range lookup checks every requested verse and translation text exactly', async () => {
+  const library = new BibleLibrary({ maxVerses: 100 });
+  const bsbOmission = await library.lookupCanonicalRange({
+    book: 'John',
+    startChapter: 4,
+    startVerse: 54,
+    endChapter: 5,
+    endVerse: 4
+  }, { translationId: 'BSB' });
+  assert.equal(bsbOmission.status, 'error');
+  assert.equal(bsbOmission.code, 'verse-text-unavailable');
+  assert.equal(bsbOmission.missingChapter, 5);
+  assert.equal(bsbOmission.missingVerse, 4);
+
+  const lsvRange = await library.lookupCanonicalRange({
+    book: 'John',
+    startChapter: 4,
+    startVerse: 54,
+    endChapter: 5,
+    endVerse: 4
+  }, { translationId: 'LSV' });
+  assert.equal(lsvRange.status, 'ok');
+  assert.equal(lsvRange.passage.verseCount, 5);
+
+  const nonexistentVerse = await library.lookupCanonicalRange({
+    book: 'Eph',
+    startChapter: 3,
+    startVerse: 21,
+    endChapter: 4,
+    endVerse: 33
+  }, { translationId: 'BSB' });
+  assert.equal(nonexistentVerse.status, 'error');
+  assert.equal(nonexistentVerse.code, 'verse-not-found');
+  assert.equal(nonexistentVerse.missingChapter, 4);
+  assert.equal(nonexistentVerse.missingVerse, 33);
+
+  const nonexistentStart = await library.lookupCanonicalRange({
+    book: 'Eph',
+    startChapter: 3,
+    startVerse: 99,
+    endChapter: 4,
+    endVerse: 2
+  }, { translationId: 'BSB' });
+  assert.equal(nonexistentStart.status, 'error');
+  assert.equal(nonexistentStart.code, 'verse-not-found');
+  assert.equal(nonexistentStart.missingChapter, 3);
+  assert.equal(nonexistentStart.missingVerse, 99);
+});
+
+test('canonical range lookup rejects aliases, loose fields, and reversed endpoints', async () => {
+  const validEndpoints = {
+    startChapter: 3,
+    startVerse: 20,
+    endChapter: 4,
+    endVerse: 2
+  };
+
+  assert.equal(
+    (await lookupCanonicalRange({ book: 'Ephes', ...validEndpoints })).code,
+    'invalid-canonical-book'
+  );
+  assert.equal(
+    (await lookupCanonicalRange({
+      book: 'Eph',
+      ...validEndpoints,
+      selectedBook: 'Ephesians'
+    })).code,
+    'invalid-canonical-range'
+  );
+  assert.equal(
+    (await lookupCanonicalRange({
+      book: 'Eph',
+      startChapter: 4,
+      startVerse: 2,
+      endChapter: 3,
+      endVerse: 20
+    })).code,
+    'invalid-canonical-range'
+  );
+  assert.equal(
+    (await lookupCanonicalRange({
+      book: 'Eph',
+      startChapter: 7,
+      startVerse: 1,
+      endChapter: 7,
+      endVerse: 1
+    })).code,
+    'chapter-not-found'
+  );
+});
+
 test('requires a verse after resolving a chapter-only shortcut', async () => {
   const result = await lookupPassage('pet4');
 
@@ -145,6 +310,32 @@ test('rejects malformed, reversed, and oversized ranges', async () => {
   assert.equal(tooLarge.status, 'error');
   assert.equal(tooLarge.code, 'range-too-large');
   assert.equal(tooLarge.maxVerses, DEFAULT_MAX_VERSES);
+});
+
+test('keeps projected Bible lookups at eight verses while sermon references allow exactly 100', async () => {
+  const projectedLibrary = new BibleLibrary({ maxVerses: 8 });
+  const sermonReferenceLibrary = new BibleLibrary({ maxVerses: 100 });
+
+  const projectedNine = await projectedLibrary.lookup('Psalm 119:1-9', {
+    translationId: 'BSB'
+  });
+  assert.equal(projectedNine.status, 'error');
+  assert.equal(projectedNine.code, 'range-too-large');
+  assert.equal(projectedNine.maxVerses, 8);
+
+  const exactHundred = await sermonReferenceLibrary.lookup('Psalm 119:1-100', {
+    translationId: 'BSB'
+  });
+  assert.equal(exactHundred.status, 'ok');
+  assert.equal(exactHundred.passage.translation.id, 'BSB');
+  assert.equal(exactHundred.passage.verses.length, 100);
+
+  const hundredOne = await sermonReferenceLibrary.lookup('Psalm 119:1-101', {
+    translationId: 'BSB'
+  });
+  assert.equal(hundredOne.status, 'error');
+  assert.equal(hundredOne.code, 'range-too-large');
+  assert.equal(hundredOne.maxVerses, 100);
 });
 
 test('validates requested verses against the selected translation data', async () => {

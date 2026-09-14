@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "syncshow-sermon-publication-bundle-fixture",
+  "description": "Exact dynamic-Community publication artifacts reconstructed from sermon-public-projection-v1.json.",
+  "sourceFixture": "sermon-public-projection-v1.json",
+  "routeProfile": {
+    "id": "strict-publication-catalog-v1",
+    "catalogPath": "/publications/sermons/catalog.json",
+    "detailPathTemplate": "/content/sermons/{publicId}",
+    "passageIndexPath": "/indexes/sermon-passages"
+  },
+  "osisBookIds": [
+    "Eph"
+  ],
+  "detailSource": "{\"body\":[{\"kind\":\"manuscript\",\"language\":\"en\",\"text\":\"The reviewed English sermon body.\\n\\nSecond paragraph.\"}],\"canonicalUrl\":\"https://church.example/sermons/prayer\",\"defaultLanguage\":\"en\",\"kind\":\"heritage-public-sermon\",\"media\":[{\"durationSeconds\":2484.5,\"kind\":\"audio\",\"language\":\"en\",\"mediaType\":\"audio/mpeg\",\"title\":\"Sermon audio\",\"url\":\"https://media.example.church/sermons/prayer.mp3\"}],\"publicId\":\"sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\",\"references\":[{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"role\":\"primary\"},{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":5,\"verse\":2},\"schemaVersion\":1,\"start\":{\"chapter\":5,\"verse\":2}},\"role\":\"mentioned\"}],\"schemaVersion\":1,\"series\":{\"titles\":{\"en\":\"From Pain to Unity\",\"ru\":\"От боли к единству\"}},\"sermonId\":\"Golden:Sermon:2026-07-26\",\"sermonRevision\":\"e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920\",\"serviceDate\":\"2026-07-26\",\"speaker\":{\"name\":\"Paul Lvutin\"},\"titles\":{\"en\":\"The Prayer That Transforms the Church\",\"ru\":\"Молитва, преображающая Церковь\"}}\n",
+  "detailSha256": "caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3",
+  "catalogSource": "{\"contentType\":\"sermons\",\"items\":[{\"checksum\":\"caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3\",\"content\":{\"mediaType\":\"application/vnd.heritage.sermon+json\",\"url\":\"/content/sermons/sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\"},\"defaultLanguage\":\"en\",\"id\":\"sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\",\"references\":[{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"role\":\"primary\"},{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":5,\"verse\":2},\"schemaVersion\":1,\"start\":{\"chapter\":5,\"verse\":2}},\"role\":\"mentioned\"}],\"series\":{\"titles\":{\"en\":\"From Pain to Unity\",\"ru\":\"От боли к единству\"}},\"sermonId\":\"Golden:Sermon:2026-07-26\",\"sermonRevision\":\"e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920\",\"serviceDate\":\"2026-07-26\",\"speaker\":{\"name\":\"Paul Lvutin\"},\"title\":\"The Prayer That Transforms the Church\",\"titles\":{\"en\":\"The Prayer That Transforms the Church\",\"ru\":\"Молитва, преображающая Церковь\"}}],\"schemaVersion\":2}\n",
+  "catalogSha256": "d83db5ee1d461512c7d9051391169775151148655040e8e8f8f045127294d719",
+  "passageIndexSource": "{\"items\":[{\"checksum\":\"caef52bea6fe6655e976056ba309ff6c8428dc686b6f26d3888e7e060ce2a0a3\",\"contentUrl\":\"/content/sermons/sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\",\"publicId\":\"sermon-8191ee362b34a68d4ff2e49a8d28c1e19e57aa2a1db5725f6caebb35631ea24a\",\"references\":[{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":3,\"verse\":21},\"schemaVersion\":1,\"start\":{\"chapter\":3,\"verse\":14}},\"role\":\"primary\"},{\"range\":{\"bookId\":\"Eph\",\"end\":{\"chapter\":5,\"verse\":2},\"schemaVersion\":1,\"start\":{\"chapter\":5,\"verse\":2}},\"role\":\"mentioned\"}],\"sermonId\":\"Golden:Sermon:2026-07-26\",\"sermonRevision\":\"e65f4cc29bc378e8be6e0fefbe2875433bcadbbd2ac5ba94d90e9df96b8f4920\",\"serviceDate\":\"2026-07-26\",\"speaker\":{\"name\":\"Paul Lvutin\"},\"title\":\"The Prayer That Transforms the Church\"}],\"kind\":\"heritage-public-sermon-passage-index\",\"schemaVersion\":1}\n",
+  "passageIndexSha256": "7c8f59d22f1dad380cdbe07573dbcf5b249603fa4481e9ddf924c6c4e31f2c07"
+}

@@ -10,8 +10,12 @@ const JSZip = require('jszip');
 
 const {
   addBibleItem,
+  addGroupItem,
   addProjectItem,
+  addSermonResource,
   addSongResource,
+  attachLocalServicePlanning,
+  bindProjectAsPowerPointCompanion,
   compileServiceProject,
   normalizeServiceProject,
   serializeServiceProject
@@ -29,6 +33,7 @@ const {
   projectStorageKey
 } = require('../src/services/project/ServiceProjectStore');
 const { LocalSongLibrary } = require('../src/services/project/LocalSongLibrary');
+const { LocalSermonLibrary } = require('../src/services/sermon/LocalSermonLibrary');
 
 const NOW = '2026-07-23T18:00:00.000Z';
 const IMAGE_METADATA = Object.freeze({
@@ -43,11 +48,142 @@ test('portable service archives use a conservative main-process memory ceiling',
   assert.equal(MAX_BUNDLE_BYTES, 128 * 1024 * 1024);
 });
 
+test('a first local Planning service keeps its schedule and item duration through portable export and import', async t => {
+  const sourceStore = new ServiceProjectStore({
+    rootPath: await tempDirectory(t, 'syncshow-local-plan-export-source-'),
+    clock: () => new Date(NOW)
+  });
+  const created = await sourceStore.create({
+    id: 'portable-first-local-plan',
+    title: 'First local Planning service',
+    serviceDate: '2026-07-26',
+    profileId: 'main-sanctuary'
+  }, {
+    prepareProject(project) {
+      const planned = attachLocalServicePlanning(project, {
+        startTime: '10:30',
+        teamNotes: 'Sound check at 09:45.'
+      });
+      return addGroupItem(planned, {
+        id: 'opening',
+        title: 'Opening',
+        groupKind: 'section',
+        plannedDurationSeconds: 300,
+        now: NOW
+      });
+    }
+  });
+  const exported = await new ServiceProjectExchange({
+    projectStore: sourceStore,
+    appVersion: '1.4.0-test'
+  }).exportBundle(created.project.id, created.revisionId);
+
+  const targetStore = new ServiceProjectStore({
+    rootPath: await tempDirectory(t, 'syncshow-local-plan-import-target-')
+  });
+  const imported = await new ServiceProjectExchange({
+    projectStore: targetStore,
+    appVersion: '1.4.0-test'
+  }).importBundle(exported.buffer);
+
+  assert.equal(imported.imported, true);
+  assert.deepEqual(imported.project.planning, {
+    schemaVersion: 4,
+    status: 'planning',
+    startTime: '10:30',
+    origin: 'local-created',
+    teamNotes: 'Sound check at 09:45.'
+  });
+  assert.equal(
+    imported.project.items.opening.plannedDurationSeconds,
+    300
+  );
+  assert.equal(
+    serializeServiceProject((await targetStore.read(imported.project.id)).project),
+    serializeServiceProject(imported.project)
+  );
+});
+
 async function tempDirectory(t, prefix = 'syncshow-project-exchange-') {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   return fs.realpath(directory);
 }
+
+test('portable import rejects a handcrafted local PowerPoint companion', async t => {
+  const sourceRoot = await tempDirectory(t, 'syncshow-companion-export-source-');
+  const sourceStore = new ServiceProjectStore({
+    rootPath: sourceRoot,
+    clock: () => new Date(NOW)
+  });
+  const created = await sourceStore.create({
+    id: 'crafted-companion',
+    title: 'Crafted companion',
+    serviceDate: '2026-07-26',
+    profileId: 'main-sanctuary'
+  });
+  const withAnchor = addGroupItem(created.project, {
+    id: 'sermon-anchor',
+    title: 'Sermon',
+    groupKind: 'sermon',
+    now: NOW
+  });
+  const saved = await sourceStore.save(withAnchor, {
+    expectedRevisionId: created.revisionId,
+    reason: 'add-sermon-anchor'
+  });
+  const sourceExchange = new ServiceProjectExchange({
+    projectStore: sourceStore
+  });
+  const exported = await sourceExchange.exportBundle(
+    saved.project.id,
+    saved.revisionId
+  );
+  const companion = bindProjectAsPowerPointCompanion(saved.project, {
+    id: 'set-2026-07-26-main',
+    fingerprint: 'a'.repeat(64),
+    serviceDate: '2026-07-26',
+    profileId: 'main-sanctuary'
+  });
+  const companionBuffer = Buffer.from(
+    serializeServiceProject(companion),
+    'utf8'
+  );
+  const craftedBundle = await rewriteBundle(
+    exported.buffer,
+    async zip => {
+      const manifest = JSON.parse(
+        await zip.file('manifest.json').async('string')
+      );
+      refreshManifestProject(manifest, companionBuffer);
+      zip.file(manifest.project.path, companionBuffer, {
+        compression: 'STORE',
+        createFolders: false
+      });
+      zip.file('manifest.json', serializeManifest(manifest), {
+        compression: 'STORE',
+        createFolders: false
+      });
+    }
+  );
+
+  const targetRoot = await tempDirectory(t, 'syncshow-companion-import-target-');
+  const targetStore = new ServiceProjectStore({
+    rootPath: targetRoot,
+    clock: () => new Date(NOW)
+  });
+  const targetExchange = new ServiceProjectExchange({
+    projectStore: targetStore
+  });
+  await assert.rejects(
+    targetExchange.importBundle(craftedBundle),
+    expectExchangeCode('COMPANION_PROJECT_NOT_IMPORTABLE')
+  );
+  await assert.rejects(
+    targetStore.read(companion.id),
+    error => error.code === 'PROJECT_NOT_FOUND'
+  );
+});
 
 function expectExchangeCode(code) {
   return error => {
@@ -108,6 +244,73 @@ function songDocument() {
     '^1',
     'Grace travels with the service'
   ].join('\n'));
+}
+
+function sermonDocument(
+  title = 'The Prayer That Transforms the Church',
+  { body = null } = {}
+) {
+  const document = {
+    schemaVersion: body === null ? 1 : 3,
+    kind: 'syncshow-sermon',
+    id: 'portable-prayer-sermon',
+    titles: { en: title },
+    defaultLanguage: 'en',
+    speaker: { id: 'paul-lvutin', name: 'Paul Lvutin' },
+    serviceDate: '2026-07-26',
+    series: null,
+    outline: [{
+      id: 'foundation',
+      parentId: null,
+      kind: 'section',
+      titles: { en: 'The Foundation of the Prayer' }
+    }],
+    sources: [],
+    references: [{
+      id: 'primary-ephesians-3',
+      range: {
+        schemaVersion: 1,
+        bookId: 'Eph',
+        start: { chapter: 3, verse: 14 },
+        end: { chapter: 3, verse: 21 }
+      },
+      role: 'primary',
+      source: 'operator',
+      reviewStatus: 'confirmed',
+      enteredText: 'Ephesians 3:14-21',
+      sourceId: null,
+      sectionId: null,
+      startOffset: null,
+      endOffset: null
+    }],
+    media: [],
+    publication: {
+      status: 'draft',
+      visibility: 'private',
+      publishedAt: null,
+      canonicalUrl: null
+    }
+  };
+  if (body !== null) document.body = body;
+  return document;
+}
+
+function portableReviewedBody() {
+  return [{
+    id: 'portable-manuscript-foundation-en',
+    kind: 'manuscript',
+    language: 'en',
+    sourceId: null,
+    sectionId: 'foundation',
+    text: 'The full reviewed sermon manuscript travels with its exact portable pin.'
+  }, {
+    id: 'portable-slide-notes-foundation-en',
+    kind: 'slide-notes',
+    language: 'en',
+    sourceId: null,
+    sectionId: 'foundation',
+    text: 'Reviewed slide notes remain the second ordered body entry.'
+  }];
 }
 
 function passage() {
@@ -177,6 +380,22 @@ async function createPortableFixture(t, options = {}) {
     lyricsPresetId: 'song-lyrics',
     operatorNotes: ''
   }, { now: NOW });
+  const pinnedSermon = addSermonResource(project, sermonDocument(
+    'The Prayer That Transforms the Church',
+    { body: portableReviewedBody() }
+  ), {
+    provider: 'local-sermon-library',
+    itemId: 'portable-prayer-sermon'
+  });
+  project = pinnedSermon.project;
+  project = addGroupItem(project, {
+    id: 'portable-sermon-group',
+    title: 'Sermon',
+    groupKind: 'sermon',
+    sermonResourceId: pinnedSermon.resourceId,
+    sermonSectionId: 'foundation',
+    now: NOW
+  });
   project = addBibleItem(project, {
     id: 'portable-bible',
     passagesByChannel: Object.fromEntries(project.channelIds.map(channelId => [channelId, passage()])),
@@ -230,7 +449,10 @@ test('a song, pinned Bible passage, and picture round-trip offline through one v
   assert.equal(imported.imported, true);
   assert.equal(imported.forked, false);
   assert.equal(imported.project.id, fixture.saved.project.id);
-  assert.equal(imported.project.resources[Object.keys(imported.project.resources)[0]].document.title, 'Portable Grace');
+  assert.equal(
+    Object.values(imported.project.resources).find(resource => resource.kind === 'song').document.title,
+    'Portable Grace'
+  );
   assert.equal(imported.project.items['portable-bible'].passagesByChannel.primary.verses[0].text, 'Pinned portable Bible text.');
   assert.equal(compileServiceProject(imported.project).cueIds.length, 4);
   const resolved = await targetStore.resolveAssetPath(imported.project.id, imported.revisionId, fixture.asset.id);
@@ -293,6 +515,112 @@ test('portable import adds pinned songs to the editable library and repeated imp
   assert.equal((await songLibrary.list()).total, 1);
 });
 
+test('portable import hydrates an exact pinned sermon revision and repeated import is a no-op', async t => {
+  const fixture = await createPortableFixture(t);
+  const portableSermon = Object.values(fixture.saved.project.resources)
+    .find(resource => resource.kind === 'sermon');
+  const exported = await new ServiceProjectExchange({ projectStore: fixture.store }).exportBundle(
+    fixture.saved.project.id,
+    fixture.saved.revisionId
+  );
+  const targetStore = new ServiceProjectStore({
+    rootPath: await tempDirectory(t, 'syncshow-exchange-sermon-project-'),
+    imageInspector: async () => IMAGE_METADATA
+  });
+  const sermonLibrary = new LocalSermonLibrary({
+    rootPath: await tempDirectory(t, 'syncshow-exchange-sermon-library-'),
+    clock: () => new Date('2026-07-27T12:00:00.000Z')
+  });
+  const exchange = new ServiceProjectExchange({
+    projectStore: targetStore,
+    sermonLibrary,
+    appVersion: '1.4.0-test'
+  });
+
+  const imported = await exchange.importBundle(exported.buffer);
+  assert.deepEqual(imported.sermonLibrary, {
+    available: true,
+    discovered: 1,
+    added: 1,
+    unchanged: 0,
+    conflicts: 0,
+    failed: 0,
+    warnings: [],
+    omittedWarnings: 0
+  });
+  const editable = await sermonLibrary.read('portable-prayer-sermon');
+  const importedSermon = Object.values(imported.project.resources)
+    .find(resource => resource.kind === 'sermon');
+  assert.equal(editable.revision, portableSermon.sha256);
+  assert.equal(importedSermon.sha256, portableSermon.sha256);
+  assert.equal(editable.sermon.titles.en, 'The Prayer That Transforms the Church');
+  assert.equal(editable.sermon.outline[0].id, 'foundation');
+  assert.deepEqual(editable.sermon.body, portableReviewedBody());
+  assert.deepEqual(importedSermon.document.body, portableReviewedBody());
+  assert.deepEqual(portableSermon.document.body, portableReviewedBody());
+  const firstUpdatedAt = editable.updatedAt;
+
+  const repeated = await exchange.importBundle(exported.buffer);
+  assert.equal(repeated.project.id, imported.project.id);
+  assert.deepEqual(repeated.sermonLibrary, {
+    available: true,
+    discovered: 1,
+    added: 0,
+    unchanged: 1,
+    conflicts: 0,
+    failed: 0,
+    warnings: [],
+    omittedWarnings: 0
+  });
+  const afterRepeat = await sermonLibrary.read('portable-prayer-sermon');
+  assert.equal(afterRepeat.revision, portableSermon.sha256);
+  assert.equal(afterRepeat.updatedAt, firstUpdatedAt);
+  assert.equal((await sermonLibrary.list()).total, 1);
+});
+
+test('portable sermon conflicts preserve the local current revision and imported exact pin', async t => {
+  const fixture = await createPortableFixture(t);
+  const portableSermon = Object.values(fixture.saved.project.resources)
+    .find(resource => resource.kind === 'sermon');
+  const exported = await new ServiceProjectExchange({ projectStore: fixture.store }).exportBundle(
+    fixture.saved.project.id,
+    fixture.saved.revisionId
+  );
+  const targetStore = new ServiceProjectStore({
+    rootPath: await tempDirectory(t, 'syncshow-exchange-sermon-conflict-project-'),
+    imageInspector: async () => IMAGE_METADATA
+  });
+  const sermonLibrary = new LocalSermonLibrary({
+    rootPath: await tempDirectory(t, 'syncshow-exchange-sermon-conflict-library-')
+  });
+  const local = await sermonLibrary.saveDocument(sermonDocument('Keep This Local Sermon'));
+  const exchange = new ServiceProjectExchange({
+    projectStore: targetStore,
+    sermonLibrary,
+    appVersion: '1.4.0-test'
+  });
+
+  const imported = await exchange.importBundle(exported.buffer);
+  assert.equal(imported.imported, true);
+  assert.equal(imported.sermonLibrary.discovered, 1);
+  assert.equal(imported.sermonLibrary.added, 0);
+  assert.equal(imported.sermonLibrary.unchanged, 0);
+  assert.equal(imported.sermonLibrary.conflicts, 1);
+  assert.equal(imported.sermonLibrary.failed, 0);
+  assert.deepEqual(imported.sermonLibrary.warnings.map(warning => warning.code), [
+    'PORTABLE_SERMON_CONFLICT'
+  ]);
+  const importedPin = Object.values(imported.project.resources)
+    .find(resource => resource.kind === 'sermon');
+  assert.equal(importedPin.sha256, portableSermon.sha256);
+  assert.equal(importedPin.document.titles.en, 'The Prayer That Transforms the Church');
+
+  const preserved = await sermonLibrary.read('portable-prayer-sermon');
+  assert.equal(preserved.revision, local.revision);
+  assert.notEqual(preserved.revision, portableSermon.sha256);
+  assert.equal(preserved.sermon.titles.en, 'Keep This Local Sermon');
+});
+
 test('portable song conflicts preserve both the imported project and the existing library song', async t => {
   const fixture = await createPortableFixture(t);
   const exported = await new ServiceProjectExchange({ projectStore: fixture.store }).exportBundle(
@@ -323,7 +651,10 @@ test('portable song conflicts preserve both the imported project and the existin
 
   const imported = await exchange.importBundle(exported.buffer);
   assert.equal(imported.imported, true);
-  assert.equal(imported.project.resources[Object.keys(imported.project.resources)[0]].document.title, 'Portable Grace');
+  assert.equal(
+    Object.values(imported.project.resources).find(resource => resource.kind === 'song').document.title,
+    'Portable Grace'
+  );
   assert.equal((await targetStore.list()).total, 1);
   assert.equal(imported.songLibrary.discovered, 1);
   assert.equal(imported.songLibrary.added, 0);

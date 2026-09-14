@@ -6,6 +6,7 @@
 const state = {
   workflowStage: 'load',
   presentations: {},
+  presentationConversionRecovery: {},
   profile: null,
   profileDraft: null,
   profileDirty: false,
@@ -18,16 +19,35 @@ const state = {
   activeLaunchPlan: null,
   showState: null,
   showActionRequest: 0,
+  showEndSessionBusy: false,
+  cueNavigationBusy: false,
+  volunteerControlBusy: false,
   isStarting: false,
   isApplyingSettings: false,
   requireDisplayReassignment: false,
   friendlyMode: true,
   advancedWarningAcknowledged: false,
   advancedWarningAction: null,
+  settingsTab: 'community',
+  prepareMode: 'community',
+  loadMode: 'syncshow',
+  loadLocalServices: {
+    items: [],
+    busy: false,
+    error: null
+  },
+  prepareAddTab: 'songs',
   cachedPresentations: null,
   cachedRestorePlan: null,
   restoreGroupId: null,
   startAttempt: null,
+  serviceHandoff: null,
+  preparedServiceRestore: { status: 'none' },
+  preparedServiceDateConfirmations: new Set(),
+  postShowOutcome: null,
+  showHandoffBusy: false,
+  showHandoffMode: null,
+  postShowPowerPointHandoff: null,
   // Per-service output choices are intentionally renderer-memory only. They
   // never flow back into the saved venue profile.
   serviceOutputDecisions: {},
@@ -42,6 +62,8 @@ const state = {
     scanning: false,
     loading: false,
     error: null,
+    conversionError: null,
+    conversionFailedRoleIds: [],
     folderChangedSinceLoad: false,
     staleRoleIds: [],
     scanVersion: 0,
@@ -57,14 +79,27 @@ const state = {
   },
   community: {
     status: null,
+    plannerOpen: false,
+    plannerBusy: false,
+    plannerError: null,
     authorizationId: null,
     busy: false,
     syncing: false,
+    sermonSyncing: false,
     error: null,
     lastSync: null,
+    lastSermonSync: null,
     pollGeneration: 0,
     approvalActionBusy: false,
     approvalActionMessage: ''
+  },
+  sermonStorage: {
+    summary: null,
+    checking: false,
+    scheduling: false,
+    scheduled: false,
+    error: null,
+    actionMessage: ''
   },
   bible: {
     query: '',
@@ -97,6 +132,27 @@ function parseIntegerOr(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizeCommunityServerAddress(value) {
+  const entered = String(value || '').trim();
+  if (!entered) throw new TypeError('Community server address is required');
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(entered)
+    ? entered
+    : `https://${entered}`;
+  const parsed = new URL(candidate);
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const loopback = hostname === 'localhost'
+    || hostname === '::1'
+    || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+  if (parsed.protocol !== 'https:'
+    && !(parsed.protocol === 'http:' && loopback)) {
+    throw new TypeError('Community server address must use HTTPS');
+  }
+  if (parsed.username || parsed.password) {
+    throw new TypeError('Community server address must not include credentials');
+  }
+  return parsed.origin;
+}
+
 function setSelectValuePreservingCustomOption(select, value, formatLabel) {
   const normalizedValue = String(value);
   for (const option of [...select.options]) {
@@ -118,6 +174,13 @@ const elements = {
   btnStagePrepare: document.getElementById('btnStagePrepare'),
   btnStageLoad: document.getElementById('btnStageLoad'),
   btnStageShow: document.getElementById('btnStageShow'),
+  communityPrepareShell: document.getElementById('communityPrepareShell'),
+  legacyPrepareShell: document.getElementById('legacyPrepareShell'),
+  btnPrepareModeCommunity: document.getElementById('btnPrepareModeCommunity'),
+  btnPrepareModeLocal: document.getElementById('btnPrepareModeLocal'),
+  communityPlannerViewport: document.getElementById('communityPlannerViewport'),
+  communityPrepareHeading: document.getElementById('communityPrepareHeading'),
+  communityPrepareStatus: document.getElementById('communityPrepareStatus'),
   inputCards: document.getElementById('inputCards'),
   serviceFolderCard: document.getElementById('serviceFolderCard'),
   serviceFolderStateBadge: document.getElementById('serviceFolderStateBadge'),
@@ -164,12 +227,28 @@ const elements = {
   communityApprovalCode: document.getElementById('communityApprovalCode'),
   communityApprovalActionStatus: document.getElementById('communityApprovalActionStatus'),
   communityLastSyncSummary: document.getElementById('communityLastSyncSummary'),
+  communityLastSermonSyncSummary: document.getElementById('communityLastSermonSyncSummary'),
+  communitySongPublicLinkSummary: document.getElementById('communitySongPublicLinkSummary'),
+  communitySongPublicLinkBadge: document.getElementById('communitySongPublicLinkBadge'),
   btnConnectCommunity: document.getElementById('btnConnectCommunity'),
   btnCancelCommunityConnection: document.getElementById('btnCancelCommunityConnection'),
   btnOpenCommunityApproval: document.getElementById('btnOpenCommunityApproval'),
   btnCopyCommunityApprovalCode: document.getElementById('btnCopyCommunityApprovalCode'),
   btnDisconnectCommunity: document.getElementById('btnDisconnectCommunity'),
   btnSyncCommunitySongs: document.getElementById('btnSyncCommunitySongs'),
+  btnSyncCommunitySermons: document.getElementById('btnSyncCommunitySermons'),
+  sermonStorageBadge: document.getElementById('sermonStorageBadge'),
+  sermonStorageStatus: document.getElementById('sermonStorageStatus'),
+  sermonStorageStatusTitle: document.getElementById('sermonStorageStatusTitle'),
+  sermonStorageStatusDetail: document.getElementById('sermonStorageStatusDetail'),
+  sermonStorageSummary: document.getElementById('sermonStorageSummary'),
+  sermonStorageTotal: document.getElementById('sermonStorageTotal'),
+  sermonStorageProtected: document.getElementById('sermonStorageProtected'),
+  sermonStorageWaiting: document.getElementById('sermonStorageWaiting'),
+  sermonStorageEligible: document.getElementById('sermonStorageEligible'),
+  sermonStorageActionStatus: document.getElementById('sermonStorageActionStatus'),
+  btnCheckSermonStorage: document.getElementById('btnCheckSermonStorage'),
+  btnScheduleSermonStorageCleanup: document.getElementById('btnScheduleSermonStorageCleanup'),
   inputRoleSettingsList: document.getElementById('inputRoleSettingsList'),
   outputSettingsList: document.getElementById('outputSettingsList'),
   outputHealthSummary: document.getElementById('outputHealthSummary'),
@@ -177,6 +256,7 @@ const elements = {
   profileServiceFolder: document.getElementById('profileServiceFolder'),
   profileTimeZone: document.getElementById('profileTimeZone'),
   profileServiceDateOrder: document.getElementById('profileServiceDateOrder'),
+  profileShowControlMode: document.getElementById('profileShowControlMode'),
   btnChooseProfileServiceFolder: document.getElementById('btnChooseProfileServiceFolder'),
   profileEditorStatus: document.getElementById('profileEditorStatus'),
   btnAddInputRole: document.getElementById('btnAddInputRole'),
@@ -188,7 +268,31 @@ const elements = {
   fadeDuration: document.getElementById('fadeDuration'),
   syncMode: document.getElementById('syncMode'),
   friendlyMode: document.getElementById('friendlyMode'),
+  btnOpenCommunityServiceFromLoad: document.getElementById('btnOpenCommunityServiceFromLoad'),
+  btnImportSyncShowFileFromLoad: document.getElementById('btnImportSyncShowFileFromLoad'),
+  btnOpenPptxImportFromLoad: document.getElementById('btnOpenPptxImportFromLoad'),
+  loadModeTabs: Array.from(document.querySelectorAll('[data-load-tab]')),
+  loadModePanels: Array.from(document.querySelectorAll('[data-load-panel]')),
+  loadLocalServiceList: document.getElementById('loadLocalServiceList'),
+  btnRefreshLocalServices: document.getElementById('btnRefreshLocalServices'),
+  inputCardsHostLoad: document.getElementById('inputCardsHostLoad'),
+  inputCardsHostScreens: document.getElementById('inputCardsHostScreens'),
   loadAutoStatus: document.getElementById('loadAutoStatus'),
+  loadServiceHandoff: document.getElementById('loadServiceHandoff'),
+  loadServiceHandoffTitle: document.getElementById('loadServiceHandoffTitle'),
+  loadServiceHandoffSchedule: document.getElementById('loadServiceHandoffSchedule'),
+  loadServiceHandoffBadge: document.getElementById('loadServiceHandoffBadge'),
+  loadServiceHandoffNotes: document.getElementById('loadServiceHandoffNotes'),
+  loadServiceHandoffRunSheet: document.getElementById('loadServiceHandoffRunSheet'),
+  loadServiceHandoffTeam: document.getElementById('loadServiceHandoffTeam'),
+  loadServiceHandoffReview: document.getElementById('loadServiceHandoffReview'),
+  loadServiceReviewDetails: document.getElementById('loadServiceReviewDetails'),
+  btnEditLoadedService: document.getElementById('btnEditLoadedService'),
+  btnLoadedServiceScreens: document.getElementById('btnLoadedServiceScreens'),
+  adminSettingsTabs: Array.from(document.querySelectorAll('[data-settings-tab]')),
+  adminSettingsPanels: Array.from(document.querySelectorAll('[data-settings-panel]')),
+  prepareAddTabs: Array.from(document.querySelectorAll('[data-prepare-add-tab]')),
+  prepareAddPanels: Array.from(document.querySelectorAll('[data-prepare-add-panel]')),
   advancedSetupDetails: document.getElementById('advancedSetupDetails'),
   btnCloseAdminSettings: document.getElementById('btnCloseAdminSettings'),
   advancedWarningDialog: document.getElementById('advancedWarningDialog'),
@@ -271,9 +375,30 @@ const elements = {
   btnBackToSetup: document.getElementById('btnBackToSetup'),
   btnPrevSlide: document.getElementById('btnPrevSlide'),
   btnNextSlide: document.getElementById('btnNextSlide'),
+  volunteerControlBar: document.getElementById('volunteerControlBar'),
+  volunteerControlTitle: document.getElementById('volunteerControlTitle'),
+  volunteerControlDetail: document.getElementById('volunteerControlDetail'),
+  btnUnlockVolunteerControls: document.getElementById('btnUnlockVolunteerControls'),
+  btnLockVolunteerControls: document.getElementById('btnLockVolunteerControls'),
   showOutputState: document.getElementById('showOutputState'),
   showOutputStateTitle: document.getElementById('showOutputStateTitle'),
   showOutputStateDetail: document.getElementById('showOutputStateDetail'),
+  showCueContext: document.getElementById('showCueContext'),
+  showCueContextPath: document.getElementById('showCueContextPath'),
+  showCueContextTitle: document.getElementById('showCueContextTitle'),
+  showCueContextMeta: document.getElementById('showCueContextMeta'),
+  showCueContextNote: document.getElementById('showCueContextNote'),
+  showCueContextNext: document.getElementById('showCueContextNext'),
+  showHandoffDialog: document.getElementById('showHandoffDialog'),
+  showHandoffTitle: document.getElementById('showHandoffTitle'),
+  showHandoffDescription: document.getElementById('showHandoffDescription'),
+  showHandoffServiceTitle: document.getElementById('showHandoffServiceTitle'),
+  showHandoffServiceMeta: document.getElementById('showHandoffServiceMeta'),
+  showHandoffError: document.getElementById('showHandoffError'),
+  btnShowHandoffCompleted: document.getElementById('btnShowHandoffCompleted'),
+  btnShowHandoffFollowUp: document.getElementById('btnShowHandoffFollowUp'),
+  btnOpenShowSermonHandoff: document.getElementById('btnOpenShowSermonHandoff'),
+  btnCloseShowHandoff: document.getElementById('btnCloseShowHandoff'),
   
   // Panels
   preparePanel: document.getElementById('preparePanel'),
@@ -323,7 +448,7 @@ const elements = {
 const FALLBACK_ROLE_LABELS = {
   russian: 'Russian',
   english: 'English',
-  media: 'Media / Singers'
+  media: 'Stage-Facing Screen / Media'
 };
 
 const presentationElements = {};
@@ -334,8 +459,11 @@ let remoteExpiryInterval = null;
 let remoteDialogGeneration = 0;
 let remoteDialogOpener = null;
 let prepareController = null;
+let sharedServiceController = null;
 let communityPollTimer = null;
 let communityStatusUnsubscribe = null;
+let communityPlannerStateUnsubscribe = null;
+let communityPlannerLayoutFrame = null;
 
 function setTextIfChanged(element, value) {
   const text = String(value ?? '');
@@ -378,10 +506,23 @@ async function init() {
     prepareController = window.SyncShowPrepare.createController({
       api: window.api,
       onPublished: refreshPublishedProject,
-      onStatus: setStatus
+      onStatus: setStatus,
+      onProjectChanged: result => {
+        refreshLoadLocalServices();
+        return sharedServiceController?.projectChanged?.(result);
+      }
+    }).initialize();
+  }
+  if (window.SyncShowSharedServices?.createController && prepareController) {
+    sharedServiceController = window.SyncShowSharedServices.createController({
+      api: window.api,
+      prepareController,
+      onStatus: setStatus,
+      onLoaded: refreshPublishedProject
     }).initialize();
   }
   setupEventListeners();
+  renderPrivateSermonStorage();
   setWorkflowStage('load');
 
   // Establish the generic message first. More useful state discovered during
@@ -398,6 +539,9 @@ async function init() {
   if (typeof window.api.onShowStateChanged === 'function') {
     window.api.onShowStateChanged(handleShowStateChanged);
   }
+  if (typeof window.api.onShowRehearsalProgress === 'function') {
+    window.api.onShowRehearsalProgress(handleShowRehearsalProgress);
+  }
   if (typeof window.api.onRemoteStateChanged === 'function') {
     window.api.onRemoteStateChanged(handleRemoteStateChanged);
   }
@@ -413,11 +557,20 @@ async function init() {
     const unsubscribe = window.api.onCommunityStatus(handleCommunityStatusChanged);
     if (typeof unsubscribe === 'function') communityStatusUnsubscribe = unsubscribe;
   }
+  if (typeof window.api.onCommunityPlannerState === 'function') {
+    const unsubscribe = window.api.onCommunityPlannerState(
+      handleCommunityPlannerStateChanged
+    );
+    if (typeof unsubscribe === 'function') {
+      communityPlannerStateUnsubscribe = unsubscribe;
+    }
+  }
 
   // Register main-process listeners before requesting initial state so a
   // display-change notification cannot be lost during startup.
   await refreshPrivateDriveOAuthState();
   await refreshCommunityStatus();
+  await refreshCommunityPlannerState();
   await loadAppState();
   await refreshRemoteControl({ refreshBindings: true });
   await initializeServiceFolder();
@@ -429,12 +582,48 @@ function setupEventListeners() {
   elements.btnStagePrepare.addEventListener('click', () => navigateWorkflowStage('prepare'));
   elements.btnStageLoad.addEventListener('click', () => navigateWorkflowStage('load'));
   elements.btnStageShow.addEventListener('click', () => navigateWorkflowStage('show'));
+  elements.btnPrepareModeCommunity.addEventListener('click', () => activatePrepareMode('community'));
+  elements.btnPrepareModeLocal.addEventListener('click', () => activatePrepareMode('local'));
+  elements.btnOpenCommunityServiceFromLoad.addEventListener('click', async () => {
+    elements.btnOpenCommunityServiceFromLoad.disabled = true;
+    try {
+      const opened = await sharedServiceController?.open?.();
+      if (!opened) {
+        setStatus('Connect Heritage Community in Admin Settings to open a shared service');
+        openSettings('community');
+      }
+    } finally {
+      elements.btnOpenCommunityServiceFromLoad.disabled = false;
+    }
+  });
+  elements.btnImportSyncShowFileFromLoad.addEventListener('click', async () => {
+    await setWorkflowStage('prepare', { localTools: true });
+    await prepareController?.importProject?.();
+  });
+  elements.btnOpenPptxImportFromLoad.addEventListener('click', () => {
+    openSettings('google-drive');
+  });
+  elements.loadModeTabs.forEach(tab => {
+    tab.addEventListener('click', () => activateLoadMode(tab.dataset.loadTab));
+    tab.addEventListener('keydown', handleLoadModeKeydown);
+  });
+  elements.btnRefreshLocalServices.addEventListener('click', refreshLoadLocalServices);
+  elements.btnEditLoadedService.addEventListener('click', openLoadedServiceInPrepare);
+  elements.btnLoadedServiceScreens.addEventListener('click', () => openSettings('screens'));
 
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
   elements.btnIdentifyDisplays.addEventListener('click', identifyDisplays);
-  elements.btnOpenSettings.addEventListener('click', openSettings);
+  elements.btnOpenSettings.addEventListener('click', () => openSettings());
   elements.btnCloseAdminSettings.addEventListener('click', closeSettings);
+  elements.adminSettingsTabs.forEach(tab => {
+    tab.addEventListener('click', () => activateSettingsTab(tab.dataset.settingsTab));
+    tab.addEventListener('keydown', handleSettingsTabKeydown);
+  });
+  elements.prepareAddTabs.forEach(tab => {
+    tab.addEventListener('click', () => activatePrepareAddTab(tab.dataset.prepareAddTab));
+    tab.addEventListener('keydown', handlePrepareAddTabKeydown);
+  });
   elements.btnStartPresentation.addEventListener('click', startPresentation);
   elements.btnRestorePrevious.addEventListener('click', restoreCachedPresentations);
   elements.btnChooseServiceFolder.addEventListener('click', chooseAndLinkServiceFolder);
@@ -470,18 +659,40 @@ function setupEventListeners() {
   elements.btnCopyCommunityApprovalCode.addEventListener('click', copyCommunityApprovalCode);
   elements.btnDisconnectCommunity.addEventListener('click', disconnectCommunity);
   elements.btnSyncCommunitySongs.addEventListener('click', syncCommunitySongs);
+  elements.btnSyncCommunitySermons.addEventListener('click', syncCommunitySermons);
+  elements.btnCheckSermonStorage.addEventListener('click', checkPrivateSermonStorage);
+  elements.btnScheduleSermonStorageCleanup.addEventListener(
+    'click',
+    schedulePrivateSermonStorageCleanup
+  );
   elements.serviceSetSelect.addEventListener('change', () => {
     state.serviceFolder.selectedSetId = elements.serviceSetSelect.value || null;
     renderServiceFolder();
   });
   elements.serviceFolderDate.addEventListener('change', () => {
     state.serviceFolder.requestedDate = elements.serviceFolderDate.value;
+    recheckLoadedPresentationDates();
+    renderServiceFolder();
+    checkReadyState();
     if (hasConfiguredServiceSource()) scanLinkedServiceFolder({ reason: 'date' });
   });
   elements.btnShowDisplays.addEventListener('click', showDisplays);
   elements.btnClearDisplays.addEventListener('click', clearDisplays);
   elements.btnStopDisplays.addEventListener('click', stopDisplays);
   elements.btnBackToSetup.addEventListener('click', () => backToSetup('load'));
+  elements.btnShowHandoffCompleted.addEventListener(
+    'click',
+    completeAndOpenPostShowSermonHandoff
+  );
+  elements.btnShowHandoffFollowUp.addEventListener('click', () =>
+    savePostShowPlanningStatus('needs-follow-up')
+  );
+  elements.btnOpenShowSermonHandoff.addEventListener('click', openPostShowSermonHandoff);
+  elements.btnCloseShowHandoff.addEventListener('click', closeShowHandoffDialog);
+  elements.showHandoffDialog.addEventListener('cancel', event => {
+    event.preventDefault();
+    if (!state.showHandoffBusy) closeShowHandoffDialog();
+  });
   
   // Fade duration change (can be changed while presenting)
   elements.fadeDuration.addEventListener('change', handleFadeDurationChange);
@@ -505,7 +716,16 @@ function setupEventListeners() {
     state.profileDraft.serviceDateOrder = elements.profileServiceDateOrder.value;
     markProfileDirty('Filename date order changed in the draft. Save to apply it to folder matching and warnings.');
   });
-  elements.btnChooseProfileServiceFolder.addEventListener('click', chooseProfileServiceFolder);
+  elements.profileShowControlMode.addEventListener('change', () => {
+    if (!state.profileDraft) return;
+    state.profileDraft.operator.showControlMode = elements.profileShowControlMode.value;
+    markProfileDirty(
+      'Show handoff controls changed in the draft. Save to apply them to the next Show.'
+    );
+  });
+  elements.btnChooseProfileServiceFolder.addEventListener('click', () => {
+    activateSettingsTab('google-drive', { focusTab: true });
+  });
   elements.btnAddInputRole.addEventListener('click', addInputRoleDraft);
   elements.btnAddOutput.addEventListener('click', addOutputDraft);
   elements.btnResetProfileDraft.addEventListener('click', resetProfileDraft);
@@ -546,6 +766,8 @@ function setupEventListeners() {
     elements.btnOpenSettings.focus();
   });
   window.addEventListener('beforeunload', disposeCommunityConnectionUi);
+  window.addEventListener('resize', scheduleCommunityPlannerLayout);
+  window.addEventListener('scroll', scheduleCommunityPlannerLayout, true);
 
   elements.btnOpenBible.addEventListener('click', openBibleDialog);
   elements.btnCloseBible.addEventListener('click', closeBibleDialog);
@@ -581,7 +803,15 @@ function setupEventListeners() {
 
   // Navigation
   elements.btnPrevSlide.addEventListener('click', () => navigateSlide(-1));
-  elements.btnNextSlide.addEventListener('click', () => navigateSlide(1));
+  elements.btnNextSlide.addEventListener('click', () => navigateSlide(1, 'right'));
+  elements.btnUnlockVolunteerControls.addEventListener(
+    'click',
+    unlockVolunteerControls
+  );
+  elements.btnLockVolunteerControls.addEventListener(
+    'click',
+    lockVolunteerControls
+  );
   
   // Keyboard shortcuts (as backup for global shortcuts)
   document.addEventListener('keydown', handleKeyboard);
@@ -640,7 +870,511 @@ function setupEventListeners() {
   });
 }
 
-function openSettings() {
+function storageBytesLabel(value) {
+  if (!Number.isSafeInteger(value) || value < 0) return 'Unknown size';
+  if (value < 1024) return `${value.toLocaleString()} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let amount = value;
+  let unit = 'B';
+  for (const candidate of units) {
+    amount /= 1024;
+    unit = candidate;
+    if (amount < 1024 || candidate === units.at(-1)) break;
+  }
+  return `${new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: amount < 10 ? 1 : 0
+  }).format(amount)} ${unit}`;
+}
+
+function storageCountAndBytes(count, bytes) {
+  const files = `${count.toLocaleString()} ${count === 1 ? 'file' : 'files'}`;
+  return `${files} · ${storageBytesLabel(bytes)}`;
+}
+
+function normalizeSermonStorageSummary(value) {
+  const countFields = [
+    'objectCount',
+    'objectBytes',
+    'referencedObjectCount',
+    'referencedBytes',
+    'unreferencedObjectCount',
+    'unreferencedBytes',
+    'waitingObjectCount',
+    'waitingBytes',
+    'eligibleObjectCount',
+    'eligibleBytes'
+  ];
+  if (
+    !value
+    || typeof value !== 'object'
+    || Array.isArray(value)
+    || value.schemaVersion !== 1
+    || !Number.isSafeInteger(value.retentionDays)
+    || value.retentionDays < 30
+    || value.retentionDays > 3650
+    || typeof value.auditedAt !== 'string'
+    || !Number.isFinite(Date.parse(value.auditedAt))
+    || !/^[a-f0-9]{64}$/.test(value.candidateHash || '')
+    || countFields.some(field => (
+      !Number.isSafeInteger(value[field]) || value[field] < 0
+    ))
+    || value.objectCount
+      !== value.referencedObjectCount + value.unreferencedObjectCount
+    || value.objectBytes !== value.referencedBytes + value.unreferencedBytes
+    || value.unreferencedObjectCount
+      !== value.waitingObjectCount + value.eligibleObjectCount
+    || value.unreferencedBytes !== value.waitingBytes + value.eligibleBytes
+    || (value.eligibleObjectCount === 0) !== (value.eligibleBytes === 0)
+  ) {
+    throw new Error('SyncShow returned an invalid private sermon storage summary.');
+  }
+  const startup = value.startupCleanup;
+  const startupCleanup = startup && typeof startup === 'object'
+    && !Array.isArray(startup)
+    && typeof startup.status === 'string'
+    && Number.isSafeInteger(startup.deletedObjectCount)
+    && startup.deletedObjectCount >= 0
+    && Number.isSafeInteger(startup.deletedBytes)
+    && startup.deletedBytes >= 0
+    ? {
+        status: startup.status,
+        causeCode: typeof startup.causeCode === 'string'
+          && /^[A-Z][A-Z0-9_]{0,79}$/.test(startup.causeCode)
+          ? startup.causeCode
+          : null,
+        deletedObjectCount: startup.deletedObjectCount,
+        deletedBytes: startup.deletedBytes
+      }
+    : null;
+  return {
+    schemaVersion: 1,
+    auditedAt: new Date(value.auditedAt).toISOString(),
+    retentionDays: value.retentionDays,
+    objectCount: value.objectCount,
+    objectBytes: value.objectBytes,
+    referencedObjectCount: value.referencedObjectCount,
+    referencedBytes: value.referencedBytes,
+    unreferencedObjectCount: value.unreferencedObjectCount,
+    unreferencedBytes: value.unreferencedBytes,
+    waitingObjectCount: value.waitingObjectCount,
+    waitingBytes: value.waitingBytes,
+    eligibleObjectCount: value.eligibleObjectCount,
+    eligibleBytes: value.eligibleBytes,
+    candidateHash: value.candidateHash,
+    startupCleanup
+  };
+}
+
+function renderPrivateSermonStorage() {
+  const storage = state.sermonStorage;
+  const summary = storage.summary;
+  elements.btnCheckSermonStorage.disabled =
+    storage.checking || storage.scheduling || storage.scheduled;
+  elements.btnCheckSermonStorage.textContent = storage.scheduled
+    ? 'Restart to recheck storage'
+    : storage.checking
+      ? 'Checking private storage…'
+      : 'Check private sermon storage';
+
+  if (!summary) {
+    elements.sermonStorageSummary.hidden = true;
+    elements.btnScheduleSermonStorageCleanup.hidden = true;
+    elements.btnScheduleSermonStorageCleanup.disabled = true;
+    if (storage.checking) {
+      elements.sermonStorageBadge.textContent = 'Checking…';
+      elements.sermonStorageStatus.dataset.kind = 'idle';
+      elements.sermonStorageStatusTitle.textContent = 'Checking saved references';
+      elements.sermonStorageStatusDetail.textContent =
+        'SyncShow is verifying private source objects and every saved sermon, service-plan, and extraction reference.';
+      elements.sermonStorageActionStatus.textContent =
+        'This is a read-only check. No files are being removed.';
+    } else if (storage.error) {
+      elements.sermonStorageBadge.textContent = 'Check stopped';
+      elements.sermonStorageStatus.dataset.kind = 'error';
+      elements.sermonStorageStatusTitle.textContent = 'Storage was left unchanged';
+      elements.sermonStorageStatusDetail.textContent = storage.error;
+      elements.sermonStorageActionStatus.textContent =
+        'Run the check again after resolving the storage warning. Removal remains unavailable.';
+    } else {
+      elements.sermonStorageBadge.textContent = 'Not checked';
+      elements.sermonStorageStatus.dataset.kind = 'idle';
+      elements.sermonStorageStatusTitle.textContent = 'Storage has not been checked';
+      elements.sermonStorageStatusDetail.textContent =
+        'Run a read-only check to count protected files and files no longer referenced.';
+      elements.sermonStorageActionStatus.textContent =
+        'The check never removes files. Unreferenced files must remain continuously unreferenced for at least 90 days before removal can be offered.';
+    }
+    return;
+  }
+
+  elements.sermonStorageSummary.hidden = false;
+  elements.sermonStorageTotal.textContent = storageCountAndBytes(
+    summary.objectCount,
+    summary.objectBytes
+  );
+  elements.sermonStorageProtected.textContent = storageCountAndBytes(
+    summary.referencedObjectCount,
+    summary.referencedBytes
+  );
+  elements.sermonStorageWaiting.textContent = storageCountAndBytes(
+    summary.waitingObjectCount,
+    summary.waitingBytes
+  );
+  elements.sermonStorageEligible.textContent = storageCountAndBytes(
+    summary.eligibleObjectCount,
+    summary.eligibleBytes
+  );
+
+  const eligible = summary.eligibleObjectCount > 0
+    && summary.eligibleBytes > 0
+    && /^[a-f0-9]{64}$/.test(summary.candidateHash);
+  elements.btnScheduleSermonStorageCleanup.hidden = !eligible || storage.scheduled;
+  elements.btnScheduleSermonStorageCleanup.disabled =
+    !eligible || storage.checking || storage.scheduling || storage.scheduled;
+  elements.btnScheduleSermonStorageCleanup.textContent = storage.scheduling
+    ? 'Scheduling for restart…'
+    : 'Remove after restart';
+
+  if (storage.scheduled) {
+    elements.sermonStorageBadge.textContent = 'Restart required';
+    elements.sermonStorageStatus.dataset.kind = 'attention';
+    elements.sermonStorageStatusTitle.textContent = 'Removal is scheduled';
+    elements.sermonStorageStatusDetail.textContent =
+      'Nothing was removed while SyncShow was open. The exact file set will be checked again during the next startup.';
+    elements.sermonStorageActionStatus.textContent = storage.actionMessage;
+    return;
+  }
+
+  if (eligible) {
+    elements.sermonStorageBadge.textContent = 'Review';
+    elements.sermonStorageStatus.dataset.kind = 'attention';
+    elements.sermonStorageStatusTitle.textContent =
+      `${summary.eligibleObjectCount.toLocaleString()} ${summary.eligibleObjectCount === 1 ? 'file is' : 'files are'} eligible`;
+    elements.sermonStorageStatusDetail.textContent =
+      `These files remained unreferenced through the ${summary.retentionDays}-day wait. Review the count before scheduling restart-only removal.`;
+    elements.sermonStorageActionStatus.textContent = storage.actionMessage
+      || 'Remove after restart schedules a second full safety check. Nothing is deleted from the running app.';
+    return;
+  }
+
+  elements.sermonStorageBadge.textContent = 'Checked';
+  elements.sermonStorageStatus.dataset.kind = 'ready';
+  elements.sermonStorageStatusTitle.textContent = 'No files are ready for removal';
+  elements.sermonStorageStatusDetail.textContent = summary.waitingObjectCount > 0
+    ? `${summary.waitingObjectCount.toLocaleString()} unreferenced ${summary.waitingObjectCount === 1 ? 'file is' : 'files are'} still inside the ${summary.retentionDays}-day protection period.`
+    : 'Every private source file is still protected by saved history.';
+  if (storage.actionMessage) {
+    elements.sermonStorageActionStatus.textContent = storage.actionMessage;
+  } else if (
+    summary.startupCleanup?.status === 'applied'
+    && summary.startupCleanup.deletedObjectCount > 0
+  ) {
+    elements.sermonStorageActionStatus.textContent =
+      `${storageCountAndBytes(
+        summary.startupCleanup.deletedObjectCount,
+        summary.startupCleanup.deletedBytes
+      )} from a previously confirmed plan were removed safely during this startup.`;
+  } else if (summary.startupCleanup?.status === 'safety-check-failed') {
+    elements.sermonStorageActionStatus.textContent =
+      'A previously scheduled startup cleanup stopped at a safety check. This read-only check succeeded, but no files were removed.';
+  } else {
+    elements.sermonStorageActionStatus.textContent =
+      'No removal is available. Run this check again later if storage use becomes a concern.';
+  }
+}
+
+async function checkPrivateSermonStorage() {
+  if (state.sermonStorage.checking || state.sermonStorage.scheduling) return;
+  state.sermonStorage.checking = true;
+  state.sermonStorage.error = null;
+  state.sermonStorage.actionMessage = '';
+  renderPrivateSermonStorage();
+  try {
+    const result = await window.api.checkPrivateSermonStorage();
+    state.sermonStorage.summary = normalizeSermonStorageSummary(result);
+  } catch (error) {
+    state.sermonStorage.summary = null;
+    state.sermonStorage.error = operatorErrorMessage(
+      error,
+      'SyncShow could not safely check private sermon storage. No files were removed.'
+    );
+  } finally {
+    state.sermonStorage.checking = false;
+    renderPrivateSermonStorage();
+  }
+}
+
+async function schedulePrivateSermonStorageCleanup() {
+  const summary = state.sermonStorage.summary;
+  if (
+    state.sermonStorage.checking
+    || state.sermonStorage.scheduling
+    || state.sermonStorage.scheduled
+    || !summary
+    || summary.eligibleObjectCount < 1
+    || summary.eligibleBytes < 1
+    || !/^[a-f0-9]{64}$/.test(summary.candidateHash)
+  ) {
+    return;
+  }
+  const quantity = storageCountAndBytes(
+    summary.eligibleObjectCount,
+    summary.eligibleBytes
+  );
+  const confirmed = window.confirm(
+    `Schedule ${quantity} for removal after SyncShow restarts? Nothing will be removed now. On the next startup, SyncShow will recover pending work and recheck the exact file set before deleting anything.`
+  );
+  if (!confirmed) return;
+
+  state.sermonStorage.scheduling = true;
+  state.sermonStorage.error = null;
+  state.sermonStorage.actionMessage = '';
+  renderPrivateSermonStorage();
+  try {
+    const result = await window.api.schedulePrivateSermonStorageCleanup({
+      candidateHash: summary.candidateHash,
+      confirmed: true
+    });
+    if (
+      !result
+      || result.scheduled !== true
+      || result.requiresRestart !== true
+      || result.candidateHash !== summary.candidateHash
+      || result.eligibleObjectCount !== summary.eligibleObjectCount
+      || result.eligibleBytes !== summary.eligibleBytes
+    ) {
+      throw new Error('SyncShow did not confirm the restart cleanup plan.');
+    }
+    state.sermonStorage.scheduled = true;
+    state.sermonStorage.actionMessage =
+      `${quantity} ${summary.eligibleObjectCount === 1 ? 'is' : 'are'} scheduled for the next startup. Nothing was removed while SyncShow remained open.`;
+  } catch (error) {
+    state.sermonStorage.summary = null;
+    state.sermonStorage.error = operatorErrorMessage(
+      error,
+      'The restart cleanup could not be scheduled. No files were removed.'
+    );
+  } finally {
+    state.sermonStorage.scheduling = false;
+    renderPrivateSermonStorage();
+  }
+}
+
+function activatePrepareAddTab(tabId, { focusTab = false } = {}) {
+  const requestedTab = typeof tabId === 'string' ? tabId : '';
+  const activeTab = elements.prepareAddTabs.find(
+    tab => tab.dataset.prepareAddTab === requestedTab
+  ) || elements.prepareAddTabs[0];
+  if (!activeTab) return;
+
+  const activeTabId = activeTab.dataset.prepareAddTab;
+  state.prepareAddTab = activeTabId;
+  elements.prepareAddTabs.forEach(tab => {
+    const selected = tab === activeTab;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  elements.prepareAddPanels.forEach(panel => {
+    panel.hidden = panel.dataset.prepareAddPanel !== activeTabId;
+  });
+  if (focusTab) activeTab.focus();
+}
+
+function handlePrepareAddTabKeydown(event) {
+  const tabs = elements.prepareAddTabs;
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex < 0) return;
+
+  let nextIndex = currentIndex;
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = tabs.length - 1;
+  else return;
+
+  event.preventDefault();
+  activatePrepareAddTab(tabs[nextIndex].dataset.prepareAddTab, { focusTab: true });
+}
+
+function activateLoadMode(mode, { focusTab = false } = {}) {
+  const activeTab = elements.loadModeTabs.find(tab => tab.dataset.loadTab === mode)
+    || elements.loadModeTabs[0];
+  if (!activeTab) return;
+  state.loadMode = activeTab.dataset.loadTab;
+  elements.loadModeTabs.forEach(tab => {
+    const selected = tab === activeTab;
+    tab.classList.toggle('is-active', selected);
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  elements.loadModePanels.forEach(panel => {
+    panel.hidden = panel.dataset.loadPanel !== state.loadMode;
+  });
+  placeServiceInputCards();
+  if (state.loadMode === 'syncshow') refreshLoadLocalServices();
+  if (focusTab) activeTab.focus();
+}
+
+function handleLoadModeKeydown(event) {
+  const currentIndex = elements.loadModeTabs.indexOf(event.currentTarget);
+  if (currentIndex < 0) return;
+  let nextIndex = currentIndex;
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % elements.loadModeTabs.length;
+  else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + elements.loadModeTabs.length) % elements.loadModeTabs.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = elements.loadModeTabs.length - 1;
+  else return;
+  event.preventDefault();
+  activateLoadMode(elements.loadModeTabs[nextIndex].dataset.loadTab, { focusTab: true });
+}
+
+function renderLoadLocalServices() {
+  elements.loadLocalServiceList.replaceChildren();
+  if (state.loadLocalServices.busy) {
+    elements.loadLocalServiceList.appendChild(
+      createElement('p', 'local-service-empty', 'Loading saved services…')
+    );
+    return;
+  }
+  if (state.loadLocalServices.error) {
+    elements.loadLocalServiceList.appendChild(
+      createElement('p', 'local-service-empty is-error', state.loadLocalServices.error)
+    );
+    return;
+  }
+  if (state.loadLocalServices.items.length === 0) {
+    elements.loadLocalServiceList.appendChild(
+      createElement('p', 'local-service-empty', 'No SyncShow services are saved here yet. Import a file or start in Prepare.')
+    );
+    return;
+  }
+  for (const project of state.loadLocalServices.items) {
+    const row = createElement('div', 'local-service-row');
+    row.dataset.projectId = project.id;
+    row.setAttribute('role', 'listitem');
+    const copy = createElement('span', 'local-service-row-copy');
+    copy.append(
+      createElement('strong', '', project.title || 'Untitled service'),
+      createElement(
+        'small',
+        '',
+        [
+          formatServiceDate(project.serviceDate),
+          `version ${project.revision}`,
+          project.planning?.status ? planningStatusLabel(project.planning.status) : 'Saved locally'
+        ].filter(Boolean).join(' · ')
+      )
+    );
+    const actions = createElement('span', 'local-service-row-actions');
+    const loadButton = createElement('button', 'btn btn-primary btn-compact', 'Load');
+    loadButton.type = 'button';
+    loadButton.addEventListener('click', () => loadLocalService(project, loadButton));
+    const editButton = createElement('button', 'btn btn-quiet btn-compact', 'Edit');
+    editButton.type = 'button';
+    editButton.addEventListener('click', () => openLocalServiceInPrepare(project.id));
+    actions.append(loadButton, editButton);
+    row.append(copy, actions);
+    elements.loadLocalServiceList.appendChild(row);
+  }
+}
+
+async function refreshLoadLocalServices() {
+  if (state.loadLocalServices.busy || typeof window.api?.listServiceProjects !== 'function') return;
+  state.loadLocalServices.busy = true;
+  state.loadLocalServices.error = null;
+  renderLoadLocalServices();
+  try {
+    const result = await window.api.listServiceProjects({
+      query: '',
+      pageSize: 8,
+      offset: 0
+    });
+    state.loadLocalServices.items = Array.isArray(result?.items) ? result.items : [];
+  } catch (error) {
+    state.loadLocalServices.items = [];
+    state.loadLocalServices.error = operatorErrorMessage(
+      error,
+      'Saved services could not be listed.'
+    );
+  } finally {
+    state.loadLocalServices.busy = false;
+    renderLoadLocalServices();
+  }
+}
+
+async function openLocalServiceInPrepare(projectId) {
+  await setWorkflowStage('prepare', { localTools: true });
+  await prepareController?.openProjectById?.(projectId);
+}
+
+async function loadLocalService(project, button) {
+  if (!project?.id || !project?.revisionId || button.disabled) return;
+  button.disabled = true;
+  const previousLabel = button.textContent;
+  button.textContent = 'Loading…';
+  setStatus(`Preparing ${project.title || 'saved service'} for offline Show…`);
+  try {
+    const result = await window.api.publishServiceProject({
+      projectId: project.id,
+      revisionId: project.revisionId
+    });
+    await refreshPublishedProject(result, { project });
+  } catch (error) {
+    console.error('[Load] Saved SyncShow service could not be loaded:', error);
+    setStatus(`Could not load ${project.title || 'that service'}: ${operatorErrorMessage(
+      error,
+      'Review it in Prepare and try again.'
+    )}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = previousLabel;
+  }
+}
+
+async function openLoadedServiceInPrepare() {
+  const projectId = state.serviceHandoff?.project?.id;
+  if (!projectId) return;
+  await openLocalServiceInPrepare(projectId);
+}
+
+function activateSettingsTab(tabId, { focusTab = false } = {}) {
+  const requestedTab = typeof tabId === 'string' ? tabId : '';
+  const activeTab = elements.adminSettingsTabs.find(
+    tab => tab.dataset.settingsTab === requestedTab
+  ) || elements.adminSettingsTabs[0];
+  if (!activeTab) return;
+
+  const activeTabId = activeTab.dataset.settingsTab;
+  state.settingsTab = activeTabId;
+  elements.adminSettingsTabs.forEach(tab => {
+    const selected = tab === activeTab;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  elements.adminSettingsPanels.forEach(panel => {
+    panel.hidden = panel.dataset.settingsPanel !== activeTabId;
+  });
+  if (focusTab) activeTab.focus();
+}
+
+function handleSettingsTabKeydown(event) {
+  const tabs = elements.adminSettingsTabs;
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex < 0) return;
+
+  let nextIndex = currentIndex;
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = tabs.length - 1;
+  else return;
+
+  event.preventDefault();
+  activateSettingsTab(tabs[nextIndex].dataset.settingsTab, { focusTab: true });
+}
+
+function openSettings(tabId = state.settingsTab) {
+  activateSettingsTab(tabId);
   refreshCommunityStatus();
   if (elements.advancedSetupDetails.open) return;
   if (!state.advancedWarningAcknowledged) {
@@ -745,7 +1479,10 @@ function updateWorkflowNavigationAvailability() {
 }
 
 function setWorkflowStage(stage) {
-  if (!['prepare', 'load', 'show'].includes(stage)) return;
+  const activationOptions = arguments[1] && typeof arguments[1] === 'object'
+    ? arguments[1]
+    : undefined;
+  if (!['prepare', 'load', 'show'].includes(stage)) return Promise.resolve(false);
   state.workflowStage = stage;
   for (const candidate of ['prepare', 'load', 'show']) {
     document.body.classList.toggle(`${candidate}-stage`, candidate === stage);
@@ -764,7 +1501,7 @@ function setWorkflowStage(stage) {
   }
 
   const stageLabels = {
-    prepare: { title: 'SyncShow — Prepare', subtitle: 'Build the service in order' },
+    prepare: { title: 'SyncShow — Prepare', subtitle: 'Plan the service' },
     load: { title: 'SyncShow — Load', subtitle: 'Load today’s service' },
     show: { title: 'SyncShow — Show', subtitle: 'Control the live service' }
   };
@@ -772,24 +1509,37 @@ function setWorkflowStage(stage) {
   elements.appSubtitle.textContent = stageLabels[stage].subtitle;
   updateWorkflowNavigationAvailability();
 
+  let activation = Promise.resolve(true);
   if (stage === 'prepare') {
-    prepareController?.activate().catch(error => {
-      console.error('[Prepare] Could not activate Prepare:', error);
-      setStatus(`Prepare could not open: ${error.message}`);
-    });
+    const requestedMode = activationOptions?.localTools === true
+      ? 'local'
+      : communityIsConnected()
+        ? state.prepareMode
+        : 'local';
+    activation = activatePrepareMode(requestedMode, activationOptions);
   } else if (stage === 'load') {
+    scheduleCommunityPlannerLayout();
     resumeServiceFolderScanOnLoad();
+    activateLoadMode(state.loadMode);
+  } else {
+    scheduleCommunityPlannerLayout();
   }
+  return activation;
 }
 
 async function navigateWorkflowStage(stage) {
-  if (stage === state.workflowStage) return;
+  if (stage === state.workflowStage) {
+    if (stage === 'prepare' && state.prepareMode === 'community') {
+      await openCommunityPrepare();
+    }
+    return;
+  }
   if (state.workflowStage === 'prepare' && prepareController?.isBusy?.()) {
     setStatus('Wait for the current Prepare change to finish before leaving this screen');
     return;
   }
   if (state.workflowStage === 'show' && (state.isPresenting || state.activeLaunchPlan)) {
-    setStatus('Use Back to Load to end the live Show safely');
+    setStatus('Use the Show finish action to end the live session safely');
     elements.btnBackToSetup.focus();
     return;
   }
@@ -816,6 +1566,10 @@ async function loadAppState() {
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
     state.displays = appState.displays;
+    applyServiceHandoff(appState.serviceHandoff);
+    state.preparedServiceRestore = appState.preparedServiceRestore || {
+      status: 'none'
+    };
     applyRuntimePresentationState(appState.presentations);
     if (appState.showState) handleShowStateChanged(appState.showState);
     renderInputCards();
@@ -827,8 +1581,29 @@ async function loadAppState() {
 
     // Check for cached presentations from previous session
     await checkForCachedPresentations();
+    renderPreparedServiceRestoreStatus();
   } catch (error) {
     console.error('Failed to load app state:', error);
+  }
+}
+
+function renderPreparedServiceRestoreStatus() {
+  const status = String(state.preparedServiceRestore?.status || 'none');
+  if (status === 'restored') {
+    const title = state.serviceHandoff?.project?.title || 'The prepared service';
+    setStatus(`${title} was restored and is ready in Load`);
+    return;
+  }
+  if (status === 'incompatible') {
+    setStatus(
+      'The prepared service was kept, but it was made for a different venue setup. Open that service in Prepare and choose Save & go to Load again.'
+    );
+    return;
+  }
+  if (status === 'corrupt') {
+    setStatus(
+      'The prepared service could not be verified. Open its saved project in Prepare and choose Save & go to Load again.'
+    );
   }
 }
 
@@ -866,13 +1641,353 @@ function applyRuntimePresentationState(presentations = {}, options = {}) {
   }
 }
 
+function applyServiceHandoff(rawHandoff) {
+  const previousKey = state.serviceHandoff
+    ? `${state.serviceHandoff.project.id}:${state.serviceHandoff.project.revisionId}`
+    : null;
+  if (rawHandoff === null || rawHandoff === undefined) {
+    state.serviceHandoff = null;
+  } else {
+    try {
+      const normalize = window.SyncShowServiceHandoff?.normalizeServiceHandoff;
+      if (typeof normalize !== 'function') {
+        throw new Error('Service handoff validation is unavailable.');
+      }
+      state.serviceHandoff = normalize(rawHandoff);
+    } catch (error) {
+      console.warn('[ServiceHandoff] Ignoring an invalid runtime handoff:', error);
+      state.serviceHandoff = null;
+    }
+  }
+  const nextKey = state.serviceHandoff
+    ? `${state.serviceHandoff.project.id}:${state.serviceHandoff.project.revisionId}`
+    : null;
+  if (previousKey !== nextKey) state.postShowOutcome = null;
+  renderLoadServiceHandoff();
+  renderShowCueContext();
+}
+
+function planningStatusLabel(status) {
+  return {
+    planning: 'Planning',
+    ready: 'Ready',
+    completed: 'Completed',
+    'needs-follow-up': 'Needs follow-up'
+  }[status] || 'Reviewed';
+}
+
+function formatServiceStartTime(value) {
+  const match = typeof value === 'string'
+    ? value.match(/^([01]\d|2[0-3]):([0-5]\d)$/)
+    : null;
+  if (!match) return '';
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function formatRunSheetDuration(value) {
+  if (!Number.isSafeInteger(value) || value < 0) return '';
+  if (value === 0) return '0 sec';
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  const seconds = value % 60;
+  return [
+    hours ? `${hours} hr` : '',
+    minutes ? `${minutes} min` : '',
+    seconds ? `${seconds} sec` : ''
+  ].filter(Boolean).join(' ');
+}
+
+function formatRunSheetClock(value) {
+  if (!value || typeof value.time !== 'string') return '';
+  const time = formatServiceStartTime(value.time.slice(0, 5));
+  if (!time) return '';
+  if (value.dayOffset === 1) return `${time} next day`;
+  if (Number.isSafeInteger(value.dayOffset) && value.dayOffset > 1) {
+    return `${time} · ${value.date}`;
+  }
+  return time;
+}
+
+function summarizeHandoffServing(rawServing) {
+  const assignments = Array.isArray(rawServing?.assignments)
+    ? rawServing.assignments
+    : [];
+  const filled = assignments.filter(assignment =>
+    ['assigned', 'confirmed'].includes(assignment.status));
+  const open = assignments.filter(assignment =>
+    assignment.status === 'open');
+  const declined = assignments.filter(assignment =>
+    assignment.status === 'declined');
+  const requiredOpen = [...open, ...declined].filter(assignment =>
+    assignment.required);
+  return {
+    assignments,
+    filled,
+    open,
+    declined,
+    requiredOpen
+  };
+}
+
+function runSheetLoadSummary(runSheet) {
+  if (!runSheet) return '';
+  if (!runSheet.complete) {
+    const enteredSeconds = runSheet.rows
+      .filter(row => row.depth === 0 && row.effectiveDurationSeconds !== null)
+      .reduce((total, row) => total + row.effectiveDurationSeconds, 0);
+    const entered = enteredSeconds > 0
+      ? `${formatRunSheetDuration(enteredSeconds)} entered`
+      : 'No durations entered';
+    const missing = runSheet.missingItemIds.length;
+    return `Run sheet: ${entered} · ${missing} ${
+      missing === 1 ? 'moment' : 'moments'
+    } untimed · finish unknown.`;
+  }
+  const parts = [
+    `Run sheet: ${formatRunSheetDuration(runSheet.totalDurationSeconds)}`,
+    `expected finish ${formatRunSheetClock(runSheet.expectedFinish)}`
+  ];
+  if (!runSheet.breakdownComplete) {
+    const count = runSheet.unestimatedItemIds.length;
+    parts.push(`${count} internal ${count === 1 ? 'moment' : 'moments'} untimed`);
+  }
+  if (runSheet.overruns.length > 0) {
+    const count = runSheet.overruns.length;
+    parts.push(`${count} ${count === 1 ? 'section is' : 'sections are'} over budget`);
+  }
+  return `${parts.join(' · ')}.`;
+}
+
+function servingLoadSummary(rawServing) {
+  const summary = summarizeHandoffServing(rawServing);
+  if (summary.assignments.length === 0) return '';
+  const counts = [
+    `${summary.filled.length} filled`,
+    `${summary.open.length} open`
+  ];
+  if (summary.requiredOpen.length > 0) {
+    counts.push(`${summary.requiredOpen.length} required open`);
+  }
+  if (summary.declined.length > 0) {
+    counts.push(`${summary.declined.length} declined`);
+  }
+  const people = summary.filled.slice(0, 4).map(assignment =>
+    `${assignment.role} — ${assignment.personName}`);
+  if (summary.filled.length > people.length) {
+    people.push(`+${summary.filled.length - people.length} more`);
+  }
+  const sentence = `Serving team: ${counts.join(' · ')}${
+    people.length > 0 ? `. ${people.join('; ')}` : ''
+  }`;
+  return /[.!?]$/u.test(sentence) ? sentence : `${sentence}.`;
+}
+
+function renderLoadServiceHandoff() {
+  const handoff = state.serviceHandoff;
+  elements.loadServiceHandoff.hidden = !handoff;
+  placeServiceInputCards();
+  if (!handoff) return;
+
+  const planning = handoff.planning;
+  const schedule = [
+    formatServiceDate(handoff.project.serviceDate),
+    planning?.startTime ? formatServiceStartTime(planning.startTime) : '',
+    `${handoff.cueIds.length} ${handoff.cueIds.length === 1 ? 'cue' : 'cues'}`,
+    `exact revision ${handoff.project.revision}`
+  ].filter(Boolean);
+  elements.loadServiceHandoffTitle.textContent = handoff.project.title;
+  elements.loadServiceHandoffSchedule.textContent = schedule.join(' · ');
+  elements.loadServiceHandoffBadge.textContent = planning
+    ? planningStatusLabel(state.postShowOutcome?.status || planning.status)
+    : 'Verified package';
+  elements.loadServiceHandoffNotes.hidden = !planning?.teamNotes;
+  elements.loadServiceHandoffNotes.textContent = planning?.teamNotes
+    ? `Team note: ${planning.teamNotes}`
+    : '';
+  let hasReviewDetails = Boolean(planning?.teamNotes);
+  if (elements.loadServiceHandoffRunSheet) {
+    const runSheetSummary = runSheetLoadSummary(handoff.runSheet);
+    elements.loadServiceHandoffRunSheet.hidden = !runSheetSummary;
+    elements.loadServiceHandoffRunSheet.textContent = runSheetSummary;
+    hasReviewDetails = hasReviewDetails || Boolean(runSheetSummary);
+  }
+  if (elements.loadServiceHandoffTeam) {
+    const teamSummary = servingLoadSummary(planning?.serving);
+    elements.loadServiceHandoffTeam.hidden = !teamSummary;
+    elements.loadServiceHandoffTeam.textContent = teamSummary;
+    hasReviewDetails = hasReviewDetails || Boolean(teamSummary);
+  }
+
+  const waivers = planning?.readinessWaivers || [];
+  const readinessSummary = waivers.length > 0
+    ? `Reviewed ${waivers.length} ${waivers.length === 1 ? 'exception' : 'exceptions'}: ${
+        waivers.map(waiver => waiver.reason).join(' · ')
+      }`
+    : '';
+  const outcomeSummary = state.postShowOutcome
+    ? ` After Show, the local plan was marked ${planningStatusLabel(
+        state.postShowOutcome.status
+      )} in a newer revision.`
+    : '';
+  const reviewText = `${readinessSummary}${outcomeSummary}`.trim();
+  elements.loadServiceHandoffReview.hidden = !reviewText;
+  elements.loadServiceHandoffReview.textContent = reviewText;
+  hasReviewDetails = hasReviewDetails || Boolean(reviewText);
+  elements.loadServiceReviewDetails.hidden = !hasReviewDetails;
+}
+
+function placeServiceInputCards() {
+  const preparedService = Boolean(state.serviceHandoff)
+    || Object.values(state.presentations).some(
+      presentation => presentation?.loaded && presentation?.source === 'prepared'
+    );
+  const loadingLegacyPptx = state.workflowStage === 'load'
+    && state.loadMode === 'pptx';
+  const target = preparedService && !loadingLegacyPptx
+    ? elements.inputCardsHostScreens
+    : elements.inputCardsHostLoad;
+  if (elements.inputCards.parentElement !== target) target.appendChild(elements.inputCards);
+  elements.inputCardsHostScreens.hidden = target !== elements.inputCardsHostScreens;
+  elements.inputCardsHostLoad.hidden = target !== elements.inputCardsHostLoad;
+}
+
+function handoffCueAt(index) {
+  if (!state.serviceHandoff || !Number.isInteger(index) || index < 0) return null;
+  const cueId = state.serviceHandoff.cueIds[index];
+  return cueId ? state.serviceHandoff.cues[cueId] || null : null;
+}
+
+function legacyCueAt(index) {
+  if (!Number.isInteger(index) || index < 0) return null;
+  const preferredRole = state.activeLaunchPlan?.timelineRoleId;
+  const roleIds = [
+    preferredRole,
+    ...getDeckRoles().map(role => role.id)
+  ].filter((roleId, candidateIndex, roleList) =>
+    roleId && roleList.indexOf(roleId) === candidateIndex
+  );
+  for (const roleId of roleIds) {
+    const slide = state.presentations[roleId]?.slides?.[index];
+    if (!slide) continue;
+    const firstLine = String(slide.text || '')
+      .split(/\r?\n/u)
+      .map(line => line.trim())
+      .find(Boolean) || '';
+    return {
+      title: slide.title || firstLine || `Slide ${index + 1}`,
+      kind: slide.kind || '',
+      groupPath: Array.isArray(slide.groupPath) ? slide.groupPath : [],
+      operatorNotes: slide.operatorNotes || ''
+    };
+  }
+  return null;
+}
+
+function cueAt(index) {
+  return handoffCueAt(index) || legacyCueAt(index);
+}
+
+function renderShowCueContext() {
+  if (!elements.showCueContext) return;
+  const current = cueAt(state.currentSlide);
+  const next = cueAt(state.currentSlide + 1);
+  const currentNumber = Math.max(1, state.currentSlide + 1);
+  const kind = current?.kind
+    ? `${current.kind.charAt(0).toUpperCase()}${current.kind.slice(1)}`
+    : 'Current cue';
+  const groupPath = current?.groupPath?.length
+    ? current.groupPath.join(' › ')
+    : '';
+
+  elements.showCueContextPath.textContent = groupPath || `${kind} ${currentNumber}`;
+  elements.showCueContextTitle.textContent = current?.title
+    || (state.totalSlides > 0 ? `Slide ${currentNumber}` : 'Waiting for the service');
+  if (elements.showCueContextMeta) {
+    const handoff = state.serviceHandoff;
+    const row = current?.itemId
+      ? handoff?.runSheet?.rows.find(candidate =>
+          candidate.itemId === current.itemId)
+      : null;
+    const meta = [];
+    if (row?.start) {
+      meta.push(`Scheduled ${formatRunSheetClock(row.start)}`);
+    }
+    if (row?.effectiveDurationSeconds !== null
+      && row?.effectiveDurationSeconds !== undefined) {
+      meta.push(`Slot ${formatRunSheetDuration(row.effectiveDurationSeconds)}`);
+    }
+    const itemPathIds = Array.isArray(current?.itemPathIds)
+      ? current.itemPathIds
+      : current?.itemId
+        ? [current.itemId]
+        : [];
+    const relevantAssignments = summarizeHandoffServing(
+      handoff?.planning?.serving
+    ).assignments.filter(assignment =>
+      assignment.scope.kind === 'service'
+      || itemPathIds.includes(assignment.scope.itemId));
+    const assignmentLabels = relevantAssignments.slice(0, 3).map(assignment =>
+      `${assignment.role}: ${
+        ['assigned', 'confirmed'].includes(assignment.status)
+          ? assignment.personName
+          : assignment.status === 'declined'
+            ? `${assignment.personName} declined`
+            : assignment.required
+              ? 'open · required'
+              : 'open'
+      }`);
+    meta.push(...assignmentLabels);
+    if (relevantAssignments.length > assignmentLabels.length) {
+      meta.push(`+${relevantAssignments.length - assignmentLabels.length} more assignments`);
+    }
+    elements.showCueContextMeta.hidden = meta.length === 0;
+    elements.showCueContextMeta.textContent = meta.join(' · ');
+  }
+  elements.showCueContextNote.hidden = !current?.operatorNotes;
+  elements.showCueContextNote.textContent = current?.operatorNotes
+    ? `Operator note: ${current.operatorNotes}`
+    : '';
+  elements.showCueContextNext.textContent = next?.title
+    || (state.totalSlides > 0 && state.currentSlide >= state.totalSlides - 1
+      ? 'End of service'
+      : '—');
+  renderShowFinishAction();
+}
+
+function renderShowFinishAction() {
+  const atFinalCue = state.totalSlides > 0
+    && state.currentSlide >= state.totalSlides - 1;
+  elements.btnBackToSetup.textContent = state.showEndSessionBusy
+    ? 'Finishing service…'
+    : atFinalCue
+      ? 'Finish service…'
+      : 'Back to Load';
+  elements.btnBackToSetup.title = atFinalCue
+    ? 'End outputs safely, return to Load, and review the exact service handoff'
+    : 'Stop outputs and return to the Load screen';
+  elements.btnBackToSetup.setAttribute(
+    'aria-label',
+    atFinalCue
+      ? 'Finish service and return safely to Load'
+      : 'Back to Load'
+  );
+}
+
 async function refreshPublishedProject(_publishResult, context = {}) {
   try {
     resetServiceOutputChoices();
+    state.presentationConversionRecovery = {};
     const appState = await window.api.getAppState();
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
     state.displays = appState.displays;
+    applyServiceHandoff(appState.serviceHandoff);
+    state.preparedServiceRestore = appState.preparedServiceRestore || {
+      status: 'none'
+    };
     applyRuntimePresentationState(appState.presentations, {
       displayName: context.project?.title || 'Prepared service',
       replaceSource: true
@@ -885,6 +2000,7 @@ async function refreshPublishedProject(_publishResult, context = {}) {
     renderProfileEditor();
     renderOutputHealth();
     checkReadyState();
+    refreshLoadLocalServices();
     setStatus(`${context.project?.title || 'Prepared service'} is ready in Load`);
   } catch (error) {
     console.error('[Prepare] Published service could not be refreshed in Load:', error);
@@ -931,6 +2047,10 @@ function applyCommittedProfile(profile) {
     nextPresentations[role.id] = state.presentations[role.id] || emptyPresentation();
   }
   state.presentations = nextPresentations;
+  state.presentationConversionRecovery = Object.fromEntries(
+    Object.entries(state.presentationConversionRecovery)
+      .filter(([roleId]) => activeRoleIds.has(roleId))
+  );
   state.serviceFolder.staleRoleIds = [...new Set(state.serviceFolder.staleRoleIds)]
     .filter(roleId => activeRoleIds.has(roleId));
 
@@ -1044,6 +2164,10 @@ function communityApiAvailable() {
   ].every(method => typeof window.api?.[method] === 'function');
 }
 
+function communitySermonSyncAvailable() {
+  return typeof window.api?.syncCommunitySermons === 'function';
+}
+
 function communityCheckedResult(result) {
   if (result?.success === false) {
     const details = result.error && typeof result.error === 'object' ? result.error : null;
@@ -1078,6 +2202,12 @@ function projectCommunityConnection(connection) {
       : null,
     canReadSongs: connection.canReadSongs === true,
     canWriteSongs: connection.canWriteSongs === true,
+    canReadSongPublicLinks: connection.canReadSongPublicLinks === true,
+    canWriteSongPublicLinks: connection.canWriteSongPublicLinks === true,
+    canReadSermons: connection.canReadSermons === true,
+    canWriteSermons: connection.canWriteSermons === true,
+    canReadServicePlans: connection.canReadServicePlans === true,
+    canReadServiceDocuments: connection.canReadServiceDocuments === true,
     expiresAt: connection.expiresAt,
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt
@@ -1114,6 +2244,7 @@ function projectCommunityStatus(status) {
       : (typeof status.error?.message === 'string' ? status.error.message : undefined),
     warning: typeof status.warning === 'string' ? status.warning : undefined,
     lastSync: status.lastSync || status.lastSyncSummary || status.sync?.lastSync || status.sync?.summary,
+    lastSermonSync: status.lastSermonSync || status.sync?.lastSermonSync,
     connection
   };
 }
@@ -1227,6 +2358,7 @@ function formatCommunitySyncSummary(summary) {
   const archived = numericCommunityCount(source, ['archived']);
   const unchanged = numericCommunityCount(source, ['unchanged', 'skipped']);
   const conflicts = communityConflictCount(source);
+  const reviewRequired = numericCommunityCount(source, ['reviewRequired']);
   const failed = numericCommunityCount(source, ['failed', 'errors', 'errorCount']);
   const warnings = Array.isArray(summary.warnings)
     ? summary.warnings.length
@@ -1238,6 +2370,9 @@ function formatCommunitySyncSummary(summary) {
     archived ? `${archived} archived` : '',
     unchanged ? `${unchanged} unchanged` : '',
     conflicts ? `${conflicts} ${conflicts === 1 ? 'conflict needs' : 'conflicts need'} review` : '',
+    reviewRequired
+      ? `${reviewRequired} ${reviewRequired === 1 ? 'song family needs' : 'song families need'} sharing review`
+      : '',
     failed ? `${failed} failed` : '',
     warnings ? `${warnings} ${warnings === 1 ? 'warning' : 'warnings'}` : ''
   ].filter(Boolean);
@@ -1285,6 +2420,7 @@ function applyCommunityStatus(rawStatus, { replace = false } = {}) {
   } catch (error) {
     state.community.error = communityErrorMessage(error, 'Community status is unavailable.');
     renderCommunitySettings();
+    renderCommunityPrepare();
     return false;
   }
   const status = projectCommunityStatus(rawPayload);
@@ -1297,7 +2433,16 @@ function applyCommunityStatus(rawStatus, { replace = false } = {}) {
     || status.lastSyncSummary
     || status.sync?.lastSync
     || status.sync?.summary;
-  if (lastSync) state.community.lastSync = lastSync;
+  const lastSermonSync = status.lastSermonSync
+    || status.sync?.lastSermonSync;
+  if (lastSermonSync) {
+    state.community.lastSermonSync = lastSermonSync;
+  }
+  if (lastSync?.resource === 'sermons') {
+    state.community.lastSermonSync = lastSync;
+  } else if (lastSync) {
+    state.community.lastSync = lastSync;
+  }
   if (communityIsConnected(state.community.status)) {
     state.community.error = null;
     stopCommunityAuthorizationPolling({ clearAuthorization: true });
@@ -1313,6 +2458,7 @@ function applyCommunityStatus(rawStatus, { replace = false } = {}) {
     elements.communityAdminEmail.value = email;
   }
   renderCommunitySettings();
+  renderCommunityPrepare();
   return true;
 }
 
@@ -1321,7 +2467,19 @@ function renderCommunitySettings() {
   const connected = available && communityIsConnected();
   const pending = available && !connected && communityIsPending();
   const busy = state.community.busy;
-  const syncing = state.community.syncing;
+  const syncing = state.community.syncing || state.community.sermonSyncing;
+  const canReadSongs = connected
+    && state.community.status?.connection?.canReadSongs === true;
+  const canReadSermons = connected
+    && state.community.status?.connection?.canReadSermons === true;
+  const canReadSongPublicLinks = connected
+    && state.community.status?.connection?.canReadSongPublicLinks === true;
+  const canWriteSongPublicLinks = canReadSongPublicLinks
+    && state.community.status?.connection?.canWriteSongPublicLinks === true;
+  const canReadServicePlans = connected
+    && state.community.status?.connection?.canReadServicePlans === true;
+  const canReadServiceDocuments = connected
+    && state.community.status?.connection?.canReadServiceDocuments === true;
   const badge = elements.communityConnectionBadge;
   badge.classList.remove('ready', 'attention', 'scanning');
 
@@ -1330,8 +2488,8 @@ function renderCommunitySettings() {
     badge.classList.add('attention');
     elements.communityConnectionStatus.dataset.kind = 'error';
     elements.communityConnectionStatusTitle.textContent = 'Community sync is not included in this build';
-    elements.communityConnectionStatusDetail.textContent = 'Install or open a newer SyncShow build to connect the shared song library.';
-    elements.communityConnectionHelp.textContent = 'Load and Show still work normally. No Community password or song data is sent from this build.';
+    elements.communityConnectionStatusDetail.textContent = 'Install or open a newer SyncShow build to connect the shared Community library.';
+    elements.communityConnectionHelp.textContent = 'Load and Show still work normally. No Community password, song, or sermon data is sent from this build.';
   } else if (connected) {
     badge.textContent = 'Connected';
     badge.classList.add('ready');
@@ -1339,9 +2497,31 @@ function renderCommunitySettings() {
     elements.communityConnectionStatusTitle.textContent = `Connected to ${communityServerLabel()}`;
     elements.communityConnectionStatusDetail.textContent = state.community.status?.warning
       || (syncing
-        ? 'Syncing the local and Community song libraries…'
-        : 'Local songs remain usable offline. Conflicts are held for review instead of being overwritten.');
-    elements.communityConnectionHelp.textContent = 'This computer has an approved, song-only Community connection. Disconnect it here if the computer changes owners.';
+        ? (state.community.sermonSyncing
+          ? 'Pulling Community sermon updates into the local library…'
+          : 'Syncing the local and Community song libraries…')
+        : canReadServiceDocuments
+          ? 'Services prepared in Community are available from Load. An opened service remains available locally for offline Show.'
+          : canReadServicePlans
+            ? 'Community service plans are available in Prepare and remain local after import.'
+            : canReadSongs && canReadSermons
+          ? 'Songs and sermon records remain available locally. Conflicts are held for review instead of being overwritten.'
+          : canReadSongs
+            ? 'This connection includes the shared song library. Sermon synchronization is not currently available.'
+            : canReadSermons
+              ? 'This connection includes the shared sermon library. Song synchronization is not currently available.'
+              : 'No currently approved Community library resource is available on this connection.');
+    elements.communityConnectionHelp.textContent = canReadServiceDocuments
+      ? 'Use Open from Heritage Community in Load. SyncShow downloads the exact revision and replaces the current Load service only after its offline package is complete.'
+      : canReadServicePlans
+        ? 'Use Browse plans in Prepare to review and import a Community plan.'
+        : canReadSongs && canReadSermons
+          ? 'This computer can read both Community libraries. Local sermons are shared only from the explicit button in Prepare.'
+          : canReadSongs
+            ? 'This computer can read the Community song library. Other resource lanes remain independent.'
+            : canReadSermons
+              ? 'This computer can read the Community sermon library. Local sermons are shared only from the explicit button in Prepare.'
+              : 'Reconnect to approve a resource the server currently advertises. Local library work remains available.';
   } else if (pending) {
     badge.textContent = 'Waiting';
     badge.classList.add('scanning');
@@ -1360,8 +2540,8 @@ function renderCommunitySettings() {
       : 'This computer is not connected';
     elements.communityConnectionStatusDetail.textContent = state.community.error
       || state.community.status?.message
-      || 'Enter the server address and an admin email to share the song library.';
-    elements.communityConnectionHelp.textContent = 'Connecting sends an approval link to the admin email. SyncShow never shows or stores a server password here.';
+      || 'Enter the server address and an admin email to connect the shared Community library.';
+    elements.communityConnectionHelp.textContent = 'Connecting emails an approval link to the Community admin account and remembers this computer. SyncShow never asks for the computer’s system password.';
   }
 
   const inputsDisabled = !available || connected || pending || busy;
@@ -1399,14 +2579,244 @@ function renderCommunitySettings() {
     : '';
   elements.btnDisconnectCommunity.hidden = !connected;
   elements.btnDisconnectCommunity.disabled = busy || syncing;
-  elements.btnSyncCommunitySongs.disabled = !connected || busy || syncing;
-  elements.btnSyncCommunitySongs.textContent = syncing ? 'Syncing songs…' : 'Sync songs now';
-  elements.communityLastSyncSummary.textContent = formatCommunitySyncSummary(state.community.lastSync);
+  elements.btnSyncCommunitySongs.disabled = !canReadSongs || busy || syncing;
+  elements.btnSyncCommunitySongs.textContent = state.community.syncing
+    ? 'Syncing songs…'
+    : 'Sync songs now';
+  elements.btnSyncCommunitySermons.disabled = !canReadSermons
+    || !communitySermonSyncAvailable()
+    || busy
+    || syncing;
+  elements.btnSyncCommunitySermons.textContent = state.community.sermonSyncing
+    ? 'Syncing sermons…'
+    : 'Sync sermons now';
+  elements.communityLastSyncSummary.textContent = canReadSongs
+    ? formatCommunitySyncSummary(state.community.lastSync)
+    : connected
+      ? 'Song synchronization is not available for this connection.'
+      : 'Sync Community songs after this computer is connected.';
+  elements.communityLastSermonSyncSummary.textContent = canReadSermons
+    ? formatCommunitySyncSummary(state.community.lastSermonSync)
+    : connected
+      ? 'Sermon synchronization is not available for this connection.'
+      : 'Pull Community sermon updates after this computer is connected.';
+  elements.communitySongPublicLinkBadge.classList.remove(
+    'ready',
+    'attention',
+    'scanning'
+  );
+  if (canWriteSongPublicLinks) {
+    elements.communitySongPublicLinkBadge.textContent = 'Manage';
+    elements.communitySongPublicLinkBadge.classList.add('ready');
+    elements.communitySongPublicLinkSummary.textContent =
+      'This approval can list, copy, create, and revoke anonymous song links. Open an exact saved song in Prepare to manage them.';
+  } else if (canReadSongPublicLinks) {
+    elements.communitySongPublicLinkBadge.textContent = 'Read only';
+    elements.communitySongPublicLinkBadge.classList.add('attention');
+    elements.communitySongPublicLinkSummary.textContent =
+      'This approval can list and copy server-confirmed links, but cannot create or revoke them.';
+  } else if (connected) {
+    elements.communitySongPublicLinkBadge.textContent = 'Not approved';
+    elements.communitySongPublicLinkBadge.classList.add('attention');
+    elements.communitySongPublicLinkSummary.textContent =
+      'Anonymous links are a separate capability. If this server offers them, reconnect to approve that scope; existing links may still need Community admin.';
+  } else {
+    elements.communitySongPublicLinkBadge.textContent = 'Not connected';
+    elements.communitySongPublicLinkSummary.textContent =
+      'Connect Heritage Community first. Public links never inherit ordinary song or member-sharing permission.';
+  }
+}
+
+function renderCommunityPrepare() {
+  const available = typeof window.api?.openCommunityPlanner === 'function';
+  const connected = available && communityIsConnected();
+
+  elements.communityPrepareStatus.dataset.kind = '';
+  if (!available) {
+    elements.communityPrepareStatus.dataset.kind = 'error';
+    elements.communityPrepareStatus.textContent =
+      'This SyncShow build cannot open the shared Community planner.';
+  } else if (!connected) {
+    elements.communityPrepareStatus.dataset.kind = 'warning';
+    elements.communityPrepareStatus.textContent =
+      'Connect Heritage Community from Admin Settings on the Load page, or use This computer.';
+  } else if (state.community.plannerError) {
+    elements.communityPrepareStatus.dataset.kind = 'error';
+    elements.communityPrepareStatus.textContent = state.community.plannerError;
+  } else if (state.community.plannerBusy) {
+    elements.communityPrepareStatus.textContent =
+      'Opening the planner supplied by Heritage Community…';
+  } else if (state.community.plannerOpen) {
+    elements.communityPrepareStatus.dataset.kind = 'success';
+    elements.communityPrepareStatus.textContent =
+      'Connected. Loading the shared planner…';
+  } else {
+    elements.communityPrepareStatus.textContent =
+      'Loading the shared planner…';
+  }
+  scheduleCommunityPlannerLayout();
+}
+
+function communityPlannerShouldBeVisible() {
+  return state.workflowStage === 'prepare'
+    && state.prepareMode === 'community'
+    && communityIsConnected()
+    && state.community.plannerOpen
+    && !elements.communityPrepareShell.hidden;
+}
+
+async function syncCommunityPlannerLayout() {
+  if (typeof window.api?.layoutCommunityPlanner !== 'function') return;
+  if (!communityPlannerShouldBeVisible()) {
+    await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
+    return;
+  }
+  const rect = elements.communityPlannerViewport.getBoundingClientRect();
+  if (rect.width < 640 || rect.height < 420) {
+    await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
+    return;
+  }
+  try {
+    await window.api.layoutCommunityPlanner({
+      visible: true,
+      bounds: {
+        x: Math.max(0, Math.round(rect.left)),
+        y: Math.max(0, Math.round(rect.top)),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      }
+    });
+  } catch (error) {
+    state.community.plannerError = communityErrorMessage(
+      error,
+      'Embedded Community Prepare could not be positioned.'
+    );
+    renderCommunityPrepare();
+  }
+}
+
+function scheduleCommunityPlannerLayout() {
+  if (communityPlannerLayoutFrame !== null) return;
+  communityPlannerLayoutFrame = window.requestAnimationFrame(() => {
+    communityPlannerLayoutFrame = null;
+    syncCommunityPlannerLayout();
+  });
+}
+
+async function activatePrepareMode(mode, options = {}) {
+  const selected = mode === 'local' ? 'local' : 'community';
+  state.prepareMode = selected;
+  const local = selected === 'local';
+  elements.communityPrepareShell.hidden = local;
+  elements.legacyPrepareShell.hidden = !local;
+  elements.btnPrepareModeCommunity.classList.toggle('is-active', !local);
+  elements.btnPrepareModeCommunity.setAttribute('aria-selected', String(!local));
+  elements.btnPrepareModeCommunity.tabIndex = local ? -1 : 0;
+  elements.btnPrepareModeLocal.classList.toggle('is-active', local);
+  elements.btnPrepareModeLocal.setAttribute('aria-selected', String(local));
+  elements.btnPrepareModeLocal.tabIndex = local ? 0 : -1;
+  elements.preparePanel.setAttribute(
+    'aria-labelledby',
+    local ? 'prepareHeading' : 'communityPrepareHeading'
+  );
+  scheduleCommunityPlannerLayout();
+  if (local) {
+    const activated = await prepareController?.activate(options).catch(error => {
+      console.error('[Prepare] Could not activate local tools:', error);
+      setStatus(`Local Prepare could not open: ${error.message}`);
+      return false;
+    });
+    window.setTimeout(() => elements.legacyPrepareShell.querySelector('h2')?.focus(), 0);
+    return activated;
+  }
+  window.setTimeout(() => elements.communityPrepareHeading.focus(), 0);
+  return openCommunityPrepare();
+}
+
+function handleCommunityPlannerStateChanged(payload = {}) {
+  const wasOpen = state.community.plannerOpen;
+  state.community.plannerOpen = payload?.open === true;
+  state.community.plannerBusy = false;
+  state.community.plannerError = typeof payload?.error?.message === 'string'
+    ? payload.error.message
+    : null;
+  renderCommunityPrepare();
+  if (wasOpen && !state.community.plannerOpen && !state.community.plannerError) {
+    setStatus('Community Prepare closed');
+  }
+}
+
+async function refreshCommunityPlannerState() {
+  if (typeof window.api?.getCommunityPlannerState !== 'function') {
+    renderCommunityPrepare();
+    return null;
+  }
+  try {
+    const payload = communityCheckedResult(
+      await window.api.getCommunityPlannerState()
+    );
+    handleCommunityPlannerStateChanged(payload);
+    return payload;
+  } catch (error) {
+    state.community.plannerError = communityErrorMessage(
+      error,
+      'Community Prepare status is unavailable.'
+    );
+    renderCommunityPrepare();
+    return null;
+  }
+}
+
+async function openCommunityPrepare() {
+  if (state.community.plannerBusy) return false;
+  if (!communityIsConnected()) {
+    state.community.plannerError = null;
+    renderCommunityPrepare();
+    setStatus('Connect Heritage Community before opening Prepare');
+    openSettings('community');
+    return false;
+  }
+  state.community.plannerBusy = true;
+  state.community.plannerError = null;
+  renderCommunityPrepare();
+  try {
+    const result = communityCheckedResult(
+      await window.api.openCommunityPlanner()
+    );
+    state.community.plannerOpen = result.opened === true;
+    const destination = result.serverName || communityServerLabel();
+    setStatus(`${destination} Prepare is embedded in SyncShow`);
+    scheduleCommunityPlannerLayout();
+    return state.community.plannerOpen;
+  } catch (error) {
+    state.community.plannerOpen = false;
+    state.community.plannerError = communityErrorMessage(
+      error,
+      'Community Prepare could not open.'
+    );
+    setStatus(state.community.plannerError);
+    if (error?.code === 'COMMUNITY_RECONNECT_REQUIRED') {
+      openSettings('community');
+    }
+    return false;
+  } finally {
+    state.community.plannerBusy = false;
+    renderCommunityPrepare();
+  }
 }
 
 function handleCommunityStatusChanged(payload) {
   applyCommunityStatus(payload);
   resumeCommunityAuthorizationPolling();
+  prepareController?.refreshSongs?.().catch(() => {
+    // Community badges can retry when the Song Library is opened or refreshed.
+  });
+  prepareController?.refreshSongCommunityState?.().catch(() => {
+    // The open song editor can retry when the song is reopened.
+  });
+  prepareController?.refreshSermonCommunityState?.().catch(() => {
+    // The narrow Prepare status can retry when the sermon is reselected.
+  });
 }
 
 async function refreshCommunityStatus() {
@@ -1414,6 +2824,7 @@ async function refreshCommunityStatus() {
     state.community.status = null;
     state.community.error = null;
     renderCommunitySettings();
+    renderCommunityPrepare();
     return null;
   }
   try {
@@ -1425,6 +2836,7 @@ async function refreshCommunityStatus() {
   } catch (error) {
     state.community.error = communityErrorMessage(error, 'Community status is unavailable.');
     renderCommunitySettings();
+    renderCommunityPrepare();
     return null;
   }
 }
@@ -1489,7 +2901,7 @@ function startCommunityAuthorizationPolling(authorizationId) {
       if (communityIsConnected()) {
         stopCommunityAuthorizationPolling({ clearAuthorization: true });
         await refreshCommunityStatus();
-        setStatus('Heritage Community is connected. Songs can now be synced.');
+        setStatus('Heritage Community is connected. Approved library resources are now available.');
         return;
       }
       if (communityTerminalAuthorizationState(result)) {
@@ -1540,16 +2952,15 @@ async function startCommunityConnection(event) {
     || communityIsConnected()
     || communityIsPending()
     || state.community.busy
-    || state.community.syncing) return;
+    || state.community.syncing
+    || state.community.sermonSyncing) return;
   if (!elements.communityConnectionForm.reportValidity()) return;
   let serverUrl;
   try {
-    const parsed = new URL(elements.communityServerUrl.value.trim());
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('unsupported');
-    parsed.hash = '';
-    serverUrl = parsed.toString().replace(/\/+$/, '');
+    serverUrl = normalizeCommunityServerAddress(elements.communityServerUrl.value);
+    elements.communityServerUrl.value = serverUrl;
   } catch (_error) {
-    state.community.error = 'Enter a complete Community server address beginning with https://.';
+    state.community.error = 'Enter a Community server address such as community.example.org. SyncShow adds https:// automatically.';
     renderCommunitySettings();
     elements.communityServerUrl.focus();
     return;
@@ -1561,7 +2972,6 @@ async function startCommunityConnection(event) {
   renderCommunitySettings();
   try {
     const result = communityCheckedResult(await window.api.startCommunityConnection({ serverUrl, email }));
-    elements.communityServerUrl.value = serverUrl;
     applyCommunityStatus({
       serverUrl,
       adminEmail: email,
@@ -1671,7 +3081,10 @@ async function cancelCommunityConnection() {
 }
 
 async function disconnectCommunity() {
-  if (!communityApiAvailable() || state.community.busy || state.community.syncing) return;
+  if (!communityApiAvailable()
+    || state.community.busy
+    || state.community.syncing
+    || state.community.sermonSyncing) return;
   state.community.busy = true;
   stopCommunityAuthorizationPolling({ clearAuthorization: true });
   renderCommunitySettings();
@@ -1691,7 +3104,7 @@ async function disconnectCommunity() {
     state.community.error = warning || null;
     setStatus(warning
       ? `Heritage Community disconnected locally. ${warning}`
-      : 'Heritage Community disconnected. Local songs are still available.');
+      : 'Heritage Community disconnected. Local library work is still available.');
   } catch (error) {
     state.community.error = communityErrorMessage(error, 'Heritage Community could not be disconnected.');
     setStatus(`Could not disconnect Heritage Community: ${state.community.error}`);
@@ -1702,10 +3115,13 @@ async function disconnectCommunity() {
 }
 
 async function syncCommunitySongs() {
+  const canReadSongs = state.community.status?.connection?.canReadSongs === true;
   if (!communityApiAvailable()
     || !communityIsConnected()
+    || !canReadSongs
     || state.community.busy
-    || state.community.syncing) return;
+    || state.community.syncing
+    || state.community.sermonSyncing) return;
   state.community.syncing = true;
   state.community.error = null;
   renderCommunitySettings();
@@ -1737,10 +3153,60 @@ async function syncCommunitySongs() {
   }
 }
 
+async function syncCommunitySermons() {
+  const canReadSermons = state.community.status?.connection?.canReadSermons === true;
+  if (!communityApiAvailable()
+    || !communitySermonSyncAvailable()
+    || !communityIsConnected()
+    || !canReadSermons
+    || state.community.busy
+    || state.community.syncing
+    || state.community.sermonSyncing) return;
+  state.community.sermonSyncing = true;
+  state.community.error = null;
+  renderCommunitySettings();
+  try {
+    const result = communityCheckedResult(await window.api.syncCommunitySermons());
+    state.community.lastSermonSync = result.lastSync || result.summary || result;
+    const conflicts = communityConflictCount(result.summary || result);
+    const offline = result.status === 'offline' || result.summary?.status === 'offline';
+    const summary = formatCommunitySyncSummary(state.community.lastSermonSync);
+    setStatus(offline
+      ? 'Community server is unavailable. Local sermon records were not changed.'
+      : conflicts > 0
+        ? `Sermon sync finished with ${conflicts} ${conflicts === 1 ? 'conflict' : 'conflicts'} to review.`
+        : `Community sermon updates pulled. ${summary}`);
+    if (prepareController?.refreshSermons) {
+      try {
+        await prepareController.refreshSermons();
+        await prepareController.refreshSermonCommunityState?.();
+      } catch (_error) {
+        // The pull itself succeeded; Prepare can refresh when it is reopened.
+      }
+    }
+    await refreshCommunityStatus();
+  } catch (error) {
+    state.community.error = communityErrorMessage(error, 'The sermon library could not be synced.');
+    setStatus(`Community sermon sync needs attention: ${state.community.error}`);
+  } finally {
+    state.community.sermonSyncing = false;
+    renderCommunitySettings();
+  }
+}
+
 function disposeCommunityConnectionUi() {
   stopCommunityAuthorizationPolling({ clearAuthorization: true });
+  if (communityPlannerLayoutFrame !== null) {
+    window.cancelAnimationFrame(communityPlannerLayoutFrame);
+    communityPlannerLayoutFrame = null;
+  }
+  window.api?.layoutCommunityPlanner?.({ visible: false }).catch(() => {});
   if (typeof communityStatusUnsubscribe === 'function') communityStatusUnsubscribe();
   communityStatusUnsubscribe = null;
+  if (typeof communityPlannerStateUnsubscribe === 'function') {
+    communityPlannerStateUnsubscribe();
+  }
+  communityPlannerStateUnsubscribe = null;
 }
 
 function renderPrivateDriveOAuthDialog() {
@@ -1950,7 +3416,7 @@ async function refreshDriveStatus() {
 
 function requireCleanProfileForSourceChange() {
   if (!state.profileDirty) return true;
-  openSettings();
+  openSettings('screens');
   elements.profileEditorStatus.textContent = 'Save or discard the venue changes before changing the automatic loading source.';
   setStatus('Venue setup changes are waiting to be saved or discarded');
   return false;
@@ -2314,6 +3780,28 @@ function setServiceStateBadge(kind, message) {
   elements.serviceFolderStateBadge.textContent = message;
 }
 
+function refreshServiceFolderConversionError() {
+  const activeRoleIds = new Set(getDeckRoles().map(role => role.id));
+  const failedRoleIds = [...new Set(state.serviceFolder.conversionFailedRoleIds)]
+    .filter(roleId => activeRoleIds.has(roleId));
+  state.serviceFolder.conversionFailedRoleIds = failedRoleIds;
+
+  if (failedRoleIds.length === 0) {
+    state.serviceFolder.conversionError = null;
+    return null;
+  }
+
+  const labels = failedRoleIds.map(getRoleLabel);
+  state.serviceFolder.conversionError =
+    `${labels.join(', ')} could not be converted. ` +
+    `Retry ${labels.length === 1 ? 'that slideshow' : 'those slideshows'} or choose another file.`;
+  return state.serviceFolder.conversionError;
+}
+
+function serviceFolderErrorMessage() {
+  return state.serviceFolder.error || state.serviceFolder.conversionError || null;
+}
+
 function serviceSetHasLoadableInput(serviceSet) {
   return Boolean(serviceSet && Object.values(serviceSet.inputs || {}).some(input => input?.available));
 }
@@ -2534,7 +4022,7 @@ function renderLoadSourceSummary() {
   } else if (state.serviceFolder.folderChangedSinceLoad) {
     kind = 'attention';
     message = 'New synced files need review';
-  } else if (state.serviceFolder.error) {
+  } else if (serviceFolderErrorMessage()) {
     kind = 'attention';
     message = state.serviceFolder.current && automaticPresentationLoaded
       ? 'Using the saved service copy'
@@ -2563,6 +4051,7 @@ function renderServiceFolder() {
   const privateDriveReady = privateDriveIsConfigured();
   const publicDriveReady = publicDriveIsConfigured();
   const conversionInFlight = presentationConversionInFlight();
+  const serviceError = serviceFolderErrorMessage();
   const sourceBusy = state.profileSaveInFlight
     || state.drive.busy
     || state.serviceFolder.scanning
@@ -2658,16 +4147,16 @@ function renderServiceFolder() {
     elements.serviceFolderCard.dataset.state = 'scanning';
     setServiceStateBadge('scanning', 'Checking files…');
     setServiceScanStatus('scanning', `Checking ${source.scanLabel} for ${formatServiceDate(state.serviceFolder.requestedDate)}…`);
-  } else if (state.serviceFolder.error) {
+  } else if (serviceError) {
     elements.serviceFolderCard.dataset.state = 'error';
     setServiceStateBadge('attention', 'Needs attention');
-    setServiceScanStatus('error', state.serviceFolder.error);
+    setServiceScanStatus('error', serviceError);
   }
 
   const scan = state.serviceFolder.scan;
   const selectedSet = getSelectedServiceSet();
   if (!scan || !selectedSet) {
-    if (!state.serviceFolder.scanning && !state.serviceFolder.loading && !state.serviceFolder.error) {
+    if (!state.serviceFolder.scanning && !state.serviceFolder.loading && !serviceError) {
       elements.serviceFolderCard.dataset.state = 'attention';
       setServiceStateBadge('attention', 'No service found');
       setServiceScanStatus('attention', `No matching PowerPoints were found for ${formatServiceDate(state.serviceFolder.requestedDate)}. Choose files on their Load cards or try another date.`);
@@ -2680,7 +4169,7 @@ function renderServiceFolder() {
       || conversionInFlight;
   } else {
     elements.serviceSetResults.hidden = false;
-    if (!state.serviceFolder.scanning && !state.serviceFolder.loading && !state.serviceFolder.error) {
+    if (!state.serviceFolder.scanning && !state.serviceFolder.loading && !serviceError) {
       const ready = selectedSet.complete
         && (selectedSet.dateStatus === 'matches' || selectedSet.dateStatus === 'not-applicable');
       elements.serviceFolderCard.dataset.state = ready ? 'ready' : 'attention';
@@ -2726,6 +4215,11 @@ function renderServiceFolder() {
 
 function clearPresentationRole(roleId, message = 'Not included in this service') {
   state.presentations[roleId] = emptyPresentation();
+  delete state.presentationConversionRecovery[roleId];
+  state.serviceFolder.conversionFailedRoleIds =
+    state.serviceFolder.conversionFailedRoleIds
+      .filter(failedRoleId => failedRoleId !== roleId);
+  refreshServiceFolderConversionError();
   state.serviceFolder.staleRoleIds = state.serviceFolder.staleRoleIds
     .filter(staleRoleId => staleRoleId !== roleId);
 
@@ -2735,6 +4229,7 @@ function clearPresentationRole(roleId, message = 'Not included in this service')
   roleElements.path.title = '';
   roleElements.dateWarning.style.display = 'none';
   updateConversionStatus(roleId, message, false);
+  renderPresentationConversionRecovery(roleId);
   refreshServiceRoleActions();
 }
 
@@ -2751,6 +4246,8 @@ async function loadSelectedServiceSet() {
   resetServiceOutputChoices({ refresh: true });
   state.serviceFolder.loading = true;
   state.serviceFolder.error = null;
+  state.serviceFolder.conversionError = null;
+  state.serviceFolder.conversionFailedRoleIds = [];
   setManualFileControlsDisabled(true);
   setProfileEditorSaving(true);
   renderServiceFolder();
@@ -2825,7 +4322,7 @@ async function loadSelectedServiceSet() {
       }
     }
     if (failedLabels.length > 0) {
-      state.serviceFolder.error = `${failedLabels.join(', ')} could not be converted. Its previous loaded file was preserved.`;
+      refreshServiceFolderConversionError();
       setStatus(`Loaded ${loadedCount} service ${loadedCount === 1 ? 'slideshow' : 'slideshows'}; ${failedLabels.join(', ')} needs attention`);
     } else if (omittedRoles.length > 0) {
       setStatus(`Service loaded: ${loadedCount} ready; ${omittedRoles.map(role => role.label).join(', ')} will be chosen manually or decided at Start`);
@@ -3058,7 +4555,24 @@ function renderInputCards() {
     progressBar.style.display = 'none';
     const progress = createElement('div', 'progress-fill');
     progressBar.appendChild(progress);
-    status.append(statusText, progressBar);
+    const conversionRecovery = createElement('div', 'conversion-recovery');
+    conversionRecovery.hidden = true;
+    const retryConversionButton = createElement(
+      'button',
+      'btn btn-outline btn-compact',
+      'I closed PowerPoint — retry'
+    );
+    retryConversionButton.type = 'button';
+    retryConversionButton.setAttribute(
+      'aria-label',
+      `Retry the ${role.label} slideshow after closing PowerPoint`
+    );
+    retryConversionButton.addEventListener(
+      'click',
+      () => retryPresentationConversion(role.id)
+    );
+    conversionRecovery.appendChild(retryConversionButton);
+    status.append(statusText, progressBar, conversionRecovery);
     const dateWarning = createElement('div', 'date-warning');
     dateWarning.style.display = 'none';
     const serviceActions = createElement('div', 'service-role-actions');
@@ -3070,6 +4584,8 @@ function renderInputCards() {
       selectButton,
       status,
       progress,
+      conversionRecovery,
+      retryConversionButton,
       dateWarning,
       card,
       stateBadge,
@@ -3101,8 +4617,17 @@ function renderInputCards() {
       );
       if (presentation.path) checkFilenameDate(role.id, presentation.dateSource || presentation.path);
     }
+    const recovery = state.presentationConversionRecovery[role.id];
+    if (recovery) {
+      const stillUsing = presentation?.loaded
+        ? ` Still using ${presentation.slideCount} previously loaded slides.`
+        : '';
+      updateConversionStatus(role.id, `✗ ${recovery.message}${stillUsing}`, false);
+    }
+    renderPresentationConversionRecovery(role.id);
   });
   elements.inputCards.appendChild(fragment);
+  placeServiceInputCards();
   refreshServiceRoleActions();
 }
 
@@ -3121,18 +4646,7 @@ function populateSingerSourceOptions(selectedRoleId) {
 }
 
 function resolveOutputDisplay(output) {
-  if (!output) return null;
-  const hasLegacyId = output.legacyDisplayId !== null && output.legacyDisplayId !== undefined;
-  const byId = hasLegacyId
-    ? state.displays.find(display => String(display.id) === String(output.legacyDisplayId))
-    : null;
-  if (output.displayFingerprint) {
-    const matches = state.displays.filter(display => display.fingerprint === output.displayFingerprint);
-    if (byId && byId.fingerprint === output.displayFingerprint) return byId;
-    if (matches.length === 1) return matches[0];
-    return null;
-  }
-  return byId;
+  return window.SyncShowServiceOutputPlan.resolveOutputDisplay(output, state.displays);
 }
 
 function createEditorField(labelText, control) {
@@ -3325,15 +4839,26 @@ function renderOutputEditor() {
       actions.appendChild(button);
     }
 
-    const grid = createElement('div', 'profile-row-grid output-row-grid');
-    grid.append(
-      createEditorField('Output name', name),
+    const quickGrid = createElement('div', 'profile-row-grid output-quick-grid');
+    quickGrid.append(
       createEditorField('Physical screen', display),
-      createEditorField('Expected slideshow', roleSelect),
+      createEditorField('Slideshow shown here', roleSelect)
+    );
+    const more = document.createElement('details');
+    more.className = 'output-row-more';
+    const moreSummary = document.createElement('summary');
+    moreSummary.append(
+      createElement('span', '', 'More options'),
+      createElement('small', '', 'Name, behavior, preview, and remove')
+    );
+    const moreGrid = createElement('div', 'profile-row-grid output-row-grid');
+    moreGrid.append(
+      createEditorField('Output name', name),
       createEditorField('Screen behavior', kind),
       enabledLabel,
       previewLabel
     );
+    more.append(moreSummary, moreGrid, actions);
     fieldset.appendChild(legend);
     if (!isEditableOutputRoute(output)) {
       const warning = createElement('div', 'profile-route-warning');
@@ -3352,7 +4877,7 @@ function renderOutputEditor() {
       warning.appendChild(useDirect);
       fieldset.appendChild(warning);
     }
-    fieldset.append(grid, actions);
+    fieldset.append(quickGrid, more);
     item.appendChild(fieldset);
     elements.outputSettingsList.appendChild(item);
   });
@@ -3380,6 +4905,8 @@ function renderProfileEditor() {
   elements.profileServiceFolder.title = automaticSourceLabel;
   elements.profileTimeZone.value = state.profileDraft.timeZone || '';
   elements.profileServiceDateOrder.value = state.profileDraft.serviceDateOrder || 'mdy';
+  elements.profileShowControlMode.value =
+    state.profileDraft.operator?.showControlMode || 'full';
   populateSingerSourceOptions(state.profileDraft.singer?.fallbackSourceRoleId);
   renderInputRoleEditor();
   renderOutputEditor();
@@ -3714,6 +5241,15 @@ async function saveProfileChanges() {
     const scanProfileChanged = previousScanProfileSignature
       !== serviceFolderScanProfileSignature(result.venueProfile);
     state.profileRecoveryWarning = null;
+    if (result.preparedServiceInvalidated === true) {
+      applyServiceHandoff(null);
+      for (const [roleId, presentation] of Object.entries(state.presentations)) {
+        if (presentation?.source === 'prepared') {
+          state.presentations[roleId] = emptyPresentation();
+        }
+      }
+      state.preparedServiceRestore = { status: 'incompatible' };
+    }
     applyCommittedProfile(result.venueProfile);
     if (previousDriveConnectionId
       && previousDriveConnectionId !== result.venueProfile.driveConnectionId) {
@@ -3729,6 +5265,7 @@ async function saveProfileChanges() {
         || previousTimeZone !== result.venueProfile.timeZone) {
         state.serviceFolder.requestedDate = serviceDateForProfile(result.venueProfile);
         elements.serviceFolderDate.value = state.serviceFolder.requestedDate;
+        recheckLoadedPresentationDates();
       }
       invalidateServiceFolderScan();
       state.serviceFolder.error = null;
@@ -3738,8 +5275,14 @@ async function saveProfileChanges() {
         renderServiceFolder();
       }
     }
-    elements.profileEditorStatus.textContent = 'Venue profile saved. Volunteers will use these defaults.';
-    setStatus('Venue profile saved');
+    elements.profileEditorStatus.textContent = result.preparedServiceInvalidated === true
+      ? 'Venue profile saved. Reprepare the reviewed native service for this venue setup.'
+      : 'Venue profile saved. Volunteers will use these defaults.';
+    if (result.preparedServiceInvalidated === true) {
+      renderPreparedServiceRestoreStatus();
+    } else {
+      setStatus('Venue profile saved');
+    }
   } catch (error) {
     elements.profileEditorStatus.textContent = `Could not save: ${error.message}`;
     setStatus(`Venue profile needs attention: ${error.message}`);
@@ -3837,8 +5380,11 @@ async function checkForCachedPresentations() {
       const cache = state.cachedPresentations[role.id];
       return cache?.exists ? `${role.label} (${cache.slideCount} slides)` : null;
     }).filter(Boolean);
+    const preparedServiceLoaded = Object.values(state.presentations).some(
+      presentation => presentation?.loaded && presentation.source === 'prepared'
+    );
 
-    if (available.length > 0) {
+    if (available.length > 0 && !preparedServiceLoaded) {
       elements.btnRestorePrevious.hidden = false;
       elements.restoreSummary.hidden = false;
       const separatedCount = Array.isArray(plan.excludedRoleIds) ? plan.excludedRoleIds.length : 0;
@@ -3876,6 +5422,7 @@ async function restoreCachedPresentations() {
 async function restorePreviousPresentation(caches, restoreContract) {
   try {
     resetServiceOutputChoices({ refresh: true });
+    applyServiceHandoff(null);
     setStatus('Restoring previous presentation...');
 
     // Restore is an explicit service boundary. Anything omitted from the
@@ -3901,6 +5448,7 @@ async function restorePreviousPresentation(caches, restoreContract) {
         cacheDir: result.cacheDir,
         slides: []
       };
+      delete state.presentationConversionRecovery[role];
       state.serviceFolder.staleRoleIds = state.serviceFolder.staleRoleIds
         .filter(roleId => roleId !== role);
 
@@ -3910,6 +5458,7 @@ async function restorePreviousPresentation(caches, restoreContract) {
       presentationElements[role].selectButton.textContent = 'Change';
       if (cache.originalFile) checkFilenameDate(role, cache.originalFile);
       updateConversionStatus(role, `✓ Ready · ${result.slideCount} slides · Restored from the last session`, false);
+      renderPresentationConversionRecovery(role);
       await loadSlideList(role);
     }
 
@@ -3944,9 +5493,35 @@ async function selectFile(language) {
   });
 }
 
+function renderPresentationConversionRecovery(language) {
+  const roleElements = presentationElements[language];
+  if (!roleElements?.conversionRecovery || !roleElements.retryConversionButton) return;
+
+  const request = state.presentationConversionRecovery[language] || null;
+  roleElements.conversionRecovery.hidden = !request;
+  roleElements.retryConversionButton.disabled = !request
+    || state.serviceFolder.loading
+    || state.presentations[language]?.pending === true;
+}
+
+async function retryPresentationConversion(language) {
+  const request = state.presentationConversionRecovery[language];
+  if (!request
+    || state.serviceFolder.loading
+    || state.presentations[language]?.pending === true) {
+    return false;
+  }
+
+  setStatus(`Retrying ${getRoleLabel(language)}; SyncShow will leave PowerPoint untouched…`);
+  return loadPresentationFile(language, request.filePath, request.options);
+}
+
 function setManualFileControlsDisabled(disabled) {
-  for (const roleElements of Object.values(presentationElements)) {
+  for (const [language, roleElements] of Object.entries(presentationElements)) {
     roleElements.selectButton.disabled = disabled;
+    roleElements.retryConversionButton.disabled = disabled
+      || !state.presentationConversionRecovery[language]
+      || state.presentations[language]?.pending === true;
   }
 }
 
@@ -3964,6 +5539,18 @@ async function loadPresentationFile(language, filePath, {
   const { path: pathInput, selectButton, dateWarning } = roleElements;
   const previousPresentation = state.presentations[language] || emptyPresentation();
   const previousPathValue = pathInput.value;
+  const retryRequest = {
+    filePath,
+    options: {
+      displayPath,
+      dateSource,
+      offline,
+      source,
+      restoreGroupId
+    }
+  };
+  delete state.presentationConversionRecovery[language];
+  renderPresentationConversionRecovery(language);
 
   try {
     selectButton.disabled = true;
@@ -3984,8 +5571,33 @@ async function loadPresentationFile(language, filePath, {
     updateConversionStatus(language, offline ? 'Loading automatically…' : 'Loading slideshow…', true);
 
     const result = await window.api.convertPptx(filePath, language, restoreGroupId);
-    if (!result.success) throw new Error(result.error || 'The presentation could not be converted');
+    if (!result?.success) {
+      const failure = window.SyncShowErrorMessages
+        ?.normalizePresentationConversionFailure(
+          result,
+          'The presentation could not be converted.'
+        ) || {
+          code: 'PRESENTATION_CONVERSION_FAILED',
+          message: 'The presentation could not be converted.',
+          recoveryAction: null
+        };
+      const conversionError = new Error(failure.message);
+      conversionError.code = failure.code;
+      conversionError.recoveryAction = failure.recoveryAction;
+      throw conversionError;
+    }
 
+    // A manually converted deck is no longer the exact immutable native
+    // package described by the previous handoff.
+    applyServiceHandoff(null);
+    for (const [roleId, presentation] of Object.entries(state.presentations)) {
+      if (presentation?.source === 'prepared') {
+        clearPresentationRole(
+          roleId,
+          'Not part of the PowerPoint service · choose a slideshow or decide at Start'
+        );
+      }
+    }
     state.presentations[language] = {
       loaded: true,
       pending: false,
@@ -3998,6 +5610,10 @@ async function loadPresentationFile(language, filePath, {
       cacheDir: result.cacheDir,
       slides: []
     };
+    state.serviceFolder.conversionFailedRoleIds =
+      state.serviceFolder.conversionFailedRoleIds
+        .filter(roleId => roleId !== language);
+    refreshServiceFolderConversionError();
     state.serviceFolder.staleRoleIds = state.serviceFolder.staleRoleIds
       .filter(roleId => roleId !== language);
 
@@ -4020,9 +5636,30 @@ async function loadPresentationFile(language, filePath, {
     return true;
   } catch (error) {
     console.error(`Error loading ${language} file:`, error);
+    const errorMessage = window.SyncShowErrorMessages?.humanizeIpcError(
+      error,
+      'The presentation could not be converted.'
+    ) || 'The presentation could not be converted.';
     state.presentations[language] = previousPresentation;
     pathInput.value = previousPathValue;
     pathInput.title = previousPresentation.path || '';
+    if (source === 'folder') {
+      state.serviceFolder.conversionFailedRoleIds = [
+        ...new Set([
+          ...state.serviceFolder.conversionFailedRoleIds,
+          language
+        ])
+      ];
+      refreshServiceFolderConversionError();
+    }
+    if (error?.recoveryAction
+      === window.SyncShowErrorMessages?.CLOSE_POWERPOINT_AND_RETRY_ACTION) {
+      state.presentationConversionRecovery[language] = {
+        ...retryRequest,
+        message: errorMessage
+      };
+    }
+    const recovery = state.presentationConversionRecovery[language] || null;
 
     if (previousPresentation.loaded) {
       if (previousPresentation.dateSource || previousPresentation.path) {
@@ -4030,20 +5667,24 @@ async function loadPresentationFile(language, filePath, {
       }
       updateConversionStatus(
         language,
-        `✗ New file failed; still using ${previousPresentation.slideCount} previously loaded slides`,
+        recovery
+          ? `✗ ${recovery.message} Still using ${previousPresentation.slideCount} previously loaded slides.`
+          : `✗ New file failed; still using ${previousPresentation.slideCount} previously loaded slides`,
         false
       );
       setStatus(`Could not replace ${getRoleLabel(language)}; the previous presentation is still loaded`);
     } else {
       dateWarning.style.display = 'none';
-      updateConversionStatus(language, `✗ Error: ${error.message}`, false);
+      updateConversionStatus(language, `✗ Error: ${errorMessage}`, false);
       selectButton.textContent = 'Choose slideshow';
       setStatus(`Error loading ${getRoleLabel(language)} presentation`);
     }
+    renderPresentationConversionRecovery(language);
     return false;
   } finally {
     selectButton.disabled = state.serviceFolder.loading;
     if (!state.presentations[language]?.loaded) selectButton.textContent = 'Choose slideshow';
+    renderPresentationConversionRecovery(language);
     renderServiceFolder();
     checkReadyState();
   }
@@ -4145,6 +5786,17 @@ function checkFilenameDate(language, filePath) {
   }
 }
 
+function recheckLoadedPresentationDates() {
+  for (const role of getDeckRoles()) {
+    const presentation = state.presentations[role.id];
+    if (!presentation?.loaded || presentation.pending) continue;
+    checkFilenameDate(
+      role.id,
+      presentation.dateSource || presentation.displayPath || presentation.path || ''
+    );
+  }
+}
+
 function updateConversionStatus(language, message, showProgress) {
   const statusEl = presentationElements[language]?.status;
   if (!statusEl) return;
@@ -4186,7 +5838,7 @@ function handleConversionProgress({ language, progress, converter, fallbackFrom,
   }
 }
 
-async function loadSlideList(language) {
+async function loadSlideList(language, { render = true } = {}) {
   try {
     const slides = await window.api.getSlideList(language);
     console.log(`[loadSlideList] Loaded ${slides.length} slides for ${language}`);
@@ -4196,9 +5848,9 @@ async function loadSlideList(language) {
       console.log(`[loadSlideList] thumbnailBase64 length:`, slides[0].thumbnailBase64?.length || 0);
     }
     state.presentations[language].slides = slides;
+    renderShowCueContext();
 
-    // Render thumbnails whenever we load slides (even if only one language)
-    renderThumbnails();
+    if (render) renderThumbnails();
   } catch (error) {
     console.error(`Error loading slide list for ${language}:`, error);
   }
@@ -4441,9 +6093,35 @@ function checkReadyState() {
   }
 }
 
+function confirmPreparedServiceDate() {
+  const selectedDate = state.serviceFolder.requestedDate
+    || serviceDateForProfile();
+  const guard = window.SyncShowPreparedServiceGuard.preparedServiceDateGuard({
+    presentations: state.presentations,
+    serviceHandoff: state.serviceHandoff,
+    selectedDate,
+    confirmedKeys: state.preparedServiceDateConfirmations
+  });
+  if (!guard.requiresConfirmation) return true;
+
+  const title = state.serviceHandoff.project.title || 'This prepared service';
+  const confirmed = window.confirm(
+    `${title} is dated ${formatServiceDate(guard.serviceDate)}, but Load is set to ${formatServiceDate(guard.selectedDate)}. Start this exact prepared service anyway?`
+  );
+  if (confirmed) {
+    state.preparedServiceDateConfirmations.add(guard.key);
+    return true;
+  }
+  setStatus(
+    'Start cancelled. Choose the intended service date or prepare the correct service before opening output screens.'
+  );
+  return false;
+}
+
 async function startPresentation() {
   const readiness = getReadinessState();
   if (!readiness.isReady) return;
+  if (!confirmPreparedServiceDate()) return;
 
   const serviceDecisions = window.SyncShowServiceOutputPlan.filterDecisionsForOutputs(
     readiness.outputs,
@@ -4837,6 +6515,12 @@ async function launchStartAttempt() {
     updateSlideCounter();
     window.api.requestOutputPreviews();
     setStatus('Presentation started');
+    window.setTimeout(() => {
+      const target = !elements.btnNextSlide.disabled
+        ? elements.btnNextSlide
+        : elements.btnClearDisplays;
+      target?.focus({ preventScroll: true });
+    }, 0);
   } catch (error) {
     console.error('Error starting presentation:', error);
     state.isStarting = false;
@@ -4951,12 +6635,15 @@ function setBibleSending(sending) {
 }
 
 function applyBibleControlLock() {
-  const locked = state.bible.busy || state.bible.sending;
+  const locked = state.bible.busy
+    || state.bible.sending
+    || state.showEndSessionBusy;
   elements.bibleReference.disabled = locked;
   elements.bibleTranslation.disabled = locked;
   elements.btnLookupBible.disabled = locked;
   elements.bibleTargets.disabled = locked || !state.bible.passage;
-  elements.btnReturnFromBible.disabled = state.bible.sending;
+  elements.btnReturnFromBible.disabled = state.bible.sending
+    || state.showEndSessionBusy;
 }
 
 function showBibleError(message) {
@@ -5090,22 +6777,44 @@ function updateBibleActions() {
   const hasTargets = getSelectedBibleTargetIds().length > 0;
   elements.btnSendBibleLive.disabled = state.bible.busy
     || state.bible.sending
+    || state.showEndSessionBusy
     || !state.bible.passage
-    || !hasTargets;
+    || !hasTargets
+    || volunteerControlsAreLocked();
   elements.btnReturnFromBible.hidden = !state.bible.isLive;
+  elements.btnReturnFromBible.disabled = state.showEndSessionBusy;
   updateBibleLiveIndicator();
 }
 
 function updateBibleLiveIndicator() {
   elements.btnOpenBible.classList.toggle('is-live', state.bible.isLive);
-  elements.btnPrevSlide.disabled = state.bible.isLive;
-  elements.btnNextSlide.disabled = state.bible.isLive;
+  const controls = state.showState?.operator?.controls
+    || state.showState?.controls
+    || {};
+  elements.btnOpenBible.disabled =
+    state.showEndSessionBusy
+    || (!state.bible.isLive && controls.canShowBible === false);
+  elements.btnPrevSlide.disabled =
+    state.showEndSessionBusy
+    || state.bible.isLive
+    || state.cueNavigationBusy
+    || controls.canPrevious === false;
+  elements.btnNextSlide.disabled =
+    state.showEndSessionBusy
+    || state.bible.isLive
+    || state.cueNavigationBusy
+    || controls.canNext === false;
   const detail = elements.btnOpenBible.querySelector('small');
   if (detail) detail.textContent = state.bible.isLive ? 'Passage is live' : 'Show a passage now';
 }
 
 async function sendBibleLive() {
-  if (!state.bible.passage || state.bible.busy || state.bible.sending) return;
+  if (
+    state.showEndSessionBusy
+    || !state.bible.passage
+    || state.bible.busy
+    || state.bible.sending
+  ) return;
   const targetOutputIds = getSelectedBibleTargetIds();
   if (targetOutputIds.length === 0) {
     showBibleError('Choose at least one output screen.');
@@ -5141,6 +6850,7 @@ async function sendBibleLive() {
 }
 
 async function returnFromBible() {
+  if (state.showEndSessionBusy) return;
   try {
     await window.api.hideBiblePassage();
     state.bible.isLive = false;
@@ -5527,7 +7237,7 @@ function renderRemoteControl() {
 async function loadSlidesIfNeeded() {
   for (const role of Object.keys(presentationElements)) {
     if (state.presentations[role].loaded && state.presentations[role].slides.length === 0) {
-      await loadSlideList(role);
+      await loadSlideList(role, { render: false });
     }
   }
 }
@@ -5538,6 +7248,31 @@ function beginShowOutputAction() {
     id: state.showActionRequest,
     revision: Number.isInteger(state.showState?.revision) ? state.showState.revision : -1
   };
+}
+
+function updateShowEndSessionBarrier() {
+  const controls = state.showState?.operator?.controls
+    || state.showState?.controls
+    || {};
+  elements.btnShowDisplays.disabled =
+    state.showEndSessionBusy || controls.canRestore === false;
+  elements.btnClearDisplays.disabled =
+    state.showEndSessionBusy || controls.canClear === false;
+  elements.btnStopDisplays.disabled =
+    state.showEndSessionBusy || controls.canStop === false;
+  elements.btnBackToSetup.disabled =
+    state.showEndSessionBusy || controls.canEndSession === false;
+  elements.btnOpenRemote.disabled =
+    state.showEndSessionBusy || controls.canManageRemote === false;
+  applyBibleControlLock();
+  updateBibleActions();
+  renderShowFinishAction();
+}
+
+function showEndSessionBlocksAction() {
+  if (!state.showEndSessionBusy) return false;
+  setStatus('Finishing the service safely; wait for Load and the service handoff');
+  return true;
 }
 
 function applyShowOutputActionResult(action, result) {
@@ -5556,6 +7291,7 @@ function showOutputActionCanReportError(action) {
 
 // Show displays - re-show the display windows and current slide
 async function showDisplays() {
+  if (showEndSessionBlocksAction()) return;
   const action = beginShowOutputAction();
   try {
     const result = await window.api.showDisplays();
@@ -5572,6 +7308,7 @@ async function showDisplays() {
 
 // Clear displays - show black screens
 async function clearDisplays() {
+  if (showEndSessionBlocksAction()) return;
   const action = beginShowOutputAction();
   try {
     const result = await window.api.clearDisplays();
@@ -5606,6 +7343,7 @@ async function handleSyncModeChange() {
 
 // Stop displays - hide windows and unregister keyboard shortcuts
 async function stopDisplays() {
+  if (showEndSessionBlocksAction()) return;
   const action = beginShowOutputAction();
   try {
     const result = await window.api.stopPresentation();
@@ -5620,8 +7358,314 @@ async function stopDisplays() {
   }
 }
 
+function setShowHandoffBusy(busy) {
+  state.showHandoffBusy = busy;
+  elements.btnShowHandoffCompleted.disabled = busy;
+  elements.btnShowHandoffFollowUp.disabled = busy;
+  elements.btnOpenShowSermonHandoff.disabled = busy;
+  elements.btnCloseShowHandoff.disabled = busy;
+}
+
+function setShowHandoffError(message = '') {
+  elements.showHandoffError.hidden = !message;
+  elements.showHandoffError.textContent = message;
+}
+
+function normalizePowerPointServiceHandoff(rawHandoff, now = Date.now()) {
+  if (
+    !rawHandoff
+    || typeof rawHandoff !== 'object'
+    || Array.isArray(rawHandoff)
+  ) {
+    return null;
+  }
+  const exactKeys = [
+    'expiresAt',
+    'receiptToken',
+    'schemaVersion',
+    'serviceDate'
+  ];
+  if (
+    Object.keys(rawHandoff).sort().join('\n') !== exactKeys.join('\n')
+    || rawHandoff.schemaVersion !== 1
+  ) {
+    return null;
+  }
+  const serviceDate = String(rawHandoff.serviceDate || '').trim();
+  const receiptToken = String(rawHandoff.receiptToken || '').trim();
+  const expiresAt = String(rawHandoff.expiresAt || '').trim();
+  const expiry = Date.parse(expiresAt);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/u.test(serviceDate)
+    || !/^[A-Za-z0-9_-]{32}$/u.test(receiptToken)
+    || !Number.isFinite(expiry)
+    || expiry <= Number(now)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    schemaVersion: 1,
+    serviceDate,
+    receiptToken,
+    expiresAt
+  });
+}
+
+function resetShowHandoffContext() {
+  state.showHandoffMode = null;
+  state.postShowPowerPointHandoff = null;
+  delete elements.showHandoffDialog.dataset.mode;
+}
+
+function openShowHandoffDialog(rawPowerPointHandoff = null) {
+  const handoff = state.serviceHandoff;
+  if (elements.showHandoffDialog.open) return false;
+  const nativeHandoff = handoff?.planning ? handoff : null;
+  const powerPointHandoff = nativeHandoff
+    ? null
+    : normalizePowerPointServiceHandoff(rawPowerPointHandoff);
+  if (!nativeHandoff && !powerPointHandoff) return false;
+
+  const powerPointMode = Boolean(powerPointHandoff);
+  state.showHandoffMode = powerPointMode ? 'powerpoint' : 'native';
+  state.postShowPowerPointHandoff = powerPointHandoff;
+  elements.showHandoffDialog.dataset.mode = state.showHandoffMode;
+  elements.showHandoffDescription.textContent = powerPointMode
+    ? 'Open the sermon follow-up for the exact verified PowerPoint service that just ended. The original presentations stay unchanged, and nothing here publishes to Community.'
+    : 'Complete this exact reviewed service and open its sermon handoff, choose follow-up, or open the handoff without changing status. Nothing here publishes to Community.';
+  elements.btnShowHandoffCompleted.hidden = powerPointMode;
+  elements.btnShowHandoffFollowUp.hidden = powerPointMode;
+  elements.btnOpenShowSermonHandoff.textContent = powerPointMode
+    ? 'Open sermon follow-up'
+    : 'Open sermon handoff';
+  elements.btnOpenShowSermonHandoff.classList.toggle('btn-primary', powerPointMode);
+  elements.btnOpenShowSermonHandoff.classList.toggle('btn-outline', !powerPointMode);
+  elements.btnCloseShowHandoff.textContent = powerPointMode
+    ? 'Not now'
+    : 'Keep current status';
+
+  if (powerPointMode) {
+    elements.showHandoffServiceTitle.textContent = 'PowerPoint service';
+    elements.showHandoffServiceMeta.textContent =
+      `${formatServiceDate(powerPointHandoff.serviceDate)} · exact verified service set`;
+  } else {
+    const schedule = [
+      formatServiceDate(nativeHandoff.project.serviceDate),
+      formatServiceStartTime(nativeHandoff.planning.startTime),
+      `revision ${nativeHandoff.project.revision}`
+    ].filter(Boolean);
+    elements.showHandoffServiceTitle.textContent = nativeHandoff.project.title;
+    elements.showHandoffServiceMeta.textContent =
+      `${schedule.join(' · ')} · exact package ${nativeHandoff.project.revisionId.slice(0, 10)}`;
+  }
+  setShowHandoffError('');
+  setShowHandoffBusy(false);
+  elements.showHandoffDialog.showModal();
+  window.setTimeout(() => elements.showHandoffTitle.focus(), 0);
+  return true;
+}
+
+function closeShowHandoffDialog() {
+  if (state.showHandoffBusy || !elements.showHandoffDialog.open) return;
+  setShowHandoffError('');
+  elements.showHandoffDialog.close();
+  resetShowHandoffContext();
+  elements.btnStageLoad.focus();
+}
+
+async function savePostShowPlanningStatus(status, {
+  openSermonHandoff = false
+} = {}) {
+  const handoff = state.serviceHandoff;
+  const completeAndOpen = status === 'completed'
+    && openSermonHandoff === true;
+  if (
+    state.showHandoffBusy
+    || state.showHandoffMode !== 'native'
+    || !handoff?.planning
+    || !['completed', 'needs-follow-up'].includes(status)
+  ) {
+    return;
+  }
+
+  setShowHandoffBusy(true);
+  setShowHandoffError('');
+  try {
+    const result = await window.api.setServicePlanningStatus({
+      projectId: handoff.project.id,
+      expectedRevisionId: handoff.project.revisionId,
+      status
+    });
+    if (
+      result?.project?.id !== handoff.project.id
+      || result?.project?.planning?.status !== status
+      || typeof result?.revisionId !== 'string'
+      || !/^[a-f0-9]{64}$/u.test(result.revisionId)
+    ) {
+      throw new Error('SyncShow did not confirm the saved post-service planning state.');
+    }
+
+    state.postShowOutcome = {
+      status,
+      revisionId: result.revisionId
+    };
+    renderLoadServiceHandoff();
+    if (completeAndOpen) {
+      let opened = null;
+      try {
+        await prepareController.activate();
+        opened = await prepareController.openServiceHandoff({
+          project: {
+            id: result.project.id,
+            revisionId: result.revisionId
+          }
+        });
+      } catch (error) {
+        console.error(
+          '[ServiceHandoff] Service completed, but its exact sermon handoff did not open:',
+          error
+        );
+      }
+
+      setShowHandoffBusy(false);
+      if (elements.showHandoffDialog.open) elements.showHandoffDialog.close();
+      resetShowHandoffContext();
+      setWorkflowStage('prepare', { localTools: true });
+      if (opened?.sermonOpened) {
+        setStatus('Service marked Completed and its exact sermon handoff opened in Prepare');
+      } else if (opened?.opened) {
+        setStatus('Service marked Completed and its exact revision opened; no linked sermon packet was found');
+      } else {
+        setStatus('Service marked Completed, but the sermon handoff changed before it opened; review the newest revision in Prepare');
+      }
+      return result;
+    }
+
+    setShowHandoffBusy(false);
+    elements.showHandoffDialog.close();
+    resetShowHandoffContext();
+    const label = planningStatusLabel(status);
+    setStatus(
+      `Service marked ${label}. The Show package remains preserved as the exact revision that ran.`
+    );
+  } catch (error) {
+    console.error('[ServiceHandoff] Could not save post-service status:', error);
+    setShowHandoffError(operatorErrorMessage(
+      error,
+      'The service changed or could not be updated. Nothing was guessed; open Prepare and review the newest revision.'
+    ));
+    setShowHandoffBusy(false);
+  }
+}
+
+async function completeAndOpenPostShowSermonHandoff() {
+  return savePostShowPlanningStatus('completed', {
+    openSermonHandoff: true
+  });
+}
+
+async function openPostShowSermonHandoff() {
+  if (state.showHandoffMode === 'powerpoint') {
+    const handoff = state.postShowPowerPointHandoff;
+    if (state.showHandoffBusy || !handoff) return;
+    if (Date.parse(handoff.expiresAt) <= Date.now()) {
+      setShowHandoffError(
+        'This exact PowerPoint follow-up has expired. Close this message, open Prepare, and review the Current PowerPoint service before continuing.'
+      );
+      return;
+    }
+    if (typeof prepareController?.openCurrentServiceCompanion !== 'function') {
+      setShowHandoffError(
+        'This build cannot open the exact PowerPoint sermon follow-up in Prepare.'
+      );
+      return;
+    }
+
+    setShowHandoffBusy(true);
+    setShowHandoffError('');
+    let result = null;
+    try {
+      await prepareController.activate({
+        exactPostShowHandoff: true
+      });
+      result = await prepareController.openCurrentServiceCompanion({
+        receiptToken: handoff.receiptToken,
+        expectedServiceDate: handoff.serviceDate,
+        exactPostShowHandoff: true
+      });
+      if (!result?.opened) {
+        throw new Error(
+          result?.error
+          || 'The exact PowerPoint service changed or the follow-up receipt expired.'
+        );
+      }
+      if (elements.showHandoffDialog.open) elements.showHandoffDialog.close();
+      resetShowHandoffContext();
+      setWorkflowStage('prepare', {
+        localTools: true,
+        exactPostShowHandoff: true
+      });
+      setStatus(result.sermonOpened
+        ? 'Opened the exact PowerPoint sermon follow-up in Prepare'
+        : 'Opened the exact PowerPoint service record to finish the sermon handoff');
+    } catch (error) {
+      console.error('[ServiceHandoff] Could not open PowerPoint sermon follow-up:', error);
+      setShowHandoffError(operatorErrorMessage(
+        error,
+        'The exact PowerPoint service changed or the follow-up receipt expired. Nothing else was opened or guessed.'
+      ));
+      window.setTimeout(() => elements.showHandoffTitle.focus(), 0);
+    } finally {
+      setShowHandoffBusy(false);
+    }
+    return;
+  }
+
+  const handoff = state.serviceHandoff;
+  if (
+    state.showHandoffBusy
+    || state.showHandoffMode !== 'native'
+    || !handoff?.planning
+  ) return;
+  if (typeof prepareController?.openServiceHandoff !== 'function') {
+    setShowHandoffError('This build cannot open the exact sermon handoff in Prepare.');
+    return;
+  }
+
+  setShowHandoffBusy(true);
+  setShowHandoffError('');
+  let result = null;
+  try {
+    await prepareController.activate();
+    result = await prepareController.openServiceHandoff(handoff);
+  } catch (error) {
+    console.error('[ServiceHandoff] Could not open sermon handoff:', error);
+  } finally {
+    setShowHandoffBusy(false);
+    if (elements.showHandoffDialog.open) elements.showHandoffDialog.close();
+    resetShowHandoffContext();
+    setWorkflowStage('prepare', { localTools: true });
+  }
+
+  if (result?.sermonOpened) {
+    setStatus('Opened the exact sermon handoff in Prepare');
+  } else if (result?.opened) {
+    setStatus('Opened the exact service revision; no linked sermon packet was found');
+  } else {
+    setStatus('The service changed after this Show package was prepared; review the newest revision');
+  }
+}
+
 // Back to setup - stop presentation and go back to setup screen
 async function backToSetup(targetStage = 'load') {
+  if (state.showEndSessionBusy) return;
+  state.showEndSessionBusy = true;
+  if (state.bible.sending) {
+    state.bible.sendVersion += 1;
+    setBibleSending(false);
+  }
+  elements.btnBackToSetup.setAttribute('aria-busy', 'true');
+  updateShowEndSessionBarrier();
   const action = beginShowOutputAction();
   try {
     // Back ends the output session. Stop merely hides it so Show/Restore can be
@@ -5646,49 +7690,94 @@ async function backToSetup(targetStage = 'load') {
     setWorkflowStage(targetStage === 'prepare' ? 'prepare' : 'load');
     
     setStatus(targetStage === 'prepare' ? 'Returned to Prepare' : 'Returned to Load');
+    if (targetStage === 'prepare') {
+      elements.btnStagePrepare.focus();
+    } else if (!openShowHandoffDialog(result?.powerPointServiceHandoff || null)) {
+      elements.btnStageLoad.focus();
+    }
   } catch (error) {
     console.error('Error returning to setup:', error);
     if (showOutputActionCanReportError(action)) {
       showOutputActionError('Could not return to Load safely', error);
     }
+  } finally {
+    state.showEndSessionBusy = false;
+    elements.btnBackToSetup.removeAttribute('aria-busy');
+    updateShowEndSessionBarrier();
   }
 }
 
 // Slide Navigation
-async function navigateSlide(delta) {
+async function navigateSlide(delta, forwardInput = 'right') {
+  if (showEndSessionBlocksAction()) return;
   if (state.bible.isLive) {
     setStatus('Return from the live Bible passage before changing slides');
     return;
   }
   if (delta !== -1 && delta !== 1) return;
+  if (state.cueNavigationBusy) return;
+  state.cueNavigationBusy = true;
+  elements.btnPrevSlide.setAttribute('aria-busy', 'true');
+  elements.btnNextSlide.setAttribute('aria-busy', 'true');
+  updateBibleLiveIndicator();
   const action = beginShowOutputAction();
   try {
-    const result = await (delta < 0 ? window.api.prevSlide() : window.api.nextSlide());
+    const result = await (delta < 0
+      ? window.api.prevSlide()
+      : window.api.nextSlide(forwardInput));
     applyShowOutputActionResult(action, result);
+    if (result?.videoHandled) {
+      setStatus(result.videoState === 'playing'
+        ? 'Video playing — Space pauses; Right skips to the next cue'
+        : 'Video paused — Space resumes; Right skips to the next cue');
+    }
   } catch (error) {
     console.error('Error changing slides:', error);
-    if (showOutputActionCanReportError(action)) {
+    // The transition itself publishes a pending revision before it can fail.
+    // Keep that authoritative state update, but still explain a timeout or
+    // output rejection when no newer local action (Clear/Stop/etc.) replaced
+    // this one.
+    if (action.id === state.showActionRequest) {
       showOutputActionError('Could not change slides', error);
+    }
+  } finally {
+    state.cueNavigationBusy = false;
+    elements.btnPrevSlide.removeAttribute('aria-busy');
+    elements.btnNextSlide.removeAttribute('aria-busy');
+    updateBibleLiveIndicator();
+    if (showUsesVolunteerControls() && !elements.btnNextSlide.disabled) {
+      elements.btnNextSlide.focus({ preventScroll: true });
     }
   }
 }
 
 async function goToSlide(slideIndex) {
+  if (showEndSessionBlocksAction()) return;
   if (state.bible.isLive) {
     setStatus('Return from the live Bible passage before changing slides');
     return;
   }
   if (slideIndex < 0 || slideIndex >= state.totalSlides) return;
+  if (state.cueNavigationBusy) return;
 
+  state.cueNavigationBusy = true;
+  elements.btnPrevSlide.setAttribute('aria-busy', 'true');
+  elements.btnNextSlide.setAttribute('aria-busy', 'true');
+  updateBibleLiveIndicator();
   const action = beginShowOutputAction();
   try {
     const result = await window.api.navigateToSlide(slideIndex);
     applyShowOutputActionResult(action, result);
   } catch (error) {
     console.error('Error changing slides:', error);
-    if (showOutputActionCanReportError(action)) {
+    if (action.id === state.showActionRequest) {
       showOutputActionError('Could not change slides', error);
     }
+  } finally {
+    state.cueNavigationBusy = false;
+    elements.btnPrevSlide.removeAttribute('aria-busy');
+    elements.btnNextSlide.removeAttribute('aria-busy');
+    updateBibleLiveIndicator();
   }
 }
 
@@ -5699,6 +7788,146 @@ function handleSlideChanged({ currentSlide, totalSlides }) {
   setPreviewsBlacked(false);
   updateSlideCounter();
   updateThumbnailHighlight();
+}
+
+function showUsesVolunteerControls(showState = state.showState) {
+  return showState?.operator?.mode === 'volunteer';
+}
+
+function volunteerControlsAreLocked(showState = state.showState) {
+  return showUsesVolunteerControls(showState)
+    && showState?.operator?.authority !== 'unlocked';
+}
+
+function handleShowRehearsalProgress(progress = {}) {
+  if (progress.status === 'rehearsing') {
+    const current = Number.isInteger(progress.currentCue)
+      ? progress.currentCue
+      : 0;
+    const total = Number.isInteger(progress.totalCues)
+      ? progress.totalCues
+      : 0;
+    elements.preflightProgress.textContent =
+      `REHEARSING ${current} OF ${total}`;
+    setStatus(
+      `Checking every cue on every output before volunteer handoff: ${current} of ${total}`
+    );
+  } else if (progress.status === 'ready') {
+    elements.preflightProgress.textContent = 'VOLUNTEER READY';
+    setStatus(
+      progress.reused
+        ? 'Exact-show rehearsal receipt verified'
+        : 'Every cue was acknowledged by every output'
+    );
+  }
+}
+
+function renderVolunteerShowControls(showState = state.showState) {
+  const volunteer = showUsesVolunteerControls(showState);
+  const locked = volunteerControlsAreLocked(showState);
+  const expiresAt = volunteer && !locked
+    ? Date.parse(showState?.operator?.unlockExpiresAt || '')
+    : Number.NaN;
+  const remainingSeconds = Number.isFinite(expiresAt)
+    ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))
+    : 0;
+
+  document.body.classList.toggle('volunteer-show-locked', locked);
+  elements.volunteerControlBar.hidden = !volunteer;
+  elements.btnUnlockVolunteerControls.hidden = !volunteer || !locked;
+  elements.btnLockVolunteerControls.hidden = !volunteer || locked;
+  elements.btnUnlockVolunteerControls.disabled = state.volunteerControlBusy;
+  elements.btnLockVolunteerControls.disabled = state.volunteerControlBusy;
+  elements.btnOpenBible.closest('.live-tools-box')?.classList.toggle(
+    'volunteer-cleanup-visible',
+    locked && state.bible.isLive
+  );
+
+  if (volunteer) {
+    const rehearsal = showState?.operator?.rehearsal || {};
+    const readinessDetail = rehearsal.status === 'ready'
+      ? rehearsal.persisted
+        ? rehearsal.reused
+          ? ' Exact-show rehearsal receipt verified.'
+          : ' Every cue passed and the exact-show receipt was saved.'
+        : ' Every cue passed for this output session.'
+      : rehearsal.status === 'rehearsing'
+        ? ` Rehearsing cue ${rehearsal.currentCue || 0} of ${rehearsal.totalCues || 0}.`
+        : '';
+    elements.volunteerControlTitle.textContent = locked
+      ? 'Volunteer controls locked'
+      : 'Operator controls temporarily unlocked';
+    elements.volunteerControlDetail.textContent = locked
+      ? `Advance with Right arrow or Space. Clear stays available for emergencies.${readinessDetail}`
+      : `Full live controls are available${remainingSeconds > 0
+        ? ` for about ${remainingSeconds} seconds`
+        : ''}. Relock before handing the computer back.${readinessDetail}`;
+  }
+
+  if (locked) {
+    if (elements.bibleDialog.open && !state.bible.isLive) closeBibleDialog();
+    if (elements.remoteDialog.open) closeRemoteDialog();
+  }
+
+  const canJump = (
+    showState?.operator?.controls
+    || showState?.controls
+  )?.canJump === true;
+  for (const thumbnail of elements.thumbnailsGrid.querySelectorAll('.thumbnail-item')) {
+    thumbnail.disabled = !canJump;
+  }
+  const hints = document.querySelector('.hints-box');
+  if (hints) {
+    hints.textContent = locked
+      ? 'Right arrow or Space advances · Esc clears'
+      : '← / → navigate · Space advances · Esc clears';
+  }
+}
+
+async function unlockVolunteerControls() {
+  if (
+    state.volunteerControlBusy
+    || typeof window.api?.unlockVolunteerControls !== 'function'
+  ) return;
+  state.volunteerControlBusy = true;
+  renderVolunteerShowControls();
+  try {
+    const result = await window.api.unlockVolunteerControls();
+    if (result?.showState) handleShowStateChanged(result.showState);
+    if (result?.confirmed === true) {
+      setStatus('Operator controls unlocked for this Show. Relock before volunteer handoff.');
+    }
+  } catch (error) {
+    showOutputActionError(
+      'Could not unlock operator controls',
+      error
+    );
+  } finally {
+    state.volunteerControlBusy = false;
+    renderVolunteerShowControls();
+  }
+}
+
+async function lockVolunteerControls() {
+  if (
+    state.volunteerControlBusy
+    || typeof window.api?.lockVolunteerControls !== 'function'
+  ) return;
+  state.volunteerControlBusy = true;
+  renderVolunteerShowControls();
+  try {
+    const result = await window.api.lockVolunteerControls();
+    if (result?.showState) handleShowStateChanged(result.showState);
+    setStatus('Volunteer controls relocked');
+  } catch (error) {
+    showOutputActionError(
+      'Could not relock volunteer controls',
+      error
+    );
+  } finally {
+    state.volunteerControlBusy = false;
+    renderVolunteerShowControls();
+  }
 }
 
 function handleShowStateChanged(payload = {}) {
@@ -5725,9 +7954,8 @@ function handleShowStateChanged(payload = {}) {
     ? [...bible.targetOutputIds]
     : [];
 
-  const controls = next.controls || {};
-  elements.btnPrevSlide.disabled = controls.canPrevious === false;
-  elements.btnNextSlide.disabled = controls.canNext === false;
+  updateShowEndSessionBarrier();
+  renderVolunteerShowControls(next);
   setPreviewsBlacked(next.phase === 'cleared' || next.phase === 'hidden' || next.phase === 'idle');
   updateSlideCounter();
   updateThumbnailHighlight();
@@ -5746,6 +7974,8 @@ function operatorErrorMessage(error, fallback) {
 function renderShowOutputState(showState = state.showState) {
   if (!elements.showOutputState) return;
   const phase = String(showState?.phase || 'idle');
+  const cueTransitionPending = Array.isArray(showState?.outputs)
+    && showState.outputs.some(output => output?.status === 'starting');
   const cueNumber = Number.isInteger(showState?.currentCue?.index)
     ? showState.currentCue.index + 1
     : state.currentSlide + 1;
@@ -5774,8 +8004,14 @@ function renderShowOutputState(showState = state.showState) {
       detail: 'Start Show from Load when the service is ready.'
     }
   };
-  const description = descriptions[phase] || descriptions.idle;
+  const description = cueTransitionPending
+    ? {
+        title: 'Changing cue…',
+        detail: 'Waiting for every routed output to confirm the same rendered cue.'
+      }
+    : descriptions[phase] || descriptions.idle;
   elements.showOutputState.dataset.phase = descriptions[phase] ? phase : 'idle';
+  elements.showOutputState.setAttribute('aria-busy', String(cueTransitionPending));
   elements.showOutputStateTitle.textContent = description.title;
   elements.showOutputStateDetail.textContent = description.detail;
 }
@@ -5812,6 +8048,7 @@ function handleBibleStateChanged({ isLive = false, passage = null, targetOutputI
   if (passage) state.bible.passage = passage;
   if (!state.bible.isLive && state.bible.sending) setBibleSending(false);
   updateBibleActions();
+  renderVolunteerShowControls();
   if (elements.bibleDialog.open) renderBibleTargets();
 }
 
@@ -5910,6 +8147,7 @@ function setPreviewsBlacked(blacked) {
 function updateSlideCounter() {
   elements.currentSlideNum.textContent = state.currentSlide + 1;
   elements.totalSlides.textContent = state.totalSlides;
+  renderShowCueContext();
 }
 
 function updateThumbnailHighlight() {
@@ -6026,6 +8264,8 @@ function createThumbnailImage(language, thumbnail, slideNumber, imgHeight) {
 
   const image = document.createElement('img');
   image.src = thumbnail;
+  image.loading = 'lazy';
+  image.decoding = 'async';
   image.alt = `${language} ${slideNumber}`;
   Object.assign(image.style, {
     maxWidth: '100%',
@@ -6136,6 +8376,10 @@ function renderThumbnails() {
     item.className = 'thumbnail-item';
     item.dataset.index = String(i);
     item.dataset.showTransport = 'true';
+    item.disabled = (
+      state.showState?.operator?.controls
+      || state.showState?.controls
+    )?.canJump !== true;
     item.style.minHeight = `${itemMinHeight}px`;
     item.setAttribute(
       'aria-label',
@@ -6209,23 +8453,38 @@ function handleKeyboard(event) {
   if (!window.SyncShowShowAccessibility.shouldHandleGlobalShowShortcut(event, {
     dialogOpen: Boolean(document.querySelector('dialog[open]'))
   })) return;
+  const volunteerLocked = volunteerControlsAreLocked();
+
+  if (
+    (event.key === 'ArrowRight' || event.key === ' ')
+    && (state.cueNavigationBusy || (volunteerLocked && event.repeat === true))
+  ) {
+    event.preventDefault();
+    return;
+  }
   
   switch (event.key) {
     case 'ArrowRight':
+      event.preventDefault();
+      navigateSlide(1, 'right');
+      break;
     case ' ':
       event.preventDefault();
-      navigateSlide(1);
+      navigateSlide(1, 'space');
       break;
     case 'ArrowLeft':
       event.preventDefault();
+      if (volunteerLocked) break;
       navigateSlide(-1);
       break;
     case 'Home':
       event.preventDefault();
+      if (volunteerLocked) break;
       goToSlide(0);
       break;
     case 'End':
       event.preventDefault();
+      if (volunteerLocked) break;
       goToSlide(state.totalSlides - 1);
       break;
     case 'Escape':

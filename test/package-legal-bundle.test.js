@@ -1,0 +1,561 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const test = require('node:test');
+
+const asar = require('@electron/asar');
+const { Arch } = require('builder-util');
+
+const {
+  PDFJS_NOTICE_PATHS,
+  RELEASE_BLOCKERS,
+  SHARP_LIBVIPS_NOTICE,
+  LIBVIPS_SOURCE_NOTICES,
+  WINDOWS_LIBVIPS_SOURCE_NOTICES,
+  buildLegalBundle
+} = require('../scripts/package-legal-bundle');
+const {
+  main: verifyReleaseLegal,
+  verifyLegalBundle
+} = require('../scripts/verify-release-legal');
+const {
+  PACKAGE_TARGETS,
+  packageTarget
+} = require('../scripts/lib/package-targets');
+
+async function writeFile(root, relativePath, contents = relativePath) {
+  const target = path.join(root, relativePath);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, contents);
+  return target;
+}
+
+async function writeJson(root, relativePath, value) {
+  return writeFile(root, relativePath, `${JSON.stringify(value)}\n`);
+}
+
+function lockRecord(version) {
+  return {
+    version,
+    integrity: `sha512-${Buffer.from(`integrity-${version}`).toString('base64')}`
+  };
+}
+
+async function legalFixture(t, {
+  appVersion = '1.4.0-preview.21'
+} = {}) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'syncshow-legal-bundle-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const projectDir = path.join(root, 'project');
+  const appOutDir = path.join(root, 'dist', 'mac-arm64');
+  const resourcesRoot = path.join(
+    appOutDir,
+    'SyncShow.app',
+    'Contents',
+    'Resources'
+  );
+  const archivePath = path.join(resourcesRoot, 'app.asar');
+  const unpackedRoot = `${archivePath}.unpacked`;
+  const asarSource = path.join(root, 'asar-source');
+
+  await writeJson(asarSource, 'package.json', {
+    name: 'sync-show',
+    version: appVersion,
+    license: 'MIT'
+  });
+  await writeJson(asarSource, 'node_modules/pdfjs-dist/package.json', {
+    name: 'pdfjs-dist',
+    version: '6.2.108',
+    license: 'Apache-2.0'
+  });
+  for (const relativePath of PDFJS_NOTICE_PATHS) {
+    await writeFile(
+      asarSource,
+      `node_modules/pdfjs-dist/${relativePath}`,
+      `PDF.js notice ${relativePath}\n`
+    );
+  }
+  await fs.mkdir(resourcesRoot, { recursive: true });
+  await asar.createPackage(asarSource, archivePath);
+
+  await writeJson(unpackedRoot, 'node_modules/@napi-rs/canvas/package.json', {
+    name: '@napi-rs/canvas',
+    version: '1.0.3'
+  });
+  await writeFile(
+    unpackedRoot,
+    'node_modules/@napi-rs/canvas/LICENSE',
+    'Canvas MIT license\n'
+  );
+  await writeJson(
+    unpackedRoot,
+    'node_modules/@napi-rs/canvas-darwin-arm64/package.json',
+    {
+      name: '@napi-rs/canvas-darwin-arm64',
+      version: '1.0.3'
+    }
+  );
+  await writeFile(
+    unpackedRoot,
+    'node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node',
+    'fixture native canvas'
+  );
+  await writeJson(unpackedRoot, 'node_modules/sharp/package.json', {
+    name: 'sharp',
+    version: '0.35.3'
+  });
+  await writeFile(
+    unpackedRoot,
+    'node_modules/sharp/LICENSE',
+    'Sharp Apache license\n'
+  );
+  await writeJson(
+    unpackedRoot,
+    'node_modules/@img/sharp-darwin-arm64/package.json',
+    {
+      name: '@img/sharp-darwin-arm64',
+      version: '0.35.3'
+    }
+  );
+  await writeFile(
+    unpackedRoot,
+    'node_modules/@img/sharp-darwin-arm64/LICENSE',
+    'Sharp target license\n'
+  );
+  await writeFile(
+    unpackedRoot,
+    'node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.3.node',
+    'fixture native sharp'
+  );
+  await writeJson(
+    unpackedRoot,
+    'node_modules/@img/sharp-libvips-darwin-arm64/package.json',
+    {
+      name: '@img/sharp-libvips-darwin-arm64',
+      version: '1.3.2'
+    }
+  );
+  await writeFile(
+    unpackedRoot,
+    'node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.3.dylib',
+    'fixture native libvips'
+  );
+  await writeFile(
+    unpackedRoot,
+    'assets/fonts/OFL-NotoSans.txt',
+    'Noto Sans OFL fixture\n'
+  );
+  await writeFile(
+    appOutDir,
+    'SyncShow.app/Contents/Frameworks/Electron Framework.framework/'
+      + 'Versions/A/Libraries/libffmpeg.dylib',
+    'fixture Electron FFmpeg'
+  );
+
+  await writeFile(projectDir, 'LICENSE.txt', 'SyncShow MIT license\n');
+  await writeFile(projectDir, SHARP_LIBVIPS_NOTICE.projectPath, await fs.readFile(
+    path.resolve(__dirname, '..', SHARP_LIBVIPS_NOTICE.projectPath)
+  ));
+  await writeJson(projectDir, 'node_modules/electron/package.json', {
+    name: 'electron',
+    version: '43.2.0'
+  });
+  await writeFile(
+    projectDir,
+    'node_modules/electron/dist/LICENSE',
+    'Electron MIT license\n'
+  );
+  await writeFile(
+    projectDir,
+    'node_modules/electron/dist/LICENSES.chromium.html',
+    '<html>Chromium and FFmpeg notices</html>\n'
+  );
+  await writeFile(
+    projectDir,
+    'node_modules/@napi-rs/canvas-darwin-arm64/README.md',
+    'Canvas target provenance only\n'
+  );
+  await writeFile(
+    projectDir,
+    'node_modules/@img/sharp-darwin-arm64/README.md',
+    'Sharp native target provenance only\n'
+  );
+  await writeFile(
+    projectDir,
+    'node_modules/@img/sharp-libvips-darwin-arm64/README.md',
+    'libvips provenance only\n'
+  );
+  await writeJson(
+    projectDir,
+    'node_modules/@img/sharp-libvips-darwin-arm64/versions.json',
+    {
+      vips: '8.18.3',
+      cairo: '1.18.4'
+    }
+  );
+
+  const packages = {
+    'node_modules/@napi-rs/canvas': lockRecord('1.0.3'),
+    'node_modules/@napi-rs/canvas-darwin-arm64': lockRecord('1.0.3'),
+    'node_modules/pdfjs-dist': lockRecord('6.2.108'),
+    'node_modules/sharp': lockRecord('0.35.3'),
+    'node_modules/@img/sharp-darwin-arm64': lockRecord('0.35.3'),
+    'node_modules/@img/sharp-libvips-darwin-arm64': lockRecord('1.3.2'),
+    'node_modules/electron': lockRecord('43.2.0')
+  };
+  await writeJson(projectDir, 'package-lock.json', {
+    lockfileVersion: 3,
+    packages
+  });
+
+  await fs.cp(
+    path.resolve(__dirname, '..', LIBVIPS_SOURCE_NOTICES.projectRoot),
+    path.join(projectDir, LIBVIPS_SOURCE_NOTICES.projectRoot),
+    { recursive: true }
+  );
+
+  const context = {
+    appOutDir,
+    electronPlatformName: 'darwin',
+    arch: Arch.arm64,
+    packager: {
+      projectDir,
+      appInfo: {
+        version: appVersion
+      },
+      config: {},
+      info: {
+        framework: {
+          version: '43.2.0'
+        }
+      },
+      getResourcesDir: () => resourcesRoot
+    }
+  };
+  return {
+    appOutDir,
+    context,
+    manifestPath: path.join(resourcesRoot, 'legal', 'manifest.json'),
+    resourcesRoot,
+    root
+  };
+}
+
+async function windowsLegalFixture(t) {
+  const fixture = await legalFixture(t);
+  const { appOutDir, context } = fixture;
+  const { projectDir } = context.packager;
+  const resourcesRoot = path.join(appOutDir, 'resources');
+  await fs.rename(fixture.resourcesRoot, resourcesRoot);
+  await fs.rm(path.join(appOutDir, 'SyncShow.app'), { recursive: true });
+  const unpackedRoot = path.join(resourcesRoot, 'app.asar.unpacked');
+  for (const relativePath of [
+    'node_modules/@napi-rs/canvas-darwin-arm64',
+    'node_modules/@img/sharp-darwin-arm64',
+    'node_modules/@img/sharp-libvips-darwin-arm64'
+  ]) {
+    await fs.rm(path.join(unpackedRoot, relativePath), { recursive: true });
+  }
+  const target = packageTarget('win32', 'x64');
+  for (const [name, version] of [
+    [`@napi-rs/${target.canvasPackage}`, '1.0.3'],
+    [`@img/${target.sharpPackage}`, '0.35.3']
+  ]) {
+    await writeJson(unpackedRoot, `node_modules/${name}/package.json`, { name, version });
+    await writeFile(unpackedRoot, `node_modules/${name}/LICENSE`, 'Windows fixture license\n');
+    await writeFile(projectDir, `node_modules/${name}/README.md`, 'Windows fixture provenance\n');
+  }
+  for (const artifact of target.nativePackageArtifacts) {
+    await writeFile(unpackedRoot, artifact.suffix, 'Windows native fixture\n');
+  }
+  await writeJson(projectDir, `node_modules/@img/${target.sharpPackage}/versions.json`, {
+    vips: '8.18.3', cairo: '1.18.4'
+  });
+  await writeFile(appOutDir, 'ffmpeg.dll', 'Windows FFmpeg fixture\n');
+  await writeFile(appOutDir, 'LICENSE.electron.txt', 'Electron MIT license\n');
+  await writeFile(appOutDir, 'LICENSES.chromium.html', '<html>Chromium notices</html>\n');
+  const lockPath = path.join(projectDir, 'package-lock.json');
+  const lock = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+  lock.packages[`node_modules/@napi-rs/${target.canvasPackage}`] = lockRecord('1.0.3');
+  lock.packages[`node_modules/@img/${target.sharpPackage}`] = lockRecord('0.35.3');
+  await fs.writeFile(lockPath, JSON.stringify(lock));
+  await fs.cp(
+    path.resolve(__dirname, '..', WINDOWS_LIBVIPS_SOURCE_NOTICES.projectRoot),
+    path.join(projectDir, WINDOWS_LIBVIPS_SOURCE_NOTICES.projectRoot),
+    { recursive: true }
+  );
+  context.electronPlatformName = 'win32';
+  context.arch = Arch.x64;
+  context.packager.getResourcesDir = () => resourcesRoot;
+  return {
+    ...fixture,
+    resourcesRoot,
+    manifestPath: path.join(resourcesRoot, 'legal', 'manifest.json')
+  };
+}
+
+test('package target map is exact for every supported release architecture', () => {
+  assert.deepEqual(Object.keys(PACKAGE_TARGETS).sort(), [
+    'darwin-arm64',
+    'darwin-x64',
+    'linux-x64',
+    'win32-x64'
+  ]);
+  assert.equal(
+    packageTarget('darwin', 'arm64').canvasPackage,
+    'canvas-darwin-arm64'
+  );
+  assert.equal(
+    packageTarget('win32', 'x64').libvipsPackage,
+    null
+  );
+  assert.throws(
+    () => packageTarget('linux', 'arm64'),
+    /Unsupported packaged application target/u
+  );
+});
+
+test('afterPack legal evidence is target-specific, complete for its stated scope, and tamper-evident', async t => {
+  const fixture = await legalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  assert.equal(built.legalRoot, path.dirname(fixture.manifestPath));
+  assert.equal(built.manifest.releaseLegalStatus, 'blocked');
+  assert.deepEqual(
+    built.manifest.releaseReadinessBlockers.map(blocker => blocker.id),
+    RELEASE_BLOCKERS.map(blocker => blocker.id)
+  );
+  assert.equal(built.manifest.target.key, 'darwin-arm64');
+  const libvipsNotice = built.manifest.notices.find(record => (
+    record.path === 'notices/sharp-libvips-1.3.2/THIRD-PARTY-NOTICES.md'
+  ));
+  assert.equal(libvipsNotice.sha256, '25ffcfa69e28b1913ced27ec778b90f24911a1bb3021253577e8b0af55db0d49');
+  const noticeText = await fs.readFile(path.join(built.legalRoot, libvipsNotice.path), 'utf8');
+  assert.match(noticeText, /\| libvips\s+\| LGPLv3/u);
+  assert.equal(
+    built.manifest.nativeArtifacts.some(record => (
+      record.package === 'electron-ffmpeg'
+      && record.path.endsWith('/libffmpeg.dylib')
+      && record.hashStage === 'after-pack-before-platform-signing'
+      && /^[a-f0-9]{64}$/u.test(record.preSigningSha256)
+    )),
+    true
+  );
+  assert.equal(
+    JSON.stringify(built.manifest).includes(fixture.root),
+    false,
+    'manifest must never disclose build-host absolute paths'
+  );
+
+  const verified = await verifyLegalBundle(
+    fixture.manifestPath,
+    { requireComplete: false }
+  );
+  assert.equal(verified.evidenceVerification, 'passed');
+  assert.equal(verified.releaseLegalStatus, 'blocked');
+  await assert.rejects(
+    verifyLegalBundle(fixture.manifestPath),
+    error => (
+      error.code === 'RELEASE_LEGAL_BLOCKED'
+      && error.details.blockerIds.length === 3
+    )
+  );
+
+  const output = [];
+  await verifyReleaseLegal(
+    ['--root', path.join(fixture.root, 'dist'), '--evidence-only'],
+    { write: value => output.push(value) }
+  );
+  assert.match(output.join(''), /"evidenceVerification": "passed"/u);
+
+  const copiedLicense = path.join(
+    fixture.resourcesRoot,
+    'legal',
+    'notices',
+    'napi-rs-canvas-1.0.3',
+    'LICENSE'
+  );
+  await fs.appendFile(copiedLicense, 'tampered\n');
+  await assert.rejects(
+    verifyLegalBundle(fixture.manifestPath, { requireComplete: false }),
+    error => error.code === 'LEGAL_EVIDENCE_CHANGED'
+  );
+});
+
+test('legal packaging rejects changed upstream libvips notice bytes', async t => {
+  const fixture = await legalFixture(t);
+  await fs.appendFile(path.join(fixture.context.packager.projectDir, SHARP_LIBVIPS_NOTICE.projectPath), 'changed\n');
+  await assert.rejects(buildLegalBundle(fixture.context), error => error.code === 'UPSTREAM_NOTICE_CHANGED');
+});
+
+test('legal verification rejects a libvips notice hash substituted in the manifest', async t => {
+  const fixture = await legalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  built.manifest.notices.find(record => record.path === SHARP_LIBVIPS_NOTICE.bundlePath).sha256 = '0'.repeat(64);
+  await fs.writeFile(fixture.manifestPath, JSON.stringify(built.manifest));
+  await assert.rejects(
+    verifyLegalBundle(fixture.manifestPath, { requireComplete: false }),
+    error => error.code === 'UPSTREAM_NOTICE_CHANGED'
+  );
+});
+
+test('libvips source notices include the actual LGPL text behind the GLib symlink', async t => {
+  const fixture = await legalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  const record = built.manifest.notices.find(item => item.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt'));
+  assert.ok(record);
+  assert.match(await fs.readFile(path.join(built.legalRoot, record.path), 'utf8'), /GNU LESSER GENERAL PUBLIC LICENSE/u);
+});
+
+test('libvips source notice generation rejects changed text and inventory bytes', async t => {
+  for (const relativePath of ['glib/LICENSES/LGPL-2.1-or-later.txt', 'manifest.json']) {
+    const fixture = await legalFixture(t);
+    await fs.appendFile(path.join(fixture.context.packager.projectDir, LIBVIPS_SOURCE_NOTICES.projectRoot, relativePath), 'changed\n');
+    await assert.rejects(buildLegalBundle(fixture.context), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
+  }
+});
+
+test('libvips source notice verification rejects substituted archive hashes', async t => {
+  const fixture = await legalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  const record = built.manifest.notices.find(item => item.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt'));
+  record.sha256 = '0'.repeat(64);
+  await fs.writeFile(fixture.manifestPath, JSON.stringify(built.manifest));
+  await assert.rejects(verifyLegalBundle(fixture.manifestPath, { requireComplete: false }), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
+});
+
+test('Windows packages its own checked source notices and preserves the unresolved archive', async t => {
+  const fixture = await windowsLegalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  const prefix = `${WINDOWS_LIBVIPS_SOURCE_NOTICES.bundleRoot}/`;
+  assert.equal(built.manifest.notices.filter(record => record.path.startsWith(prefix)).length, 105);
+  assert.equal(built.manifest.notices.some(record => record.path.startsWith('notices/sharp-libvips-1.3.2/')), false);
+  const inventory = JSON.parse(await fs.readFile(path.join(built.legalRoot, prefix, 'manifest.json'), 'utf8'));
+  assert.equal(inventory.sourceArchives.length, 27);
+  assert.deepEqual(inventory.unresolvedSourceArchives.map(record => record.id), ['imagequant']);
+  assert.equal(inventory.files.some(record => record.sourceArchive === 'imagequant'), false);
+  const glib = built.manifest.notices.find(record => record.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt'));
+  assert.match(await fs.readFile(path.join(built.legalRoot, glib.path), 'utf8'), /GNU LESSER GENERAL PUBLIC LICENSE/u);
+  assert.equal((await verifyLegalBundle(fixture.manifestPath, { requireComplete: false })).evidenceVerification, 'passed');
+  await assert.rejects(verifyLegalBundle(fixture.manifestPath), error => error.code === 'RELEASE_LEGAL_BLOCKED');
+});
+
+test('Windows notice generation rejects changed source text and inventory', async t => {
+  for (const relativePath of ['glib/LICENSES/LGPL-2.1-or-later.txt', 'manifest.json']) {
+    const fixture = await windowsLegalFixture(t);
+    await fs.appendFile(path.join(fixture.context.packager.projectDir, WINDOWS_LIBVIPS_SOURCE_NOTICES.projectRoot, relativePath), 'changed\n');
+    await assert.rejects(buildLegalBundle(fixture.context), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
+  }
+});
+
+test('Windows notice verification rejects a substituted source hash', async t => {
+  const fixture = await windowsLegalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  built.manifest.notices.find(record => record.path.endsWith('/glib/LICENSES/LGPL-2.1-or-later.txt')).sha256 = '0'.repeat(64);
+  await fs.writeFile(fixture.manifestPath, JSON.stringify(built.manifest));
+  await assert.rejects(verifyLegalBundle(fixture.manifestPath, { requireComplete: false }), error => error.code === 'UPSTREAM_SOURCE_NOTICE_CHANGED');
+});
+
+test('legal verification reads the evolving application version from packaged app.asar', async t => {
+  const fixture = await legalFixture(t, {
+    appVersion: '1.4.0-preview.22'
+  });
+  await buildLegalBundle(fixture.context);
+  const verified = await verifyLegalBundle(
+    fixture.manifestPath,
+    { requireComplete: false }
+  );
+  assert.equal(verified.evidenceVerification, 'passed');
+});
+
+test('legal evidence generation rejects a staged native target mismatch', async t => {
+  const fixture = await legalFixture(t);
+  await fs.rename(
+    path.join(
+      `${path.join(fixture.resourcesRoot, 'app.asar')}.unpacked`,
+      'node_modules',
+      '@napi-rs',
+      'canvas-darwin-arm64'
+    ),
+    path.join(
+      `${path.join(fixture.resourcesRoot, 'app.asar')}.unpacked`,
+      'node_modules',
+      '@napi-rs',
+      'canvas-darwin-x64'
+    )
+  );
+  await assert.rejects(
+    buildLegalBundle(fixture.context),
+    error => error.code === 'NATIVE_PACKAGE_TARGET_MISMATCH'
+  );
+});
+
+test('legal evidence generation rejects a staged Sharp WASM fallback', async t => {
+  const fixture = await legalFixture(t);
+  const wasmRoot = path.join(
+    `${path.join(fixture.resourcesRoot, 'app.asar')}.unpacked`,
+    'node_modules',
+    '@img',
+    'sharp-wasm32'
+  );
+  await fs.mkdir(wasmRoot, { recursive: false });
+  await fs.writeFile(path.join(wasmRoot, 'package.json'), '{}\n');
+  await assert.rejects(
+    buildLegalBundle(fixture.context),
+    error => error.code === 'NATIVE_PACKAGE_TARGET_MISMATCH'
+  );
+});
+
+test('release workflow enforces blocked legal evidence before every artifact upload', async () => {
+  const root = path.resolve(__dirname, '..');
+  const packageJson = JSON.parse(
+    await fs.readFile(path.join(root, 'package.json'), 'utf8')
+  );
+  const workflow = await fs.readFile(
+    path.join(root, '.github', 'workflows', 'build.yml'),
+    'utf8'
+  );
+  const promotionWorkflow = await fs.readFile(
+    path.join(root, '.github', 'workflows', 'promote-release.yml'),
+    'utf8'
+  );
+  const afterPack = await fs.readFile(
+    path.join(root, 'scripts', 'afterPack.js'),
+    'utf8'
+  );
+  assert.equal(
+    packageJson.scripts['build:verify-release-legal'],
+    'node scripts/verify-release-legal.js'
+  );
+  assert.equal(
+    (workflow.match(/- name: Enforce public-release legal materials/gu) || []).length,
+    3
+  );
+  assert.equal(
+    (workflow.match(/run: npm run build:verify-release-legal/gu) || []).length,
+    3
+  );
+  const gates = [...workflow.matchAll(
+    /run: npm run build:verify-release-legal/gu
+  )].map(match => match.index);
+  const uploads = [
+    '- name: Upload Windows artifact',
+    '- name: Upload macOS artifact',
+    '- name: Upload Linux artifact'
+  ].map(label => workflow.indexOf(label));
+  assert.deepEqual(
+    gates.map((gate, index) => gate < uploads[index]),
+    [true, true, true]
+  );
+  assert.ok(
+    afterPack.indexOf('await buildLegalBundle(context)')
+      < afterPack.indexOf("context.electronPlatformName !== 'darwin'")
+  );
+  assert.doesNotMatch(promotionWorkflow, /\bgit tag\b|--tags|gh workflow run/u);
+  assert.match(
+    promotionWorkflow,
+    /build workflow owns the\s+# release tag/u
+  );
+});

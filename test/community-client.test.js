@@ -3,6 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
+const memberSharingFixture =
+  require('./fixtures/song-member-sharing-wire-v1.json');
 
 const {
   CommunityClient,
@@ -35,6 +37,41 @@ function discovery(overrides = {}) {
         ...overrides
       }
     }
+  };
+}
+
+function resourceDiscovery(resources) {
+  return {
+    schemaVersion: 1,
+    server: { id: 'wotbc-community', name: 'WOTBC Community' },
+    integrations: {
+      syncShow: {
+        schemaVersion: 2,
+        apiBaseUrl: `${BASE_URL}api/community/syncshow/v1`,
+        deviceAuthorization: true,
+        resources
+      }
+    }
+  };
+}
+
+function songResource(scopes = ['syncshow:songs:read', 'syncshow:songs:write']) {
+  return {
+    schemaVersion: 1,
+    endpoint: 'songs',
+    scopes
+  };
+}
+
+function sermonResource() {
+  return {
+    schemaVersion: 1,
+    endpoint: 'sermons',
+    scopes: ['syncshow:sermons:read', 'syncshow:sermons:write'],
+    sourceObjectScopes: [
+      'syncshow:sermon-sources:read',
+      'syncshow:sermon-sources:write'
+    ]
   };
 }
 
@@ -119,6 +156,61 @@ test('discovery pins the SyncShow API and every advertised endpoint to the serve
   );
 });
 
+test('member-sharing discovery is exact, same-origin, and version pinned', async () => {
+  const cases = [
+    {
+      descriptor: {
+        schemaVersion: 1,
+        endpoint: 'song-member-sharing',
+        reviewScope: 'community-members',
+        fallback: 'songs'
+      },
+      code: 'INVALID_DISCOVERY'
+    },
+    {
+      descriptor: {
+        schemaVersion: 2,
+        endpoint: 'song-member-sharing',
+        reviewScope: 'community-members'
+      },
+      code: 'SYNC_UNSUPPORTED'
+    },
+    {
+      descriptor: {
+        schemaVersion: 1,
+        endpoint: 'song-member-sharing',
+        reviewScope: 'everyone'
+      },
+      code: 'SYNC_UNSUPPORTED'
+    },
+    {
+      descriptor: {
+        schemaVersion: 1,
+        endpoint: 'https://attacker.invalid/member-sharing',
+        reviewScope: 'community-members'
+      },
+      code: 'INVALID_DISCOVERY'
+    }
+  ];
+
+  for (const testCase of cases) {
+    const client = new CommunityClient({
+      baseUrl: BASE_URL,
+      fetchImpl: async () => json(resourceDiscovery({
+        songs: {
+          ...songResource(),
+          memberSharing: testCase.descriptor
+        }
+      }))
+    });
+    await assert.rejects(
+      client.discover(),
+      error => error instanceof CommunityClientError
+        && error.code === testCase.code
+    );
+  }
+});
+
 test('redirects and oversized discovery responses are rejected without following them', async () => {
   const redirected = new CommunityClient({
     baseUrl: BASE_URL,
@@ -146,6 +238,129 @@ test('redirects and oversized discovery responses are rejected without following
     oversized.discover(),
     error => error.code === 'RESPONSE_TOO_LARGE'
   );
+});
+
+test('sermon-only discovery rejects every song method before any song request', async () => {
+  const requests = [];
+  const client = new CommunityClient({
+    baseUrl: BASE_URL,
+    fetchImpl: async (input, options) => {
+      requests.push({ input, options });
+      return json(resourceDiscovery({ sermons: sermonResource() }));
+    }
+  });
+  const calls = [
+    () => client.listSongChanges({ accessToken: ACCESS_TOKEN }),
+    () => client.getSong({
+      syncId: 'amazing-grace',
+      accessToken: ACCESS_TOKEN
+    }),
+    () => client.createSong({
+      syncId: 'amazing-grace',
+      syncDocuments: [songDocument()],
+      idempotencyKey: 'song-create-0001',
+      accessToken: ACCESS_TOKEN
+    }),
+    () => client.updateSong({
+      syncId: 'amazing-grace',
+      syncDocuments: [songDocument()],
+      expectedSyncVersion: 3,
+      accessToken: ACCESS_TOKEN
+    }),
+    () => client.archiveSong({
+      syncId: 'amazing-grace',
+      expectedSyncVersion: 3,
+      accessToken: ACCESS_TOKEN
+    })
+  ];
+
+  for (const call of calls) {
+    await assert.rejects(
+      call,
+      error => error instanceof CommunityClientError
+        && error.code === 'SONG_SYNC_UNSUPPORTED'
+    );
+  }
+  assert.equal(requests.length, 1);
+  assert.equal(new URL(requests[0].input).pathname, DISCOVERY_PATH);
+});
+
+test('a v2 read-only song lane rejects every write before any song request', async () => {
+  const requests = [];
+  const client = new CommunityClient({
+    baseUrl: BASE_URL,
+    fetchImpl: async (input, options) => {
+      requests.push({ input, options });
+      return json(resourceDiscovery({
+        songs: songResource(['syncshow:songs:read'])
+      }));
+    }
+  });
+  const calls = [
+    () => client.createSong({
+      syncId: 'amazing-grace',
+      syncDocuments: [songDocument()],
+      idempotencyKey: 'song-create-0001',
+      accessToken: ACCESS_TOKEN
+    }),
+    () => client.updateSong({
+      syncId: 'amazing-grace',
+      syncDocuments: [songDocument()],
+      expectedSyncVersion: 3,
+      accessToken: ACCESS_TOKEN
+    }),
+    () => client.archiveSong({
+      syncId: 'amazing-grace',
+      expectedSyncVersion: 3,
+      accessToken: ACCESS_TOKEN
+    })
+  ];
+
+  for (const call of calls) {
+    await assert.rejects(
+      call,
+      error => error instanceof CommunityClientError
+        && error.code === 'SONG_SCOPE_UNAVAILABLE'
+    );
+  }
+  assert.equal(requests.length, 1);
+  assert.equal(new URL(requests[0].input).pathname, DISCOVERY_PATH);
+});
+
+test('omitted device scopes use advertised read lanes without inventing song access', async () => {
+  const requests = [];
+  const client = new CommunityClient({
+    baseUrl: BASE_URL,
+    randomBytes: () => Buffer.alloc(32, 5),
+    randomUUID: () => 'authorization-sermon-only',
+    fetchImpl: async (input, options) => {
+      const url = new URL(input);
+      if (url.pathname === DISCOVERY_PATH) {
+        return json(resourceDiscovery({ sermons: sermonResource() }));
+      }
+      requests.push(JSON.parse(options.body));
+      return json({
+        deviceId: 'device-authorization-sermon-only',
+        deviceSecret: DEVICE_SECRET,
+        userCode: 'SRMN-1234',
+        verificationUri: `${BASE_URL}admin/syncshow/approve`,
+        expiresAt: '2026-07-25T12:10:00.000Z',
+        pollIntervalMs: 1000
+      }, 201);
+    }
+  });
+
+  await client.startDeviceAuthorization({
+    email: 'admin@example.com',
+    deviceName: 'Sanctuary Mac'
+  });
+
+  assert.deepEqual(requests[0].scopes, [
+    'syncshow:sermon-sources:read',
+    'syncshow:sermons:read'
+  ]);
+  assert.equal(requests[0].scopes.some(scope => scope.startsWith('syncshow:songs:')), false);
+  assert.equal(requests[0].scopes.some(scope => scope.endsWith(':write')), false);
 });
 
 test('oversized song pages retry with smaller limits instead of wedging synchronization', async () => {
@@ -254,6 +469,69 @@ test('device authorization keeps the device secret and PKCE verifier out of retu
   assert.equal(polled.grant.accessToken, ACCESS_TOKEN);
   assert.equal(JSON.stringify(polled).includes(DEVICE_SECRET), false);
   assert.equal(requests.length, 4);
+});
+
+test('a device token must explicitly return non-empty granted scopes', async () => {
+  const variants = [
+    { label: 'missing' },
+    { label: 'null', scopes: null },
+    { label: 'empty', scopes: [] }
+  ];
+
+  for (const variant of variants) {
+    const client = new CommunityClient({
+      baseUrl: BASE_URL,
+      now: () => new Date('2026-07-25T12:00:00.000Z'),
+      randomBytes: () => Buffer.alloc(32, 8),
+      randomUUID: () => `authorization-${variant.label}-scopes`,
+      fetchImpl: async (input) => {
+        const url = new URL(input);
+        if (url.pathname === DISCOVERY_PATH) return json(discovery());
+        if (url.pathname.endsWith('/auth/device/start')) {
+          return json({
+            deviceId: `device-${variant.label}-scopes-0001`,
+            deviceSecret: DEVICE_SECRET,
+            userCode: 'SCOPE-1234',
+            verificationUri: `${BASE_URL}admin/syncshow/approve`,
+            expiresAt: '2026-07-25T12:10:00.000Z',
+            pollIntervalMs: 1000
+          }, 201);
+        }
+        if (url.pathname.endsWith('/auth/device/status')) {
+          return json({ status: 'approved' });
+        }
+        if (url.pathname.endsWith('/auth/device/token')) {
+          return json({
+            accessToken: ACCESS_TOKEN,
+            refreshToken: null,
+            expiresAt: '2026-07-25T13:00:00.000Z',
+            ...(Object.hasOwn(variant, 'scopes')
+              ? { scopes: variant.scopes }
+              : {}),
+            account: {
+              id: 'admin-1',
+              email: 'admin@example.com',
+              name: 'Church Admin'
+            }
+          });
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      }
+    });
+
+    const started = await client.startDeviceAuthorization({
+      email: 'admin@example.com',
+      deviceName: 'Sanctuary Mac',
+      scopes: ['syncshow:songs:read']
+    });
+    await assert.rejects(
+      client.pollDeviceAuthorization(started.authorizationId),
+      error => error instanceof CommunityClientError
+        && error.code === 'INVALID_RESPONSE'
+        && /granted community access scopes/i.test(error.message),
+      `${variant.label} token scopes must fail closed`
+    );
+  }
 });
 
 test('a consumed device grant retries the deterministic token exchange after a lost response', async () => {
@@ -393,7 +671,7 @@ test('legacy bilingual title fields are retained as matchable alternate titles',
   assert.deepEqual(page.items[0].alternateTitles, ['О благодать', 'Amazing Grace']);
 });
 
-test('scheduled visibility is explicit and revoke treats an already-invalid token as revoked', async () => {
+test('ordinary song writes stay private and revoke treats an already-invalid token as revoked', async () => {
   const requests = [];
   const client = new CommunityClient({
     baseUrl: BASE_URL,
@@ -404,8 +682,8 @@ test('scheduled visibility is explicit and revoke treats an already-invalid toke
       if (url.pathname.endsWith('/auth/revoke')) return new Response(null, { status: 401 });
       return json(remoteSong({
         syncVersion: 5,
-        visibility: 'scheduled-public',
-        publishAt: '2026-07-26T17:00:00.000Z'
+        visibility: 'private',
+        publishAt: null
       }));
     }
   });
@@ -414,19 +692,243 @@ test('scheduled visibility is explicit and revoke treats an already-invalid toke
     client.updateSong({
       syncId: 'amazing-grace',
       visibility: 'scheduled-public',
+      publishAt: '2026-07-26T17:00:00.000Z',
       expectedSyncVersion: 4,
       accessToken: ACCESS_TOKEN
     }),
-    error => error.code === 'INVALID_INPUT'
+    error => error.code === 'SONG_MEMBER_SHARING_TRANSACTION_REQUIRED'
   );
+  await assert.rejects(
+    client.createSong({
+      syncId: 'new-song',
+      syncDocuments: [songDocument('new-song', 'New Song')],
+      visibility: 'public',
+      accessToken: ACCESS_TOKEN
+    }),
+    error => error.code === 'SONG_MEMBER_SHARING_TRANSACTION_REQUIRED'
+  );
+  assert.equal(
+    requests.filter(request =>
+      ['POST', 'PUT'].includes(request.options?.method)).length,
+    0
+  );
+
   const updated = await client.updateSong({
     syncId: 'amazing-grace',
-    visibility: 'scheduled-public',
-    publishAt: '2026-07-26T17:00:00.000Z',
+    visibility: 'private',
+    publishAt: null,
     expectedSyncVersion: 4,
     accessToken: ACCESS_TOKEN
   });
-  assert.equal(updated.visibility, 'scheduled-public');
+  assert.equal(updated.visibility, 'private');
   assert.equal(await client.revokeAccessToken({ accessToken: ACCESS_TOKEN })
     .then(result => result.revoked), true);
+});
+
+test('reviewed song submissions send bounded Community rights fields with the private write', async () => {
+  const requests = [];
+  const client = new CommunityClient({
+    baseUrl: BASE_URL,
+    fetchImpl: async (input, options) => {
+      const url = new URL(input);
+      requests.push({ url, options });
+      if (url.pathname === DISCOVERY_PATH) return json(discovery());
+      const body = JSON.parse(options.body);
+      return json(remoteSong({
+        syncId: body.syncId,
+        syncVersion: 1,
+        syncDocuments: body.syncDocuments,
+        visibility: 'private',
+        publishAt: null,
+        rightsStatus: body.rightsStatus,
+        rightsNotes: body.rightsNotes
+      }));
+    }
+  });
+  const rightsNotes = [
+    'SyncShow reviewed submission for Community admins only.',
+    'Evidence: exact permission letter reviewed.',
+    `Exact family revision: ${'a'.repeat(64)}`,
+    'Reviewed at: 2026-07-25T12:00:00.000Z'
+  ].join(' ');
+
+  const created = await client.createSong({
+    syncId: 'reviewed-private',
+    syncDocuments: [songDocument('reviewed-private', 'Reviewed Private')],
+    visibility: 'private',
+    rightsStatus: 'permission-granted',
+    rightsNotes,
+    accessToken: ACCESS_TOKEN,
+    idempotencyKey: 'reviewed-private-operation-0001'
+  });
+
+  const body = JSON.parse(requests[1].options.body);
+  assert.equal(body.visibility, 'private');
+  assert.equal(body.rightsStatus, 'permission-granted');
+  assert.equal(body.rightsNotes, rightsNotes);
+  assert.equal(created.rightsStatus, 'permission-granted');
+  assert.equal(created.rightsNotes, rightsNotes);
+});
+
+test('reviewed member sharing uses its advertised transaction and confirms current receipt state', async () => {
+  const requests = [];
+  const client = new CommunityClient({
+    baseUrl: BASE_URL,
+    fetchImpl: async (input, options) => {
+      const url = new URL(input);
+      requests.push({ url, options });
+      if (url.pathname === DISCOVERY_PATH) {
+        return json(resourceDiscovery({
+          songs: {
+            ...songResource(),
+            memberSharing: {
+              schemaVersion: 1,
+              endpoint: 'song-member-sharing',
+              reviewScope: 'community-members'
+            }
+          }
+        }));
+      }
+      if (options.method === 'POST') {
+        return json({ receipt: memberSharingFixture.receipt });
+      }
+      return json({
+        ...remoteSong({
+          syncId: memberSharingFixture.songSyncId,
+          syncVersion: memberSharingFixture.receipt.songSyncVersion,
+          visibility: 'public',
+          publishAt: null
+        }),
+        effectiveVisibility: 'public',
+        memberSharing: memberSharingFixture.receipt
+      });
+    }
+  });
+
+  const result = await client.shareSongWithMembers({
+    syncId: memberSharingFixture.songSyncId,
+    expectedSyncVersion: memberSharingFixture.expectedSongSyncVersion,
+    familyRevision: memberSharingFixture.request.familyRevision,
+    review: memberSharingFixture.request.review,
+    reviewRevision: memberSharingFixture.request.reviewRevision,
+    visibility: memberSharingFixture.request.visibility,
+    publishAt: memberSharingFixture.request.publishAt,
+    accessToken: ACCESS_TOKEN
+  });
+
+  assert.equal(result.receipt.receiptRevision,
+    memberSharingFixture.expectedReceiptRevision);
+  assert.equal(result.song.syncVersion,
+    memberSharingFixture.receipt.songSyncVersion);
+  assert.equal(result.song.effectiveVisibility, 'public');
+  assert.equal(requests.length, 3);
+  assert.equal(
+    requests[1].url.pathname,
+    `/api/community/syncshow/v1/song-member-sharing/${
+      memberSharingFixture.songSyncId
+    }`
+  );
+  assert.equal(
+    requests[1].options.headers['If-Match'],
+    `"song:${memberSharingFixture.songSyncId}:${
+      memberSharingFixture.expectedSongSyncVersion
+    }"`
+  );
+  assert.equal(
+    requests[1].options.headers['Idempotency-Key'],
+    memberSharingFixture.expectedRequestRevision
+  );
+  assert.deepEqual(
+    JSON.parse(requests[1].options.body),
+    memberSharingFixture.request
+  );
+  assert.equal(requests[2].options.method, 'GET');
+});
+
+test('song reads refuse effective member access without its exact current receipt', async () => {
+  const base = {
+    ...remoteSong({
+      syncId: memberSharingFixture.songSyncId,
+      syncVersion: memberSharingFixture.receipt.songSyncVersion,
+      revision:
+        `song:${memberSharingFixture.songSyncId}:${
+          memberSharingFixture.receipt.songSyncVersion
+        }`,
+      visibility: 'public',
+      publishAt: null
+    }),
+    effectiveVisibility: 'public',
+    memberSharing: memberSharingFixture.receipt
+  };
+  const cases = [
+    {
+      ...base,
+      memberSharing: null
+    },
+    {
+      ...base,
+      syncVersion: base.syncVersion + 1,
+      revision: `song:${memberSharingFixture.songSyncId}:${base.syncVersion + 1}`
+    }
+  ];
+
+  for (const song of cases) {
+    const client = new CommunityClient({
+      baseUrl: BASE_URL,
+      fetchImpl: async input => {
+        if (new URL(input).pathname === DISCOVERY_PATH) return json(discovery());
+        return json({ items: [song], nextCursor: null, hasMore: false });
+      }
+    });
+    await assert.rejects(
+      client.listSongChanges({ accessToken: ACCESS_TOKEN }),
+      error => error.code === 'INVALID_RESPONSE'
+    );
+  }
+});
+
+test('older Community servers keep private sync but refuse member sharing without fallback', async () => {
+  let nonDiscoveryRequests = 0;
+  const client = new CommunityClient({
+    baseUrl: BASE_URL,
+    fetchImpl: async (input, options) => {
+      const url = new URL(input);
+      if (url.pathname === DISCOVERY_PATH) return json(discovery());
+      nonDiscoveryRequests += 1;
+      return json(remoteSong({
+        syncId: 'private-only-song',
+        syncVersion: 1,
+        revision: 'song:private-only-song:1',
+        syncDocuments: JSON.parse(options.body).syncDocuments,
+        visibility: 'private',
+        publishAt: null
+      }));
+    }
+  });
+
+  await assert.rejects(
+    client.shareSongWithMembers({
+      syncId: memberSharingFixture.songSyncId,
+      expectedSyncVersion: memberSharingFixture.expectedSongSyncVersion,
+      familyRevision: memberSharingFixture.request.familyRevision,
+      review: memberSharingFixture.request.review,
+      reviewRevision: memberSharingFixture.request.reviewRevision,
+      visibility: 'public',
+      publishAt: null,
+      accessToken: ACCESS_TOKEN
+    }),
+    error => error.code === 'SONG_MEMBER_SHARING_UNSUPPORTED'
+      && /stage songs privately/.test(error.message)
+  );
+  assert.equal(nonDiscoveryRequests, 0);
+
+  const privateSong = await client.createSong({
+    syncId: 'private-only-song',
+    syncDocuments: [songDocument('private-only-song', 'Private Only Song')],
+    visibility: 'private',
+    publishAt: null,
+    accessToken: ACCESS_TOKEN
+  });
+  assert.equal(privateSong.visibility, 'private');
+  assert.equal(nonDiscoveryRequests, 1);
 });

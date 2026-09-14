@@ -8,6 +8,13 @@ const os = require('os');
 const path = require('path');
 
 const {
+  LOCAL_SERVICE_PLAN_ORIGIN,
+  LOCAL_SERVICE_PLAN_SCHEMA_VERSION,
+  addGroupItem,
+  bindProjectAsPowerPointCompanion,
+  bindProjectToServiceSet
+} = require('../src/services/project/ServiceProject');
+const {
   MAX_IMAGE_BYTES,
   ProjectStoreError,
   ServiceProjectStore,
@@ -124,6 +131,251 @@ test('create, read, direct revision read, list, checksum, and restart form a dur
     revisionId: created.revisionId,
     itemCount: 0
   });
+});
+
+test('create can prepare one complete initial project before publishing its first revision', async t => {
+  const rootPath = await tempDirectory(t);
+  const store = new ServiceProjectStore({ rootPath });
+  const created = await store.create({
+    id: 'project-prepared',
+    title: 'Prepared service',
+    serviceDate: '2026-07-26',
+    profileId: 'main-sanctuary'
+  }, {
+    prepareProject(project) {
+      return addGroupItem(project, {
+        id: 'sermon',
+        title: 'Sermon',
+        groupKind: 'sermon'
+      });
+    }
+  });
+
+  assert.equal(created.project.revision, 1);
+  assert.deepEqual(created.project.rootItemIds, ['sermon']);
+  assert.equal(created.project.items.sermon.kind, 'group');
+  const revisions = await store.listRevisions(created.project.id);
+  assert.equal(revisions.total, 1);
+
+  await assert.rejects(
+    store.create({
+      id: 'project-invalid-preparer',
+      title: 'Invalid preparer',
+      serviceDate: '2026-07-26',
+      profileId: 'main-sanctuary'
+    }, { prepareProject: true }),
+    TypeError
+  );
+  await assert.rejects(
+    store.read('project-invalid-preparer'),
+    expectStoreCode('PROJECT_NOT_FOUND')
+  );
+});
+
+test('create can persist one local-created plan in its first revision without changing legacy unplanned creates', async t => {
+  const rootPath = await tempDirectory(t);
+  const store = new ServiceProjectStore({
+    rootPath,
+    clock: () => new Date('2026-07-30T17:00:00.000Z')
+  });
+  const created = await store.create({
+    id: 'project-first-planned-service',
+    title: 'First planned service',
+    serviceDate: '2026-08-02',
+    startTime: '10:30',
+    teamNotes: 'Sound check at 09:45.',
+    profileId: 'main-sanctuary'
+  }, {
+    prepareProject(project) {
+      return addGroupItem(project, {
+        id: 'opening',
+        title: 'Opening',
+        groupKind: 'section'
+      });
+    }
+  });
+
+  assert.equal(created.project.revision, 1);
+  assert.deepEqual(created.project.planning, {
+    schemaVersion: LOCAL_SERVICE_PLAN_SCHEMA_VERSION,
+    status: 'planning',
+    startTime: '10:30',
+    origin: LOCAL_SERVICE_PLAN_ORIGIN,
+    teamNotes: 'Sound check at 09:45.'
+  });
+  assert.deepEqual(created.project.rootItemIds, ['opening']);
+  assert.equal((await store.listRevisions(created.project.id)).total, 1);
+
+  const restarted = new ServiceProjectStore({ rootPath });
+  const reopened = await restarted.read(created.project.id);
+  assert.deepEqual(reopened.project, created.project);
+  assert.equal(reopened.revisionId, created.revisionId);
+
+  const legacy = await store.create({
+    id: 'project-still-unplanned',
+    title: 'Existing create contract',
+    serviceDate: '2026-08-02',
+    profileId: 'main-sanctuary'
+  });
+  assert.equal(legacy.project.planning, undefined);
+
+  await assert.rejects(
+    store.create({
+      id: 'project-notes-without-time',
+      title: 'Invalid local plan',
+      serviceDate: '2026-08-02',
+      teamNotes: 'Missing its required start time.',
+      profileId: 'main-sanctuary'
+    }),
+    error => {
+      assert.equal(error?.code, 'INVALID_SERVICE_PLAN_START_TIME');
+      return true;
+    }
+  );
+});
+
+test('exact service-set binding lookup is bounded and never adopts a date-only match', async t => {
+  const rootPath = await tempDirectory(t);
+  const store = new ServiceProjectStore({ rootPath });
+  const binding = {
+    id: 'service-set-july-26',
+    fingerprint: 'a'.repeat(64),
+    serviceDate: '2026-07-26',
+    profileId: 'main-sanctuary'
+  };
+  await store.create({
+    id: 'project-date-only',
+    title: 'Unbound date match',
+    serviceDate: binding.serviceDate,
+    profileId: binding.profileId
+  });
+  for (const projectId of ['project-bound-a', 'project-bound-b']) {
+    await store.create({
+      id: projectId,
+      title: projectId,
+      serviceDate: binding.serviceDate,
+      profileId: binding.profileId
+    }, {
+      prepareProject(project) {
+        return bindProjectToServiceSet(project, binding);
+      }
+    });
+  }
+  await store.create({
+    id: 'project-companion',
+    title: 'PowerPoint service record',
+    serviceDate: binding.serviceDate,
+    profileId: binding.profileId
+  }, {
+    prepareProject(project) {
+      return bindProjectAsPowerPointCompanion(
+        addGroupItem(project, {
+          id: 'sermon-anchor',
+          title: 'Sermon',
+          groupKind: 'sermon'
+        }),
+        binding
+      );
+    }
+  });
+
+  const exact = await store.findByServiceSetBinding(binding, { limit: 2 });
+  assert.equal(exact.length, 2);
+  assert.equal(exact.every(result =>
+    result.project.sourceServiceSet?.id === binding.id
+      && result.project.sourceServiceSet?.fingerprint === binding.fingerprint
+  ), true);
+  assert.equal(exact.every(result => result.project.id !== 'project-date-only'), true);
+  const companions = await store.findByServiceSetBinding(binding, {
+    limit: 2,
+    workflowMode: 'pptx-companion'
+  });
+  assert.deepEqual(
+    companions.map(result => result.project.id),
+    ['project-companion']
+  );
+  await assert.rejects(
+    Promise.resolve().then(() => store.findByServiceSetBinding({
+      id: binding.id,
+      fingerprint: 'not-a-checksum'
+    })),
+    TypeError
+  );
+});
+
+test('exact service-set binding lookup never adopts a revision recovered from a damaged pointer', async t => {
+  const rootPath = await tempDirectory(t);
+  const clock = clockAt('2026-07-22T12:00:00.000Z');
+  const store = new ServiceProjectStore({ rootPath, clock: clock.now });
+  const binding = {
+    id: 'service-set-recovery-boundary',
+    fingerprint: 'b'.repeat(64),
+    serviceDate: '2026-07-26',
+    profileId: 'main-sanctuary'
+  };
+  const created = await store.create({
+    id: 'project-recovered-companion',
+    title: 'PowerPoint service record',
+    serviceDate: binding.serviceDate,
+    profileId: binding.profileId
+  }, {
+    prepareProject(project) {
+      return bindProjectAsPowerPointCompanion(
+        addGroupItem(project, {
+          id: 'sermon-anchor',
+          title: 'Sermon',
+          groupKind: 'sermon'
+        }),
+        binding
+      );
+    }
+  });
+  clock.set('2026-07-22T13:00:00.000Z');
+  const saved = await store.save(changedProject(created.project, {
+    title: 'Current PowerPoint service record'
+  }), {
+    expectedRevisionId: created.revisionId
+  });
+  const pointerPath = path.join(
+    rootPath,
+    projectStorageKey(saved.project.id),
+    'current.json'
+  );
+  const validPointer = await fs.readFile(pointerPath, 'utf8');
+
+  await fs.writeFile(pointerPath, '{ malformed pointer }\n');
+  const malformedStore = new ServiceProjectStore({ rootPath });
+  const malformedRecovery = await malformedStore.read(saved.project.id);
+  assert.equal(malformedRecovery.revisionId, saved.revisionId);
+  assert.equal(malformedRecovery.recovery?.source, 'revision-scan');
+  assert.deepEqual(
+    await malformedStore.findByServiceSetBinding(binding, {
+      workflowMode: 'pptx-companion'
+    }),
+    []
+  );
+  assert.equal(await fs.readFile(pointerPath, 'utf8'), '{ malformed pointer }\n');
+
+  await fs.writeFile(pointerPath, validPointer);
+  assert.deepEqual(
+    (await new ServiceProjectStore({ rootPath }).findByServiceSetBinding(
+      binding,
+      { workflowMode: 'pptx-companion' }
+    )).map(result => result.project.id),
+    [saved.project.id]
+  );
+
+  await fs.unlink(pointerPath);
+  const missingStore = new ServiceProjectStore({ rootPath });
+  const missingRecovery = await missingStore.read(saved.project.id);
+  assert.equal(missingRecovery.revisionId, saved.revisionId);
+  assert.equal(missingRecovery.recovery?.source, 'revision-scan');
+  assert.deepEqual(
+    await missingStore.findByServiceSetBinding(binding, {
+      workflowMode: 'pptx-companion'
+    }),
+    []
+  );
 });
 
 test('semantic no-op saves ignore editor timestamps and revisions without publishing another file', async t => {
