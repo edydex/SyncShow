@@ -133,10 +133,31 @@ async function locateRuntime(archivePath, manifest) {
 
 function runPackagedRuntimeSmoke(runtimePath, archivePath) {
   const enginePath = path.join(archivePath, 'src', 'services', 'pdf', 'PdfEngine.js');
+  const canvasPath = path.join(archivePath, 'node_modules', '@napi-rs', 'canvas');
   const fixture = buildSmokePdf().toString('base64');
   const smokeSource = `
     const engine = require(${JSON.stringify(enginePath)});
+    const canvas = require(${JSON.stringify(canvasPath)});
     (async () => {
+      // Loading and encoding alone can pass with incompatible native class bindings.
+      // PDF image rendering needs both decoded Image and Canvas drawImage inputs.
+      const source = canvas.createCanvas(2, 2);
+      const sourceContext = source.getContext('2d');
+      sourceContext.fillStyle = '#123456';
+      sourceContext.fillRect(0, 0, 1, 2);
+      sourceContext.fillStyle = '#fedcba';
+      sourceContext.fillRect(1, 0, 1, 1);
+      const expectedPixels = Buffer.from(sourceContext.getImageData(0, 0, 2, 2).data);
+      const decoded = await canvas.loadImage(source.toBuffer('image/png'));
+      for (const input of [source, decoded]) {
+        const target = canvas.createCanvas(2, 2);
+        const context = target.getContext('2d');
+        context.drawImage(input, 0, 0);
+        const pixels = Buffer.from(context.getImageData(0, 0, 2, 2).data);
+        if (!pixels.equals(expectedPixels)) {
+          throw new Error('Packaged canvas image round-trip changed pixels.');
+        }
+      }
       const callerBytes = Buffer.from(${JSON.stringify(fixture)}, 'base64');
       const callerLength = callerBytes.length;
       const document = await engine.openPdf(callerBytes);
