@@ -139,6 +139,19 @@ function connectionInput(overrides = {}) {
   };
 }
 
+test('recording history is effective only when separately granted and advertised', async t => {
+  const root = await tempDirectory(t);
+  const store = new CommunityConnectionStore({ storageRoot: path.join(root, 'connections'), platform: 'darwin', safeStorage: safeStorage() });
+  const control = 'syncshow:translation:control';
+  const review = 'syncshow:translation:archives:read';
+  const legacy = await store.saveConnection(connectionInput({ scopes: [control], advertisedScopes: [control, review] }));
+  assert.equal(legacy.effectiveScopes.includes(review), false);
+  const approved = await store.saveConnection(connectionInput({ scopes: [control, review], advertisedScopes: [control, review] }));
+  assert.equal(approved.effectiveScopes.includes(review), true);
+  const withdrawn = await store.saveConnection(connectionInput({ scopes: [control, review], advertisedScopes: [control] }));
+  assert.equal(withdrawn.effectiveScopes.includes(review), false);
+});
+
 test('macOS uses bounded async safeStorage and never invokes sync when both APIs exist', async t => {
   const root = await tempDirectory(t);
   const storage = dualModeSafeStorage();

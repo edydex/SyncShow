@@ -56,6 +56,10 @@ test('discovery adds explicitly advertised translation control without granting 
   const enabled = await discover(descriptor);
   assert.equal(enabled.capabilities.translation, true);
   assert.equal(enabled.scopes.includes('syncshow:translation:control'), true);
+  const archives = { schemaVersion: 1, scope: 'syncshow:translation:archives:read' };
+  assert.equal(enabled.scopes.includes(archives.scope), false);
+  assert.equal((await discover({ ...descriptor, archiveReview: archives })).scopes.includes(archives.scope), true);
+  await assert.rejects(discover({ ...descriptor, archiveReview: { ...archives, scope: 'syncshow:songs:write' } }));
   await assert.rejects(discover({ ...descriptor, accessPath: 'https://other.example.test/access' }));
 });
 

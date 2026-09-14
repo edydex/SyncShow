@@ -42,7 +42,8 @@ const KNOWN_SCOPES = new Set([
   'syncshow:service-plans:read',
   'syncshow:service-documents:read',
   'syncshow:service-documents:write',
-  'syncshow:translation:control'
+  'syncshow:translation:control',
+  'syncshow:translation:archives:read'
 ]);
 
 class CommunityConnectionStoreError extends Error {

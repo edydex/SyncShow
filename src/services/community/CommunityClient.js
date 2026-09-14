@@ -127,7 +127,8 @@ const KNOWN_SCOPES = new Set([
   ...SERMON_MEDIA_SCOPES,
   ...SERVICE_PLAN_SCOPES,
   ...SERVICE_DOCUMENT_SCOPES,
-  'syncshow:translation:control'
+  'syncshow:translation:control',
+  'syncshow:translation:archives:read'
 ]);
 const VISIBILITIES = new Set(['private', 'public', 'scheduled-public']);
 const SONG_RIGHTS_STATUSES = new Set([
@@ -698,7 +699,12 @@ function normalizeTranslationResource(value) {
     || value.scopes[0] !== 'syncshow:translation:control') {
     fail('INVALID_DISCOVERY', 'This Community server advertises an unsupported live translation connection.');
   }
+  if (value.archiveReview !== undefined && (!value.archiveReview || value.archiveReview.schemaVersion !== 1
+    || value.archiveReview.scope !== 'syncshow:translation:archives:read')) {
+    fail('INVALID_DISCOVERY', 'This Community server advertises unsupported recording-review access.');
+  }
   return Object.freeze({ schemaVersion: 1, scopes: Object.freeze([...value.scopes]),
+    ...(value.archiveReview ? { archiveReview: Object.freeze({ schemaVersion: 1, scope: value.archiveReview.scope }) } : {}),
     operatorPath: value.operatorPath, accessPath: value.accessPath, eventsPath: value.eventsPath });
 }
 
@@ -1864,7 +1870,8 @@ class CommunityClient {
       ...(sermonMediaResource?.scopes || []),
       ...(servicePlanResource?.scopes || []),
       ...(serviceDocumentResource?.scopes || []),
-      ...(translationResource?.scopes || [])
+      ...(translationResource?.scopes || []),
+      ...(translationResource?.archiveReview ? [translationResource.archiveReview.scope] : [])
     ], {
       code: 'INVALID_DISCOVERY'
     });
