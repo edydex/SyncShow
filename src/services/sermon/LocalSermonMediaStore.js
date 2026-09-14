@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { validateOggOpusRecording } = require('./OggOpusRecording');
 const nativeFs = require('fs');
 const fs = require('fs/promises');
 const path = require('path');
@@ -33,6 +34,8 @@ const MEDIA_TYPES = Object.freeze({
     mediaType: 'audio/mp4',
     format: 'm4a'
   }),
+  '.opus': Object.freeze({ extension: '.opus', kind: 'audio', mediaType: 'audio/ogg', format: 'opus' }),
+  '.ogg': Object.freeze({ extension: '.ogg', kind: 'audio', mediaType: 'audio/ogg', format: 'opus' }),
   '.mp4': Object.freeze({
     extension: '.mp4',
     kind: 'video',
@@ -81,7 +84,7 @@ function mediaTypeForName(fileName) {
   if (!mediaType) {
     fail(
       'UNSUPPORTED_MEDIA_TYPE',
-      'Sermon recordings must be MP3, M4A, or MP4 files.'
+      'Sermon recordings must be MP3, M4A, Opus, or MP4 files.'
     );
   }
   return mediaType;
@@ -465,7 +468,11 @@ async function validateIsoMedia(handle, sizeBytes, format) {
 }
 
 async function validateMediaHandle(handle, sizeBytes, mediaType) {
-  if (mediaType.format === 'mp3') {
+  if (mediaType.format === 'opus') {
+    const valid = await validateOggOpusRecording((offset, length) =>
+      readExact(handle, length, offset, 'The Opus recording is truncated.'), sizeBytes);
+    if (!valid) fail('CORRUPT_MEDIA', 'The recording must be a complete mono or stereo Ogg Opus stream.');
+  } else if (mediaType.format === 'mp3') {
     await validateMp3(handle, sizeBytes);
   } else {
     await validateIsoMedia(handle, sizeBytes, mediaType.format);

@@ -106,7 +106,7 @@ class CommunitySermonMediaAttemptStore {
           'sizeBytes'
         ].sort().join('\n')
       || recording.kind !== 'audio'
-      || !['audio/mpeg', 'audio/mp4'].includes(recording.mediaType)
+      || !['audio/mpeg', 'audio/mp4', 'audio/ogg'].includes(recording.mediaType)
       || !ID_PATTERN.test(recording.id || '')
       || !LANGUAGE_PATTERN.test(recording.language || '')
       || typeof recording.fileName !== 'string'

@@ -11288,7 +11288,7 @@
         : postServiceEditable
           ? localRecording.recorded
             ? 'Replace the private local copy. SyncShow will not upload or publish the chosen file.'
-            : 'Copy one MP3, M4A, or MP4 recording into SyncShow’s private local storage.'
+            : 'Copy one MP3, M4A, Opus, or MP4 recording into SyncShow’s private local storage.'
           : 'Choose the exact editable sermon revision before preserving a recording.';
       elements.btnPlaySermonRecording.disabled =
         postServiceLocked
@@ -19202,7 +19202,7 @@
         || context.conflict
         || !localRecording.preserved
         || recording?.kind !== 'audio'
-        || !['audio/mpeg', 'audio/mp4'].includes(recording?.mediaType)
+        || !['audio/mpeg', 'audio/mp4', 'audio/ogg'].includes(recording?.mediaType)
         || !/^[a-f0-9]{64}$/u.test(sha256)) {
         return null;
       }
@@ -19362,7 +19362,7 @@
       );
       elements.sermonManagedUploadBadge.textContent = 'Waiting';
       elements.sermonManagedUploadStatus.textContent =
-        'Choose and verify an MP3 or M4A recording to check managed upload.';
+        'Choose and verify an MP3, M4A, or Opus recording to check managed upload.';
       elements.sermonManagedUploadProgress.hidden = true;
       elements.sermonManagedUploadProgress.value = 0;
       elements.sermonManagedUploadProgress.textContent = '0%';
@@ -19884,7 +19884,7 @@
           && Object.keys(payload).length === 6
           && payload.opened === true
           && ['audio', 'video'].includes(payload.kind)
-          && ['audio/mpeg', 'audio/mp4', 'video/mp4'].includes(
+          && ['audio/mpeg', 'audio/mp4', 'audio/ogg', 'video/mp4'].includes(
             payload.mediaType
           )
           && /^[a-f0-9]{64}$/u.test(String(payload.sha256 || ''))

@@ -710,9 +710,13 @@ function normalizeTranslationResource(value) {
 
 function normalizeSermonMediaResource(value, {
   origin,
-  apiPath
+  apiPath,
+  formats
 }) {
-  if (value === undefined) return null;
+  if (value === undefined) {
+    if (formats !== undefined) fail('INVALID_DISCOVERY', 'Recording formats require sermon-media support.');
+    return null;
+  }
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     fail(
       'INVALID_DISCOVERY',
@@ -769,6 +773,15 @@ function normalizeSermonMediaResource(value, {
       'INVALID_DISCOVERY',
       'Community sermon-media types are unsupported.'
     );
+  }
+  if (formats !== undefined) {
+    if (!formats || typeof formats !== 'object' || Array.isArray(formats)
+      || Object.keys(formats).sort().join(',') !== 'additionalAcceptedMediaTypes,schemaVersion'
+      || formats.schemaVersion !== 1
+      || JSON.stringify(formats.additionalAcceptedMediaTypes) !== JSON.stringify(['audio/ogg'])) {
+      fail('INVALID_DISCOVERY', 'Community additional recording formats are unsupported.');
+    }
+    acceptedMediaTypes.push('audio/ogg');
   }
   if (value.chunkSizeBytes !== 8_388_608
     || value.maximumBytes !== 1_073_741_824
@@ -1826,6 +1839,7 @@ class CommunityClient {
     const sermonMediaResource = schemaVersion === 2
       ? normalizeSermonMediaResource(resources.sermonMedia, {
         origin: this.baseUrl.origin,
+        formats: resources.sermonMediaFormats,
         apiPath
       })
       : null;

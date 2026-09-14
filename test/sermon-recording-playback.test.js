@@ -283,3 +283,18 @@ test('protocol response supports HEAD and fails closed for invalid or unknown re
   assert.equal(methodRejected.status, 405);
   assert.equal(methodRejected.headers.get('allow'), 'GET, HEAD');
 });
+
+
+test('private Opus playback retains the audio MIME type and supports byte ranges', async () => {
+  const playback = authority();
+  const opusReader = { ...reader(), mediaType: 'audio/ogg' };
+  await playback.issue({ reader: opusReader, binding: binding() });
+  const resolved = await playback.resolve(TOKEN);
+  assert.equal(resolved.reader.mediaType, 'audio/ogg');
+  const response = await createSermonRecordingPlaybackResponse(
+    new Request(`syncshow-sermon-media://play/${TOKEN}`, { headers: { Range: 'bytes=0-5' } }), playback);
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('content-type'), 'audio/ogg');
+  assert.deepEqual(await bodyBytes(response), BYTES.subarray(0, 6));
+  await playback.revoke(TOKEN);
+});

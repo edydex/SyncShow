@@ -143,6 +143,11 @@ test('MP3, M4A, and MP4 imports are content-addressed, path-free, private, and r
     kind: 'audio',
     mediaType: 'audio/mp4'
   }, {
+    fileName: 'Sunday sermon.opus',
+    bytes: await fs.readFile(path.join(__dirname, 'fixtures', 'recording-tone.opus')),
+    kind: 'audio',
+    mediaType: 'audio/ogg'
+  }, {
     fileName: 'Sunday sermon.mp4',
     bytes: validIsoMedia({ audio: true, video: true }),
     kind: 'video',
@@ -735,4 +740,16 @@ test('initialization failures are typed and do not disclose local storage paths'
     new LocalSermonMediaStore({ rootPath }).initialize(),
     expectStoreCode('STORE_UNAVAILABLE', [rootPath, parent])
   );
+});
+
+
+test('Opus container corruption is rejected even when its supplied digest matches', async t => {
+  const parent = await tempDirectory(t);
+  const rootPath = path.join(parent, 'store');
+  const bytes = Buffer.from(await fs.readFile(path.join(__dirname, 'fixtures', 'recording-tone.opus')));
+  bytes[bytes.length - 1] ^= 1;
+  const sourcePath = path.join(parent, 'damaged.opus');
+  await fs.writeFile(sourcePath, bytes);
+  const store = new LocalSermonMediaStore({ rootPath });
+  await assert.rejects(store.importFile({ sourcePath }), { code: 'CORRUPT_MEDIA' });
 });

@@ -66,7 +66,7 @@ function playbackReader(value) {
     || typeof value.read !== 'function'
     || typeof value.close !== 'function'
     || !['audio', 'video'].includes(value.kind)
-    || !['audio/mpeg', 'audio/mp4', 'video/mp4'].includes(value.mediaType)
+    || !['audio/mpeg', 'audio/mp4', 'audio/ogg', 'video/mp4'].includes(value.mediaType)
     || !/^[a-f0-9]{64}$/u.test(value.sha256 || '')
     || !Number.isSafeInteger(value.sizeBytes)
     || value.sizeBytes < 1

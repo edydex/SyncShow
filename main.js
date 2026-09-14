@@ -4844,7 +4844,7 @@ async function resolveLocalSermonMediaUploadBinding(reference) {
     .find(candidate => candidate?.id === recordingId) || null;
   if (!recording
     || recording.kind !== 'audio'
-    || !['audio/mpeg', 'audio/mp4'].includes(recording.mediaType)
+    || !['audio/mpeg', 'audio/mp4', 'audio/ogg'].includes(recording.mediaType)
     || !/^[a-f0-9]{64}$/u.test(String(recording.sha256 || ''))
     || !Number.isSafeInteger(recording.sizeBytes)
     || recording.sizeBytes < 1
@@ -4852,7 +4852,7 @@ async function resolveLocalSermonMediaUploadBinding(reference) {
     || recording.durationSeconds !== null) {
     failMainOperation(
       'SERMON_MEDIA_NOT_ELIGIBLE',
-      'Choose and verify an MP3 or M4A recording before uploading it privately.'
+      'Choose and verify an MP3, M4A, or Opus recording before uploading it privately.'
     );
   }
 
@@ -11005,7 +11005,7 @@ function failSermonMediaImport(error) {
   const messages = {
     EMPTY_MEDIA: 'The selected recording is empty.',
     MEDIA_TOO_LARGE: 'The selected recording is too large to preserve safely.',
-    UNSUPPORTED_MEDIA_TYPE: 'Choose an MP3, M4A, or MP4 sermon recording.',
+    UNSUPPORTED_MEDIA_TYPE: 'Choose an MP3, M4A, Opus, or MP4 sermon recording.',
     MEDIA_TYPE_MISMATCH: 'The selected recording does not match its file type.',
     MEDIA_RESTORE_MISMATCH:
       'Choose the exact same recording file identified by this sermon record.',
@@ -22325,7 +22325,7 @@ ipcMain.handle('prepare:projects:attachSermonRecording', async (event, request =
         : 'Preserve Sermon Recording',
     filters: [{
       name: 'Sermon recordings',
-      extensions: ['mp3', 'm4a', 'mp4']
+      extensions: ['mp3', 'm4a', 'opus', 'ogg', 'mp4']
     }],
     properties: ['openFile']
   });

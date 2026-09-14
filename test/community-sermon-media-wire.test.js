@@ -153,3 +153,14 @@ test('idempotency keys are stable for a retry and distinct for a new attempt', (
   assert.notEqual(first, restarted);
   assert.match(first, /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u);
 });
+
+
+test('recording wire preserves the Opus digest, filename and MIME type', async () => {
+  const vector = await fixture();
+  const recording = { ...vector.initRequest.recording, mediaType: 'audio/ogg', fileName: 'sermon.opus' };
+  const request = buildSermonMediaInitBody({ ...vector.initRequest.sermon, recording });
+  assert.deepEqual(request.recording, recording);
+  const response = structuredClone(vector.uploadingResponse);
+  response.upload.recording = recording;
+  assert.deepEqual(normalizeSermonMediaUploadResponse(response).recording, recording);
+});

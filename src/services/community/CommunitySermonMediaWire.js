@@ -6,7 +6,7 @@ const SERMON_MEDIA_SCHEMA_VERSION = 1;
 const SERMON_MEDIA_CHUNK_SIZE_BYTES = 8_388_608;
 const SERMON_MEDIA_MAXIMUM_BYTES = 1_073_741_824;
 const SERMON_MEDIA_SESSION_TTL_SECONDS = 604_800;
-const SERMON_MEDIA_TYPES = Object.freeze(['audio/mp4', 'audio/mpeg']);
+const SERMON_MEDIA_TYPES = Object.freeze(['audio/mp4', 'audio/mpeg', 'audio/ogg']);
 const SERMON_MEDIA_UPLOAD_STATES = new Set([
   'uploading',
   'finalizing',

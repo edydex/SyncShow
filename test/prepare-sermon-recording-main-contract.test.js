@@ -323,6 +323,8 @@ test('main owns selection, immutable import, exact repin, and journaled commit',
         assert.deepEqual(plain(options.filters[0].extensions), [
           'mp3',
           'm4a',
+          'opus',
+          'ogg',
           'mp4'
         ]);
         assert.deepEqual(plain(options.properties), ['openFile']);

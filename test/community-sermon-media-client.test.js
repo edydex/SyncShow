@@ -195,3 +195,19 @@ test('sermon-media discovery fails closed on drift, extras, or missing sermon de
     );
   }
 });
+
+
+test('separate Opus capability extends recording support without changing the legacy descriptor', async () => {
+  const vector = await fixture();
+  const resources = { sermons: sermons(), sermonMedia: vector.discoveryResource,
+    sermonMediaFormats: { schemaVersion: 1, additionalAcceptedMediaTypes: ['audio/ogg'] } };
+  const found = await client(discovery(resources)).discover();
+  assert.deepEqual(found.resources.sermonMedia.acceptedMediaTypes, ['audio/mp4', 'audio/mpeg', 'audio/ogg']);
+  assert.deepEqual(resources.sermonMedia, vector.discoveryResource);
+  for (const formats of [null, {}, { schemaVersion: 2, additionalAcceptedMediaTypes: ['audio/ogg'] },
+    { schemaVersion: 1, additionalAcceptedMediaTypes: ['text/html'] },
+    { schemaVersion: 1, additionalAcceptedMediaTypes: ['audio/ogg'], publicUrl: '/unsafe' }]) {
+    await assert.rejects(client(discovery({ ...resources, sermonMediaFormats: formats })).discover(), { code: 'INVALID_DISCOVERY' });
+  }
+  await assert.rejects(client(discovery({ sermonMediaFormats: resources.sermonMediaFormats })).discover(), { code: 'INVALID_DISCOVERY' });
+});
