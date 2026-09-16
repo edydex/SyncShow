@@ -193,6 +193,7 @@ function resolvedChannel(cue, channelId) {
 
 function isVisibleBlock(block) {
   if (!block || block.type === 'blank') return false;
+  if (block.type === 'canvas') return block.objects.some(object => object.type !== 'text' || /\S/u.test(object.text));
   if (block.type === 'text') return /\S/u.test(block.text || '');
   if (block.type === 'bible') {
     return Array.isArray(block.verses)

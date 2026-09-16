@@ -11,7 +11,7 @@
 (function exposeNativeCueRenderer(global) {
   const SCHEMA_VERSION = 3;
   const KIND = 'syncshow-native-cue-scene';
-  const LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'video', 'singer-current-next']);
+  const LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'video', 'singer-current-next', 'canvas']);
   const SOURCE_KINDS = new Set(['song', 'bible', 'sermon', 'picture', 'video', 'notice', 'blank', 'slide']);
   const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
   const ASSET_ID_PATTERN = /^sha256:[a-f0-9]{64}$/;
@@ -104,7 +104,7 @@
     return value.map((candidate, index) => {
       if (!record(candidate)) throw new TypeError(`scene.bodySpans[${index}] is invalid`);
       const keys = Object.keys(candidate).sort();
-      if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale', 'italic', 'underline'].includes(key))) {
+      if (keys.some(key => !['end', 'foreground', 'background', 'start', 'weight', 'fontScale', 'italic', 'underline'].includes(key))) {
         throw new TypeError(`scene.bodySpans[${index}] has an unsupported field`);
       }
       const start = integer(candidate.start, `scene.bodySpans[${index}].start`, 0, text.length);
@@ -119,6 +119,7 @@
       if (candidate.foreground !== undefined) {
         normalized.foreground = color(candidate.foreground, `scene.bodySpans[${index}].foreground`);
       }
+      if (candidate.background !== undefined) normalized.background = color(candidate.background, 'scene.highlight');
       if (candidate.weight !== undefined) {
         if (!WEIGHTS.has(candidate.weight)) throw new TypeError('scene body span weight is invalid');
         normalized.weight = candidate.weight;
@@ -133,7 +134,7 @@
           normalized[key] = candidate[key];
         }
       }
-      if (!normalized.foreground && !normalized.weight && !normalized.fontScale && normalized.italic === undefined && normalized.underline === undefined) throw new TypeError('scene body span has no style');
+      if (!normalized.background && !normalized.foreground && !normalized.weight && !normalized.fontScale && normalized.italic === undefined && normalized.underline === undefined) throw new TypeError('scene body span has no style');
       previousEnd = end;
       return normalized;
     });
@@ -378,6 +379,11 @@
         style: songTitleStyle(raw.style)
       };
     }
+    if (raw.layout === 'canvas') {
+      exactKeys(raw, ['background','canvas','cueId','kind','layout','objects','schemaVersion','sourceKind'], 'scene');
+      if (!global.SyncShowCanvasLayout) throw new Error('Canvas renderer is unavailable.');
+      return {...common,objects:global.SyncShowCanvasLayout.normalizeCanvasObjects(raw.objects,(_code,message)=>{throw new TypeError(message)},(value,text)=>spans(value || [],text))};
+    }
     if (raw.layout === 'picture') {
       exactKeys(raw, [
         'background',
@@ -469,6 +475,7 @@
       }
       const element = document.createElement('span');
       if (span.foreground) element.style.color = span.foreground;
+      if (span.background) element.style.backgroundColor = span.background;
       if (span.weight) element.style.fontWeight = span.weight;
       if (span.italic !== undefined) element.style.fontStyle = span.italic ? 'italic' : 'normal';
       if (span.underline !== undefined) element.style.textDecoration = span.underline ? 'underline' : 'none';
@@ -591,7 +598,32 @@
       });
     }
 
-    if (scene.layout === 'text') {
+    if (scene.layout === 'canvas') {
+      surface.style.overflow = 'hidden';
+      for (const object of scene.objects) {
+        const node = document.createElement('div'), f = object.frame;
+        node.className = 'native-canvas-object';
+        Object.assign(node.style,{position:'absolute',left:`${f.x*100}%`,top:`${f.y*100}%`,width:`${f.width*100}%`,height:`${f.height*100}%`,transform:`rotate(${f.rotation}deg)`,transformOrigin:'center',color:object.color || '#ffffff',lineHeight:'1.12',whiteSpace:'pre-wrap',overflowWrap:'break-word',textAlign:object.align || 'left',fontWeight:'400'});
+        surface.appendChild(node);
+        if (object.type === 'text') {
+          appendStyledText(node,object.text,object.spans,false);
+          children.push({relayout(scale){fitText(node,object.fontSize*scene.canvas.width/1920,1,scale);}});
+        } else if (object.type === 'image') {
+          const source=options.resolveAssetUrl?.(object.assetId);
+          if(typeof source!=='string' || !source.startsWith('file:')) throw new Error('Canvas image asset is unavailable');
+          const image=document.createElement('img');image.src=source;image.alt=object.altText;
+          Object.assign(image.style,{width:'100%',height:'100%',objectFit:'contain'});node.appendChild(image);images.push(image);
+        } else {
+          const ns='http://www.w3.org/2000/svg', svg=document.createElementNS(ns,'svg'), shape=document.createElementNS(ns,object.type==='brace'?'path':'ellipse');
+          svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('preserveAspectRatio','none');svg.style.width='100%';svg.style.height='100%';
+          if(object.type==='brace')shape.setAttribute('d',global.SyncShowCanvasLayout.BRACE_PATH);
+          else {shape.setAttribute('cx','50');shape.setAttribute('cy','50');shape.setAttribute('rx','47');shape.setAttribute('ry','47');}
+          shape.setAttribute('fill',object.filled?object.color:'none');shape.setAttribute('stroke',object.color);shape.setAttribute('vector-effect','non-scaling-stroke');
+          svg.appendChild(shape);node.appendChild(svg);
+          children.push({relayout(scale){shape.setAttribute('stroke-width',String(object.lineWidth*scene.canvas.width/1920*scale));}});
+        }
+      }
+    } else if (scene.layout === 'text') {
       if (scene.backgroundAssetId) {
         const source = options.resolveAssetUrl?.(scene.backgroundAssetId);
         if (!source) throw new Error('Slide background image is unavailable');

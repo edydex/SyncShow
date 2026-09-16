@@ -1,4 +1,5 @@
 'use strict';
+const { normalizeCanvasObjects, canvasText, BRACE_PATH } = require('./CanvasLayout');
 
 const fs = require('fs');
 const os = require('os');
@@ -182,7 +183,7 @@ function normalizeSafeTextSpans(value, rawSpans) {
       throw invalidTextSpans(`Compiled text span ${index + 1} must be an object.`);
     }
     const keys = Object.keys(raw).sort();
-    if (keys.some(key => !['end', 'foreground', 'start', 'weight', 'fontScale', 'italic', 'underline'].includes(key))) {
+    if (keys.some(key => !['end', 'foreground', 'background', 'start', 'weight', 'fontScale', 'italic', 'underline'].includes(key))) {
       throw invalidTextSpans(`Compiled text span ${index + 1} has an unsupported field.`);
     }
     const { start, end } = raw;
@@ -204,6 +205,10 @@ function normalizeSafeTextSpans(value, rawSpans) {
       }
       span.foreground = raw.foreground;
     }
+    if (raw.background !== undefined) {
+      if (!COMPILED_SPAN_COLOR_PATTERN.test(raw.background)) throw invalidTextSpans('Invalid highlight color.');
+      span.background = raw.background;
+    }
     if (raw.weight !== undefined) {
       if (typeof raw.weight !== 'string' || !COMPILED_SPAN_WEIGHTS.has(raw.weight)) {
         throw invalidTextSpans(`Compiled text span ${index + 1} has an invalid weight.`);
@@ -220,7 +225,7 @@ function normalizeSafeTextSpans(value, rawSpans) {
         span[key] = raw[key];
       }
     }
-    if (!span.foreground && !span.weight && !span.fontScale && span.italic === undefined && span.underline === undefined) {
+    if (!span.background && !span.foreground && !span.weight && !span.fontScale && span.italic === undefined && span.underline === undefined) {
       throw invalidTextSpans(`Compiled text span ${index + 1} has no presentation style.`);
     }
     previousEnd = end;
@@ -284,8 +289,9 @@ function markupTextSpans(value, rawSpans = [], options = {}) {
     if (options.paragraphGap === true) {
       escaped = escaped.replace(/\r\n|\r|\n/g, '\n\n');
     }
-    if (foreground || weight || explicit?.fontScale || explicit?.italic !== undefined || explicit?.underline !== undefined) {
+    if (explicit?.background || foreground || weight || explicit?.fontScale || explicit?.italic !== undefined || explicit?.underline !== undefined) {
       const attributes = [
+        explicit?.background ? `background="${explicit.background}"` : '',
         foreground ? `foreground="${foreground}"` : '',
         weight ? `weight="${weight}"` : '',
         explicit?.fontScale ? `size="${Math.round(explicit.fontScale * 100)}%"` : '',
@@ -338,7 +344,9 @@ function cueMetadataForChannel(cue, channelId) {
     const imageBlock = channel.blocks?.find(block => block.type === 'image');
     const bibleBlock = channel.blocks?.find(block => block.type === 'bible');
     const textBlocks = channel.blocks?.filter(block => block.type === 'text') || [];
-    if (imageBlock && imageBlock.role !== 'background') {
+    const canvas = channel.blocks?.find(block => block.type === 'canvas');
+    if (canvas) { text = canvasText(canvas.objects);
+    } else if (imageBlock && imageBlock.role !== 'background') {
       text = imageBlock.altText || '';
     } else if (bibleBlock) {
       text = scriptureFlowText(bibleBlock.verses);
@@ -417,10 +425,10 @@ class NativeSlideRenderer {
   async _textLayer(value, options = {}) {
     const text = String(value || '');
     if (!text.trim()) return null;
-    const width = Math.max(100, Math.floor(options.width || this.width * 0.78));
-    const maxHeight = Math.max(50, Math.floor(options.maxHeight || this.height * 0.7));
-    const preferred = Math.max(18, Math.floor(options.fontSize || 72));
-    const minimum = Math.max(14, Math.min(preferred, Math.floor(options.minimumFontSize || 28)));
+    const width = Math.max(options.exactBounds ? 1 : 100, Math.floor(options.width || this.width * 0.78));
+    const maxHeight = Math.max(options.exactBounds ? 1 : 50, Math.floor(options.maxHeight || this.height * 0.7));
+    const preferred = Math.max(options.exactBounds ? 1 : 18, Math.floor(options.fontSize || 72));
+    const minimum = Math.max(options.exactBounds ? 1 : 14, Math.min(preferred, Math.floor(options.minimumFontSize || 28)));
     const foreground = options.foreground || '#f8fafc';
     const weight = options.weight || '500';
     if (text.length > 12000 || text.split(/\r?\n/).length > 240) {
@@ -470,7 +478,7 @@ class NativeSlideRenderer {
         error.details = { width, maxHeight, fontSize: size };
         throw error;
       }
-      if (rendered.info.height <= maxHeight + 2) return { ...rendered, fontSize: size, fontWeight: weight };
+      if (rendered.info.height <= maxHeight + (options.exactBounds ? 0 : 2)) return { ...rendered, fontSize: size, fontWeight: weight };
     }
     const error = new Error('This cue has more text than the selected preset can display safely.');
     error.code = 'TEXT_OVERFLOW';
@@ -751,6 +759,37 @@ class NativeSlideRenderer {
     }]);
   }
 
+  async _renderCanvas(block) {
+    const objects = normalizeCanvasObjects(block.objects, (code, message) => { const error = new Error(message); error.code = code; throw error; }, (spans, text) => normalizeSafeTextSpans(text, spans));
+    const layers = [], scale = this.width / 1920;
+    for (const object of objects) {
+      const f = object.frame, width = Math.max(1, Math.round(f.width * this.width)), height = Math.max(1, Math.round(f.height * this.height));
+      let data;
+      if (object.type === 'text') {
+        if (!object.text.trim()) continue;
+        const rendered = await this._textLayer(object.text, {width, maxHeight:height, fontSize:object.fontSize*scale, minimumFontSize:1, exactBounds:true, lineSpacingPercent:12, foreground:object.color, weight:'400', align:object.align, spans:object.spans});
+        if (!rendered) continue;
+        const left = object.align === 'right' ? width-rendered.info.width : object.align === 'center' ? Math.round((width-rendered.info.width)/2) : 0;
+        data = await this.sharp({create:{width,height,channels:4,background:'#00000000'}}).composite([{input:rendered.data,left:Math.max(0,left),top:0}]).png().toBuffer();
+      } else if (object.type === 'image') {
+        const resolved = await this.resolveAsset?.(object.assetId), path = typeof resolved === 'string' ? resolved : resolved?.assetPath;
+        if (!path) throw new Error('A canvas image is unavailable.');
+        data = await this.sharp(path,{limitInputPixels:MAX_IMAGE_PIXELS,failOn:'warning'}).rotate().resize(width,height,{fit:'contain',background:'#00000000'}).png().toBuffer();
+      } else {
+        const shape = object.type === 'brace' ? `<path d="${BRACE_PATH}" fill="none"/>` : `<ellipse cx="50" cy="50" rx="47" ry="47" fill="${object.filled ? object.color : 'none'}"/>`;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 100 100" preserveAspectRatio="none"><g stroke="${object.color}" stroke-width="${object.lineWidth*scale}" vector-effect="non-scaling-stroke">${shape.replace('/>', ' vector-effect="non-scaling-stroke"/>')}</g></svg>`;
+        data = await this.sharp(Buffer.from(svg)).png().toBuffer();
+      }
+      const rotated = await this.sharp(data).rotate(f.rotation,{background:'#00000000'}).png().toBuffer({resolveWithObject:true});
+      const left = Math.round((f.x+f.width/2)*this.width-rotated.info.width/2), top = Math.round((f.y+f.height/2)*this.height-rotated.info.height/2);
+      const cropLeft = Math.max(0,-left), cropTop = Math.max(0,-top), cropWidth = Math.min(rotated.info.width-cropLeft,this.width-Math.max(0,left)), cropHeight = Math.min(rotated.info.height-cropTop,this.height-Math.max(0,top));
+      if (cropWidth<=0 || cropHeight<=0) continue;
+      const clipped = await this.sharp(rotated.data).extract({left:cropLeft,top:cropTop,width:cropWidth,height:cropHeight}).png().toBuffer();
+      layers.push({input:clipped,left:Math.max(0,left),top:Math.max(0,top)});
+    }
+    return this._background('#000000').composite(layers);
+  }
+
   async renderCue(cue, channelId, outputPath = null) {
     if (!cue || typeof cue !== 'object') throw new TypeError('A compiled cue is required');
     const channel = cue.channels?.[channelId];
@@ -771,7 +810,11 @@ class NativeSlideRenderer {
         error.code = 'LEGACY_DECK_REQUIRES_RENDER';
         throw error;
       }
-      if (videoBlock) {
+      const canvasBlock = channel.blocks?.find(block => block.type === 'canvas');
+      if (canvasBlock) {
+        pipeline = await this._renderCanvas(canvasBlock);
+        textValue = canvasText(canvasBlock.objects);
+      } else if (videoBlock) {
         // Show-package thumbnails are static previews. The live native scene
         // owns video decoding and starts paused on its first available frame.
         pipeline = this._background('#000000');

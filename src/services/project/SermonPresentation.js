@@ -1,6 +1,7 @@
 'use strict';
 
-const TEMPLATES = ['title', 'point', 'quote'];
+const { normalizeCanvasObjects } = require('./CanvasLayout');
+const TEMPLATES = ['title', 'point', 'quote', 'other'];
 function subtitleSpans(body, spans = []) {
   const result = [];
   let start = 0;
@@ -12,7 +13,7 @@ function subtitleSpans(body, spans = []) {
   if (start < body.length) result.push({start, end:body.length, fontScale:0.65, weight:'400'});
   return result;
 }
-function normalizeSermonOptions(raw, channelIds, fail) {
+function normalizeSermonOptions(raw, channelIds, fail, normalizeSpans) {
   const result = {};
   if (raw.sermonTemplate !== undefined) {
     if (raw.kind !== 'sermon' || !TEMPLATES.includes(raw.sermonTemplate)) fail('INVALID_SERMON_TEMPLATE', 'Unknown sermon slide template.');
@@ -33,11 +34,20 @@ function normalizeSermonOptions(raw, channelIds, fail) {
     }
     result.sermonPresentation = {showText:value.showText, darkenBackground:value.darkenBackground};
   }
+  if (raw.objectsByChannel !== undefined || raw.sermonTemplate === 'other') {
+    if (raw.sermonTemplate !== 'other' || !raw.objectsByChannel || typeof raw.objectsByChannel !== 'object' || Array.isArray(raw.objectsByChannel)) fail('INVALID_CANVAS', 'Choose an Other slide for movable objects.');
+    result.objectsByChannel = {};
+    for (const [channel, objects] of Object.entries(raw.objectsByChannel)) {
+      if (!channelIds.includes(channel)) fail('INVALID_CANVAS', 'Unknown canvas output.');
+      result.objectsByChannel[channel] = normalizeCanvasObjects(objects, fail, normalizeSpans);
+    }
+  }
   return result;
 }
 
 /** Editing guides never enter a cue. Existing slides retain their old defaults. */
 function sermonSlideBlocks(item, channelId) {
+  if (item.sermonTemplate === 'other') return [{ type: 'canvas', objects: item.objectsByChannel[channelId] || [] }];
   const blocks = item.backgroundAssetId ? [{
     type:'image', role:'background', assetId:item.backgroundAssetId, fit:'fill',
     focalPoint:{x:0.5,y:0.5}, altText:item.title, attribution:'',

@@ -1,4 +1,5 @@
 'use strict';
+const { normalizeCanvasObjects, canvasText } = require('../project/CanvasLayout');
 const { singerSourceCue, singerNextLine } = require('../project/SingerPresentation');
 
 const {
@@ -24,7 +25,7 @@ const TEXT_WEIGHTS = new Set(['400', '500', '600', '650', '700']);
 const TEXT_ALIGNMENTS = new Set(['left', 'center', 'right']);
 const BODY_POSITIONS = new Set(['center', 'top']);
 const IMAGE_FITS = new Set(['fit', 'fill', 'stretch']);
-const SCENE_LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'video', 'singer-current-next']);
+const SCENE_LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'video', 'singer-current-next', 'canvas']);
 const SOURCE_KINDS = new Set(['song', 'bible', 'sermon', 'picture', 'video', 'notice', 'blank', 'slide']);
 const SINGER_NEXT_STATES = new Set(['text', 'blank', 'end']);
 
@@ -379,6 +380,10 @@ function commonScene(raw, expected = {}) {
 
 function normalizeNativeCueScene(raw, expected = {}) {
   const common = commonScene(raw, expected);
+  if (common.layout === 'canvas') {
+    exactKeys(raw, ['background','canvas','cueId','kind','layout','objects','schemaVersion','sourceKind'], 'scene');
+    return {...common, objects: normalizeCanvasObjects(raw.objects, fail, (spans,text)=>normalizeSafeTextSpans(text,spans))};
+  }
   if (common.layout === 'blank') {
     exactKeys(raw, ['background', 'canvas', 'cueId', 'kind', 'layout', 'schemaVersion', 'sourceKind'], 'scene');
     return common;
@@ -668,6 +673,8 @@ function compileNativeCueScene(cue, channelId, options = {}) {
       nativeCueSingerNext(options.nextCue, channel.sourceChannelId)
     );
   }
+  const canvasBlock = channel.blocks?.find(block => block.type === 'canvas');
+  if (canvasBlock) return normalizeNativeCueScene({schemaVersion:NATIVE_CUE_SCENE_SCHEMA_VERSION,kind:NATIVE_CUE_SCENE_KIND,cueId:cue.id,sourceKind:cue.kind,canvas,layout:'canvas',background:'#000000',objects:canvasBlock.objects});
   const imageBlock = channel.blocks?.find(block => block.type === 'image');
   if (imageBlock && imageBlock.role !== 'background') {
     return normalizeNativeCueScene({
@@ -729,6 +736,7 @@ function nativeSceneSingerLine(scene) {
   if (normalized.layout === 'singer-current-next') {
     return nativeSceneSingerLine(normalized.current);
   }
+  if (normalized.layout === 'canvas') return meaningfulFirstLine(canvasText(normalized.objects));
   if (normalized.layout === 'song-title') return meaningfulFirstLine(normalized.title);
   if (normalized.layout !== 'text') return '';
 
@@ -754,6 +762,7 @@ function nativeSceneSingerNext(nextScene) {
 function sceneAssetIds(scene) {
   const normalized = normalizeNativeCueScene(scene);
   if (normalized.layout === 'text' && normalized.backgroundAssetId) return [normalized.backgroundAssetId];
+  if (normalized.layout === 'canvas') return [...new Set(normalized.objects.filter(object=>object.type==='image').map(object=>object.assetId))];
   if (normalized.layout === 'picture') return [normalized.picture.assetId];
   if (normalized.layout === 'video') return [normalized.video.assetId];
   if (normalized.layout === 'singer-current-next') return sceneAssetIds(normalized.current);

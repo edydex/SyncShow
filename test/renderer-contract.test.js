@@ -325,6 +325,7 @@ test('Bible outputs use the shared fitted double-buffer overlay controller', () 
     assert.match(outputHtml, /id="bibleAttributionStaging"/);
     const scriptSequence = rendererScript === 'display.js'
       ? '<script src="bible-overlay.js"></script>\\s*'
+        + '<script src="canvas-layout.js"></script>\\s*'
         + '<script src="native-cue-renderer.js"></script>\\s*'
         + '<script src="display.js"></script>'
       : '<script src="bible-overlay.js"></script>\\s*'

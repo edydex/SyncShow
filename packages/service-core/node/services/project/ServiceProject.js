@@ -1,5 +1,6 @@
 'use strict';
 const { normalizeSermonOptions, sermonSlideBlocks } = require('./SermonPresentation');
+const { normalizeCanvasObjects, canvasAssetIds } = require('./CanvasLayout');
 const { scriptureFlowText } = require('./SlideFormatting');
 
 const { normalizeSongPresentation, presentationTitleBlocks, presentationLyricBlocks } = require('./SongPresentation');
@@ -65,7 +66,7 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const STORED_NAME_PATTERN = /^[a-f0-9]{64}\.[a-z0-9]{1,10}$/;
 const CUE_KINDS = Object.freeze(['song', 'bible', 'sermon', 'picture', 'video', 'notice', 'blank', 'slide']);
 const CHANNEL_MODES = Object.freeze(['content', 'inherit', 'condensed', 'hide']);
-const BLOCK_TYPES = Object.freeze(['text', 'bible', 'image', 'video', 'blank', 'legacy-deck']);
+const BLOCK_TYPES = Object.freeze(['text', 'bible', 'image', 'video', 'blank', 'legacy-deck', 'canvas']);
 const ASSET_KINDS = Object.freeze(['image', 'video', 'deck', 'document']);
 const IMAGE_FITS = Object.freeze(['fit', 'fill', 'stretch']);
 const MAX_CUES = 5000;
@@ -165,7 +166,7 @@ function normalizeTextSpans(raw, authoritativeText, field) {
       fail('INVALID_TEXT_SPANS', `${spanField} must be an object.`, { field: spanField });
     }
     const keys = Object.keys(candidate);
-    const unexpected = keys.filter(key => !['start', 'end', 'foreground', 'weight', 'fontScale', 'italic', 'underline'].includes(key));
+    const unexpected = keys.filter(key => !['start', 'end', 'foreground', 'background', 'weight', 'fontScale', 'italic', 'underline'].includes(key));
     if (unexpected.length > 0) {
       fail(
         'INVALID_TEXT_SPANS',
@@ -212,6 +213,10 @@ function normalizeTextSpans(raw, authoritativeText, field) {
       }
       span.foreground = candidate.foreground.toLowerCase();
     }
+    if (candidate.background !== undefined) {
+      if (typeof candidate.background !== 'string' || !TEXT_SPAN_FOREGROUND_PATTERN.test(candidate.background)) fail('INVALID_TEXT_SPANS', 'Highlight must be a six-digit color.');
+      span.background = candidate.background.toLowerCase();
+    }
     if (candidate.weight !== undefined) {
       if (typeof candidate.weight !== 'string'
         || !TEXT_SPAN_WEIGHTS.includes(candidate.weight)) {
@@ -235,7 +240,7 @@ function normalizeTextSpans(raw, authoritativeText, field) {
         span[key] = candidate[key];
       }
     }
-    if (span.foreground === undefined && span.weight === undefined && span.fontScale === undefined && span.italic === undefined && span.underline === undefined) {
+    if (span.background === undefined && span.foreground === undefined && span.weight === undefined && span.fontScale === undefined && span.italic === undefined && span.underline === undefined) {
       fail(
         'INVALID_TEXT_SPANS',
         `${spanField} must set foreground, weight, or both.`,
@@ -318,6 +323,7 @@ function normalizeBlock(raw, field) {
   const type = raw.type;
   if (!BLOCK_TYPES.includes(type)) fail('INVALID_BLOCK_TYPE', `${field} has an unsupported block type.`, { field, type });
 
+  if (type === 'canvas') return { type, objects: normalizeCanvasObjects(raw.objects, fail, normalizeTextSpans) };
   if (type === 'text') {
     const normalized = {
       type,
@@ -713,6 +719,7 @@ function normalizeServiceProject(raw, options = {}) {
   for (const cue of Object.values(cues)) {
     for (const channel of Object.values(cue.channels)) {
       for (const block of channel.blocks || []) {
+        if (block.type === 'canvas' && block.objects.some(object => object.type === 'image' && assets[object.assetId]?.kind !== 'image')) fail('MISSING_ASSET', 'A canvas image is unavailable.');
         if (['image', 'video', 'legacy-deck'].includes(block.type) && !assets[block.assetId]) {
           fail('MISSING_ASSET', `Cue ${cue.id} uses an asset that is not in this project.`, {
             cueId: cue.id,
@@ -2460,7 +2467,7 @@ function normalizeProjectItem(raw, channelIds, now) {
   }
 
   if (raw.kind === 'sermon' || raw.kind === 'notice') {
-    const sermonOptions = normalizeSermonOptions(raw, channelIds, fail);
+    const sermonOptions = normalizeSermonOptions(raw, channelIds, fail, normalizeTextSpans);
     if (!isRecord(raw.textByChannel)) fail('INVALID_TEXT_VARIANTS', `Item ${itemId} needs text variants.`);
     const textByChannel = {};
     for (const [channelId, value] of Object.entries(raw.textByChannel)) {
@@ -3272,6 +3279,7 @@ function normalizeEditableServiceProject(raw, options = {}) {
   const index = validateProjectTree(normalized);
 
   for (const item of Object.values(items)) {
+    if (canvasAssetIds(item).some(assetId => assets[assetId]?.kind !== 'image')) fail('MISSING_ASSET', 'A canvas image is unavailable.');
     if (item.backgroundAssetId && assets[item.backgroundAssetId]?.kind !== 'image') fail('MISSING_ASSET', `Slide ${item.id} has no pinned background image.`);
     if (item.kind === 'bible' && item.sermonReading) {
       const resource = resources[item.sermonReading.sermonResourceId];
@@ -3945,6 +3953,8 @@ function planNextServiceProject(rawSourceProject, options = {}) {
   const reachableResourceIds = new Set();
   const reachableAssetIds = new Set();
   for (const item of Object.values(next.items)) {
+    canvasAssetIds(item).forEach(assetId => reachableAssetIds.add(assetId));
+    if (item.backgroundAssetId) reachableAssetIds.add(item.backgroundAssetId);
     if (item.kind === 'song') {
       for (const variant of Object.values(item.variants)) {
         if (variant.mode === 'content') reachableResourceIds.add(variant.resourceId);
@@ -4826,6 +4836,7 @@ function pruneUnreachableProjectRecords(rawProject, candidates = {}, {
   const reachableResources = new Set();
   const reachableAssets = new Set();
   for (const item of Object.values(project.items)) {
+    canvasAssetIds(item).forEach(assetId => reachableAssets.add(assetId));
     if (item.backgroundAssetId) reachableAssets.add(item.backgroundAssetId);
     if (item.sermonResourceId) reachableResources.add(item.sermonResourceId);
     if (item.kind === 'bible' && item.sermonReading) {
@@ -4891,6 +4902,7 @@ function removeProjectItemAndDescendants(rawProject, rawItemId) {
   const assetIds = new Set();
   const collect = currentId => {
     const item = project.items[currentId];
+    canvasAssetIds(item).forEach(assetId => assetIds.add(assetId));
     if (item.backgroundAssetId) assetIds.add(item.backgroundAssetId);
     if (item.kind === 'group') item.childIds.forEach(collect);
     if (item.sermonResourceId) resourceIds.add(item.sermonResourceId);
