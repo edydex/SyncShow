@@ -86,7 +86,7 @@ jobs:
         env:
           CSC_FOR_PULL_REQUEST: 'true'
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: ${{ matrix.build_command }}
+        run: ${{ matrix.build_command }} --publish never
 
       - name: Verify the Mac preview bundle signature
         if: matrix.platform == 'darwin'
