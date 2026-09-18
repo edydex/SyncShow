@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncShow local sermon recording visual fixture</title>
+  <link rel="stylesheet" href="../../src/renderer/styles.css">
+  <style>
+    html,
+    body.recording-fixture {
+      height: auto;
+      min-height: 100%;
+    }
+
+    body.recording-fixture {
+      overflow: auto;
+    }
+
+    .recording-fixture .app-container {
+      height: auto;
+      min-height: 100vh;
+    }
+
+    .recording-fixture .prepare-panel {
+      overflow: visible;
+    }
+
+    .recording-fixture .prepare-workspace {
+      grid-template-columns: 235px 440px minmax(470px, 1fr);
+      flex: 0 0 auto;
+      min-height: 640px;
+    }
+
+    .recording-fixture .prepare-library-pane {
+      overflow-y: auto;
+    }
+
+    .recording-fixture .prepare-sermon-inspector {
+      margin-top: 12px;
+      padding-top: 12px;
+    }
+
+    .recording-fixture .prepare-rundown-list {
+      margin-top: 12px;
+    }
+
+    .recording-fixture .fixture-selected {
+      color: #dce6ff;
+      background: rgba(79, 124, 255, 0.13);
+      border-color: rgba(104, 144, 255, 0.4);
+    }
+  </style>
+</head>
+<body class="friendly-mode prepare-stage recording-fixture">
+  <p class="sr-only" role="note">
+    Static visual fixture. It illustrates the implemented Prepare recording
+    intake state and is intentionally noninteractive.
+  </p>
+
+  <div class="app-container">
+    <header class="header" id="setupHeader">
+      <div class="header-left">
+        <div class="app-mark" aria-hidden="true">S</div>
+        <div>
+          <div class="app-title-row">
+            <h1 class="app-title">SyncShow</h1>
+            <span class="preview-label">Preview</span>
+          </div>
+          <span class="app-subtitle">Build the service in order</span>
+        </div>
+      </div>
+
+      <nav class="workflow-steps" aria-label="Service workflow">
+        <button type="button" class="workflow-step active" aria-current="step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">1</span>
+          <span class="workflow-label">Prepare</span>
+        </button>
+        <button type="button" class="workflow-step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">2</span>
+          <span class="workflow-label">Load</span>
+        </button>
+        <button type="button" class="workflow-step" tabindex="-1" aria-disabled="true">
+          <span class="workflow-number">3</span>
+          <span class="workflow-label">Show</span>
+        </button>
+      </nav>
+
+      <div class="header-right header-load-actions">
+        <button class="btn btn-secondary" type="button" tabindex="-1" aria-disabled="true">Admin Settings</button>
+        <button class="btn btn-primary btn-start" type="button" tabindex="-1" aria-disabled="true">Save &amp; go to Load</button>
+      </div>
+    </header>
+
+    <section class="prepare-panel" aria-labelledby="fixturePrepareHeading">
+      <div class="prepare-shell">
+        <div class="prepare-intro">
+          <div>
+            <p class="section-kicker">PREPARE</p>
+            <h2 id="fixturePrepareHeading">Build the service in order</h2>
+            <p>One exact sermon packet now carries a private post-service recording handoff and local review player.</p>
+          </div>
+          <div class="prepare-primary-actions">
+            <button type="button" class="btn btn-quiet" tabindex="-1" aria-disabled="true">Import service</button>
+            <button type="button" class="btn btn-secondary" tabindex="-1" aria-disabled="true">New service</button>
+            <button type="button" class="btn btn-primary" tabindex="-1" aria-disabled="true">Save &amp; go to Load</button>
+          </div>
+        </div>
+
+        <p class="prepare-notice" data-kind="success" role="status">
+          The exact recording is preserved and ready for private local review. Its bytes and local path were not uploaded, published, or sent to Community.
+        </p>
+
+        <div class="prepare-workspace">
+          <aside class="prepare-column prepare-projects-pane" aria-labelledby="fixtureProjectsHeading">
+            <div class="prepare-pane-heading">
+              <div>
+                <p class="section-kicker">SERVICES</p>
+                <h3 id="fixtureProjectsHeading">Service projects</h3>
+              </div>
+              <span class="prepare-count">3</span>
+            </div>
+            <label class="prepare-search-field">
+              <span class="sr-only">Search service projects</span>
+              <input class="text-input" type="search" tabindex="-1" placeholder="Search services">
+            </label>
+            <div class="prepare-list" role="list">
+              <h4 class="prepare-project-group-heading" role="presentation">Upcoming</h4>
+              <div role="listitem">
+                <button class="prepare-project-button" type="button" tabindex="-1" aria-current="true">
+                  <strong>Sunday Service</strong>
+                  <span>Jul 27, 2026 · Needs follow-up · 10:30 · 18 items</span>
+                </button>
+              </div>
+              <h4 class="prepare-project-group-heading" role="presentation">Past</h4>
+              <div role="listitem">
+                <button class="prepare-project-button" type="button" tabindex="-1">
+                  <strong>Sunday Service</strong>
+                  <span>Jul 20, 2026 · Completed · 17 items</span>
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          <section class="prepare-column prepare-rundown-pane" aria-labelledby="fixtureRundownHeading">
+            <div class="prepare-pane-heading prepare-rundown-heading">
+              <div>
+                <p class="section-kicker">RUNDOWN</p>
+                <h3 id="fixtureRundownHeading">Sunday Service</h3>
+                <p class="prepare-pane-subtitle">Jul 27, 2026 · Needs follow-up · 10:30 · 18 items</p>
+              </div>
+              <span class="prepare-save-state">Autosaved</span>
+            </div>
+
+            <ol class="prepare-rundown-list" aria-label="Service order">
+              <li class="prepare-rundown-entry">
+                <button class="prepare-rundown-row" type="button" tabindex="-1">
+                  <span class="prepare-item-number">01</span>
+                  <span class="prepare-item-copy"><strong>Welcome</strong><small>Public and Singer/Media</small></span>
+                  <span class="prepare-item-kind">Notice</span>
+                </button>
+              </li>
+              <li class="prepare-rundown-entry">
+                <button class="prepare-rundown-row" type="button" tabindex="-1">
+                  <span class="prepare-item-number">02</span>
+                  <span class="prepare-item-copy"><strong>Come Behold the Wondrous Mystery</strong><small>English and Russian family</small></span>
+                  <span class="prepare-item-kind">Song</span>
+                </button>
+              </li>
+              <li class="prepare-rundown-entry">
+                <button class="prepare-rundown-row" type="button" tabindex="-1">
+                  <span class="prepare-item-number">03</span>
+                  <span class="prepare-item-copy"><strong>Ephesians 3:14–21</strong><small>Exact primary sermon reading · BSB</small></span>
+                  <span class="prepare-item-kind">Bible</span>
+                </button>
+              </li>
+              <li class="prepare-rundown-entry">
+                <button class="prepare-rundown-row prepare-rundown-section-row fixture-selected" type="button" tabindex="-1" aria-current="true">
+                  <span class="prepare-section-rule"></span>
+                  <span class="prepare-item-copy"><strong>The Prayer That Transforms the Church</strong><small>Exact sermon packet · post-service follow-up</small></span>
+                  <span class="prepare-item-kind">Sermon packet</span>
+                </button>
+              </li>
+              <li class="prepare-rundown-entry" style="--prepare-depth: 1">
+                <button class="prepare-rundown-row" type="button" tabindex="-1">
+                  <span class="prepare-item-number">04</span>
+                  <span class="prepare-item-copy"><strong>The Foundation of the Prayer</strong><small>Reviewed sermon material</small></span>
+                  <span class="prepare-item-kind">Sermon</span>
+                </button>
+              </li>
+              <li class="prepare-rundown-entry">
+                <button class="prepare-rundown-row" type="button" tabindex="-1">
+                  <span class="prepare-item-number">05</span>
+                  <span class="prepare-item-copy"><strong>Yet Not I but Through Christ in Me</strong><small>English and Russian family</small></span>
+                  <span class="prepare-item-kind">Song</span>
+                </button>
+              </li>
+            </ol>
+          </section>
+
+          <aside class="prepare-column prepare-library-pane" aria-labelledby="fixtureInspectorHeading">
+            <section class="prepare-inspector">
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">SELECTED</p>
+                  <h3 id="fixtureInspectorHeading">The Prayer That Transforms the Church</h3>
+                </div>
+              </div>
+              <p class="prepare-pane-subtitle">Sermon packet · exact local revision · used by this service</p>
+            </section>
+
+            <section class="prepare-sermon-inspector" aria-labelledby="fixtureSermonSourceHeading">
+              <div class="prepare-pane-heading">
+                <div>
+                  <p class="section-kicker">SERMON SOURCE</p>
+                  <h3 id="fixtureSermonSourceHeading">Exact packet linked</h3>
+                </div>
+              </div>
+              <p class="prepare-pane-subtitle">Paul Lvutin · Ephesians 3:14–21 · Jul 27, 2026</p>
+
+              <section class="prepare-sermon-post-service" data-kind="warning" aria-labelledby="fixturePostServiceHeading">
+                <div class="prepare-sermon-post-service-heading">
+                  <div>
+                    <p class="section-kicker">AFTER THE SERVICE</p>
+                    <h4 id="fixturePostServiceHeading">Sermon revisit handoff</h4>
+                  </div>
+                  <span class="prepare-sermon-post-service-badge">Waiting</span>
+                </div>
+                <dl class="prepare-sermon-post-service-states">
+                  <div>
+                    <dt>Sermon page</dt>
+                    <dd>Waiting</dd>
+                  </div>
+                  <div>
+                    <dt>Recording</dt>
+                    <dd>
+                      <span>Preserved locally · ready to review</span>
+                      <small class="prepare-sermon-post-service-recording-detail">Sunday sermon.mp3 · 42.6 MB</small>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Reviewed sermon text</dt>
+                    <dd>Available</dd>
+                  </div>
+                  <div>
+                    <dt>External notes / transcript</dt>
+                    <dd>Waiting</dd>
+                  </div>
+                </dl>
+                <p class="prepare-sermon-post-service-status">
+                  Review the exact recording in SyncShow, then add its stable HTTPS URL after the separate Community upload step.
+                </p>
+                <p class="prepare-sermon-post-service-audience">
+                  Audience remains Private. Ready does not change the audience.
+                </p>
+                <p class="prepare-sermon-post-service-privacy">
+                  A chosen recording is copied into SyncShow’s private local storage on this computer. Its bytes and local path are not uploaded, published, or sent to Community. Its verified filename, type, hash, and size are saved in the sermon record and may later sync to Community. Automatic recording cleanup is not available yet, so private copies remain on this computer.
+                </p>
+                <p class="prepare-sermon-post-service-meaning">
+                  Ready means this reviewed record can be saved to Community. It does not publish the sermon or make it public.
+                </p>
+                <div class="prepare-sermon-post-service-actions">
+                  <button type="button" class="btn btn-outline btn-compact" tabindex="-1">Replace local recording…</button>
+                  <button type="button" class="btn btn-quiet btn-compact" tabindex="-1">Review local recording</button>
+                  <button type="button" class="btn btn-outline btn-compact" tabindex="-1">Review post-service links</button>
+                  <button type="button" class="btn btn-quiet btn-compact" tabindex="-1" disabled>Mark ready for Community</button>
+                </div>
+              </section>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <footer class="status-bar">
+      <div class="status-left">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>Local sermon recording preserved · private review ready · upload still separate</span>
+      </div>
+      <div class="status-right">
+        <span>Static visual fixture · no Community write</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

@@ -13,7 +13,6 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
-      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -51,14 +50,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Commit, tag, and push
+          # Commit and push the stable version. The build workflow owns the
+          # release tag, and creates it only after every platform and legal
+          # release gate succeeds.
           git add package.json package-lock.json
           git commit -m "Release v${CLEAN_VERSION}"
-          git tag "v${CLEAN_VERSION}"
-          git push origin main --tags
-
-      - name: Trigger build workflow
-        if: steps.check.outputs.is_prerelease == 'true'
-        run: gh workflow run build.yml
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git push origin main

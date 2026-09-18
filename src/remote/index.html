@@ -6,9 +6,10 @@
   <meta name="theme-color" content="#0b1020">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>SyncShow Remote</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/teaching.css">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Skip to Show controls</a>
@@ -71,6 +72,31 @@
       </section>
 
       <section id="showView" class="show-view" aria-labelledby="showTitle" hidden>
+        <details id="teachingPanel" class="teaching-panel">
+          <summary>Teach · Draw on the current slide</summary>
+          <p>Choose the screen whose text you want to mark. Ink stays on that screen and slide during this Show. Stage-facing screens keep their own view.</p>
+          <div class="teaching-toolbar">
+            <label>Screen<select id="teachingOutput" aria-label="Teaching screen"></select></label>
+            <label>Tool<select id="teachingTool"><option value="pen">Pen</option><option value="highlight">Highlighter</option><option value="pointer">Trailing pointer · 1 second</option></select></label>
+            <label>Color<select id="teachingColor"><option value="#ef4444">Red</option><option value="#2563eb">Blue</option><option value="#16a34a">Green</option><option value="#eab308">Yellow</option><option value="#ffffff">White</option><option value="#111827">Black</option></select></label>
+            <label>Pen size<select id="teachingWidth"><option value="0.004">Fine</option><option value="0.008" selected>Medium</option><option value="0.016">Bold</option></select></label>
+            <label><input type="checkbox" id="teachingPenOnly" aria-describedby="teachingPenHelp">Stylus only</label>
+            <button id="teaching-undo" type="button">Undo ink</button>
+            <button id="teaching-clear" type="button">Clear ink</button>
+          </div>
+          <p id="teachingPenHelp">Stylus only ignores finger and mouse drawing. Leave it off if your tablet does not recognize your pen.</p>
+          <div class="teaching-toolbar" aria-label="Teaching slide navigation">
+            <button id="btnTeachingPrevious" type="button" disabled>← Previous</button>
+            <button id="btnTeachingGallery" type="button" aria-haspopup="dialog" aria-controls="jumpDialog" disabled>Slide gallery</button>
+            <button id="btnTeachingNext" type="button" disabled>Next →</button>
+          </div>
+          <p id="teachingStatus" role="status">Open Teaching to connect to the current slide.</p>
+          <div id="teachingCanvasWrap" class="teaching-canvas-wrap" data-ready="false">
+            <img id="teachingImage" alt="Current output with teacher annotations">
+            <canvas id="teachingCanvas" aria-label="Draw on the current slide"></canvas>
+          </div>
+          <p>Draw with a pen or finger. The pointer fades progressively over one second; pen and highlighter stay on the slide. Ending the Show discards ink.</p>
+        </details>
         <div class="show-overview">
           <div>
             <p class="eyebrow">CURRENT SHOW</p>
@@ -99,7 +125,7 @@
         <section class="control-section navigation-controls" aria-labelledby="navigationHeading">
           <div class="control-section-heading">
             <h3 id="navigationHeading">Navigate</h3>
-            <button id="btnOpenJump" class="button button-quiet button-small" type="button" aria-haspopup="dialog" aria-controls="jumpDialog" disabled>Jump to cue</button>
+            <button id="btnOpenJump" class="button button-quiet button-small" type="button" aria-haspopup="dialog" aria-controls="jumpDialog" disabled>Slide gallery</button>
           </div>
           <div class="navigation-grid">
             <button id="btnPrevious" class="button button-secondary button-control" type="button" disabled>
@@ -165,14 +191,17 @@
     <div class="jump-dialog-heading">
       <div>
         <p class="eyebrow">SHOW CUES</p>
-        <h2 id="jumpTitle">Jump to a cue</h2>
-        <p id="jumpDescription">Choose a visible cue. SyncShow will confirm the change before this phone updates.</p>
+        <h2 id="jumpTitle">Slide gallery</h2>
+        <p id="jumpDescription">Slides around the current slide. Selecting one changes the Show and notifies the host.</p>
       </div>
       <button id="btnCloseJump" class="dialog-close" type="button" aria-label="Close cue list">×</button>
     </div>
+    <label class="gallery-scope"><input id="galleryAll" type="checkbox"> Show all slides</label>
     <div id="jumpCueList" class="jump-cue-list" role="list"></div>
   </dialog>
 
   <script src="/app.js" defer></script>
+  <script src="/teaching-trail.js" defer></script>
+  <script src="/teaching.js" defer></script>
 </body>
 </html>

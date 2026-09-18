@@ -330,7 +330,7 @@ test('Prepare exposes an accessible count and Load more control with one final i
   assert.match(controllerSource, /state\.songRequest \+= 1;\s*state\.songNextOffset = null;/);
 
   const start = controllerSource.indexOf('async function importSong()');
-  const end = controllerSource.indexOf('function populateSongFamilyChoices', start);
+  const end = controllerSource.indexOf('function communitySongApiAvailable', start);
   const importSource = controllerSource.slice(start, end);
   assert.equal((importSource.match(/await loadSongs\(\)/g) || []).length, 1);
   assert.match(importSource, /summarizeSongImport\(result\)/);

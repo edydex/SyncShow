@@ -59,6 +59,33 @@ test('new frames, failures, and renderer responsiveness conservatively update he
   assert.equal(tracker.expectFrame({ ...output, cueIndex: 3 }), false);
 });
 
+test('authoritative Clear cancels a pending frame without reviving a failed output', () => {
+  const tracker = new OutputHealthTracker();
+  const sender = {};
+  const output = identity('front', 24, sender);
+  tracker.register(output);
+  tracker.expectFrame({ ...output, cueIndex: 0 });
+  tracker.acknowledge({ sender, sessionId: 24, cueIndex: 0, ok: true });
+
+  tracker.expectFrame({ ...output, cueIndex: 1 });
+  assert.equal(tracker.read('front', 24, sender).status, 'starting');
+  assert.equal(tracker.markCleared(output), true);
+  assert.deepEqual(tracker.read('front', 24, sender), {
+    status: 'healthy',
+    expectedCueIndex: null
+  });
+  assert.equal(
+    tracker.acknowledge({ sender, sessionId: 24, cueIndex: 1, ok: true }),
+    false,
+    'a late pre-Clear cue cannot become authoritative'
+  );
+
+  tracker.expectFrame({ ...output, cueIndex: 2 });
+  tracker.acknowledge({ sender, sessionId: 24, cueIndex: 2, ok: false });
+  assert.equal(tracker.markCleared(output), false);
+  assert.equal(tracker.read('front', 24, sender).status, 'unavailable');
+});
+
 test('the ledger is bounded and clearing it invalidates late senders', () => {
   const tracker = new OutputHealthTracker({ maximumEntries: 2 });
   const firstSender = {};

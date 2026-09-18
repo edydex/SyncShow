@@ -1,13 +1,33 @@
 'use strict';
 
 module.exports = {
+  ...require('../sermon'),
   ...require('./SongDocument'),
+  ...require('./SongFamilyRevision'),
+  ...require('./SongFamilyCaptureReview'),
+  ...require('./LocalServiceSongRightsEvidence'),
+  ...require('./CurrentServiceSongFamilyReview'),
+  ...require('./CurrentServiceSongDraft'),
+  ...require('./CurrentServiceSongDraftWorker'),
+  ...require('./CurrentServiceNativeDraft'),
   ...require('./ServiceProject'),
+  ...require('./ServiceProjectRunSheet'),
+  ...require('./ServiceProjectServing'),
+  ...require('./ReviewedSongRangeReplacement'),
+  ...require('./ServiceProjectReadiness'),
+  ...require('./ServiceHandoff'),
+  ...require('./CurrentShowPackageBinding'),
+  ...require('./PreparedServiceVenueContract'),
+  ...require('./SermonCueReconciliation'),
+  ...require('./CanonicalSermonBodyProjection'),
   ...require('./LocalSongLibrary'),
+  ...require('./LocalSongFamilyReviewStore'),
+  ...require('./LocalSongFamilyCommitCoordinator'),
   ...require('./ServiceProjectStore'),
   ...require('./ServiceProjectExchange'),
   ...require('./PortableSongLibraryImport'),
   ...require('./NativePresetCatalog'),
   ...require('./NativeSlideRenderer'),
-  ...require('./ShowPackagePublisher')
+  ...require('./ShowPackagePublisher'),
+  ...require('./CurrentShowPackageStore')
 };

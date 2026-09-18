@@ -7,12 +7,20 @@ const path = require('node:path');
 const test = require('node:test');
 const asar = require('@electron/asar');
 const {
+  doMergeConfigs
+} = require('app-builder-lib/out/util/config/config');
+const {
   GENERATED_MARKER,
   cleanGoogleDriveBuildConfig,
   injectGoogleDriveBuildConfig,
   main,
   verifyPackagedGoogleDriveConfig
 } = require('../scripts/google-drive-build-config');
+const {
+  CONFIG_EXCLUSION,
+  RELEASE_PACKAGE_FLAG,
+  prepareGoogleDrivePackaging
+} = require('../scripts/beforePack');
 
 const CLIENT_ID = '123456789012-release.apps.googleusercontent.com';
 const CLIENT_SECRET = 'GOCSPX-release-test-desktop-credential';
@@ -22,6 +30,29 @@ async function temporaryConfig(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'syncshow-drive-build-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   return path.join(root, 'assets', 'google-drive-config.json');
+}
+
+function packagingContext({ normalized = false } = {}) {
+  const rules = [
+    'main.js',
+    'assets/**/*',
+    CONFIG_EXCLUSION,
+    'node_modules/**/*'
+  ];
+  return {
+    packager: {
+      config: {
+        files: normalized ? doMergeConfigs([{ files: rules }]).files : rules
+      }
+    }
+  };
+}
+
+function packagingRules(context) {
+  const [first] = context.packager.config.files;
+  return typeof first === 'string'
+    ? context.packager.config.files
+    : first.filter;
 }
 
 test('release credentials are written without logging and generated config can be cleaned', async t => {
@@ -104,6 +135,160 @@ test('injection and cleanup preserve a developer-maintained local config', async
     error => error.code === 'LOCAL_CONFIG_PRESERVED'
   );
   assert.equal(await fs.readFile(configPath, 'utf8'), localConfig);
+});
+
+test('ordinary packaging always keeps Google Drive configuration excluded', async t => {
+  const configPath = await temporaryConfig(t);
+  const missingContext = packagingContext();
+  assert.deepEqual(
+    await prepareGoogleDrivePackaging(missingContext, {
+      env: {},
+      configPath
+    }),
+    { googleDriveConfigIncluded: false }
+  );
+  assert.ok(packagingRules(missingContext).includes(CONFIG_EXCLUSION));
+
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(
+    configPath,
+    `${JSON.stringify({
+      _generatedBy: GENERATED_MARKER,
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      apiKey: API_KEY
+    })}\n`,
+    { mode: 0o600 }
+  );
+  const generatedContext = packagingContext();
+  await prepareGoogleDrivePackaging(generatedContext, {
+    env: {},
+    configPath
+  });
+  assert.ok(packagingRules(generatedContext).includes(CONFIG_EXCLUSION));
+});
+
+test('ordinary packaging accepts electron-builder normalized file rules', async t => {
+  const configPath = await temporaryConfig(t);
+  const context = packagingContext({ normalized: true });
+  assert.deepEqual(
+    await prepareGoogleDrivePackaging(context, { env: {}, configPath }),
+    { googleDriveConfigIncluded: false }
+  );
+  assert.ok(packagingRules(context).includes(CONFIG_EXCLUSION));
+});
+
+test('release packaging includes only the exact generated Google Drive config', async t => {
+  const configPath = await temporaryConfig(t);
+  await injectGoogleDriveBuildConfig({
+    configPath,
+    env: {
+      SYNCSHOW_GOOGLE_CLIENT_ID: CLIENT_ID,
+      SYNCSHOW_GOOGLE_CLIENT_SECRET: CLIENT_SECRET,
+      SYNCSHOW_GOOGLE_API_KEY: API_KEY
+    }
+  });
+  const context = packagingContext();
+  const env = { [RELEASE_PACKAGE_FLAG]: '1' };
+
+  assert.deepEqual(
+    await prepareGoogleDrivePackaging(context, { env, configPath }),
+    { googleDriveConfigIncluded: true }
+  );
+  assert.ok(!packagingRules(context).includes(CONFIG_EXCLUSION));
+  assert.deepEqual(
+    await prepareGoogleDrivePackaging(context, { env, configPath }),
+    { googleDriveConfigIncluded: true },
+    'multi-architecture hook calls must be idempotent'
+  );
+});
+
+test('release packaging mutates normalized file rules idempotently', async t => {
+  const configPath = await temporaryConfig(t);
+  await injectGoogleDriveBuildConfig({
+    configPath,
+    env: {
+      SYNCSHOW_GOOGLE_CLIENT_ID: CLIENT_ID,
+      SYNCSHOW_GOOGLE_CLIENT_SECRET: CLIENT_SECRET,
+      SYNCSHOW_GOOGLE_API_KEY: API_KEY
+    }
+  });
+  const context = packagingContext({ normalized: true });
+  const env = { [RELEASE_PACKAGE_FLAG]: '1' };
+
+  await prepareGoogleDrivePackaging(context, { env, configPath });
+  assert.ok(!packagingRules(context).includes(CONFIG_EXCLUSION));
+  assert.deepEqual(
+    await prepareGoogleDrivePackaging(context, { env, configPath }),
+    { googleDriveConfigIncluded: true }
+  );
+});
+
+test('release packaging rejects missing, local, malformed, and unsafe configs without exposing values', async t => {
+  const configPath = await temporaryConfig(t);
+  const env = { [RELEASE_PACKAGE_FLAG]: '1' };
+  await assert.rejects(
+    prepareGoogleDrivePackaging(packagingContext(), { env, configPath }),
+    error => error.code === 'GENERATED_CONFIG_MISSING'
+  );
+
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(
+    configPath,
+    `${JSON.stringify({
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      apiKey: API_KEY
+    })}\n`,
+    { mode: 0o600 }
+  );
+  await assert.rejects(
+    prepareGoogleDrivePackaging(packagingContext(), { env, configPath }),
+    error => {
+      assert.equal(error.code, 'UNRECOGNIZED_CONFIG');
+      assert.doesNotMatch(error.message, new RegExp(CLIENT_ID));
+      assert.doesNotMatch(error.message, new RegExp(CLIENT_SECRET));
+      assert.doesNotMatch(error.message, new RegExp(API_KEY));
+      return true;
+    }
+  );
+
+  await fs.writeFile(configPath, '{not json}\n', { mode: 0o600 });
+  await assert.rejects(
+    prepareGoogleDrivePackaging(packagingContext(), { env, configPath }),
+    error => error.code === 'UNRECOGNIZED_CONFIG'
+  );
+
+  if (process.platform !== 'win32') {
+    const targetPath = `${configPath}.target`;
+    await fs.writeFile(
+      targetPath,
+      `${JSON.stringify({
+        _generatedBy: GENERATED_MARKER,
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        apiKey: API_KEY
+      })}\n`,
+      { mode: 0o600 }
+    );
+    await fs.unlink(configPath);
+    await fs.symlink(targetPath, configPath);
+    await assert.rejects(
+      prepareGoogleDrivePackaging(packagingContext(), { env, configPath }),
+      error => error.code === 'UNSAFE_CONFIG_PATH'
+    );
+  }
+});
+
+test('package manifest keeps the local credential exclusion behind the global hook', async () => {
+  const packageJson = JSON.parse(
+    await fs.readFile(path.resolve(__dirname, '../package.json'), 'utf8')
+  );
+  assert.equal(packageJson.build.beforePack, 'scripts/beforePack.js');
+  const assetsIndex = packageJson.build.files.lastIndexOf('assets/**/*');
+  const exclusionIndex = packageJson.build.files.lastIndexOf(CONFIG_EXCLUSION);
+  assert.ok(assetsIndex >= 0);
+  assert.ok(exclusionIndex > assetsIndex);
 });
 
 test('packaged app verification requires the exact generated config without printing it', async t => {
@@ -304,7 +489,13 @@ test('release workflow scopes secrets to injection and always removes generated 
   for (const step of packagingSteps) {
     assert.doesNotMatch(step, /SYNCSHOW_GOOGLE_(?:CLIENT_ID|CLIENT_SECRET|API_KEY)/);
     assert.doesNotMatch(step, /secrets\./);
+    assert.match(step, /SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG:\s*'1'/);
   }
+  assert.equal(
+    (workflow.match(/SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG:\s*'1'/g) || []).length,
+    3,
+    'only the three protected packaging steps may include the generated config'
+  );
 
   const buildJobs = workflow.match(
     /^  build-(?:windows|mac|linux):[\s\S]*?(?=^  (?:build-|create-release:))/gm
@@ -327,6 +518,7 @@ test('release workflow scopes secrets to injection and always removes generated 
   );
   assert.match(pullRequestWorkflow, /^\s+pull_request:/m);
   assert.doesNotMatch(pullRequestWorkflow, /secrets\.SYNCSHOW_GOOGLE_/);
+  assert.doesNotMatch(pullRequestWorkflow, /SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG/);
 });
 
 test('real build config remains ignored while the placeholder example remains source-controlled', async () => {

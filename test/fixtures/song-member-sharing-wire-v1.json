@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "songSyncId": "exact-song",
+  "expectedSongSyncVersion": 7,
+  "request": {
+    "schemaVersion": 1,
+    "familyRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "review": {
+      "scope": "community-members",
+      "basis": "church-license",
+      "evidence": "Verified church license covers signed-in member display.",
+      "validUntil": "2026-08-31",
+      "reviewedAt": "2026-07-30T18:00:00.000Z",
+      "familyRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "reviewRevision": "6f14d736aa04857e5d54bdfaefe2dfa906ad12182a0e0ec3935334c52a7f7c64",
+    "visibility": "public",
+    "publishAt": null
+  },
+  "expectedRequestRevision": "f928787a6de104a3f991b621b87bbc8a2a5bbaa06d94e701a5f9157ac88e27de",
+  "receipt": {
+    "schemaVersion": 1,
+    "receiptId": "c2hhcmVkLW1lbWJlci1yZWNlaXB0LTAwMDAwMDE",
+    "receiptVersion": 1,
+    "songSyncId": "exact-song",
+    "previousSongSyncVersion": 7,
+    "songSyncVersion": 8,
+    "familyRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "reviewRevision": "6f14d736aa04857e5d54bdfaefe2dfa906ad12182a0e0ec3935334c52a7f7c64",
+    "visibility": "public",
+    "publishAt": null,
+    "timeZone": "America/Los_Angeles",
+    "validThrough": "2026-09-01T06:59:59.999Z",
+    "reviewedAt": "2026-07-30T18:00:00.000Z",
+    "confirmedAt": "2026-07-30T19:00:00.000Z",
+    "requestRevision": "f928787a6de104a3f991b621b87bbc8a2a5bbaa06d94e701a5f9157ac88e27de",
+    "receiptRevision": "d6366c29104a7b6816677fa69ef9b69bbec4d910456effc77ad0b73a06964ca0"
+  },
+  "expectedReceiptRevision": "d6366c29104a7b6816677fa69ef9b69bbec4d910456effc77ad0b73a06964ca0"
+}

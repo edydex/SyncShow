@@ -294,7 +294,7 @@ test('Preview 7 authoring survives CAS revisions and restart, then publishes a v
   assert.equal(published.manifest.cueCount, timeline.cueIds.length);
   assert.deepEqual(published.manifest.cueIds, timeline.cueIds);
   assert.equal(published.manifest.channels.length, 3);
-  assert.equal(published.manifest.artifacts.length, 46);
+  assert.equal(published.manifest.artifacts.length, 47);
   assert.equal(progress.length, 21);
   assert.deepEqual(Object.values(published.presentations).map(item => item.slideCount), [7, 7, 7]);
   assert.equal(

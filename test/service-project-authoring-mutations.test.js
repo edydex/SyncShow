@@ -13,7 +13,9 @@ const {
   duplicateProjectItem,
   normalizeServiceProject,
   parseSongDocument,
+  planNextServiceProject,
   removeProjectItemAndDescendants,
+  replaceSongItem,
   serializeServiceProject,
   updateGroupItem,
   updatePictureChannelAsset,
@@ -128,6 +130,47 @@ function projectWithSongSubtree() {
   return project;
 }
 
+function replacementSongFor(project, overrides = {}) {
+  const song = parseSongDocument([
+    '---',
+    'id: mercy-song',
+    'title: Mercy Song',
+    'language: en',
+    '---',
+    '^1',
+    'Morning by morning',
+    '^chorus',
+    'Great is Your mercy'
+  ].join('\n'));
+  const pinned = addSongResource(project, song, {
+    provider: 'local',
+    itemId: song.id,
+    revision: 'song-revision-two'
+  });
+  return {
+    project: pinned.project,
+    resourceId: pinned.resourceId,
+    item: {
+      id: 'song-mercy',
+      kind: 'song',
+      title: song.title,
+      primaryChannelId: 'primary',
+      variants: {
+        primary: { mode: 'content', resourceId: pinned.resourceId },
+        secondary: { mode: 'inherit', from: 'primary' }
+      },
+      arrangement: [
+        { id: 'arr-mercy-verse-one', sectionId: 'verse-1' },
+        { id: 'arr-mercy-chorus-one', sectionId: 'chorus' }
+      ],
+      titlePresetId: 'song-title',
+      lyricsPresetId: 'song-lyrics',
+      operatorNotes: '',
+      ...overrides
+    }
+  };
+}
+
 test('subtree removal prunes only last-reference song and picture records', () => {
   const original = projectWithSongSubtree();
   const originalSong = original.items['song-grace'];
@@ -205,6 +248,126 @@ test('subtree removal prunes only last-reference song and picture records', () =
   assert.ok(Object.isFrozen(afterPictureRemoval));
 });
 
+test('native song replacement preserves the exact parent and index with fresh cue identities', () => {
+  const original = projectWithSongSubtree();
+  const originalBytes = serializeServiceProject(original);
+  const sourceResourceId =
+    original.items['song-grace'].variants.primary.resourceId;
+  const originalTimeline = compileServiceProject(original);
+  const originalCueIds = originalTimeline.cueIds.filter(cueId =>
+    originalTimeline.cues[cueId].itemId === 'song-grace');
+  const prepared = replacementSongFor(original);
+  const preparedBytes = serializeServiceProject(prepared.project);
+
+  const replaced = replaceSongItem(
+    prepared.project,
+    'song-grace',
+    prepared.item,
+    { now: '2026-07-23T20:04:00.000Z' }
+  );
+
+  assert.deepEqual(replaced.rootItemIds, ['worship']);
+  assert.deepEqual(
+    replaced.items.worship.childIds,
+    ['song-mercy', 'worship-notice']
+  );
+  assert.equal(replaced.items['song-grace'], undefined);
+  assert.equal(replaced.items['song-mercy'].kind, 'song');
+  assert.equal(
+    replaced.items['song-mercy'].variants.primary.resourceId,
+    prepared.resourceId
+  );
+  assert.equal(replaced.resources[sourceResourceId], undefined);
+  assert.ok(replaced.resources[prepared.resourceId]);
+
+  const timeline = compileServiceProject(replaced);
+  const replacementCueIds = timeline.cueIds.filter(cueId =>
+    timeline.cues[cueId].itemId === 'song-mercy');
+  const replacementStart = timeline.cueIds.indexOf(replacementCueIds[0]);
+  const noticeStart = timeline.cueIds.findIndex(cueId =>
+    timeline.cues[cueId].itemId === 'worship-notice');
+  assert.ok(replacementCueIds.length > 0);
+  assert.ok(replacementStart >= 0 && replacementStart < noticeStart);
+  assert.equal(
+    replacementCueIds.some(cueId => originalCueIds.includes(cueId)),
+    false,
+    'the fresh item and arrangement identities must produce fresh Cue identities'
+  );
+  assert.equal(
+    timeline.cueIds.some(cueId => timeline.cues[cueId].itemId === 'song-grace'),
+    false
+  );
+  assert.equal(serializeServiceProject(original), originalBytes);
+  assert.equal(serializeServiceProject(prepared.project), preparedBytes);
+  assert.ok(Object.isFrozen(replaced));
+});
+
+test('native song replacement retains an original resource used by another occurrence', () => {
+  const original = projectWithSongSubtree();
+  const source = original.items['song-grace'];
+  const sourceResourceId = source.variants.primary.resourceId;
+  let shared = addProjectItem(original, {
+    ...structuredClone(source),
+    id: 'song-grace-reprise',
+    title: 'Grace Song reprise',
+    arrangement: source.arrangement.map((entry, index) => ({
+      id: `arr-reprise-${index + 1}`,
+      sectionId: entry.sectionId
+    }))
+  }, { now: NOW });
+  const prepared = replacementSongFor(shared);
+
+  shared = replaceSongItem(
+    prepared.project,
+    'song-grace-reprise',
+    prepared.item,
+    { now: '2026-07-23T20:04:30.000Z' }
+  );
+
+  assert.deepEqual(shared.rootItemIds, ['worship', 'song-mercy']);
+  assert.ok(shared.items['song-grace']);
+  assert.equal(shared.items['song-grace-reprise'], undefined);
+  assert.ok(
+    shared.resources[sourceResourceId],
+    'the original stays pinned while the nested occurrence still reaches it'
+  );
+  assert.ok(shared.resources[prepared.resourceId]);
+});
+
+test('native song replacement rejects non-song targets and reused identities', () => {
+  const original = projectWithSongSubtree();
+  const prepared = replacementSongFor(original);
+
+  expectProjectCode('WRONG_PROJECT_ITEM_KIND', () => replaceSongItem(
+    prepared.project,
+    'worship-notice',
+    prepared.item,
+    { now: NOW }
+  ));
+  expectProjectCode('SONG_REPLACEMENT_ID_REUSED', () => replaceSongItem(
+    prepared.project,
+    'song-grace',
+    { ...prepared.item, id: 'song-grace' },
+    { now: NOW }
+  ));
+  expectProjectCode('INVALID_SONG_REPLACEMENT', () => replaceSongItem(
+    prepared.project,
+    'song-grace',
+    {
+      id: 'replacement-notice',
+      kind: 'notice',
+      title: 'Not a song',
+      textByChannel: {
+        primary: 'Not a song',
+        secondary: 'Not a song'
+      },
+      presetId: 'notice-text',
+      operatorNotes: ''
+    },
+    { now: NOW }
+  ));
+});
+
 function projectWithPicture() {
   const raw = structuredClone(freshProject());
   const sha256 = 'd'.repeat(64);
@@ -237,6 +400,34 @@ function projectWithPicture() {
     presetId: 'picture-fullscreen',
     operatorNotes: ''
   }, { now: NOW });
+}
+
+function projectWithReviewedPicture() {
+  const raw = structuredClone(projectWithPicture());
+  const item = raw.items['welcome-picture'];
+  const assetIdsByChannel = {
+    primary: item.assetId,
+    secondary: item.assetId
+  };
+  delete item.assetId;
+  delete item.channelIds;
+  item.assetIdsByChannel = assetIdsByChannel;
+  raw.sourceServiceSet = {
+    id: 'reviewed-service-set',
+    fingerprint: 'a'.repeat(64),
+    serviceDate: raw.serviceDate,
+    profileId: raw.preferredProfileId
+  };
+  item.sourceVisualReview = {
+    schemaVersion: 1,
+    kind: 'powerpoint-render',
+    serviceSetId: raw.sourceServiceSet.id,
+    serviceSetFingerprint: raw.sourceServiceSet.fingerprint,
+    renderRevisionId: 'b'.repeat(64),
+    position: 1,
+    assetIdsByChannel
+  };
+  return normalizeServiceProject(raw);
 }
 
 test('group renames preserve item, descendant, and compiled cue identities', () => {
@@ -489,6 +680,87 @@ test('picture presentation edits can correct accessibility text without replacin
     altText: '   ',
     now: NOW
   }));
+});
+
+test('picture edits and duplication clear source visual provenance without altering the original', () => {
+  const original = projectWithReviewedPicture();
+  const item = original.items['welcome-picture'];
+  assert.equal(item.sourceVisualReview.position, 1);
+
+  const edited = updatePresentationItem(original, {
+    itemId: item.id,
+    title: 'Reviewed picture, adjusted',
+    now: '2026-07-23T20:13:30.000Z'
+  });
+  assert.equal(edited.items[item.id].sourceVisualReview, undefined);
+
+  const removedOutput = updatePictureChannelAsset(original, {
+    itemId: item.id,
+    channelId: 'secondary',
+    remove: true,
+    now: '2026-07-23T20:13:31.000Z'
+  });
+  assert.equal(removedOutput.items[item.id].sourceVisualReview, undefined);
+
+  const replacementRaw = structuredClone(original);
+  const replacementHash = 'c'.repeat(64);
+  const replacementAssetId = `sha256:${replacementHash}`;
+  replacementRaw.assets[replacementAssetId] = {
+    id: replacementAssetId,
+    kind: 'image',
+    sha256: replacementHash,
+    fileName: 'replacement.png',
+    storedName: `${replacementHash}.png`,
+    mediaType: 'image/png',
+    size: 4096,
+    createdAt: NOW,
+    attribution: '',
+    altText: 'Replacement picture',
+    width: 1920,
+    height: 1080,
+    orientation: 1
+  };
+  const withReplacement = normalizeServiceProject(replacementRaw);
+  const replacedOutput = updatePictureChannelAsset(withReplacement, {
+    itemId: item.id,
+    channelId: 'primary',
+    assetId: replacementAssetId,
+    now: '2026-07-23T20:13:32.000Z'
+  });
+  assert.equal(replacedOutput.items[item.id].sourceVisualReview, undefined);
+
+  let sequence = 0;
+  const duplicated = duplicateProjectItem(original, {
+    itemId: item.id,
+    now: '2026-07-23T20:13:33.000Z',
+    randomUUID: () =>
+      `20000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`
+  });
+  const copiedItem = duplicated.items[duplicated.rootItemIds[1]];
+  assert.equal(copiedItem.kind, 'picture');
+  assert.equal(copiedItem.sourceVisualReview, undefined);
+  assert.deepEqual(copiedItem.assetIdsByChannel, item.assetIdsByChannel);
+
+  const savedRaw = structuredClone(original);
+  savedRaw.revision = 1;
+  const planned = planNextServiceProject(normalizeServiceProject(savedRaw), {
+    id: 'authoring-service-next',
+    title: 'Next service',
+    serviceDate: '2026-08-02',
+    startTime: '10:30',
+    now: '2026-07-23T20:13:34.000Z'
+  });
+  assert.equal(planned.sourceServiceSet, undefined);
+  assert.equal(
+    planned.items[item.id].sourceVisualReview,
+    undefined,
+    'a copied next-service picture cannot retain the previous render review'
+  );
+
+  assert.deepEqual(
+    original.items[item.id].sourceVisualReview,
+    item.sourceVisualReview
+  );
 });
 
 test('picture outputs migrate from shared routing and safely replace or remove localized images', () => {

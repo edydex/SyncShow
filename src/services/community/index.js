@@ -1,8 +1,32 @@
 'use strict';
 
 module.exports = {
+  ...require('./AppLocalCredentialStorage'),
   ...require('./CommunityClient'),
+  ...require('./CommunityBinaryClient'),
   ...require('./CommunityConnectionStore'),
+  ...require('./CommunitySermonMediaUpload'),
+  ...require('./CommunitySermonMediaAttemptStore'),
+  ...require('./CommunitySermonMediaWire'),
+  ...require('./CommunitySermonPublicationConformance'),
+  ...require('./CommunitySermonFirstPublicationTransactionConformance'),
+  ...require('./CommunitySermonPublicationTransactionConformance'),
+  ...require('./CommunitySermonPublicationProbe'),
+  ...require('./CommunitySermonPublicationWire'),
+  ...require('./CommunitySermonSync'),
+  ...require('./CommunitySermonWire'),
+  ...require('./CommunityServicePlan'),
+  ...require('./HeritageServiceDocument'),
+  ...require('./HeritageServiceDocumentOutbox'),
+  ...require('./HeritageServiceDocumentSync'),
+  ...require('./HeritageServiceDocumentBindingStore'),
+  ...require('./CommunityServicePlanBaseline'),
+  ...require('./CommunityServicePlanImportCoordinator'),
+  ...require('./CommunityServicePlanReconciliation'),
+  ...require('./CommunitySongPublicLinkReview'),
+  ...require('./CommunitySongSharingReview'),
+  ...require('./CommunitySongMemberSharing'),
+  ...require('./CommunitySongFamilyImportCoordinator'),
   ...require('./CommunitySongSync'),
   ...require('./CommunitySyncStateStore')
 };

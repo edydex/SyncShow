@@ -11,6 +11,7 @@ const {
   addSongResource,
   compareSongTranslations,
   compileServiceProject,
+  createDefaultSongChannelVariants,
   createServiceProject,
   linkSongTranslation,
   normalizeServiceProject,
@@ -18,6 +19,7 @@ const {
   resolveAuthoritativeSongSource,
   resetSongChannelVariant,
   serializeServiceProject,
+  setSongChannelTreatment,
   updateSongArrangement,
   validateProjectTree
 } = require('../src/services/project');
@@ -133,6 +135,64 @@ function biblePassage(options = {}) {
     }))
   };
 }
+
+test('new-song defaults use primary-or-first channel identity and never infer from custom labels', () => {
+  let custom = createServiceProject({
+    id: 'custom-output-service',
+    title: 'Custom output service',
+    serviceDate: '2026-07-26',
+    profileId: 'custom-sanctuary',
+    now: NOW,
+    channels: [
+      { id: 'confidence', label: 'Choir confidence', language: 'en' },
+      { id: 'broadcast', label: 'Media Singer Stage', language: 'en' },
+      { id: 'room', label: 'Room screen', language: 'en' }
+    ]
+  });
+  const customPinned = addSongResource(custom, primarySong());
+  custom = customPinned.project;
+  assert.deepEqual(
+    createDefaultSongChannelVariants(custom, customPinned.resourceId),
+    {
+      sourceChannelId: 'confidence',
+      variants: {
+        confidence: {
+          mode: 'content',
+          resourceId: customPinned.resourceId
+        },
+        broadcast: { mode: 'inherit', from: 'confidence' },
+        room: { mode: 'inherit', from: 'confidence' }
+      }
+    }
+  );
+
+  let withPrimary = createServiceProject({
+    id: 'explicit-primary-service',
+    title: 'Explicit primary service',
+    serviceDate: '2026-07-26',
+    profileId: 'custom-sanctuary',
+    now: NOW,
+    channels: [
+      { id: 'stage-first', label: 'Stage first', language: 'en' },
+      { id: 'primary', label: 'Ordinary room output', language: 'en' }
+    ]
+  });
+  const primaryPinned = addSongResource(withPrimary, primarySong());
+  withPrimary = primaryPinned.project;
+  assert.deepEqual(
+    createDefaultSongChannelVariants(withPrimary, primaryPinned.resourceId),
+    {
+      sourceChannelId: 'primary',
+      variants: {
+        'stage-first': { mode: 'inherit', from: 'primary' },
+        primary: {
+          mode: 'content',
+          resourceId: primaryPinned.resourceId
+        }
+      }
+    }
+  );
+});
 
 test('addGroupItem creates only empty groups and preserves the semantic tree invariants', () => {
   let project = addGroupItem(freshProject(), {
@@ -370,6 +430,129 @@ test('resetSongChannelVariant reverses linked output lyrics and restores Singer 
     mode: 'inherit',
     now: NOW
   }));
+});
+
+test('setSongChannelTreatment applies explicit sources, hidden output, pruning, no-op, and cycle checks', () => {
+  const original = projectWithSong();
+  const secondaryLinked = linkSongTranslation(original, {
+    itemId: 'song-steadfast-love',
+    channelId: 'secondary',
+    song: translatedSong(),
+    now: NOW
+  });
+  const derivedFromTranslation = setSongChannelTreatment(secondaryLinked, {
+    itemId: 'song-steadfast-love',
+    channelId: 'media',
+    mode: 'derive-next-text',
+    sourceChannelId: 'secondary',
+    now: '2026-07-23T18:12:00.000Z'
+  });
+  assert.deepEqual(
+    derivedFromTranslation.items['song-steadfast-love'].variants.media,
+    {
+      mode: 'derive',
+      from: 'secondary',
+      transform: { id: 'first-lines', version: 1, maxLines: 2 }
+    }
+  );
+
+  const titledRaw = JSON.parse(serializeServiceProject(original));
+  titledRaw.items['song-steadfast-love'].variants.media.titleCardMode = 'simple';
+  const titled = normalizeServiceProject(titledRaw);
+  const mediaLinked = linkSongTranslation(titled, {
+    itemId: 'song-steadfast-love',
+    channelId: 'media',
+    song: translatedSong(),
+    now: NOW
+  });
+  const displacedResourceId =
+    mediaLinked.items['song-steadfast-love'].variants.media.resourceId;
+  const hidden = setSongChannelTreatment(mediaLinked, {
+    itemId: 'song-steadfast-love',
+    channelId: 'media',
+    mode: 'hidden',
+    now: '2026-07-23T18:13:00.000Z'
+  });
+  assert.deepEqual(hidden.items['song-steadfast-love'].variants.media, {
+    mode: 'hidden',
+    titleCardMode: 'simple'
+  });
+  assert.equal(hidden.resources[displacedResourceId], undefined);
+
+  const sourcePinned = setSongChannelTreatment(original, {
+    itemId: 'song-steadfast-love',
+    channelId: 'media',
+    mode: 'derive-next-text',
+    sourceChannelId: 'primary',
+    now: '2026-07-23T18:14:00.000Z'
+  });
+  const unchanged = setSongChannelTreatment(sourcePinned, {
+    itemId: 'song-steadfast-love',
+    channelId: 'media',
+    mode: 'derive-next-text',
+    sourceChannelId: 'primary',
+    now: '2026-07-23T18:15:00.000Z'
+  });
+  assert.equal(
+    serializeServiceProject(unchanged),
+    serializeServiceProject(sourcePinned),
+    'an exact repeated treatment must remain a semantic no-op'
+  );
+
+  expectProjectCode('INVALID_SONG_TREATMENT', () =>
+    setSongChannelTreatment(original, {
+      itemId: 'song-steadfast-love',
+      channelId: 'media',
+      mode: 'automatic',
+      sourceChannelId: 'primary',
+      now: NOW
+    }));
+  expectProjectCode('MISSING_SONG_TREATMENT_SOURCE', () =>
+    setSongChannelTreatment(original, {
+      itemId: 'song-steadfast-love',
+      channelId: 'secondary',
+      mode: 'inherit',
+      now: NOW
+    }));
+  expectProjectCode('UNKNOWN_PROJECT_CHANNEL', () =>
+    setSongChannelTreatment(original, {
+      itemId: 'song-steadfast-love',
+      channelId: 'secondary',
+      mode: 'inherit',
+      sourceChannelId: 'balcony',
+      now: NOW
+    }));
+  expectProjectCode('CHANNEL_INHERITANCE_CYCLE', () =>
+    setSongChannelTreatment(original, {
+      itemId: 'song-steadfast-love',
+      channelId: 'secondary',
+      mode: 'inherit',
+      sourceChannelId: 'secondary',
+      now: NOW
+    }));
+  expectProjectCode('PRIMARY_SONG_CHANNEL', () =>
+    setSongChannelTreatment(original, {
+      itemId: 'song-steadfast-love',
+      channelId: 'primary',
+      mode: 'hidden',
+      now: NOW
+    }));
+
+  const mediaFromSecondary = setSongChannelTreatment(original, {
+    itemId: 'song-steadfast-love',
+    channelId: 'media',
+    mode: 'inherit',
+    sourceChannelId: 'secondary',
+    now: NOW
+  });
+  expectProjectCode('CHANNEL_INHERITANCE_CYCLE', () =>
+    setSongChannelTreatment(mediaFromSecondary, {
+      itemId: 'song-steadfast-love',
+      channelId: 'secondary',
+      mode: 'inherit',
+      sourceChannelId: 'media',
+      now: NOW
+    }));
 });
 
 test('translation replacement prunes only the displaced resource and cannot replace the authoritative source', () => {

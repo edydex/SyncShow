@@ -16,6 +16,9 @@ const os = require('os');
 const BaseStrategy = require('./BaseStrategy');
 
 const POWERPOINT_IN_USE_CODE = 'POWERPOINT_IN_USE';
+const POWERPOINT_IN_USE_MARKER = '__SYNCSHOW_POWERPOINT_IN_USE__';
+const POWERPOINT_OWNERSHIP_UNCERTAIN_MARKER =
+  '__SYNCSHOW_POWERPOINT_OWNERSHIP_UNCERTAIN__';
 
 // PowerShell script template for conversion.
 // Written to a temp file to avoid command-line escaping issues with paths.
@@ -35,7 +38,7 @@ $preexistingPowerPointPids = @(
     ForEach-Object { [int]$_.Id }
 )
 if ($preexistingPowerPointPids.Count -gt 0) {
-  [Console]::Error.WriteLine('__SYNCSHOW_POWERPOINT_IN_USE__: Close PowerPoint or use LibreOffice.')
+  [Console]::Error.WriteLine('${POWERPOINT_IN_USE_MARKER}: Close PowerPoint or use LibreOffice.')
   exit 2
 }
 
@@ -62,7 +65,7 @@ try {
   }
 
   if (-not $ownsPowerPointProcess) {
-    throw '__SYNCSHOW_POWERPOINT_OWNERSHIP_UNCERTAIN__: Refusing to automate a shared PowerPoint process.'
+    throw '${POWERPOINT_OWNERSHIP_UNCERTAIN_MARKER}: Refusing to automate a shared PowerPoint process.'
   }
 
   # Open read-only, not as a template, and without a presentation window.
@@ -208,7 +211,7 @@ class PowerPointStrategy extends BaseStrategy {
     if (processIds.length === 0) return;
 
     const error = new Error(
-      'PowerPoint is already running. SyncShow will use LibreOffice to avoid closing or interrupting user presentations.'
+      'PowerPoint is already running. SyncShow will not close or interrupt it.'
     );
     error.code = POWERPOINT_IN_USE_CODE;
     error.processIds = processIds;
@@ -276,7 +279,17 @@ class PowerPointStrategy extends BaseStrategy {
 
             if (error) {
               const detail = stderr.trim() || error.message;
-              finish(reject, new Error(`PowerPoint conversion failed: ${detail}`));
+              const powerPointInUse = detail.includes(POWERPOINT_IN_USE_MARKER)
+                || detail.includes(POWERPOINT_OWNERSHIP_UNCERTAIN_MARKER);
+              const conversionError = new Error(
+                powerPointInUse
+                  ? 'PowerPoint became active while SyncShow was preparing the conversion. SyncShow left it untouched.'
+                  : `PowerPoint conversion failed: ${detail}`
+              );
+              if (powerPointInUse) {
+                conversionError.code = POWERPOINT_IN_USE_CODE;
+              }
+              finish(reject, conversionError);
               return;
             }
             finish(resolve, { stdout, stderr });

@@ -23,6 +23,10 @@ const {
   serializeServiceProject,
   serializeSongDocument
 } = require('../../src/services/project');
+const {
+  PptxStyledTextError,
+  extractStyledParagraphsFromSlideXml: extractSharedStyledParagraphsFromSlideXml
+} = require('../../src/services/sermon/PptxStyledText');
 
 const MANIFEST_SCHEMA_VERSION = 1;
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
@@ -31,7 +35,6 @@ const MAX_SLIDES = 10000;
 const MAX_SLIDE_XML_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 75 * 1024 * 1024;
 const MAX_EMPHASIS_COLORS = 16;
-const RAISED_DIGIT_WORD_SEPARATOR = '\u202f';
 const UKRAINIAN_HOMOGLYPH_NORMALIZATION = 'ukrainian-cyrillic-homoglyphs-v1';
 const CYRILLIC_HOMOGLYPH_NORMALIZATION = 'cyrillic-homoglyphs-v1';
 const LATIN_HOMOGLYPH_NORMALIZATION = 'latin-homoglyphs-v1';
@@ -258,144 +261,15 @@ function normalizeEmphasisColorFilter(value, field) {
   return colors;
 }
 
-function runColor(runXml) {
-  const colorMatch = /<(?:a:srgbClr|a:prstClr)\b([^>]*)\/?>/.exec(runXml);
-  if (!colorMatch) return null;
-  return normalizeRunColor(parseXmlAttributes(colorMatch[1]).val);
-}
-
-function runWeight(runXml) {
-  const propertiesMatch = /<a:rPr\b([^>]*)\/?>/.exec(runXml);
-  if (!propertiesMatch) return null;
-  const bold = String(parseXmlAttributes(propertiesMatch[1]).b || '').toLowerCase();
-  if (['1', 'true', 'on'].includes(bold)) return '700';
-  if (['0', 'false', 'off'].includes(bold)) return '400';
-  return null;
-}
-
-function runBaseline(runXml) {
-  const propertiesMatch = /<a:rPr\b([^>]*)\/?>/.exec(runXml);
-  if (!propertiesMatch) return null;
-  const rawBaseline = parseXmlAttributes(propertiesMatch[1]).baseline;
-  if (rawBaseline === undefined || rawBaseline === '') return null;
-  const baseline = Number(rawBaseline);
-  return Number.isFinite(baseline) ? baseline : null;
-}
-
-function sameInlineStyle(left, right) {
-  return left?.foreground === right?.foreground
-    && left?.weight === right?.weight;
-}
-
-function pushInlineSpan(spans, start, end, style) {
-  if (!style || end <= start) return;
-  const previous = spans.at(-1);
-  if (previous && previous.end === start && sameInlineStyle(previous, style)) {
-    previous.end = end;
-    return;
-  }
-  spans.push({
-    start,
-    end,
-    ...(style.foreground ? { foreground: style.foreground } : {}),
-    ...(style.weight ? { weight: style.weight } : {})
-  });
-}
-
-function styledParagraphFromFragments(fragments) {
-  const characters = [];
-  const rawSpans = [];
-  let outputLength = 0;
-  let previousWasNewline = false;
-  for (const fragment of fragments) {
-    const normalized = String(fragment.text || '').replace(/\r\n?/g, '\n');
-    for (const character of normalized) {
-      if (character === '\n' && previousWasNewline) continue;
-      const start = outputLength;
-      characters.push(character);
-      outputLength += character.length;
-      pushInlineSpan(rawSpans, start, outputLength, fragment.style);
-      previousWasNewline = character === '\n';
-    }
-  }
-  const untrimmed = characters.join('');
-  const leading = untrimmed.length - untrimmed.trimStart().length;
-  const trailing = untrimmed.trimEnd().length;
-  const text = untrimmed.slice(leading, trailing);
-  if (!text) return null;
-  const spans = [];
-  for (const span of rawSpans) {
-    const start = Math.max(span.start, leading);
-    const end = Math.min(span.end, trailing);
-    if (end <= start) continue;
-    pushInlineSpan(spans, start - leading, end - leading, span);
-  }
-  return {
-    text,
-    ...(spans.length > 0 ? { spans } : {})
-  };
-}
-
 function extractStyledParagraphsFromSlideXml(xml, options = {}) {
-  const includeColors = normalizeColorFilter(options.includeColors, 'includeColors');
-  const excludeColors = normalizeColorFilter(options.excludeColors, 'excludeColors');
-  const emphasisColors = normalizeEmphasisColorFilter(options.emphasisColors, 'emphasisColors');
-  const acceptsRun = color => (!includeColors || (color && includeColors.has(color)))
-    && (!excludeColors || !color || !excludeColors.has(color));
-  const paragraphs = [];
-  const paragraphExpression = /<a:p(?:\s[^>]*)?>([\s\S]*?)<\/a:p>/g;
-  for (const paragraphMatch of xml.matchAll(paragraphExpression)) {
-    const fragments = [];
-    let sawRun = false;
-    let pendingRaisedDigits = false;
-    const tokenExpression = /<a:r(?:\s[^>]*)?>([\s\S]*?)<\/a:r>|<a:br(?:\s[^>]*)?(?:\/>|>[\s\S]*?<\/a:br>)/g;
-    for (const token of paragraphMatch[1].matchAll(tokenExpression)) {
-      if (token[1] === undefined) {
-        fragments.push({ text: '\n', style: null });
-        pendingRaisedDigits = false;
-        continue;
-      }
-      sawRun = true;
-      const color = runColor(token[1]);
-      if (!acceptsRun(color)) {
-        pendingRaisedDigits = false;
-        continue;
-      }
-      const textParts = [...token[1].matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/g)]
-        .map(match => decodeXmlText(match[1]));
-      const runText = textParts.join('');
-      if (pendingRaisedDigits && /^\p{L}/u.test(runText)) {
-        // PowerPoint visually separates raised verse-number runs from the
-        // following word. Plain-text import has no baseline styling yet, so
-        // retain that boundary only for this structural, unambiguous case.
-        // A narrow no-break space preserves the source deck's dense line
-        // wrapping and keeps the verse number attached to its following word.
-        fragments.push({ text: RAISED_DIGIT_WORD_SEPARATOR, style: null });
-      }
-      const weight = runWeight(token[1]);
-      const style = color && emphasisColors?.has(color)
-        ? {
-            foreground: `#${color.toLowerCase()}`,
-            ...(weight ? { weight } : {})
-          }
-        : null;
-      fragments.push({ text: runText, style });
-      pendingRaisedDigits = runBaseline(token[1]) > 0 && /^[0-9]+$/.test(runText);
+  try {
+    return extractSharedStyledParagraphsFromSlideXml(xml, options);
+  } catch (error) {
+    if (error instanceof PptxStyledTextError) {
+      fail(error.code, error.message, error.details);
     }
-    if (!sawRun) {
-      // Some generators place text directly under a field/paragraph. It has
-      // no independently filterable run color, so an include filter excludes
-      // it while an unfiltered/exclude-only import retains it.
-      if (!includeColors) {
-        for (const match of paragraphMatch[1].matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/g)) {
-          fragments.push({ text: decodeXmlText(match[1]), style: null });
-        }
-      }
-    }
-    const paragraph = styledParagraphFromFragments(fragments);
-    if (paragraph) paragraphs.push(paragraph);
+    throw error;
   }
-  return paragraphs;
 }
 
 function extractParagraphsFromSlideXml(xml, options = {}) {
@@ -773,16 +647,17 @@ class PptxDeckExtractor {
     );
   }
 
-  async extractSlideStyledText(oneBasedSlideNumber, options = {}) {
+  async extractSlideStyledText(oneBasedSlideNumber, options) {
+    const extractionOptions = options || {};
     const { xml } = await this._slideXml(oneBasedSlideNumber);
     const paragraphs = extractStyledParagraphsFromSlideXml(xml, {
-      includeColors: options.includeColors,
-      excludeColors: options.excludeColors,
-      emphasisColors: options.emphasisColors
+      includeColors: extractionOptions.includeColors,
+      excludeColors: extractionOptions.excludeColors,
+      emphasisColors: extractionOptions.emphasisColors
     });
     return selectParagraphs(
       paragraphs,
-      options.paragraphs,
+      extractionOptions.paragraphs,
       `Slide ${oneBasedSlideNumber} paragraph selection`
     );
   }

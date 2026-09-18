@@ -102,6 +102,18 @@ class OutputHealthTracker {
     return true;
   }
 
+  markCleared({ outputId, sessionId, sender }) {
+    const entry = this._find(outputId, sessionId, sender);
+    if (!entry || this._status(entry) === OUTPUT_HEALTH_STATUSES.UNAVAILABLE) {
+      return false;
+    }
+    const before = this._status(entry);
+    entry.expectedCueIndex = null;
+    entry.frameState = 'ready';
+    this._notifyIfChanged(entry, before, 'output-cleared');
+    return true;
+  }
+
   markUnresponsive({ outputId, sessionId, sender }) {
     const entry = this._find(outputId, sessionId, sender);
     if (!entry || entry.processGone) return false;

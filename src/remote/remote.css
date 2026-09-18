@@ -827,7 +827,7 @@ main {
 
 .jump-cue-button {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   min-height: 74px;
@@ -861,7 +861,7 @@ main {
 .jump-cue-thumbnail {
   display: grid;
   place-items: center;
-  width: 84px;
+  width: 100%;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   color: var(--text-muted);
@@ -906,6 +906,8 @@ main {
   color: var(--text-muted);
   text-align: center;
 }
+.gallery-scope { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 12px; }
+.gallery-scope input { width: 20px; height: 20px; }
 
 @media (max-width: 620px) {
   .remote-shell {

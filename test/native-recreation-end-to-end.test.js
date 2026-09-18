@@ -491,13 +491,17 @@ test('a service recreated from scratch stays native, editable, portable, and pub
   forgedManifest.assets[0].size += 1;
   await fs.writeFile(manifestPath, `${JSON.stringify(forgedManifest, null, 2)}\n`);
   await assert.rejects(
-    targetPublisher.publish({
-      ...publishOptions,
-      revisionId: editedRevision.revisionId
-    }),
+    targetPublisher.open(republished.manifest.id),
     error => {
       assert.equal(error.code, 'SHOW_PACKAGE_CORRUPT');
       return true;
     }
   );
+  const recovered = await targetPublisher.publish({
+    ...publishOptions,
+    revisionId: editedRevision.revisionId
+  });
+  assert.equal(recovered.manifest.id, republished.manifest.id);
+  assert.equal(recovered.packagePath, republished.packagePath);
+  assert.deepEqual(recovered.manifest.assets, republished.manifest.assets);
 });

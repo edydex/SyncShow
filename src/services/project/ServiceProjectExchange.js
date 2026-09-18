@@ -6,6 +6,7 @@ const JSZip = require('jszip');
 
 const {
   MAX_PROJECT_JSON_BYTES,
+  isPowerPointCompanionProject,
   normalizeServiceProject,
   serializeServiceProject
 } = require('./ServiceProject');
@@ -18,6 +19,10 @@ const {
   failedPortableSongImportSummary,
   importPortableProjectSongs
 } = require('./PortableSongLibraryImport');
+const {
+  failedPortableSermonImportSummary,
+  importPortableProjectSermons
+} = require('../sermon/PortableSermonLibraryImport');
 
 const BUNDLE_KIND = 'syncshow-service-project-bundle';
 const BUNDLE_SCHEMA_VERSION = 1;
@@ -482,12 +487,26 @@ class ServiceProjectExchange {
       throw new TypeError('ServiceProjectExchange songLibrary must be a LocalSongLibrary');
     }
     this.songLibrary = options.songLibrary || null;
+    if (options.sermonLibrary !== undefined
+      && options.sermonLibrary !== null
+      && (typeof options.sermonLibrary.read !== 'function'
+        || typeof options.sermonLibrary.validateSource !== 'function'
+        || typeof options.sermonLibrary.saveSource !== 'function')) {
+      throw new TypeError('ServiceProjectExchange sermonLibrary must be a LocalSermonLibrary');
+    }
+    this.sermonLibrary = options.sermonLibrary || null;
     this.appVersion = String(options.appVersion || 'unknown').slice(0, 120) || 'unknown';
   }
 
   async exportBundle(projectId, revisionId) {
     const selected = await this.projectStore.read(projectId, { revisionId });
     const project = selected.project;
+    if (isPowerPointCompanionProject(project)) {
+      fail(
+        'COMPANION_PROJECT_NOT_EXPORTABLE',
+        'A PowerPoint sermon handoff references one exact local service set and is not a portable native service.'
+      );
+    }
     assertPortablePresetPack(project);
     const projectBuffer = Buffer.from(serializeServiceProject(project), 'utf8');
     const projectSha256 = hashBuffer(projectBuffer);
@@ -627,6 +646,12 @@ class ServiceProjectExchange {
       fail('INVALID_BUNDLE_PROJECT', `project.json is invalid: ${error.message}`);
     }
     assertCanonicalProject(projectBuffer, project);
+    if (isPowerPointCompanionProject(project)) {
+      fail(
+        'COMPANION_PROJECT_NOT_IMPORTABLE',
+        'A PowerPoint sermon handoff is bound to one exact local service set and cannot be imported as a portable service.'
+      );
+    }
     assertPortablePresetPack(project);
     if (project.id !== manifest.project.id || project.schemaVersion !== manifest.project.schemaVersion) {
       fail('BUNDLE_PROJECT_MANIFEST_MISMATCH', 'project.json identity does not match the bundle manifest.');
@@ -659,9 +684,22 @@ class ServiceProjectExchange {
       // misreport that independently verified project.
       songLibrary = failedPortableSongImportSummary(imported.project);
     }
+    let sermonLibrary;
+    try {
+      sermonLibrary = await importPortableProjectSermons(
+        imported.project,
+        this.sermonLibrary
+      );
+    } catch (_error) {
+      // Sermon hydration has the same best-effort boundary as song hydration:
+      // the verified project and its exact embedded sermon revisions remain
+      // usable even when the editable local library cannot be updated.
+      sermonLibrary = failedPortableSermonImportSummary(imported.project);
+    }
     return {
       ...imported,
       songLibrary,
+      sermonLibrary,
       bundle: {
         id: manifest.bundleId,
         sourceProjectId: manifest.project.id,

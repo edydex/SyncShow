@@ -8,6 +8,7 @@ const { fileURLToPath } = require('node:url');
 const Converter = require('../src/services/converter/Converter');
 const LibreOfficeStrategy = require('../src/services/converter/strategies/LibreOfficeStrategy');
 const PowerPointStrategy = require('../src/services/converter/strategies/PowerPointStrategy');
+const { PDF_RENDERER_PROVENANCE } = require('../src/services/pdf/PdfEngine');
 
 async function writeGeneration(directory, marker, slideCount = 2) {
   await fs.mkdir(directory, { recursive: true });
@@ -80,6 +81,43 @@ test('generation validation rejects mismatched metadata without an explicit expe
   );
 });
 
+test('generation validation never follows generation, metadata, or artifact symlinks', async t => {
+  const root = await makeTempDirectory(t);
+  const generation = path.join(root, 'generation');
+  const converter = new Converter();
+  await writeGeneration(generation, 'safe-links', 2);
+
+  const outsideMetadata = path.join(root, 'outside-metadata.json');
+  await fs.writeFile(outsideMetadata, JSON.stringify({
+    slideCount: 2,
+    slides: [{ text: '', firstLine: '' }, { text: '', firstLine: '' }]
+  }));
+  await fs.rm(path.join(generation, 'metadata.json'));
+  await fs.symlink(outsideMetadata, path.join(generation, 'metadata.json'));
+  await assert.rejects(
+    converter.validateGeneration(generation, 2),
+    /invalid conversion metadata/i
+  );
+
+  await fs.rm(path.join(generation, 'metadata.json'));
+  await writeGeneration(generation, 'safe-links', 2);
+  const outsideSlide = path.join(root, 'outside-slide.jpg');
+  await fs.writeFile(outsideSlide, 'outside-slide');
+  await fs.rm(path.join(generation, 'slide_001.jpg'));
+  await fs.symlink(outsideSlide, path.join(generation, 'slide_001.jpg'));
+  await assert.rejects(
+    converter.validateGeneration(generation, 2),
+    /empty or not a file/i
+  );
+
+  const linkedGeneration = path.join(root, 'linked-generation');
+  await fs.symlink(generation, linkedGeneration);
+  await assert.rejects(
+    converter.validateGeneration(linkedGeneration, 2),
+    /invalid conversion metadata/i
+  );
+});
+
 test('generation validation treats restore provenance as part of the atomic cache contract', async t => {
   const root = await makeTempDirectory(t);
   const generation = path.join(root, 'generation');
@@ -107,6 +145,32 @@ test('generation validation treats restore provenance as part of the atomic cach
   await assert.rejects(
     converter.validateGeneration(generation),
     /restore context is invalid/i
+  );
+});
+
+test('generation validation accepts legacy caches and validates new PDF renderer provenance', async t => {
+  const root = await makeTempDirectory(t);
+  const generation = path.join(root, 'generation');
+  const converter = new Converter();
+  await writeGeneration(generation, 'renderer-provenance', 2);
+  const metadataPath = path.join(generation, 'metadata.json');
+
+  const legacy = await converter.validateGeneration(generation);
+  assert.equal(Object.hasOwn(legacy, 'pdfRenderer'), false);
+
+  const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
+  metadata.pdfRenderer = { ...PDF_RENDERER_PROVENANCE };
+  await fs.writeFile(metadataPath, JSON.stringify(metadata));
+  assert.deepEqual(
+    (await converter.validateGeneration(generation)).pdfRenderer,
+    PDF_RENDERER_PROVENANCE
+  );
+
+  metadata.pdfRenderer.localPath = '/private/pdf-engine';
+  await fs.writeFile(metadataPath, JSON.stringify(metadata));
+  await assert.rejects(
+    converter.validateGeneration(generation),
+    /invalid PDF renderer provenance.*unexpected fields/i
   );
 });
 
@@ -242,6 +306,54 @@ test('a preexisting PowerPoint process falls back to isolated LibreOffice', asyn
     assert.equal(progress[0].fallbackFrom, 'PowerPoint');
     assert.equal(progress[0].converter, 'LibreOffice');
     assert.match(progress[0].message, /PowerPoint is already running/i);
+  } finally {
+    LibreOfficeStrategy.detect = originalDetect;
+    LibreOfficeStrategy.prototype.convertToPdf = originalConvert;
+  }
+});
+
+test('PowerPoint-in-use stays classified when no LibreOffice fallback is installed', async () => {
+  const converter = new Converter();
+  const originalDetect = LibreOfficeStrategy.detect;
+
+  converter.strategy = new PowerPointStrategy('POWERPNT.EXE');
+  converter.strategy._getRunningPowerPointProcessIds = async () => [4242];
+  LibreOfficeStrategy.detect = async () => null;
+
+  try {
+    await assert.rejects(
+      converter._convertToPdf('/tmp/input.pptx', '/tmp/staging'),
+      error => error.code === PowerPointStrategy.POWERPOINT_IN_USE_CODE
+    );
+  } finally {
+    LibreOfficeStrategy.detect = originalDetect;
+  }
+});
+
+test('a failed LibreOffice fallback retains the PowerPoint-in-use root cause', async () => {
+  const converter = new Converter();
+  const originalDetect = LibreOfficeStrategy.detect;
+  const originalConvert = LibreOfficeStrategy.prototype.convertToPdf;
+
+  converter.strategy = new PowerPointStrategy('POWERPNT.EXE');
+  converter.strategy._getRunningPowerPointProcessIds = async () => [4242];
+  LibreOfficeStrategy.detect = async () => ({ path: '/fake/soffice', isFlatpak: false });
+  LibreOfficeStrategy.prototype.convertToPdf = async () => {
+    throw new Error('LibreOffice test failure');
+  };
+
+  try {
+    await assert.rejects(
+      converter._convertToPdf('/tmp/input.pptx', '/tmp/staging'),
+      error => {
+        assert.equal(error.code, 'PRESENTATION_CONVERSION_FALLBACK_FAILED');
+        assert.equal(
+          error.powerPointError.code,
+          PowerPointStrategy.POWERPOINT_IN_USE_CODE
+        );
+        return true;
+      }
+    );
   } finally {
     LibreOfficeStrategy.detect = originalDetect;
     LibreOfficeStrategy.prototype.convertToPdf = originalConvert;
