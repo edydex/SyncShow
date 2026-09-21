@@ -630,3 +630,16 @@ test('Singer Prepare preview keeps intentional blank distinct from presentation 
     'only the terminal state should paint the End of presentation label'
   );
 });
+
+test('Bible raster output displays a separate credit footer without changing semantic verse metadata', async () => {
+  const renderer = new NativeSlideRenderer({ width: 1280, height: 720, fontPath: FONT_PATH });
+  const block = { type: 'bible', reference: 'Romans 1:1', translationId: 'TEST', verses: [{ number: 1, text: 'Exact supplied verse.' }], attribution: 'Licensed edition © Example & Publisher <literal>.' };
+  const cue = { id: 'licensed-bible', kind: 'bible', title: 'Romans 1:1', presetId: 'wotbc-sermon-verse', channels: { primary: { mode: 'content', blocks: [block] } } };
+  const credited = await renderer.renderCue(cue, 'primary');
+  const without = await renderer.renderCue({ ...cue, channels: { primary: { mode: 'content', blocks: [{ ...block, attribution: '' }] } } }, 'primary');
+  const bottom = async output => sharp(await sharp(output.info.data).extract({ left: 0, top: 620, width: 1280, height: 100 }).toBuffer()).stats();
+  const visible = await bottom(credited), empty = await bottom(without);
+  assert.ok(visible.channels[0].mean > empty.channels[0].mean + .5, 'Required credit must produce visible footer pixels');
+  assert.equal(credited.metadata.text, without.metadata.text);
+  assert.equal(credited.metadata.text, '¹\u00a0Exact supplied verse.');
+});

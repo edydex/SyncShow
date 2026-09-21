@@ -81,20 +81,24 @@
             <label>Color<select id="teachingColor"><option value="#ef4444">Red</option><option value="#2563eb">Blue</option><option value="#16a34a">Green</option><option value="#eab308">Yellow</option><option value="#ffffff">White</option><option value="#111827">Black</option></select></label>
             <label>Pen size<select id="teachingWidth"><option value="0.004">Fine</option><option value="0.008" selected>Medium</option><option value="0.016">Bold</option></select></label>
             <label><input type="checkbox" id="teachingPenOnly" aria-describedby="teachingPenHelp">Stylus only</label>
+            <label><input type="checkbox" id="teachingMonochrome" aria-describedby="teachingMonochromeHelp">Monochrome / colorblind view</label>
             <button id="teaching-undo" type="button">Undo ink</button>
             <button id="teaching-clear" type="button">Clear ink</button>
           </div>
           <p id="teachingPenHelp">Stylus only ignores finger and mouse drawing. Leave it off if your tablet does not recognize your pen.</p>
+          <p id="teachingMonochromeHelp" hidden>Patterns on this tablet only; audience screens keep their colors. Similar shades in pictures share a pattern. Photos also become black and white. Thin marks keep a solid outline for readability.</p>
+          <div id="teachingPatternPalette" class="teaching-pattern-palette" role="group" aria-label="Drawing color patterns" hidden></div>
           <div class="teaching-toolbar" aria-label="Teaching slide navigation">
             <button id="btnTeachingPrevious" type="button" disabled>← Previous</button>
             <button id="btnTeachingGallery" type="button" aria-haspopup="dialog" aria-controls="jumpDialog" disabled>Slide gallery</button>
             <button id="btnTeachingNext" type="button" disabled>Next →</button>
           </div>
           <p id="teachingStatus" role="status">Open Teaching to connect to the current slide.</p>
-          <div id="teachingCanvasWrap" class="teaching-canvas-wrap" data-ready="false">
+          <div class="teaching-workspace"><div id="teachingCanvasWrap" class="teaching-canvas-wrap" data-ready="false">
             <img id="teachingImage" alt="Current output with teacher annotations">
+            <canvas id="teachingPatternPreview" aria-label="Monochrome slide preview" hidden></canvas>
             <canvas id="teachingCanvas" aria-label="Draw on the current slide"></canvas>
-          </div>
+          </div><aside id="teachingPatternLegend" aria-label="Ink colors on this slide" hidden></aside></div>
           <p>Draw with a pen or finger. The pointer fades progressively over one second; pen and highlighter stay on the slide. Ending the Show discards ink.</p>
         </details>
         <div class="show-overview">
@@ -202,6 +206,7 @@
 
   <script src="/app.js" defer></script>
   <script src="/teaching-trail.js" defer></script>
+  <script src="/teaching-patterns.js" defer></script>
   <script src="/teaching.js" defer></script>
 </body>
 </html>

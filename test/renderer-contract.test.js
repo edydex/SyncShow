@@ -411,11 +411,11 @@ test('native cue output is constrained, font-gated, staged, and acknowledged aft
 test('Bible overlay lifecycle is cancellable and preserves an exact Return path', () => {
   assert.match(
     mainSource,
-    /const bibleLibrary = new BibleLibrary\(\{ maxVerses: 8 \}\)/
+    /const bibleLibrary = new BibleLibrary\(\{ maxVerses: 8, installedLibrary: installedBibleSource \}\)/
   );
   assert.match(
     mainSource,
-    /const sermonReferenceBibleLibrary = new BibleLibrary\(\{ maxVerses: 100 \}\)/
+    /const sermonReferenceBibleLibrary = new BibleLibrary\(\{ maxVerses: 100, installedLibrary: installedBibleSource \}\)/
   );
   assert.match(mainSource, /ipcMain\.handle\('bible:lookup'/);
   assert.match(mainSource, /ipcMain\.handle\('bible:show'/);

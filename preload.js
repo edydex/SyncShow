@@ -666,6 +666,13 @@ contextBridge.exposeInMainWorld('api', {
   revokeRemoteDevices: () => ipcRenderer.invoke('remote:revokeAll'),
   disableRemote: () => ipcRenderer.invoke('remote:disable'),
 
+  // Complete Bible sources stay in main; imports use native file selection and an opaque preview token.
+  listBibleTranslations: () => ipcRenderer.invoke('bible:translations'),
+  previewBibleImport: () => ipcRenderer.invoke('bible:importPreview'),
+  cancelBibleImport: () => ipcRenderer.invoke('bible:importCancel'),
+  installBibleImport: request => ipcRenderer.invoke('bible:importInstall', request),
+  saveBibleImportExample: () => ipcRenderer.invoke('bible:importExample'),
+
   // Bible lookup and temporary live overlay
   lookupBiblePassage: (request) => ipcRenderer.invoke('bible:lookup', request),
   showBiblePassage: (request) => ipcRenderer.invoke('bible:show', request),

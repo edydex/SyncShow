@@ -390,6 +390,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
   }
   if (common.layout === 'text') {
     exactKeys(raw, [
+      ...(raw.credit !== undefined ? ['credit'] : []),
       ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
       ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
       'background',
@@ -416,6 +417,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
       bodySpans: normalizeSceneSpans(raw.bodySpans, body),
       ...(raw.titleSpans !== undefined ? { titleSpans: normalizeSceneSpans(raw.titleSpans, title, 'scene.titleSpans') } : {}),
       ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: ASSET_ID_PATTERN.test(raw.backgroundAssetId) ? raw.backgroundAssetId : fail('INVALID_NATIVE_SCENE', 'Invalid background image.') } : {}),
+      ...(raw.credit !== undefined ? { credit: boundedString(raw.credit, 'scene.credit', 500) } : {}),
       style: normalizeTextStyle(raw.style)
     };
   }
@@ -637,6 +639,7 @@ function textScene(cue, channel, canvas) {
     bodySpans,
     ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
     ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId } : {}),
+    ...(bibleBlock?.attribution ? { credit: bibleBlock.attribution } : {}),
     style: resolvedTextStyle(preset, hasTitle, cue.presetId)
   });
 }

@@ -513,6 +513,10 @@ async function init() {
       }
     }).initialize();
   }
+  window.SyncShowBibleImports?.initialize({ api: window.api, onCatalog: editions => {
+    window.SyncShowBibleImports.populateSelect(elements.bibleTranslation, editions);
+    prepareController?.setBibleTranslations?.(editions);
+  } });
   if (window.SyncShowSharedServices?.createController && prepareController) {
     sharedServiceController = window.SyncShowSharedServices.createController({
       api: window.api,

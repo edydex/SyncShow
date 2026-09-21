@@ -24,7 +24,11 @@ test('packaged shared-core smoke is exact and exercises document-to-cue compilat
     '/packages/service-core/package.json',
     '/packages/service-core/index.js',
     '/packages/service-core/node.js',
-    '/packages/service-core/node/services/project/ServiceProject.js'
+    '/packages/service-core/node/services/project/ServiceProject.js',
+    '/packages/bible-import/index.js',
+    '/packages/bible-import/package.json',
+    '/src/services/bible/InstalledBibleLibrary.js',
+    '/assets/bible-import-example.json'
   ]);
 });
 

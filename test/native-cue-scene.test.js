@@ -276,3 +276,17 @@ test('rejects unknown scene fields, split surrogate spans, and inconsistent nest
     /unsupported or missing fields/
   );
 });
+
+test('Bible attribution survives package scenes and stage derivation without changing spoken text', () => {
+  const credit = 'Licensed edition © Example & Publisher <literal>.';
+  const scene = compileNativeCueScene({ id: CUE_ID, kind: 'bible', title: 'Romans 1:1', presetId: 'scripture-text',
+    channels: { primary: { mode: 'content', blocks: [{ type: 'bible', reference: 'Romans 1:1', translationId: 'TEST', attribution: credit, verses: [{ number: 1, text: 'Exact supplied verse.' }] }] } } }, 'primary', CANVAS);
+  assert.equal(scene.credit, credit);
+  assert.equal(scene.body, '¹\u00a0Exact supplied verse.');
+  assert.equal(nativeSceneSingerLine(scene), '¹\u00a0Exact supplied verse.');
+  assert.equal(deriveNativeSingerScene(scene, { state: 'end', text: '' }).current.credit, credit);
+  assert.deepEqual(JSON.parse(JSON.stringify(validateBrowserScene(scene))), scene);
+  assert.equal(normalizeNativeCueScene(JSON.parse(serializeNativeCueScene(scene))).credit, credit);
+  assert.throws(() => normalizeNativeCueScene({ ...scene, credit: 'x'.repeat(501) }));
+  assert.throws(() => validateBrowserScene({ ...scene, credit: 'x'.repeat(501) }));
+});

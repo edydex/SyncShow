@@ -279,6 +279,7 @@ class BibleLibrary {
     this.readFile = options.readFile || fs.readFile;
     this.indexCache = new Map();
     this.bookCache = new Map();
+    this.installedLibrary = options.installedLibrary || null;
   }
 
   clearCache() {
@@ -362,6 +363,13 @@ class BibleLibrary {
   }
 
   async _loadBook(translationId, bookName) {
+    if (!getTranslationById(translationId) && this.installedLibrary) {
+      try {
+        const book = await this.installedLibrary.book(translationId, bookName);
+        if (book) return book;
+      } catch { throw new BibleDataError('installed-bible-unavailable', 'The installed Bible failed its integrity check.'); }
+      throw new BibleDataError('data-book-missing', 'This book is not included in the installed edition.');
+    }
     const cacheKey = `${translationId}:${bookName}`;
     if (this.bookCache.has(cacheKey)) return this.bookCache.get(cacheKey);
 
@@ -422,7 +430,11 @@ class BibleLibrary {
     const translationId = normalizeTranslationId(
       options.translationId || DEFAULT_TRANSLATION_ID
     );
-    const translation = getTranslationById(translationId);
+    let translation = getTranslationById(translationId);
+    if (!translation && this.installedLibrary) {
+      try { translation = await this.installedLibrary.translation(translationId); }
+      catch { return errorResult('translation-data-unavailable', 'The installed Bible could not be verified. Restore its verified backup.'); }
+    }
     if (!translation) {
       return errorResult(
         'unsupported-translation',
@@ -523,13 +535,17 @@ class BibleLibrary {
    *   endChapter: number,
    *   endVerse: number
    * }} input
-   * @param {{ translationId?: 'BSB'|'LSV' }} options
+   * @param {{ translationId?: string }} options
    */
   async lookupCanonicalRange(input, options = {}) {
     const translationId = normalizeTranslationId(
       options.translationId || DEFAULT_TRANSLATION_ID
     );
-    const translation = getTranslationById(translationId);
+    let translation = getTranslationById(translationId);
+    if (!translation && this.installedLibrary) {
+      try { translation = await this.installedLibrary.translation(translationId); }
+      catch { return errorResult('translation-data-unavailable', 'The installed Bible could not be verified. Restore its verified backup.'); }
+    }
     if (!translation) {
       return errorResult(
         'unsupported-translation',

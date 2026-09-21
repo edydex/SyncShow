@@ -1,5 +1,14 @@
 (() => {
   'use strict';
+  const patterns = window.SyncShowTeachingPatterns;
+  const monochromeInput = document.getElementById('teachingMonochrome');
+  const patternPreview = document.getElementById('teachingPatternPreview');
+  const patternPalette = document.getElementById('teachingPatternPalette');
+  const patternLegend = document.getElementById('teachingPatternLegend');
+  const modeHelp = document.getElementById('teachingMonochromeHelp');
+  let monochrome = false;
+  try { monochrome = localStorage.getItem('syncshow.teaching.monochrome.v1') === 'true'; } catch (_) {}
+  const patternCache = new Map();
   const panel = document.getElementById('teachingPanel');
   const output = document.getElementById('teachingOutput');
   const tool = document.getElementById('teachingTool');
@@ -14,6 +23,62 @@
   let lastSend = 0, scheduled;
   let localTrail = null, animation = null;
   const shown = () => panel.open && !document.getElementById('showView').hidden;
+  function cancelPaint() {
+    if (animation) { if (animation.timer) clearTimeout(animation.id); else cancelAnimationFrame(animation.id); }
+    animation = null;
+  }
+  function localColor(value) {
+    if (!monochrome) return value;
+    const scale = canvas.width / Math.max(1, canvas.clientWidth), key = `${value}:${scale}`;
+    if (!patternCache.has(key)) {
+      if (patternCache.size > 12) patternCache.clear();
+      patternCache.set(key, canvas.getContext('2d').createPattern(patterns.tile(value, scale), 'repeat'));
+    }
+    return patternCache.get(key);
+  }
+  function swatch(item) {
+    const sample = document.createElement('canvas'); sample.width=sample.height=24; const context=sample.getContext('2d'); context.fillStyle=context.createPattern(patterns.tile(item.color),'repeat'); context.fillRect(0,0,24,24); sample.className = 'teaching-pattern-swatch'; sample.setAttribute('aria-hidden','true'); return sample;
+  }
+  function updateLegend() {
+    if (!monochrome) return;
+    const used = new Set([...(state?.frame?.inkColors || []), ...(stroke ? [stroke.color] : [])]);
+    const heading = document.createElement('strong'); heading.textContent = 'Ink colors on this slide';
+    const list = document.createElement('ul');
+    for (const item of patterns.palette.filter(item => used.has(item.color))) {
+      const entry = document.createElement('li'); entry.append(swatch(item), document.createTextNode(`${item.name} · ${item.pattern}`)); list.append(entry);
+    }
+    const empty = document.createElement('p'); empty.textContent = 'Colors appear here as you draw.';
+    patternLegend.replaceChildren(heading, used.size ? list : empty);
+  }
+  function renderPatternPreview() {
+    if (!monochrome || !image.complete || !image.naturalWidth) return;
+    patternPreview.width = image.naturalWidth; patternPreview.height = image.naturalHeight;
+    const context = patternPreview.getContext('2d', { willReadFrequently:true });
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, patternPreview.width, patternPreview.height);
+    pixels.data.set(patterns.convert(pixels.data, pixels.width, pixels.height, pixels.width / Math.max(1, image.clientWidth)));
+    context.putImageData(pixels, 0, 0);
+  }
+  function applyMode() {
+    monochromeInput.checked = monochrome;
+    wrap.dataset.monochrome = String(monochrome);
+    patternPreview.hidden = patternPalette.hidden = patternLegend.hidden = modeHelp.hidden = !monochrome;
+    color.closest('label').hidden = monochrome;
+    for (const button of patternPalette.querySelectorAll('button')) button.setAttribute('aria-pressed',String(button.dataset.color === color.value));
+    cancelPaint(); renderPatternPreview(); paint(); updateLegend();
+  }
+  for (const item of patterns.palette) {
+    const button = document.createElement('button'); button.type = 'button'; button.dataset.color = item.color;
+    button.append(swatch(item),document.createTextNode(`${item.name} · ${item.pattern}`));
+    button.addEventListener('click', () => { color.value = item.color; applyMode(); }); patternPalette.append(button);
+  }
+  monochromeInput.addEventListener('change', () => {
+    monochrome = monochromeInput.checked;
+    try { localStorage.setItem('syncshow.teaching.monochrome.v1', String(monochrome)); } catch (_) {}
+    applyMode();
+  });
+  let resizeTimer;
+  new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer=setTimeout(renderPatternPreview,120); }).observe(wrap);
   const setReady = value => { ready = value; wrap.dataset.ready = String(value); };
   async function json(url, body) {
     const response = await fetch(url, { method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
@@ -25,8 +90,7 @@
   function clearDraft(keepTrail = false) {
     stroke = null; pointer = null; pending = null;
     if (!keepTrail) localTrail = null;
-    if (animation) cancelAnimationFrame(animation);
-    animation = null;
+    cancelPaint();
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
     if (localTrail) paint();
   }
@@ -35,6 +99,7 @@
       && Number(next.frame.frameId.split(':').at(-1)) < Number(state.frame.frameId.split(':').at(-1))) return;
     if (state?.frame?.surfaceId !== next.frame?.surfaceId) { clearDraft(); setReady(false); }
     state = next;
+    updateLegend();
     const previous = output.value;
     output.replaceChildren(...next.outputs.map(item => { const option = document.createElement('option'); option.value = item.id; option.textContent = item.name; return option; }));
     if (next.outputs.some(item => item.id === previous)) output.value = previous;
@@ -54,7 +119,7 @@
       image.onload = () => {
         if (state?.frame?.frameId !== expected || output.value !== target || stroke) return;
         canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
-        imageFrame = expected; setReady(true);
+        renderPatternPreview(); imageFrame = expected; setReady(true); paint();
       };
       image.src = data;
     } catch (error) { setReady(false); status.textContent = error.message; }
@@ -107,19 +172,24 @@
     return [Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)), Math.max(0, Math.min(1, (event.clientY - box.top) / box.height))];
   }
   function paint() {
-    if (animation) cancelAnimationFrame(animation);
-    animation = null;
+    cancelPaint();
     const context = canvas.getContext('2d'); context.clearRect(0, 0, canvas.width, canvas.height);
     if (localTrail) {
-      if (window.SyncShowTeachingTrail.paintTrail(context, localTrail, canvas.width, canvas.height, Date.now()))
-        animation = requestAnimationFrame(paint);
+      if (window.SyncShowTeachingTrail.paintTrail(context, monochrome ? { ...localTrail, color:localColor(localTrail.color) } : localTrail, canvas.width, canvas.height, Date.now()))
+        animation = monochrome ? {timer:true,id:setTimeout(paint,125)} : {timer:false,id:requestAnimationFrame(paint)};
       else localTrail = null;
     }
     if (!stroke || stroke.tool === 'pointer') return;
-    context.strokeStyle = stroke.color; context.globalAlpha = stroke.tool === 'highlight' ? .3 : 1;
+    context.strokeStyle = localColor(stroke.color); context.globalAlpha = stroke.tool === 'highlight' ? (monochrome ? .7 : .3) : 1;
     context.lineWidth = stroke.width * Math.min(canvas.width, canvas.height); context.lineCap = 'round'; context.lineJoin = 'round'; context.beginPath();
     stroke.points.forEach(([x, y], index) => index ? context.lineTo(x * canvas.width, y * canvas.height) : context.moveTo(x * canvas.width, y * canvas.height));
-    context.stroke();
+    if (monochrome) {
+      const intended = context.strokeStyle, size = context.lineWidth;
+      context.strokeStyle='#111111'; context.lineWidth=size+2*canvas.width/Math.max(1,canvas.clientWidth); context.stroke();
+      context.strokeStyle=intended;context.lineWidth=size;
+    }
+    if(stroke.points.length===1) {const [x,y]=stroke.points[0];context.fillStyle=context.strokeStyle;context.arc(x*canvas.width,y*canvas.height,context.lineWidth/2,0,Math.PI*2);context.fill();}
+    else context.stroke();
   }
   canvas.addEventListener('pointerdown', event => {
     if (!ready || stroke || sending || !event.isPrimary) return;
@@ -132,7 +202,7 @@
     stroke = { id: `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`,
       tool: tool.value, color: color.value, width: tool.value === 'highlight' ? .035 : Number(width.value), points: [point(event)], finished: false };
     if (stroke.tool === 'pointer') { stroke.times = [Date.now()]; localTrail = stroke; }
-    pointer = event.pointerId; canvas.setPointerCapture(pointer); event.preventDefault(); paint(); queue();
+    pointer = event.pointerId; canvas.setPointerCapture(pointer); event.preventDefault(); updateLegend(); paint(); queue();
   });
   canvas.addEventListener('pointermove', event => {
     if (!stroke || pointer !== event.pointerId || stroke.finished) return;
@@ -162,5 +232,6 @@
     clearDraft(); setReady(false); state = null; image.onload = null; imageFrame = ''; void refresh();
   });
   panel.addEventListener('toggle', () => { if (panel.open) void refresh(); else { clearDraft(); setReady(false); } });
+  applyMode();
   setInterval(() => { if (shown()) void refresh(); else if (stroke) clearDraft(); }, 1500);
 })();

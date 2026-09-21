@@ -327,7 +327,9 @@ class ShowPackagePublisher {
       || manifest.handoffPath !== 'handoff.json'
       || !/^[a-f0-9]{64}$/.test(manifest.handoffSha256 || '')
       || manifest.compilerVersion !== 3
-      || manifest.rendererVersion !== NATIVE_RENDERER_VERSION
+      // Renderer 11 packages remain playable offline; newly prepared packages
+      // get version 12 identities so pre-credit artifacts cannot be reused.
+      || ![11, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
       || !Number.isSafeInteger(manifest.cueCount)
       || manifest.cueCount < 1
       || manifest.cueCount > MAX_PACKAGE_CUES
