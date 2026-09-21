@@ -98,6 +98,30 @@ async function preparedProject(t) {
   return { packagesPath, publishOptions, publisher, saved, store, workspace };
 }
 
+test('old renderer packages still open offline while fresh preparation uses a new identity', async t => {
+  const fixture = await preparedProject(t);
+  const current = await fixture.publisher.publish(fixture.publishOptions);
+  assert.equal(current.manifest.rendererVersion, 12);
+  const legacy = structuredClone(current.manifest);
+  legacy.rendererVersion = 11;
+  const identity = {};
+  for (const key of ['schemaVersion', 'projectId', 'projectRevisionId', 'projectContentHash',
+    'timelineSha256', 'handoffSha256', 'compilerVersion', 'rendererVersion', 'roleMapping', 'renderOptions']) {
+    identity[key] = legacy[key];
+  }
+  identity.fontSha256 = legacy.font.sha256;
+  legacy.id = `show-${crypto.createHash('sha256').update(canonicalJson(identity)).digest('hex')}`;
+  const legacyPath = path.join(fixture.packagesPath, legacy.id);
+  await fs.cp(current.packagePath, legacyPath, { recursive: true });
+  await fs.writeFile(path.join(legacyPath, 'manifest.json'), canonicalJson(legacy));
+  const opened = await fixture.publisher.open(legacy.id);
+  assert.equal(opened.manifest.rendererVersion, 11);
+  assert.equal(opened.presentations.main.scenes[0].body, 'Welcome <everyone> & friends');
+  const prepared = await fixture.publisher.publish(fixture.publishOptions);
+  assert.equal(prepared.manifest.id, current.manifest.id);
+  assert.notEqual(prepared.manifest.id, legacy.id);
+});
+
 test('publishes an immutable equal-length package, returns the exact presentation contract, and reuses it', async t => {
   const fixture = await preparedProject(t);
   const progress = [];

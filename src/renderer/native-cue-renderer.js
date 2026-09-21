@@ -330,6 +330,7 @@
     }
     if (raw.layout === 'text') {
       exactKeys(raw, [
+        ...(raw.credit !== undefined ? ['credit'] : []),
         ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
         ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
         'background',
@@ -354,6 +355,7 @@
         bodySpans: spans(raw.bodySpans, body),
         ...(raw.titleSpans !== undefined ? { titleSpans: spans(raw.titleSpans, raw.title) } : {}),
         ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: raw.backgroundAssetId } : {}),
+        ...(raw.credit !== undefined ? { credit: string(raw.credit, 'scene.credit', 500) } : {}),
         style: textStyle(raw.style)
       };
     }
@@ -664,6 +666,14 @@
       appendStyledText(body, scene.body, scene.bodySpans, style.paragraphGap);
       bodyRegion.appendChild(body);
       surface.appendChild(bodyRegion);
+      let credit = null;
+      if (scene.credit) {
+        credit = document.createElement('div');
+        credit.className = 'native-scene-credit';
+        credit.textContent = scene.credit;
+        Object.assign(credit.style, { position: 'absolute', left: '2%', width: '96%', bottom: '2%', color: style.bodyForeground, fontWeight: '400', textAlign: 'center', whiteSpace: 'pre-wrap', lineHeight: '1.15' });
+        surface.appendChild(credit);
+      }
       children.push({
         relayout(scale) {
           let titleBottom = 0;
@@ -682,16 +692,17 @@
           const logicalTop = style.bodyPosition === 'top' && titleBottom > 0
             ? Math.max(configuredBodyTop, titleBottom + scene.canvas.height * 0.04)
             : configuredBodyTop;
-          const logicalRegionHeight = style.bodyPosition === 'top'
+          let logicalRegionHeight = style.bodyPosition === 'top'
             ? Math.min(
                 style.bodyHeight,
                 Math.max(50, scene.canvas.height - logicalTop - scene.canvas.height * 0.06)
               )
             : scene.canvas.height * style.bodyRegionHeightPercent / 100;
+          if (credit) logicalRegionHeight = Math.min(logicalRegionHeight, Math.max(50, scene.canvas.height * .84 - logicalTop));
           const logicalFitHeight = style.bodyPosition === 'top'
             ? logicalRegionHeight
             : Math.min(
-                style.bodyHeight,
+                style.bodyHeight, logicalRegionHeight,
                 scene.canvas.height * (style.showTitle
                   ? style.bodyRegionHeightPercent
                   : Math.max(10, style.bodyRegionHeightPercent - 2)) / 100
@@ -705,6 +716,12 @@
           body.style.height = `${bodyMaximumHeight}px`;
           fitText(body, style.bodySize, bodyMinimumSize, scale);
           settleFittedTextHeight(body, bodyMaximumHeight);
+          if (credit) {
+            credit.style.height = `${scene.canvas.height * .10 * scale}px`;
+            const creditScale = Math.min(1, scene.canvas.width / 1920, scene.canvas.height / 1080);
+            fitText(credit, Math.max(8, 26 * creditScale), Math.max(6, 18 * creditScale), scale);
+            settleFittedTextHeight(credit, scene.canvas.height * .10 * scale);
+          }
         }
       });
     } else if (scene.layout === 'song-title') {

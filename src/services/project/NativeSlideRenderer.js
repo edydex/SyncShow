@@ -531,6 +531,7 @@ class NativeSlideRenderer {
   }
 
   async _renderTextSlide({
+    credit = '',
     title = '',
     body = '',
     bodySpans = [],
@@ -587,7 +588,7 @@ class NativeSlideRenderer {
     const availableTop = preset.bodyPosition === 'top' && titleBottom > 0
       ? Math.max(configuredBodyTop, titleBottom + Math.round(this.height * (churchLayout ? 0.02 : 0.04)))
       : configuredBodyTop;
-    const bodyMaximumHeight = churchLayout
+    let bodyMaximumHeight = churchLayout
       ? Math.min(preset.bodyHeight * resolutionScale, this.height - availableTop - this.height * 0.02)
       : preset.bodyPosition === 'top'
       ? Math.min(
@@ -595,6 +596,7 @@ class NativeSlideRenderer {
           Math.max(50, this.height - availableTop - Math.round(this.height * 0.06))
         )
       : Math.min(preset.bodyHeight, this.height * (hasTitle ? 0.66 : 0.78));
+    if (credit) bodyMaximumHeight = Math.min(bodyMaximumHeight, Math.max(50, this.height * .84 - availableTop));
     const bodyWidth = this.width * (preset.bodyWidthPercent || 82) / 100;
     const bodyAlign = preset.bodyAlign || 'center';
     const bodyLayer = await this._textLayer(body || title, {
@@ -631,8 +633,14 @@ class NativeSlideRenderer {
         ),
         top: preset.bodyPosition === 'top'
           ? availableTop
-          : availableTop + Math.max(0, Math.round(((churchLayout ? bodyMaximumHeight : oldAvailableHeight) - bodyLayer.info.height) / 2))
+          : availableTop + Math.max(0, Math.round(((churchLayout || credit ? bodyMaximumHeight : oldAvailableHeight) - bodyLayer.info.height) / 2))
       });
+    }
+    if (credit) {
+      const creditLayer = await this._textLayer(credit, { exactBounds: true, width: this.width * .96, maxHeight: this.height * .10,
+        fontSize: Math.max(8, 26 * resolutionScale), minimumFontSize: Math.max(6, 18 * resolutionScale),
+        foreground: preset.bodyForeground || '#f8fafc', weight: '400', align: 'center', lineSpacingPercent: 15 });
+      if (creditLayer) composites.push({ input: creditLayer.data, left: Math.round((this.width - creditLayer.info.width) / 2), top: Math.round(this.height * .98 - creditLayer.info.height) });
     }
     let background = this._background(preset.background);
     if (backgroundAssetId) {
@@ -826,6 +834,7 @@ class NativeSlideRenderer {
         textValue = scriptureFlowText(bibleBlock.verses);
         pipeline = await this._renderTextSlide({
           title: bibleBlock.reference,
+          credit: bibleBlock.attribution || '',
           body: textValue,
           bodySpans: bibleBlock.spans || [],
           onTypography,
