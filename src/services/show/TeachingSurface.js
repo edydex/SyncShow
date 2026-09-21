@@ -52,7 +52,8 @@ class TeachingSurface {
     const context = this.sync();
     const { strokes, trails, serverNow, ...frame } = this.frame(outputId, context);
     return { available: context.ready, message: context.message || '', outputs: context.outputs,
-      cue: context.cueLabel || '', ...(outputId ? { frame: { ...frame, strokeCount: strokes.length } } : {}) };
+      cue: context.cueLabel || '', ...(outputId ? { frame: { ...frame, strokeCount: strokes.length,
+        inkColors: [...new Set(strokes.map(stroke => stroke.color))] } } : {}) };
   }
   apply(request) {
     const context = this.sync();

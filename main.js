@@ -2805,6 +2805,10 @@ remoteServer = new RemoteControlServer({
       filePath: path.join(__dirname, 'src', 'remote', 'teaching.js'),
       contentType: 'text/javascript; charset=utf-8'
     },
+    '/teaching-patterns.js': {
+      filePath: path.join(__dirname, 'src', 'remote', 'teaching-patterns.js'),
+      contentType: 'text/javascript; charset=utf-8'
+    },
     '/teaching-trail.js': {
       filePath: path.join(__dirname, 'src', 'renderer', 'teaching-trail.js'),
       contentType: 'text/javascript; charset=utf-8'
