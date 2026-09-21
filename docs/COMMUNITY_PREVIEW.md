@@ -1,4 +1,12 @@
-# Community integration preview — 1.4.0-preview.31
+# Community integration preview — 1.4.0-preview.32
+
+Preview 32 adds separate reading and sermon Scripture layouts, a centered reading
+title, and the current sermon point above passage text. Sermon title pictures can
+differ between English and Russian. Community's song library supports flexible
+verse-part headings and a per-song default language used by new planner entries.
+Update the Community server alongside SyncShow to prepare these layouts. Existing
+saved services retain their song snapshots; re-add a song to use its updated
+library formatting.
 
 Preview 31 adds a local patterned monochrome tablet view with named swatches and
 a used-color legend. Normal congregation output retains its intended colors.
@@ -11,20 +19,20 @@ Canvas slides and text highlighting from Preview 30 remain supported.
 
 ## Download and install
 
-**Preview 31 is ready for owner testing**, including Windows. Sign into GitHub
+**Preview 32 is ready for owner testing**, including Windows. Sign into GitHub
 with access to the private `edydex/heritage-preview-builds` repository, then open
-the [Preview 31 release](https://github.com/edydex/heritage-preview-builds/releases/tag/syncshow-v1.4.0-preview.31).
+the [Preview 32 release](https://github.com/edydex/heritage-preview-builds/releases/tag/syncshow-v1.4.0-preview.32).
 A signed-out browser can show a 404 for a private download.
 
 | Computer | Installer |
 | --- | --- |
-| Windows 10/11, x64 | [Windows installer](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow.Setup.1.4.0-preview.31.exe) |
-| Mac, Apple silicon | [arm64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow-1.4.0-preview.31-arm64.dmg) |
-| Mac, Intel | [x64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow-1.4.0-preview.31-x64.dmg) |
-| Linux, x64 | [AppImage](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow-1.4.0-preview.31.AppImage) or [Debian package](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/sync-show_1.4.0-preview.31_amd64.deb) |
+| Windows 10/11, x64 | [Windows installer](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/SyncShow.Setup.1.4.0-preview.32.exe) |
+| Mac, Apple silicon | [arm64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/SyncShow-1.4.0-preview.32-arm64.dmg) |
+| Mac, Intel | [x64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/SyncShow-1.4.0-preview.32-x64.dmg) |
+| Linux, x64 | [AppImage](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/SyncShow-1.4.0-preview.32.AppImage) or [Debian package](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/sync-show_1.4.0-preview.32_amd64.deb) |
 
 Quit SyncShow before installing, keep your previous installer until rehearsal
-passes, and confirm version **1.4.0-preview.31** after opening the new copy.
+passes, and confirm version **1.4.0-preview.32** after opening the new copy.
 It uses your existing settings and service library. Windows is unsigned; the
 Mac preview is ad-hoc signed, without notarization. Checksums and exact-source
 verification files are attached to the release. There is no automatic updater
