@@ -3,6 +3,7 @@ name: Package Smoke
 on:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -134,6 +135,7 @@ jobs:
           --manifest dist/package-smoke-${{ matrix.target }}.json
 
       - name: Upload short-lived QA package evidence
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: qa-package-${{ matrix.target }}
@@ -148,3 +150,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+
+      - name: Show installer download
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          PACKAGE_TARGET: ${{ matrix.target }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const { version } = require('./package.json');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+            `## SyncShow ${version} — ${process.env.PACKAGE_TARGET}`,
+            '',
+            `[Download installer and verification files](${process.env.ARTIFACT_URL})`,
+            '',
+            'Extract the downloaded ZIP, then open the installer inside. GitHub sign-in is required. These workflow artifacts expire after seven days.',
+            '',
+            'Packaged application launch, PDF, Sharp, service workflow and artifact checks passed. Physical venue testing is still required.',
+            '',
+            '[Permanent owner downloads and installation instructions](https://github.com/edydex/SyncShow/blob/main/docs/COMMUNITY_PREVIEW.md#download-and-install). These QA packages support Community and local presentations; direct Google Drive is not configured. They are not a public release.',
+            '',
+          ].join('\n'));
+          JS

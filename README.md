@@ -42,7 +42,14 @@ A cross-platform desktop application for planning and running synchronized churc
 
 ### Download Pre-built Releases
 
-Download the latest installer for your platform from the [Releases page](https://github.com/edydex/SyncShow/releases):
+For the current Community, tablet-teaching and Bible-import features, use
+**[Preview 31 downloads and installation instructions](docs/COMMUNITY_PREVIEW.md#download-and-install)**.
+The installers are in a private testing repository; sign into GitHub with access
+to `edydex/heritage-preview-builds`. **[Download the Windows preview](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow.Setup.1.4.0-preview.31.exe)**.
+
+The [public Releases page](https://github.com/edydex/SyncShow/releases) contains older
+releases. A failed public-release workflow does not mean the separately verified
+private preview is unavailable. Installer formats are:
 
 - **Windows**: `SyncShow Setup X.X.X.exe`
 - **macOS**: separate Intel and Apple Silicon `.dmg`/`.zip` downloads
@@ -50,7 +57,7 @@ Download the latest installer for your platform from the [Releases page](https:/
 
 ### macOS Installation
 
-1. **Download** the `.dmg` file from [Releases](https://github.com/edydex/SyncShow/releases)
+1. **Download** the `.dmg` for your Mac from the [preview downloads](docs/COMMUNITY_PREVIEW.md#download-and-install)
 2. **Open** the DMG file
 3. **Drag** SyncShow to the Applications folder
 4. **First launch** - You may see "SyncShow can't be opened because Apple cannot check it for malicious software"
@@ -67,13 +74,13 @@ Download the latest installer for your platform from the [Releases page](https:/
 
 ### Windows Installation
 
-1. Download the `.exe` installer from [Releases](https://github.com/edydex/SyncShow/releases)
+1. Download the `.exe` installer from the [preview downloads](docs/COMMUNITY_PREVIEW.md#download-and-install)
 2. Run the installer and follow the prompts
 3. **Optional legacy/emergency fallback**: Ensure Microsoft PowerPoint or [LibreOffice](https://www.libreoffice.org/download/) is installed only if this computer must open older PowerPoint services. Within this optional fallback converter only, SyncShow uses installed PowerPoint before LibreOffice.
 
 ### Linux Installation
 
-1. Download the `.AppImage` or `.deb` from [Releases](https://github.com/edydex/SyncShow/releases)
+1. Download the `.AppImage` or `.deb` from the [preview downloads](docs/COMMUNITY_PREVIEW.md#download-and-install)
 2. For AppImage:
    ```bash
    chmod +x SyncShow-*.AppImage

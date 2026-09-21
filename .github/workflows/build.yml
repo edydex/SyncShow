@@ -18,6 +18,7 @@ jobs:
     outputs:
       version_changed: ${{ steps.check.outputs.changed }}
       version: ${{ steps.check.outputs.version }}
+      preview: ${{ steps.check.outputs.preview }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,15 +30,22 @@ jobs:
           # Get current version
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT_VERSION"
+          echo "preview=false" >> "$GITHUB_OUTPUT"
 
-          # Maintainer previews use Package Smoke and its exact artifact receipts.
-          # A preview version bump must not start the protected public-release
-          # workflow, whose Drive and dependency-distribution gates are separate.
-          # An explicit main-branch dispatch still runs every release gate.
-          if [ "${{ github.event_name }}" = "push" ] && echo "$CURRENT_VERSION" | grep -qiE '[-]preview'; then
-            echo "Preview version: use Package Smoke for testing artifacts"
+          # Preview pushes and manual runs must produce tested installers, not
+          # silently skip packaging or enter the credentialed public path.
+          if echo "$CURRENT_VERSION" | grep -qiE '[-]preview([.]|$)'; then
+            echo "Preview version: building testing installers on all four targets"
+            echo "preview=true" >> "$GITHUB_OUTPUT"
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Testing preview
+
+          This run builds Windows, Mac (Apple silicon and Intel), and Linux installers through **Package Smoke**. Each successful platform job provides a download link after its packaged-app checks pass. A green run means the preview packages were checked; it does not publish a public release.
+
+          [Current permanent owner downloads and installation instructions](https://github.com/edydex/SyncShow/blob/main/docs/COMMUNITY_PREVIEW.md#download-and-install) are separate from the seven-day artifacts attached to this run. Google Drive release credentials are not required for Community and local presentation testing.
+          SUMMARY
             exit 0
           fi
 
@@ -75,6 +83,12 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           fi
+
+  preview-packages:
+    name: Testing installers
+    needs: check-version
+    if: needs.check-version.outputs.preview == 'true'
+    uses: ./.github/workflows/package-smoke.yml
 
   build-windows:
     needs: check-version
