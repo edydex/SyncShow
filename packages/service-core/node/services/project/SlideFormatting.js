@@ -7,6 +7,18 @@ function scriptureFlowText(verses) {
   }).join(' ');
 }
 
+function scriptureDisplay(passage, presetId) {
+  const prefix = presetId === 'wotbc-sermon-scripture' ? `${passage.reference} ` : '';
+  const flow = scriptureFlowText(passage.verses);
+  // A single-verse reference already gives its verse number. Keep the source
+  // flow intact for saved formatting; remove only that redundant display marker.
+  const sourceStart = prefix && passage.verses?.length === 1 ? flow.indexOf('\u00a0') + 1 : 0;
+  const prefixLength = prefix.length - sourceStart;
+  return { text: prefix + flow.slice(sourceStart), prefixLength, bodyStart: prefix.length, sourceStart,
+    spans: [...(prefix ? [{start:0,end:prefix.length - 1,foreground:'#ffc000',weight:'700'}] : []),
+      ...(passage.spans || []).filter(span => span.end > sourceStart).map(span => ({...span,start:Math.max(span.start,sourceStart)+prefixLength,end:span.end+prefixLength}))] };
+}
+
 function applyTextStyle(text, spans, start, end, patch) {
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > text.length || start >= end) throw new Error('Select the text to format.');
   const points = [...new Set([0, text.length, start, end, ...spans.flatMap(span => [span.start, span.end])])].sort((a,b) => a-b);
@@ -59,4 +71,4 @@ function remapTextSpans(before, after, spans) {
   }
   return result;
 }
-module.exports = { scriptureFlowText, applyTextStyle, remapTextSpans };
+module.exports = { scriptureDisplay, scriptureFlowText, applyTextStyle, remapTextSpans };

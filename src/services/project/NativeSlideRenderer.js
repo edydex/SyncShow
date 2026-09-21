@@ -7,6 +7,7 @@ const path = require('path');
 
 const { parseBibleReference } = require('../bible/BibleReferenceParser');
 const { scriptureFlowText } = require('../bible/ScriptureText');
+const { scriptureDisplay } = require('./SlideFormatting');
 const { resolveNativeTextPreset } = require('./NativePresetCatalog');
 const { singerSourceCue, singerNextLine } = require('./SingerPresentation');
 const { MAX_IMAGE_PIXELS } = require('./ServiceProject');
@@ -831,12 +832,13 @@ class NativeSlideRenderer {
         pipeline = await this._renderPicture(imageBlock);
         textValue = imageBlock.altText;
       } else if (bibleBlock) {
-        textValue = scriptureFlowText(bibleBlock.verses);
+        const display = scriptureDisplay(bibleBlock, cue.presetId);
+        textValue = display.text;
         pipeline = await this._renderTextSlide({
-          title: bibleBlock.reference,
+          title: cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : bibleBlock.reference,
           credit: bibleBlock.attribution || '',
           body: textValue,
-          bodySpans: bibleBlock.spans || [],
+          bodySpans: display.spans,
           onTypography,
           presetId: cue.presetId || 'scripture-text'
         });

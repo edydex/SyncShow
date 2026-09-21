@@ -3280,6 +3280,7 @@ function normalizeEditableServiceProject(raw, options = {}) {
 
   for (const item of Object.values(items)) {
     if (canvasAssetIds(item).some(assetId => assets[assetId]?.kind !== 'image')) fail('MISSING_ASSET', 'A canvas image is unavailable.');
+    for (const assetId of Object.values(item.backgroundAssetIdsByChannel || {})) if (assets[assetId]?.kind !== 'image') fail('MISSING_ASSET', `Slide ${item.id} has no pinned output background image.`);
     if (item.backgroundAssetId && assets[item.backgroundAssetId]?.kind !== 'image') fail('MISSING_ASSET', `Slide ${item.id} has no pinned background image.`);
     if (item.kind === 'bible' && item.sermonReading) {
       const resource = resources[item.sermonReading.sermonResourceId];
@@ -3955,6 +3956,7 @@ function planNextServiceProject(rawSourceProject, options = {}) {
   for (const item of Object.values(next.items)) {
     canvasAssetIds(item).forEach(assetId => reachableAssetIds.add(assetId));
     if (item.backgroundAssetId) reachableAssetIds.add(item.backgroundAssetId);
+    for (const assetId of Object.values(item.backgroundAssetIdsByChannel || {})) reachableAssetIds.add(assetId);
     if (item.kind === 'song') {
       for (const variant of Object.values(item.variants)) {
         if (variant.mode === 'content') reachableResourceIds.add(variant.resourceId);
@@ -4151,9 +4153,26 @@ function compileServiceProject(rawProject, options = {}) {
     cues[cueId] = cue;
   };
 
+  const sermonHeadings = new Map();
   const compileLeaf = item => {
     const groupRecords = index.groupPathByItemId[item.id] || [];
     const groupPath = groupRecords.map(group => group.title);
+    const scope = [...groupRecords].reverse().find(group => group.kind === 'sermon')?.id || groupRecords[0]?.id || 'root';
+    if (item.kind === 'song' || item.presetId === 'wotbc-reading-title') sermonHeadings.delete(scope);
+    if (item.kind === 'sermon') {
+      const isTitle = item.sermonTemplate === 'title' || item.presetId === 'wotbc-sermon-title';
+      const isPoint = item.sermonTemplate === 'point' || item.presetId === 'wotbc-sermon';
+      if (isTitle || isPoint) {
+        const headings = {};
+        for (const channelId of project.channelIds) {
+          const lines = String(item.textByChannel?.[channelId] || '').split('\n').map(line => line.trim()).filter(Boolean);
+          const point = isPoint ? lines.filter(line => /^(?:[IVXLCDM]+|\d+|[a-zа-я])[.)]\s+/iu.test(line)).at(-1) : null;
+          const heading = point || item.titlesByChannel?.[channelId] || '';
+          if (heading) headings[channelId] = heading;
+        }
+        sermonHeadings.set(scope, headings);
+      }
+    }
     if (item.kind === 'song') {
       const resolvedByChannel = Object.fromEntries(project.channelIds.map(channelId => [
         channelId,
@@ -4309,7 +4328,7 @@ function compileServiceProject(rawProject, options = {}) {
       for (const channelId of project.channelIds) {
         const passage = item.passagesByChannel[channelId];
         channels[channelId] = passage
-          ? { mode: 'content', blocks: [passage] }
+          ? { mode: 'content', blocks: [...(item.presetId === 'wotbc-sermon-scripture' && sermonHeadings.get(scope)?.[channelId] ? [{ type: 'text', role: 'title', text: sermonHeadings.get(scope)[channelId] }] : []), passage] }
           : { mode: 'hide', blocks: [] };
       }
       addCue(item, 'self', {
@@ -4838,6 +4857,7 @@ function pruneUnreachableProjectRecords(rawProject, candidates = {}, {
   for (const item of Object.values(project.items)) {
     canvasAssetIds(item).forEach(assetId => reachableAssets.add(assetId));
     if (item.backgroundAssetId) reachableAssets.add(item.backgroundAssetId);
+    for (const assetId of Object.values(item.backgroundAssetIdsByChannel || {})) reachableAssets.add(assetId);
     if (item.sermonResourceId) reachableResources.add(item.sermonResourceId);
     if (item.kind === 'bible' && item.sermonReading) {
       reachableResources.add(item.sermonReading.sermonResourceId);
@@ -4904,6 +4924,7 @@ function removeProjectItemAndDescendants(rawProject, rawItemId) {
     const item = project.items[currentId];
     canvasAssetIds(item).forEach(assetId => assetIds.add(assetId));
     if (item.backgroundAssetId) assetIds.add(item.backgroundAssetId);
+    for (const assetId of Object.values(item.backgroundAssetIdsByChannel || {})) assetIds.add(assetId);
     if (item.kind === 'group') item.childIds.forEach(collect);
     if (item.sermonResourceId) resourceIds.add(item.sermonResourceId);
     if (item.kind === 'bible' && item.sermonReading) {

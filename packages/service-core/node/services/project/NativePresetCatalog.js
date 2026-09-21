@@ -12,6 +12,21 @@ const TEXT_VERTICAL_POSITIONS = Object.freeze(['center', 'top']);
 // already points at one of these stable IDs.
 const RAW_PRESETS = [
   {
+    id: 'wotbc-reading-title', label: 'Reading title', description: 'Passage and Bible edition centered on black.',
+    selectable: true, kinds: ['notice'],
+    render: { mode: 'text', background: '#000000', bodySize: 112, bodyHeight: 860, bodyMinimumSize: 48,
+      titleSize: 112, titleMinimumSize: 48, showTitle: false, bodyWeight: '400',
+      bodyWidthPercent: 94, bodyTopPercent: 10, bodyPosition: 'center', bodyAlign: 'center', lineSpacingPercent: 22 }
+  },
+  {
+    id: 'wotbc-sermon-scripture', label: 'Sermon passage · current point', description: 'Current sermon point above a gold inline reference and flowing Scripture.',
+    selectable: true, kinds: ['bible'],
+    render: { mode: 'text', background: '#000000', bodySize: 78, bodyHeight: 880, bodyMinimumSize: 42,
+      titleSize: 88, titleMinimumSize: 44, showTitle: true, bodyWeight: '400',
+      titleForeground: '#ffc000', titleWeight: '700', titleAlign: 'center',
+      bodyWidthPercent: 97, titleTopPercent: 2, bodyTopPercent: 16, bodyPosition: 'top', bodyAlign: 'left', lineSpacingPercent: 8 }
+  },
+  {
     id: 'wotbc-sermon-title', label: 'Sermon title · image', description: 'Editable title and subtitle over a darkened image.',
     selectable: true, kinds: ['sermon', 'notice'],
     render: { mode: 'text', background: '#000000', bodySize: 112, bodyHeight: 820, bodyMinimumSize: 48,
@@ -443,8 +458,8 @@ const NATIVE_PRESET_BY_ID = freezeDeep(Object.fromEntries(
   NATIVE_PRESETS.map(preset => [preset.id, preset])
 ));
 const DEFAULT_NATIVE_TEXT_PRESET_ID = 'default-text';
-const NATIVE_PRESET_CATALOG_VERSION = 4;
-const NATIVE_RENDERER_VERSION = 12;
+const NATIVE_PRESET_CATALOG_VERSION = 5;
+const NATIVE_RENDERER_VERSION = 13;
 
 function getNativePreset(presetId) {
   return typeof presetId === 'string' ? NATIVE_PRESET_BY_ID[presetId] || null : null;

@@ -11,6 +11,7 @@ const {
 } = require('../project/NativeSlideRenderer');
 const { resolveNativeTextPreset } = require('../project/NativePresetCatalog');
 const { scriptureFlowText } = require('../bible/ScriptureText');
+const { scriptureDisplay } = require('../project/SlideFormatting');
 
 const NATIVE_CUE_SCENE_SCHEMA_VERSION = 3;
 const NATIVE_CUE_SCENE_KIND = 'syncshow-native-cue-scene';
@@ -585,9 +586,10 @@ function textScene(cue, channel, canvas) {
   let body = '';
   let bodySpans = [];
   if (bibleBlock) {
-    title = bibleBlock.reference;
-    body = scriptureFlowText(bibleBlock.verses);
-    bodySpans = bibleBlock.spans || [];
+    const display = scriptureDisplay(bibleBlock, cue.presetId);
+    title = cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : bibleBlock.reference;
+    body = display.text;
+    bodySpans = display.spans;
   } else {
     const localizedTitle = textBlocks.find(block => block.role === 'title')?.text || '';
     if (cue.kind === 'song' && localizedTitle) {

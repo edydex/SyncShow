@@ -15,6 +15,15 @@ function subtitleSpans(body, spans = []) {
 }
 function normalizeSermonOptions(raw, channelIds, fail, normalizeSpans) {
   const result = {};
+  if (raw.backgroundAssetIdsByChannel !== undefined) {
+    const values = raw.backgroundAssetIdsByChannel;
+    if (raw.kind !== 'sermon' || !values || typeof values !== 'object' || Array.isArray(values)) fail('INVALID_ASSET_REFERENCE', 'Choose a title image for a known output.');
+    result.backgroundAssetIdsByChannel = {};
+    for (const [channel, assetId] of Object.entries(values)) {
+      if (!channelIds.includes(channel) || typeof assetId !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(assetId)) fail('INVALID_ASSET_REFERENCE', 'Invalid output title image.');
+      result.backgroundAssetIdsByChannel[channel] = assetId;
+    }
+  }
   if (raw.sermonTemplate !== undefined) {
     if (raw.kind !== 'sermon' || !TEMPLATES.includes(raw.sermonTemplate)) fail('INVALID_SERMON_TEMPLATE', 'Unknown sermon slide template.');
     result.sermonTemplate = raw.sermonTemplate;
@@ -48,8 +57,9 @@ function normalizeSermonOptions(raw, channelIds, fail, normalizeSpans) {
 /** Editing guides never enter a cue. Existing slides retain their old defaults. */
 function sermonSlideBlocks(item, channelId) {
   if (item.sermonTemplate === 'other') return [{ type: 'canvas', objects: item.objectsByChannel[channelId] || [] }];
-  const blocks = item.backgroundAssetId ? [{
-    type:'image', role:'background', assetId:item.backgroundAssetId, fit:'fill',
+  const backgroundAssetId = item.backgroundAssetIdsByChannel?.[channelId] || item.backgroundAssetId;
+  const blocks = backgroundAssetId ? [{
+    type:'image', role:'background', assetId:backgroundAssetId, fit:'fill',
     focalPoint:{x:0.5,y:0.5}, altText:item.title, attribution:'',
     ...(item.sermonPresentation ? {dimOpacity:item.sermonPresentation.darkenBackground ? 0.55 : 0} : {})
   }] : [];
