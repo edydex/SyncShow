@@ -30,8 +30,18 @@ jobs:
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT_VERSION"
 
-          # Promotion owns alpha/beta/rc/dev. Preview builds remain explicit
-          # prereleases and should proceed through this workflow unchanged.
+          # Maintainer previews use Package Smoke and its exact artifact receipts.
+          # A preview version bump must not start the protected public-release
+          # workflow, whose Drive and dependency-distribution gates are separate.
+          # An explicit main-branch dispatch still runs every release gate.
+          if [ "${{ github.event_name }}" = "push" ] && echo "$CURRENT_VERSION" | grep -qiE '[-]preview'; then
+            echo "Preview version: use Package Smoke for testing artifacts"
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Promotion owns alpha/beta/rc/dev.
           if [ "${{ github.event_name }}" = "push" ] && echo "$CURRENT_VERSION" | grep -qiE '[-](alpha|beta|rc|dev)'; then
             echo "Pre-release version $CURRENT_VERSION on push - deferring to promote-release workflow"
             echo "changed=false" >> $GITHUB_OUTPUT

@@ -1,4 +1,13 @@
-# Community integration preview — 1.4.0-preview.28
+# Community integration preview — 1.4.0-preview.31
+
+Preview 31 adds a local patterned monochrome tablet view with named swatches and
+a used-color legend. Normal congregation output retains its intended colors.
+See [monochrome teaching](MONOCHROME-TEACHING.md) for display limitations.
+It also adds **Prepare → This computer → Scripture → Bible translations**:
+preview and install an authorized edition, choose it independently for each
+output, and preserve exact text and credits in offline service packages. See
+[Bible import](BIBLE-IMPORTS.md) for the portable format and permission boundary.
+Canvas slides and text highlighting from Preview 30 remain supported.
 
 Preview 28 adds the progressively fading pointer, a nearby-slide gallery and a full-width host notification after any paired remote changes slides. This version distinguishes the pastor-controls milestone from earlier Preview 27 installers. Pen/highlighter ink remains per-slide, while pointer fragments fade after about one second. See [tablet teaching](TABLET_TEACHING.md) for the controls and limitations.
 
