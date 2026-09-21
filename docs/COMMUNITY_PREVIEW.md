@@ -9,6 +9,35 @@ output, and preserve exact text and credits in offline service packages. See
 [Bible import](BIBLE-IMPORTS.md) for the portable format and permission boundary.
 Canvas slides and text highlighting from Preview 30 remain supported.
 
+## Download and install
+
+**Preview 31 is ready for owner testing**, including Windows. Sign into GitHub
+with access to the private `edydex/heritage-preview-builds` repository, then open
+the [Preview 31 release](https://github.com/edydex/heritage-preview-builds/releases/tag/syncshow-v1.4.0-preview.31).
+A signed-out browser can show a 404 for a private download.
+
+| Computer | Installer |
+| --- | --- |
+| Windows 10/11, x64 | [Windows installer](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow.Setup.1.4.0-preview.31.exe) |
+| Mac, Apple silicon | [arm64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow-1.4.0-preview.31-arm64.dmg) |
+| Mac, Intel | [x64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow-1.4.0-preview.31-x64.dmg) |
+| Linux, x64 | [AppImage](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow-1.4.0-preview.31.AppImage) or [Debian package](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/sync-show_1.4.0-preview.31_amd64.deb) |
+
+Quit SyncShow before installing, keep your previous installer until rehearsal
+passes, and confirm version **1.4.0-preview.31** after opening the new copy.
+It uses your existing settings and service library. Windows is unsigned; the
+Mac preview is ad-hoc signed, without notarization. Checksums and exact-source
+verification files are attached to the release. There is no automatic updater
+for these private previews.
+
+The installers passed packaged-app launch and runtime checks on all four native
+CI platforms. They support **Heritage Community** and **This computer** services.
+Direct Google Drive is not configured in these previews. The older public
+releases and their separate release workflow do not indicate whether this
+private testing installer is available.
+
+## Preview features
+
 Preview 28 adds the progressively fading pointer, a nearby-slide gallery and a full-width host notification after any paired remote changes slides. This version distinguishes the pastor-controls milestone from earlier Preview 27 installers. Pen/highlighter ink remains per-slide, while pointer fragments fade after about one second. See [tablet teaching](TABLET_TEACHING.md) for the controls and limitations.
 
 Prepared services can now supply saved language, Quality/Economy, translated-speech and sermon-note choices in the shared translation console. Select a service in Live translation; Community also links there from its service editor. Saving does not start translation. Economy note sharing remains an explicit choice for each session. Update the unified Community/Multilinguum server set to enable this workflow.
@@ -38,7 +67,9 @@ The macOS installer is produced in `dist/`. Check its version and architecture b
 
 ## Packaging checks
 
-The ordinary Package Smoke workflow creates temporary QA artifacts. A successful build is not an official public release. Google Drive release configuration and target-specific dependency-distribution materials remain tracked by the existing protected release workflow.
+The ordinary Package Smoke workflow creates temporary QA artifacts. Build and Release also calls it for preview version pushes and manual preview runs, so a successful preview run includes checked installers instead of skipped packaging. Each platform's job summary links its installer ZIP and verification files; sign into GitHub to download them within seven days. Permanent owner releases are published separately after their receipts and checksums are verified, at the private download location above.
+
+A successful preview build is not an official public release. Non-preview releases still require Google Drive release configuration and target-specific dependency-distribution materials in the protected release workflow.
 
 Local checks include the packaged PDF and Sharp runtimes, shared service workflow, app launch, exact artifact/source inventory, and the macOS local-network/microphone declarations. Translation and tablet teaching have separate real Electron rehearsals. Synthetic media input verifies browser permission handling without accessing a physical microphone or contacting a translation provider.
 
