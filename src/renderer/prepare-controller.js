@@ -14,6 +14,7 @@
     window.SyncShowWeeklyReadinessActions || {};
   const nativeWorkflowContinuationContracts =
     window.SyncShowNativeWorkflowContinuation || {};
+  let knownBibleTranslationIds = new Set(['BSB', 'LSV']);
   const PROJECT_PAGE_SIZE = 100;
   const SONG_PAGE_SIZE = 100;
   const SERMON_PAGE_SIZE = 100;
@@ -7116,7 +7117,7 @@
         mode !== 'translation'
         || rawOutput.translationId !== rawTranslationId
         || translationId !== rawTranslationId
-        || !['BSB', 'LSV'].includes(translationId)
+        || !knownBibleTranslationIds.has(translationId)
       ) {
         return null;
       }
@@ -7130,7 +7131,7 @@
     const normalizedTranslation = String(translationId || 'BSB')
       .trim()
       .toUpperCase();
-    const safeTranslation = ['BSB', 'LSV'].includes(normalizedTranslation)
+    const safeTranslation = knownBibleTranslationIds.has(normalizedTranslation)
       ? normalizedTranslation
       : 'BSB';
     return (project?.channelIds || []).map(channelId => ({
@@ -7160,7 +7161,7 @@
         const translationId = String(passage.translationId || '')
           .trim()
           .toUpperCase();
-        if (!['BSB', 'LSV'].includes(translationId)) return null;
+        if (!knownBibleTranslationIds.has(translationId)) return null;
         fromPinnedPassages.push({
           channelId,
           mode: 'translation',
@@ -7176,7 +7177,7 @@
     const legacyTranslation = String(
       item?.sermonReading?.translationId || ''
     ).trim().toUpperCase();
-    return ['BSB', 'LSV'].includes(legacyTranslation)
+    return knownBibleTranslationIds.has(legacyTranslation)
       ? defaultSermonReadingOutputs(project, legacyTranslation)
       : null;
   }
@@ -16647,11 +16648,11 @@
       } else if (readingState.status === 'all-hidden') {
         elements.sermonReadingStatus.dataset.kind = 'warning';
         elements.sermonReadingStatus.textContent =
-          'Choose BSB or LSV on at least one output; an all-hidden congregational reading cannot be added.';
+          'Choose an installed translation on at least one output; an all-hidden congregational reading cannot be added.';
       } else if (readingState.status === 'invalid-outputs') {
         elements.sermonReadingStatus.dataset.kind = 'warning';
         elements.sermonReadingStatus.textContent =
-          'Choose one explicit BSB, LSV, or Hidden treatment for every configured output.';
+          'Choose an installed translation or Hidden treatment for every configured output.';
       } else if (readingState.status === 'unsupported') {
         elements.sermonReadingStatus.dataset.kind = 'warning';
         elements.sermonReadingStatus.textContent =
@@ -17970,7 +17971,7 @@
       ) {
         setDialogError(
           elements.sermonPacketError,
-          'Choose BSB or LSV on at least one output before reviewing the service files.'
+          'Choose an installed translation on at least one output before reviewing the service files.'
         );
         return false;
       }
@@ -30322,7 +30323,7 @@
           ? `The reading will show on ${visibleCount} ${
               visibleCount === 1 ? 'output' : 'outputs'
             }. Each visible translation is resolved from the canonical Bible source.`
-          : 'Choose BSB or LSV on at least one output; an all-hidden reading cannot be created.';
+          : 'Choose an installed translation on at least one output; an all-hidden reading cannot be created.';
       };
       renderDenseBibleOutputSelections({
         container: elements.sermonPacketReadingOutputs,
@@ -32037,6 +32038,13 @@
     }
 
     const controller = Object.freeze({
+      setBibleTranslations(editions) {
+        knownBibleTranslationIds = new Set(editions.map(edition => edition.id));
+        window.SyncShowBibleImports.populateSelect(elements.bibleTranslation, editions);
+        renderBibleOutputTreatments();
+        renderSelectedSermonReadingOutputTreatments();
+        renderSermonPacketReadingOutputTreatments();
+      },
       activate,
       initialize,
       importProject,

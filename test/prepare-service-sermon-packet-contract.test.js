@@ -753,7 +753,7 @@ test('reviewed sermon-packet confirmation preserves and displays the exact dense
       'sermonReadingOutputReviewText',
       'renderSermonPacketProposal'
     ],
-    { state, elements },
+    { state, elements, knownBibleTranslationIds: new Set(['BSB', 'LSV']) },
     ['renderSermonPacketProposal']
   );
   renderSermonPacketProposal();

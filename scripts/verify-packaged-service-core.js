@@ -12,7 +12,11 @@ const REQUIRED_CORE_ENTRIES = Object.freeze([
   '/packages/service-core/package.json',
   '/packages/service-core/index.js',
   '/packages/service-core/node.js',
-  '/packages/service-core/node/services/project/ServiceProject.js'
+  '/packages/service-core/node/services/project/ServiceProject.js',
+  '/packages/bible-import/index.js',
+  '/packages/bible-import/package.json',
+  '/src/services/bible/InstalledBibleLibrary.js',
+  '/assets/bible-import-example.json'
 ]);
 
 class PackagedServiceCoreVerificationError extends Error {
@@ -84,6 +88,15 @@ function serviceCoreSmokeSource(corePath) {
   return `'use strict';
     const assert = require('node:assert/strict');
     const core = require(${JSON.stringify(corePath)});
+    const path = require('node:path');
+    const fs = require('node:fs');
+    const appRoot = path.resolve(path.dirname(${JSON.stringify(corePath)}), '../..');
+    const importer = require(path.join(appRoot, 'packages/bible-import'));
+    const books = require(path.join(appRoot, 'src/services/bible/BibleBooks')).bibleBooks;
+    const sample = importer.parseBibleImport(fs.readFileSync(path.join(appRoot, 'assets/bible-import-example.json'), 'utf8'), books.map(book => ({ id: book.abbr, name: book.name, chapters: book.chapters })));
+    assert.equal(sample.summary.id, 'BSB-DEMO');
+    assert.equal(sample.summary.verseCount, 3);
+    assert.equal(typeof require(path.join(appRoot, 'src/services/bible/InstalledBibleLibrary')).InstalledBibleLibrary, 'function');
     const now = '2026-07-26T16:00:00.000Z';
     const channels = [
       { id: 'english', label: 'English', language: 'en' },

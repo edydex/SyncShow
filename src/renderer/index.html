@@ -7,6 +7,7 @@
   <title>SyncShow</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="translation-controls.css">
+  <link rel="stylesheet" href="bible-import.css">
 </head>
 <body class="friendly-mode load-stage">
   <div class="app-container">
@@ -665,6 +666,7 @@
                         </select>
                       </label>
                       <button type="button" id="btnLookupPrepareBible" class="btn btn-outline btn-compact" disabled>Find</button>
+                      <button type="button" id="btnManageBibleTranslations" class="btn btn-outline btn-compact">Bible translations…</button>
                     </div>
                     <p id="prepareBibleStatus" class="prepare-bible-status" role="status">Open a service before adding a passage.</p>
                     <section id="prepareBibleAmbiguity" class="prepare-bible-response" aria-labelledby="prepareBibleAmbiguityHeading" hidden>
@@ -2914,6 +2916,22 @@
     </form>
   </dialog>
 
+  <dialog id="bibleImportDialog" class="bible-import-dialog" aria-labelledby="bibleImportHeading">
+    <h2 id="bibleImportHeading">Bible translations</h2>
+    <p>Install an authorized edition on this computer. Saved service passages remain available offline.</p>
+    <ul id="bibleImportCatalog"></ul>
+    <form id="bibleImportForm">
+      <div class="bible-import-actions"><button type="button" id="bibleImportChoose" class="btn btn-secondary">Choose Bible JSON…</button><button type="button" id="bibleImportExample" class="btn btn-outline">Save test sample…</button></div>
+      <section id="bibleImportPreview" hidden><h3 id="bibleImportTitle"></h3><p id="bibleImportCounts"></p><p id="bibleImportCredit"></p><pre id="bibleImportVerses"></pre><p id="bibleImportLicense"></p>
+        <label class="field-group">Permission or license reference<input id="bibleImportPermissionReference" class="text-input" type="text" maxlength="1000" autocomplete="off" placeholder="Publisher agreement, permission reference, or CC0" required></label>
+        <label class="bible-import-permission"><input id="bibleImportPermission" type="checkbox" required> I have permission to store and display this edition, including any planned offline sharing or livestream use.</label>
+      </section>
+      <p id="bibleImportStatus" role="status" aria-live="polite"></p>
+      <details><summary>File format and getting LSB</summary><p>Choose UTF-8 Heritage Bible JSON, version 1, up to 24 MiB. Save the public-domain BSB sample to see the format and try Romans 1:1–3. It contains only those three verses.</p><p>For Legacy Standard Bible use, the publisher FAQ at lsbible.org directs software agreements to info@316publishing.com. Ask for Heritage Community/SyncShow permission and an authorized structured source. No portable retail LSB file has been verified. This importer does not unlock modules bought for another application.</p><p>Edition IDs cannot be overwritten. For revised text, use a new ID. Complete imported text and the permission reference stay in this computer’s private app storage. Chosen excerpts and attribution travel with service packages. Keep a backup of the source file.</p></details>
+      <div class="bible-import-actions"><button id="bibleImportInstall" type="submit" class="btn btn-primary" disabled>Install edition</button><button id="bibleImportClose" type="button" class="btn btn-secondary">Close</button></div>
+    </form>
+  </dialog>
+
   <dialog id="remoteDialog" class="remote-dialog" aria-labelledby="remoteDialogTitle" aria-describedby="remoteDialogDescription">
     <div class="remote-dialog-heading">
       <div>
@@ -3060,6 +3078,7 @@
   <script src="community-service-plan-review.js"></script>
   <script src="weekly-readiness-actions.js"></script>
   <script src="native-workflow-continuation.js"></script>
+  <script src="bible-import-controller.js"></script>
   <script src="prepare-controller.js"></script>
   <script src="community-service-document-controller.js"></script>
   <script src="app.js"></script>

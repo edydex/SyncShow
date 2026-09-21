@@ -180,6 +180,7 @@
       "src/**/*",
       "!src/renderer/test-thumbnails.html",
       "packages/service-core/**/*",
+      "packages/bible-import/**/*",
       "assets/**/*",
       "!assets/google-drive-config.json",
       "node_modules/**/*",

@@ -76,7 +76,9 @@ const {
   resolveNativeCuePayload,
   showRehearsalReceiptMatches
 } = require('./src/services/show');
-const { BibleLibrary } = require('./src/services/bible');
+const { BibleLibrary, translations: bundledBibleTranslations } = require('./src/services/bible');
+const { InstalledBibleLibrary } = require('./src/services/bible/InstalledBibleLibrary');
+const { MAX_BIBLE_IMPORT_BYTES, BibleImportError } = require('./packages/bible-import');
 const {
   CANONICAL_BIBLE_BOOKS
 } = require('./src/services/sermon/BibleRange');
@@ -327,11 +329,20 @@ const PREPARE_GOLD_EMPHASIS_FOREGROUND = '#ffc000';
 
 // Keep a live overlay readable on ordinary venue screens. Longer passages can
 // be sent as consecutive ranges until multi-page Bible overlays land.
-const bibleLibrary = new BibleLibrary({ maxVerses: 8 });
+let installedBibleLibrary;
+function getInstalledBibleLibrary() {
+  if (!installedBibleLibrary) installedBibleLibrary = new InstalledBibleLibrary({ rootPath: path.join(app.getPath('userData'), 'bible-translations') });
+  return installedBibleLibrary;
+}
+const installedBibleSource = {
+  translation: id => getInstalledBibleLibrary().translation(id),
+  book: (id, name) => getInstalledBibleLibrary().book(id, name)
+};
+const bibleLibrary = new BibleLibrary({ maxVerses: 8, installedLibrary: installedBibleSource });
 // Sermon primary references are metadata, not one projected screen. Keep their
 // larger review preview on a separate resolver so no live or service Bible cue
 // can inherit this limit accidentally.
-const sermonReferenceBibleLibrary = new BibleLibrary({ maxVerses: 100 });
+const sermonReferenceBibleLibrary = new BibleLibrary({ maxVerses: 100, installedLibrary: installedBibleSource });
 const sermonAttachmentHealthCoordinator = new SermonAttachmentHealthCoordinator();
 const sermonRecordingHealthCoordinator = new SermonAttachmentHealthCoordinator();
 const sermonSourceExtractionCoordinator = new SermonSourceExtractionCoordinator();
@@ -10117,7 +10128,7 @@ function normalizeBibleLookupRequest(request = {}) {
   const translationId = typeof request.translationId === 'string'
     ? request.translationId.trim().toUpperCase()
     : 'BSB';
-  if (translationId !== 'BSB' && translationId !== 'LSV') {
+  if (!/^[A-Z][A-Z0-9-]{1,31}$/.test(translationId)) {
     throw new TypeError('Unknown Bible translation');
   }
   const selectedBook = typeof request.selectedBook === 'string'
@@ -10276,6 +10287,65 @@ function hideBibleOverlay({ restore = true } = {}) {
 }
 
 // IPC Handlers
+let pendingBibleImport = null;
+let bibleImportEpoch = 0;
+function bibleImportFailure(error) {
+  return { error: error instanceof BibleImportError ? error.message : 'The Bible library could not complete this request. Try again; installed editions are kept.' };
+}
+ipcMain.handle('bible:translations', async event => {
+  requireControlSender(event);
+  try {
+    const result = await getInstalledBibleLibrary().list();
+    return { translations: [...bundledBibleTranslations.map(edition => ({ ...edition, builtin: true })), ...result.editions], warnings: result.warnings };
+  } catch (error) { return bibleImportFailure(error); }
+});
+ipcMain.handle('bible:importPreview', async event => {
+  requireControlSender(event);
+  const epoch = ++bibleImportEpoch;
+  pendingBibleImport = null;
+  const selected = await dialog.showOpenDialog(controlWindow, { title: 'Import an authorized Bible edition', filters: [{ name: 'Heritage Bible JSON', extensions: ['json'] }], properties: ['openFile'] });
+  if (selected.canceled || !selected.filePaths.length || epoch !== bibleImportEpoch) return { cancelled: true };
+  try {
+    const bytes = (await readFileNoFollow(selected.filePaths[0], MAX_BIBLE_IMPORT_BYTES)).buffer;
+    let source;
+    try { source = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+    catch { throw new BibleImportError('BIBLE_IMPORT_ENCODING', 'The Bible file must be valid UTF-8. No text was imported.'); }
+    const preview = await getInstalledBibleLibrary().preview(source);
+    if (epoch !== bibleImportEpoch) return { cancelled: true };
+    const token = crypto.randomUUID();
+    pendingBibleImport = { token, source, digest: preview.digest, sender: event.sender, expires: Date.now() + 15 * 60_000 };
+    return { ...preview, token };
+  } catch (error) { return bibleImportFailure(error); }
+});
+ipcMain.handle('bible:importCancel', event => {
+  requireControlSender(event);
+  ++bibleImportEpoch; pendingBibleImport = null;
+  return true;
+});
+ipcMain.handle('bible:importInstall', async (event, request = {}) => {
+  requireControlSender(event);
+  const pending = pendingBibleImport;
+  if (!request || typeof request !== 'object' || Array.isArray(request)
+    || Object.keys(request).sort().join() !== ['token', 'permissionConfirmed', 'permissionReference'].sort().join()
+    || !pending || pending.sender !== event.sender || request.token !== pending.token || Date.now() > pending.expires) {
+    return { error: 'Choose and preview the Bible file again before installing it.' };
+  }
+  try {
+    const result = await getInstalledBibleLibrary().install({ source: pending.source, digest: pending.digest, permissionConfirmed: request.permissionConfirmed, permissionReference: request.permissionReference });
+    if (pendingBibleImport === pending) pendingBibleImport = null;
+    return result;
+  } catch (error) { return bibleImportFailure(error); }
+});
+ipcMain.handle('bible:importExample', async event => {
+  requireControlSender(event);
+  const selected = await dialog.showSaveDialog(controlWindow, { title: 'Save public-domain Bible import sample', defaultPath: 'BSB-DEMO.json', filters: [{ name: 'Heritage Bible JSON', extensions: ['json'] }] });
+  if (selected.canceled || !selected.filePath) return { cancelled: true };
+  try {
+    await fs.promises.copyFile(path.join(__dirname, 'assets', 'bible-import-example.json'), selected.filePath);
+    return { saved: true };
+  } catch { return { error: 'The sample could not be saved. Choose another location.' }; }
+});
+
 ipcMain.handle('bible:lookup', async (event, request = {}) => {
   requireControlSender(event);
   return resolveBibleLookupRequest(request);
@@ -25263,10 +25333,10 @@ function prepareBibleOutputSelections(rawOutputs, project) {
     const translationId = prepareText(
       raw.translationId,
       `${project.channels[channelId].label || channelId} Bible translation`,
-      12,
+      32,
       { required: true }
     ).toUpperCase();
-    if (!['BSB', 'LSV'].includes(translationId)) {
+    if (!/^[A-Z][A-Z0-9-]{1,31}$/.test(translationId)) {
       failMainOperation(
         'UNSUPPORTED_BIBLE_TRANSLATION',
         'Choose a Bible translation available on this computer.',
