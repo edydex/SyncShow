@@ -1,7 +1,7 @@
 'use strict';
 // Optional real-browser rehearsal; point SYNCSHOW_PLAYWRIGHT_MODULE at an installed
-// playwright or @playwright/test module when it is not on Node's module path.
-const {chromium,firefox,expect}=require(process.env.SYNCSHOW_PLAYWRIGHT_MODULE || 'playwright');
+// @playwright/test module when it is not on Node's module path.
+const {chromium,firefox,expect}=require(process.env.SYNCSHOW_PLAYWRIGHT_MODULE || '@playwright/test');
 const {RemoteControlServer}=require('../src/services/remote');
 const {TeachingSurface}=require('../src/services/show/TeachingSurface');
 const sharp=require('sharp');
