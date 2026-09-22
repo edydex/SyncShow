@@ -370,6 +370,12 @@ function normalizeBlock(raw, field) {
         actual: normalized.contentSha256
       });
     }
+    if (raw.displayText !== undefined) {
+      normalized.displayText = text(raw.displayText, `${field}.displayText`, 20000, { required: true, trim: false });
+      if (!normalized.displayText.trim()) fail('MISSING_TEXT', 'Slide text cannot be empty. Use a blank slide instead.');
+      const displaySpans = normalizeTextSpans(raw.displaySpans, normalized.displayText, `${field}.displaySpans`);
+      if (displaySpans.length) normalized.displaySpans = displaySpans;
+    }
     const spans = normalizeTextSpans(raw.spans, scriptureFlowText(normalized.verses), `${field}.spans`);
     if (spans.length) normalized.spans = spans;
     return normalized;
@@ -2471,6 +2477,11 @@ function normalizeProjectItem(raw, channelIds, now) {
       );
     }
     if (Object.keys(passagesByChannel).length < 1) fail('INVALID_BIBLE_VARIANTS', `Bible item ${itemId} needs at least one passage.`);
+    const verseNumbers = raw.verseNumbers !== undefined ? normalizeVerseSelection(raw.verseNumbers, range) : undefined;
+    if (verseNumbers && Object.values(passagesByChannel).some(passage =>
+      passage.verses.length !== verseNumbers.length || passage.verses.some((verse, index) => verse.number !== verseNumbers[index]))) {
+      fail('BIBLE_SELECTION_MISMATCH', `Bible item ${itemId} must contain exactly its selected verses.`);
+    }
     const sermonReading = normalizeSermonReadingLink(
       raw.sermonReading,
       `Bible item ${itemId}.sermonReading`,
@@ -2479,6 +2490,7 @@ function normalizeProjectItem(raw, channelIds, now) {
     return {
       ...common,
       range,
+      ...(verseNumbers ? { verseNumbers } : {}),
       passagesByChannel,
       presetId: id(raw.presetId || 'scripture-text', `Bible item ${itemId} presetId`),
       ...(sermonReading ? { sermonReading } : {})
@@ -6027,6 +6039,15 @@ function bibleRangesEqual(left, right) {
     && left.end.verse === right.end.verse;
 }
 
+function normalizeVerseSelection(value, range) {
+  if (!Array.isArray(value) || !value.length || value.length > 200 || range.start.chapter !== range.end.chapter
+    || value.some((n,i) => !Number.isSafeInteger(n) || n < range.start.verse || n > range.end.verse || (i && n <= value[i-1]))
+    || value[0] !== range.start.verse || value.at(-1) !== range.end.verse) {
+    fail('INVALID_BIBLE_RANGE', 'Selected verses must be distinct, ascending, and match the range endpoints.');
+  }
+  return [...value];
+}
+
 function pinnedBibleBlock(rawPassage, field) {
   if (!isRecord(rawPassage)) fail('INVALID_BIBLE_BLOCK', `${field} must be a resolved Bible passage.`);
   const translation = isRecord(rawPassage.translation) ? rawPassage.translation : {};
@@ -6071,8 +6092,8 @@ function addBibleItem(rawProject, options = {}) {
     if (range.start.chapter !== range.end.chapter) {
       fail('INVALID_BIBLE_RANGE', 'Pinned Bible items currently support one chapter at a time.');
     }
-    const expectedVerseNumbers = [];
-    for (let verse = range.start.verse; verse <= range.end.verse; verse += 1) expectedVerseNumbers.push(verse);
+    const expectedVerseNumbers = options.verseNumbers !== undefined ? normalizeVerseSelection(options.verseNumbers, range) : [];
+    if (options.verseNumbers === undefined) for (let verse = range.start.verse; verse <= range.end.verse; verse += 1) expectedVerseNumbers.push(verse);
     if (block.verses.length !== expectedVerseNumbers.length
       || block.verses.some((verse, index) => verse.number !== expectedVerseNumbers[index])) {
       fail('BIBLE_RANGE_MISMATCH', `Bible passage ${channelId} text does not exactly cover its pinned canonical range.`);
@@ -6083,6 +6104,7 @@ function addBibleItem(rawProject, options = {}) {
     id: options.id,
     kind: 'bible',
     title: options.title || Object.values(passagesByChannel)[0].reference,
+    ...(options.verseNumbers !== undefined ? { verseNumbers: options.verseNumbers } : {}),
     range,
     passagesByChannel,
     presetId: options.presetId || 'scripture-text',

@@ -290,3 +290,23 @@ test('Bible attribution survives package scenes and stage derivation without cha
   assert.throws(() => normalizeNativeCueScene({ ...scene, credit: 'x'.repeat(501) }));
   assert.throws(() => validateBrowserScene({ ...scene, credit: 'x'.repeat(501) }));
 });
+
+test('quotation sources have a separate right-aligned layout in live and validated scenes', () => {
+  const cue=compiledTextCue({presetId:'wotbc-sermon-quote'});
+  cue.channels.primary.blocks.push({type:'text',role:'credit',text:'Author, source'});
+  const scene=compileNativeCueScene(cue,'primary',CANVAS);
+  assert.equal(scene.credit,'Author, source');assert.equal(scene.quoteCredit,true);
+  assert.equal(scene.body,'Body <is text> & never markup');assert.equal(scene.style.bodyAlign,'left');
+  const validated=JSON.parse(JSON.stringify(validateBrowserScene(JSON.parse(serializeNativeCueScene(scene)))));
+  assert.deepEqual(validated,scene);
+});
+
+test('an edited Scripture excerpt survives native scene compilation without changing source words', () => {
+  const cue=compiledTextCue({kind:'bible',presetId:'wotbc-sermon-scripture'});
+  cue.channels.primary.blocks=[{type:'text',role:'title',text:'Current point'},{type:'bible',reference:'John 8:31–32,44',translationId:'BSB',verses:[{number:31,text:'Original words.'}],displayText:'John 8:31–32,44 Selected words… [context]',displaySpans:[{start:15,end:23,background:'#ffff00'}]}];
+  const scene=compileNativeCueScene(cue,'primary',CANVAS);
+  assert.equal(scene.body,cue.channels.primary.blocks[1].displayText);assert.equal(scene.title,'Current point');
+  assert.deepEqual(scene.bodySpans,cue.channels.primary.blocks[1].displaySpans);
+  assert.equal(cue.channels.primary.blocks[1].verses[0].text,'Original words.');
+  assert.deepEqual(JSON.parse(JSON.stringify(validateBrowserScene(scene))),scene);
+});

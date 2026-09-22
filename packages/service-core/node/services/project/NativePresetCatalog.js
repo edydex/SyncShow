@@ -34,13 +34,13 @@ const RAW_PRESETS = [
       bodyWidthPercent: 90, bodyTopPercent: 10, bodyPosition: 'center', bodyAlign: 'center', lineSpacingPercent: 10 }
   },
   {
-    id: 'wotbc-sermon-quote', label: 'Sermon quotation', description: 'A centered thought with an optional gold heading.',
+    id: 'wotbc-sermon-quote', label: 'Sermon quotation', description: 'Gold heading, left-aligned quotation and right-aligned source.',
     selectable: true, kinds: ['sermon', 'notice'],
-    render: { mode: 'text', background: '#000000', bodySize: 94, bodyHeight: 820, bodyMinimumSize: 44,
-      titleSize: 64, titleMinimumSize: 32, showTitle: true, bodyWeight: '500',
+    render: { mode: 'text', background: '#000000', bodySize: 74, bodyHeight: 820, bodyMinimumSize: 32,
+      titleSize: 84, titleMinimumSize: 32, showTitle: true, bodyWeight: '400',
       titleForeground: '#ffc000', titleWeight: '700', titleAlign: 'center',
-      bodyWidthPercent: 90, titleTopPercent: 4, bodyTopPercent: 18, bodyPosition: 'center',
-      bodyAlign: 'center', lineSpacingPercent: 12 }
+      bodyWidthPercent: 98, titleTopPercent: 2, bodyTopPercent: 16, bodyPosition: 'top',
+      bodyAlign: 'left', lineSpacingPercent: 12 }
   },
   {
     id: 'wotbc-sermon-verse', label: 'Sermon Bible passage', description: 'Gold passage reference with room to emphasize the verse text.',

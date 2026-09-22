@@ -331,6 +331,7 @@
     if (raw.layout === 'text') {
       exactKeys(raw, [
         ...(raw.credit !== undefined ? ['credit'] : []),
+        ...(raw.quoteCredit !== undefined ? ['quoteCredit'] : []),
         ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
         ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
         'background',
@@ -345,6 +346,7 @@
         'style',
         'title'
       ], 'scene');
+      if (raw.quoteCredit !== undefined && raw.quoteCredit !== true) throw new TypeError('Invalid quotation source layout');
       const body = string(raw.body, 'scene.body', 12000, true);
       if (raw.backgroundAssetId !== undefined && !ASSET_ID_PATTERN.test(raw.backgroundAssetId)) throw new TypeError('Invalid slide background image');
       if (body.split(/\r\n|\r|\n/).length > 240) throw new TypeError('scene.body has too many lines');
@@ -356,6 +358,7 @@
         ...(raw.titleSpans !== undefined ? { titleSpans: spans(raw.titleSpans, raw.title) } : {}),
         ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: raw.backgroundAssetId } : {}),
         ...(raw.credit !== undefined ? { credit: string(raw.credit, 'scene.credit', 500) } : {}),
+        ...(raw.quoteCredit ? {quoteCredit:true} : {}),
         style: textStyle(raw.style)
       };
     }
@@ -698,7 +701,7 @@
                 Math.max(50, scene.canvas.height - logicalTop - scene.canvas.height * 0.06)
               )
             : scene.canvas.height * style.bodyRegionHeightPercent / 100;
-          if (credit) logicalRegionHeight = Math.min(logicalRegionHeight, Math.max(50, scene.canvas.height * .84 - logicalTop));
+          if (credit) logicalRegionHeight = Math.min(logicalRegionHeight, Math.max(50, scene.canvas.height * (scene.quoteCredit ? .74 : .84) - logicalTop));
           const logicalFitHeight = style.bodyPosition === 'top'
             ? logicalRegionHeight
             : Math.min(
@@ -719,8 +722,9 @@
           if (credit) {
             credit.style.height = `${scene.canvas.height * .10 * scale}px`;
             const creditScale = Math.min(1, scene.canvas.width / 1920, scene.canvas.height / 1080);
-            fitText(credit, Math.max(8, 26 * creditScale), Math.max(6, 18 * creditScale), scale);
+            fitText(credit, scene.quoteCredit ? parseFloat(body.style.fontSize) / scale : Math.max(8, 26 * creditScale), Math.max(6, (scene.quoteCredit ? 32 : 18) * creditScale), scale);
             settleFittedTextHeight(credit, scene.canvas.height * .10 * scale);
+            if (scene.quoteCredit) { credit.style.textAlign = 'right'; credit.style.bottom = 'auto'; credit.style.top = `${Math.min(surface.clientHeight * .98 - credit.offsetHeight, bodyRegion.offsetTop + body.offsetHeight + surface.clientHeight * .035)}px`; }
           }
         }
       });
