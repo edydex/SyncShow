@@ -459,7 +459,7 @@ const NATIVE_PRESET_BY_ID = freezeDeep(Object.fromEntries(
 ));
 const DEFAULT_NATIVE_TEXT_PRESET_ID = 'default-text';
 const NATIVE_PRESET_CATALOG_VERSION = 5;
-const NATIVE_RENDERER_VERSION = 13;
+const NATIVE_RENDERER_VERSION = 14;
 
 function getNativePreset(presetId) {
   return typeof presetId === 'string' ? NATIVE_PRESET_BY_ID[presetId] || null : null;

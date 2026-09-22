@@ -71,4 +71,10 @@ function remapTextSpans(before, after, spans) {
   }
   return result;
 }
-module.exports = { scriptureDisplay, scriptureFlowText, applyTextStyle, remapTextSpans };
+// Built-in BSB source bookkeeping is retained in the document, but is not a
+// congregation-facing copyright notice. Imported-edition credits stay visible.
+function scriptureCredit(block) {
+  const credit = block.attribution || '';
+  return block.translationId === 'BSB' && credit === 'Berean Standard Bible (BSB); exact text pinned from Heritage Study Bible reader data.' ? '' : credit;
+}
+module.exports = { scriptureCredit, scriptureDisplay, scriptureFlowText, applyTextStyle, remapTextSpans };

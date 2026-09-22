@@ -372,7 +372,32 @@ const translationScreens = new TranslationScreens({
 const teachingPainted = new Map();
 const teachingSurface = new TeachingSurface({ readContext: readTeachingContext, changed: sendTeachingFrames });
 const translationFeed = new TranslationFeed({ projection: translationProjection, changed: notifyTranslationChanged });
-const translationOperator = new TranslationOperatorWindow({ BrowserWindow, changed: notifyTranslationChanged });
+const translationOperator = new TranslationOperatorWindow({ BrowserWindow, changed: notifyTranslationChanged,
+  failed: message => slideTranslation.report({ phase: 'error', message }) });
+let desiredSlideTranslation = null;
+const { SlideTranslationCues } = require('./src/services/translation/SlideTranslationCues');
+const slideTranslation = new SlideTranslationCues({
+  changed: notifyTranslationChanged,
+  resolve: async presentation => {
+    const services = await getCommunityServices();
+    const binding = await services.serviceDocumentBindingStore.get(presentation.projectId);
+    const connection = await currentCommunityConnectionSummary();
+    if (!binding?.documentRevision || binding.serverId !== connection?.serverId
+      || binding.localRevisionId !== presentation.projectRevisionId) {
+      throw new Error('Load the saved Community service before using translation cues.');
+    }
+    return { serviceId: binding.syncId, serviceRevision: binding.documentRevision };
+  },
+  send: async command => {
+    desiredSlideTranslation = command;
+    if (command.phase === 'idle') {
+      translationOperator.dispatch(command);
+      return;
+    }
+    await connectTranslation({ control: true, hidden: true, serviceId: command.serviceId });
+    if (desiredSlideTranslation === command) translationOperator.dispatch(command);
+  }
+});
 let outputSessionId = 0;
 let outputLifecyclePhase = 'idle';
 let displayStartInProgress = false;
@@ -7416,7 +7441,8 @@ function clearCommunitySermonMediaOperationState() {
 }
 
 async function cancelCommunityTransientOperations() {
-  translationOperator.close();
+  await translationOperator.shutdown();
+  slideTranslation.stop();
   translationFeed.stop();
   communityOperationEpoch += 1;
   communitySyncAbortController?.abort();
@@ -8197,6 +8223,7 @@ function destroyOutputWindows() {
   // then fail its session/reference check instead of touching a replacement.
   outputWindows = new Map();
   appState.displayAssignments = new Map();
+  slideTranslation.stop();
   appState.activeLaunchPlan = null;
   activePowerPointShowReceipt = null;
   appState.isCleared = false;
@@ -9470,6 +9497,9 @@ function commitCueNavigation(
 ) {
   appState.currentSlide = slideIndex;
   armVideoPlaybackForCue(slideIndex);
+  // Only committed live navigation runs automation; selecting a Prepare preview never does.
+  const cuePresentation = appState.presentations[appState.activeLaunchPlan?.timelineRoleId];
+  if (publish && outputsShouldBeVisible) void slideTranslation.navigate(cuePresentation, slideIndex);
   // A cue becomes current only after its caller's reveal contract is met.
   // Hidden startup/rehearsal callers commit through their own exact frame
   // barrier; live operator navigation commits after every routed output has
@@ -17861,7 +17891,7 @@ function translationOutputs() {
 }
 
 function translationStatePayload() {
-  return { ...translationProjection.snapshot(), origin: translationFeed.origin,
+  return { ...translationProjection.snapshot(), automation: slideTranslation.status, origin: translationFeed.origin,
     operatorOpen: Boolean(translationOperator.window && !translationOperator.window.isDestroyed()),
     outputs: translationOutputs() };
 }
@@ -17878,7 +17908,7 @@ function notifyTranslationChanged() {
   translationScreens.sendFrames();
 }
 
-async function connectTranslation({ control = false } = {}) {
+async function connectTranslation({ control = false, hidden = false, serviceId } = {}) {
   await ensureTranslationPreferences();
   const connection = await currentCommunityConnectionSummary({ refreshCapabilities: true });
   if (!connection || communityConnectionExpired(connection) || communityReconnectRequired) {
@@ -17890,7 +17920,7 @@ async function connectTranslation({ control = false } = {}) {
   translationFeed.connect(connection.baseUrl);
   if (control) {
     const { connectionStore } = await getCommunityServices();
-    await translationOperator.open(await connectionStore.getConnection(connection.id), controlWindow);
+    await translationOperator.open(await connectionStore.getConnection(connection.id), controlWindow, { hidden, serviceId });
   }
   return translationStatePayload();
 }
@@ -17898,6 +17928,31 @@ async function connectTranslation({ control = false } = {}) {
 function requireTranslationOutput(outputId) {
   if (!translationOutputs().some(output => output.id === outputId)) throw new Error('Choose an output configured for this venue.');
 }
+
+function requireTranslationOperatorSender(event) {
+  if (!translationOperator.owns(event)) throw new Error('Translation controls are not authorized.');
+}
+function translationInputScope() {
+  if (!activeVenueProfile?.id || !translationOperator.connectionId) throw new Error('Choose a venue and connect Community first.');
+  return require('crypto').createHash('sha256').update(`${activeVenueProfile.id}:${translationOperator.connectionId}`).digest('hex');
+}
+ipcMain.handle('translation:cue-ready', event => {
+  if (translationOperator.owns(event)) translationOperator.markReady();
+});
+ipcMain.handle('translation:cue-status', (event, status) => {
+  if (!translationOperator.owns(event) || !status || !['idle', 'preparing', 'ready', 'starting', 'live', 'stopping', 'error'].includes(status.phase)
+    || (status.message !== undefined && (typeof status.message !== 'string' || status.message.length > 2000))) return;
+  translationOperator.report(status);
+  slideTranslation.report({ phase: status.phase, ...(status.message ? { message: status.message } : {}) });
+});
+ipcMain.handle('translation:input:read', event => {
+  requireTranslationOperatorSender(event);
+  return new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).readInput(translationInputScope());
+});
+ipcMain.handle('translation:input:write', (event, input) => {
+  requireTranslationOperatorSender(event);
+  return new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).writeInput(translationInputScope(), input);
+});
 
 ipcMain.handle('translation:state', event => {
   requireControlSender(event);
@@ -26346,6 +26401,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   outputWindows.forEach(({ win }) => showOutputWindow(win));
   outputLifecyclePhase = 'live';
   const showState = publishShowState('show-started');
+  void slideTranslation.navigate(appState.presentations[appState.activeLaunchPlan?.timelineRoleId], appState.currentSlide);
   sealActivePowerPointShowReceipt(powerPointServiceCandidate, sessionId);
 
   return {
@@ -27384,6 +27440,14 @@ if (!hasSingleInstanceLock) {
     }
   });
 }
+
+let translationQuitReady = false;
+app.on('before-quit', event => {
+  if (translationQuitReady || !translationOperator.window) return;
+  event.preventDefault();
+  translationQuitReady = true;
+  translationOperator.shutdown().finally(() => app.quit());
+});
 
 app.on('will-quit', () => {
   translationScreens.closeAll();

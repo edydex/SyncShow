@@ -101,7 +101,7 @@ async function preparedProject(t) {
 test('old renderer packages still open offline while fresh preparation uses a new identity', async t => {
   const fixture = await preparedProject(t);
   const current = await fixture.publisher.publish(fixture.publishOptions);
-  assert.equal(current.manifest.rendererVersion, 13);
+  assert.equal(current.manifest.rendererVersion, 14);
   const legacy = structuredClone(current.manifest);
   legacy.rendererVersion = 11;
   const identity = {};
@@ -178,7 +178,8 @@ test('publishes an immutable equal-length package, returns the exact presentatio
       'showPackageId',
       'slideCount',
       'sourceType',
-      'success'
+      'success',
+      'translationCues'
     ]);
     assert.equal(presentation.success, true);
     assert.equal(presentation.sourceType, 'service-project');
