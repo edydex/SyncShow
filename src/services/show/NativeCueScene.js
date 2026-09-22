@@ -392,6 +392,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
   if (common.layout === 'text') {
     exactKeys(raw, [
       ...(raw.credit !== undefined ? ['credit'] : []),
+      ...(raw.quoteCredit !== undefined ? ['quoteCredit'] : []),
       ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
       ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
       'background',
@@ -419,6 +420,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
       ...(raw.titleSpans !== undefined ? { titleSpans: normalizeSceneSpans(raw.titleSpans, title, 'scene.titleSpans') } : {}),
       ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: ASSET_ID_PATTERN.test(raw.backgroundAssetId) ? raw.backgroundAssetId : fail('INVALID_NATIVE_SCENE', 'Invalid background image.') } : {}),
       ...(raw.credit !== undefined ? { credit: boundedString(raw.credit, 'scene.credit', 500) } : {}),
+      ...(raw.quoteCredit !== undefined ? { quoteCredit: raw.quoteCredit === true ? true : fail('INVALID_NATIVE_SCENE', 'Invalid quotation source layout.') } : {}),
       style: normalizeTextStyle(raw.style)
     };
   }
@@ -600,7 +602,7 @@ function textScene(cue, channel, canvas) {
     const bodyParts = [];
     const bodySeparator = cue.presetId === 'wotbc-song-stacked' ? '\n' : '\n\n';
     let bodyOffset = 0;
-    for (const block of textBlocks.filter(candidate => candidate.role !== 'title')) {
+    for (const block of textBlocks.filter(candidate => candidate.role !== 'title' && candidate.role !== 'credit')) {
       if (!block.text) continue;
       if (bodyParts.length > 0) bodyOffset += bodySeparator.length;
       bodyParts.push(block.text);
@@ -642,6 +644,7 @@ function textScene(cue, channel, canvas) {
     ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
     ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId } : {}),
     ...(bibleBlock && scriptureCredit(bibleBlock) ? { credit: scriptureCredit(bibleBlock) } : {}),
+    ...(!bibleBlock && textBlocks.find(block=>block.role==='credit') ? {credit: textBlocks.find(block=>block.role==='credit').text, ...(cue.presetId === 'wotbc-sermon-quote' ? {quoteCredit: true} : {})} : {}),
     style: resolvedTextStyle(preset, hasTitle, cue.presetId)
   });
 }

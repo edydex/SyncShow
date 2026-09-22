@@ -28,6 +28,14 @@ function normalizeSermonOptions(raw, channelIds, fail, normalizeSpans) {
     if (raw.kind !== 'sermon' || !TEMPLATES.includes(raw.sermonTemplate)) fail('INVALID_SERMON_TEMPLATE', 'Unknown sermon slide template.');
     result.sermonTemplate = raw.sermonTemplate;
   }
+  if (raw.quoteSourcesByChannel !== undefined) {
+    if (raw.sermonTemplate !== 'quote' || !raw.quoteSourcesByChannel || typeof raw.quoteSourcesByChannel !== 'object' || Array.isArray(raw.quoteSourcesByChannel)) fail('INVALID_SERMON_TEMPLATE', 'Quotation sources must name known outputs.');
+    result.quoteSourcesByChannel = {};
+    for (const [channel, text] of Object.entries(raw.quoteSourcesByChannel)) {
+      if (!channelIds.includes(channel) || typeof text !== 'string' || text.length > 500) fail('INVALID_SERMON_TEMPLATE', 'Quotation sources must be text up to 500 characters.');
+      result.quoteSourcesByChannel[channel] = text;
+    }
+  }
   if (raw.pendingPointChannels !== undefined) {
     if (raw.sermonTemplate !== 'point' || !Array.isArray(raw.pendingPointChannels)
       || raw.pendingPointChannels.some(id => !channelIds.includes(id))
@@ -78,6 +86,7 @@ function sermonSlideBlocks(item, channelId) {
   }
   if (title) blocks.push({type:'text',role:'title',text:title,...(item.titleSpansByChannel?.[channelId] ? {spans:item.titleSpansByChannel[channelId]} : {})});
   if (body) blocks.push({type:'text',role:item.kind === 'sermon' ? 'body' : 'caption',text:body,...(item.spansByChannel?.[channelId] ? {spans:item.spansByChannel[channelId]} : {})});
+  if (item.sermonTemplate === 'quote' && item.quoteSourcesByChannel?.[channelId]) blocks.push({type:'text',role:'credit',text:item.quoteSourcesByChannel[channelId]});
   return blocks;
 }
 module.exports = { normalizeSermonOptions, sermonSlideBlocks };

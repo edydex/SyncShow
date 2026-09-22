@@ -8,6 +8,7 @@ function scriptureFlowText(verses) {
 }
 
 function scriptureDisplay(passage, presetId) {
+  if (passage.displayText !== undefined) return { text: passage.displayText, spans: passage.displaySpans || [], prefixLength: 0, bodyStart: 0, sourceStart: 0 };
   const prefix = presetId === 'wotbc-sermon-scripture' ? `${passage.reference} ` : '';
   const flow = scriptureFlowText(passage.verses);
   // A single-verse reference already gives its verse number. Keep the source
@@ -77,4 +78,9 @@ function scriptureCredit(block) {
   const credit = block.attribution || '';
   return block.translationId === 'BSB' && credit === 'Berean Standard Bible (BSB); exact text pinned from Heritage Study Bible reader data.' ? '' : credit;
 }
-module.exports = { scriptureCredit, scriptureDisplay, scriptureFlowText, applyTextStyle, remapTextSpans };
+function verseSelectionLabel(numbers) {
+  const ranges = [];
+  for (const n of numbers) { const last = ranges.at(-1); if (last && n === last[1] + 1) last[1] = n; else ranges.push([n,n]); }
+  return ranges.map(([a,b]) => a === b ? String(a) : `${a}–${b}`).join(',');
+}
+module.exports = { verseSelectionLabel, scriptureCredit, scriptureDisplay, scriptureFlowText, applyTextStyle, remapTextSpans };

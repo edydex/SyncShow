@@ -321,7 +321,7 @@ function cueTextForChannel(cue, channelId) {
   return (channel.blocks || []).map(block => {
     if (block.type === 'text') return block.text || '';
     if (block.type === 'bible') {
-      return scriptureFlowText(block.verses);
+      return block.displayText ?? scriptureFlowText(block.verses);
     }
     return '';
   }).filter(Boolean).join('\n\n');
@@ -350,7 +350,7 @@ function cueMetadataForChannel(cue, channelId) {
     } else if (imageBlock && imageBlock.role !== 'background') {
       text = imageBlock.altText || '';
     } else if (bibleBlock) {
-      text = scriptureFlowText(bibleBlock.verses);
+      text = bibleBlock.displayText ?? scriptureFlowText(bibleBlock.verses);
     } else {
       const localizedTitle = textBlocks.find(block => block.role === 'title')?.text || '';
       text = cue.kind === 'song' && localizedTitle
@@ -544,6 +544,7 @@ class NativeSlideRenderer {
   }) {
     const preset = resolveNativeTextPreset(presetId).render;
     const churchLayout = presetId.startsWith('wotbc-');
+    const quoteCredit = presetId === 'wotbc-sermon-quote';
     const composites = [];
     const hasTitle = Boolean(String(title || '').trim()) && preset.showTitle;
     const resolutionScale = Math.min(1, this.width / 1920, this.height / 1080);
@@ -597,7 +598,7 @@ class NativeSlideRenderer {
           Math.max(50, this.height - availableTop - Math.round(this.height * 0.06))
         )
       : Math.min(preset.bodyHeight, this.height * (hasTitle ? 0.66 : 0.78));
-    if (credit) bodyMaximumHeight = Math.min(bodyMaximumHeight, Math.max(50, this.height * .84 - availableTop));
+    if (credit) bodyMaximumHeight = Math.min(bodyMaximumHeight, Math.max(50, this.height * (quoteCredit ? .74 : .84) - availableTop));
     const bodyWidth = this.width * (preset.bodyWidthPercent || 82) / 100;
     const bodyAlign = preset.bodyAlign || 'center';
     const bodyLayer = await this._textLayer(body || title, {
@@ -639,9 +640,9 @@ class NativeSlideRenderer {
     }
     if (credit) {
       const creditLayer = await this._textLayer(credit, { exactBounds: true, width: this.width * .96, maxHeight: this.height * .10,
-        fontSize: Math.max(8, 26 * resolutionScale), minimumFontSize: Math.max(6, 18 * resolutionScale),
-        foreground: preset.bodyForeground || '#f8fafc', weight: '400', align: 'center', lineSpacingPercent: 15 });
-      if (creditLayer) composites.push({ input: creditLayer.data, left: Math.round((this.width - creditLayer.info.width) / 2), top: Math.round(this.height * .98 - creditLayer.info.height) });
+        fontSize: quoteCredit ? bodyLayer?.fontSize || preset.bodySize * resolutionScale : Math.max(8, 26 * resolutionScale), minimumFontSize: Math.max(6, (quoteCredit ? 32 : 18) * resolutionScale),
+        foreground: preset.bodyForeground || '#f8fafc', weight: '400', align: quoteCredit ? 'right' : 'center', lineSpacingPercent: 15 });
+      if (creditLayer) composites.push({ input: creditLayer.data, left: Math.round(quoteCredit ? this.width * .98 - creditLayer.info.width : (this.width - creditLayer.info.width) / 2), top: Math.round(quoteCredit ? Math.min(this.height * .98 - creditLayer.info.height, availableTop + (bodyLayer?.info.height || 0) + this.height * .035) : this.height * .98 - creditLayer.info.height) });
     }
     let background = this._background(preset.background);
     if (backgroundAssetId) {
@@ -878,6 +879,7 @@ class NativeSlideRenderer {
           }
           textValue = bodyParts.join(bodySeparator);
           pipeline = await this._renderTextSlide({
+            credit,
             // Sermon/notice rundown titles are operator-facing. Only an explicit
             // per-output title block belongs on those projected slides.
             title: cue.kind === 'song'
