@@ -78,3 +78,36 @@ test('prepared-service credentials stay on exact owned Community reads and write
     assert.equal(headers.authorization, undefined);
   }
 });
+
+
+test('cue shutdown waits for its own Stop acknowledgement and clears connection state', async () => {
+  const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
+  const sent = []; let destroyed = false;
+  const operator = new TranslationOperatorWindow({ BrowserWindow: null, stopTimeoutMs: 100 });
+  const contents = { send: (_channel, command) => sent.push(command), getURL: () => `${origin}/admin/live-translation` };
+  contents.mainFrame = {};
+  operator.window = { webContents: contents, isDestroyed: () => destroyed, destroy: () => { destroyed = true; } };
+  operator.origin = origin; operator.connectionId = 'test'; operator.ready = true;
+  operator.dispatch({ serviceId: 'one', serviceRevision: 'abc', segmentId: 'first', phase: 'live' });
+  assert.equal(operator.owns({ sender: contents, senderFrame: {} }), false);
+  assert.equal(operator.owns({ sender: contents, senderFrame: contents.mainFrame }), true);
+  const stopped = operator.shutdown();
+  assert.equal(sent.at(-1).phase, 'idle');
+  assert.equal(destroyed, false);
+  operator.report({ phase: 'idle' });
+  await stopped;
+  assert.equal(destroyed, true); assert.equal(operator.command, null);
+  assert.equal(operator.origin, null); assert.equal(operator.ready, false);
+});
+
+test('an unavailable processor reports a bounded readiness failure; ready cancels it', async () => {
+  const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
+  const failures = [];
+  const operator = new TranslationOperatorWindow({ BrowserWindow: null, readyTimeoutMs: 5, failed: message => failures.push(message) });
+  operator.dispatch({ phase: 'prepare' });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(failures.length, 1);
+  operator.dispatch({ phase: 'prepare' }); operator.markReady();
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(failures.length, 1); operator.close();
+});

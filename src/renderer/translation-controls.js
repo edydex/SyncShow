@@ -43,6 +43,19 @@
   function render(next) {
     if (!next?.outputs) return;
     state = next;
+    const cueStatus = document.getElementById('translationCueStatus');
+    if (cueStatus) {
+      const automation = next.automation || { phase: 'idle' };
+      cueStatus.hidden = automation.phase === 'idle';
+      const labels = { preparing: 'Preparing the translation audio feed…', ready: 'Translation ready · starts on the next slide',
+        starting: 'Starting translation…', live: 'Translation is live', stopping: 'Stopping translation…', error: 'Translation needs attention' };
+      cueStatus.textContent = `${labels[automation.phase] || ''}${automation.message ? ` · ${automation.message}` : ''}`;
+      if (automation.phase === 'error') {
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Open translation controls';
+        button.addEventListener('click', () => action(() => window.api.openTranslationOperator()));
+        cueStatus.append(' ', button);
+      }
+    }
     status.textContent = ({ live: 'Receiving live captions', idle: 'Connected · waiting for the next service',
       connecting: 'Connecting to the church…', disconnected: next.origin ? 'Connection lost · screens hold their last text' : 'Connect to your church to receive captions' })[next.status];
     for (const language of ['en', 'ru']) {

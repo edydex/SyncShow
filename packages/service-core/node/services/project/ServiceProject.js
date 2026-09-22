@@ -485,6 +485,19 @@ function validateChannelGraph(channels, cueId) {
   }
 }
 
+function normalizeTranslationCues(value) {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || Object.keys(value).length > 1000) fail('INVALID_TRANSLATION_CUES', 'Translation cues must identify individual slides.');
+  const result = {};
+  for (const [key, action] of Object.entries(value)) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,299}$/.test(key) || !['start', 'stop'].includes(action)) {
+      fail('INVALID_TRANSLATION_CUES', 'Choose Start Translate or Stop Translate.');
+    }
+    Object.defineProperty(result, key, { value: action, enumerable: true, configurable: true, writable: true });
+  }
+  return result;
+}
+
 function normalizeCue(raw, expectedId = null) {
   if (!isRecord(raw)) fail('INVALID_CUE', 'Every cue must be an object.');
   const cueId = id(raw.id || expectedId, 'Cue id');
@@ -514,6 +527,11 @@ function normalizeCue(raw, expectedId = null) {
     operatorNotes: text(raw.operatorNotes, `Cue ${cueId} operatorNotes`, 4000, { trim: false }),
     presetId: id(raw.presetId || defaultPresetForKind(raw.kind), `Cue ${cueId} presetId`)
   };
+  if (raw.sourceLeafKey !== undefined) normalized.sourceLeafKey = text(raw.sourceLeafKey, 'Source slide key', 300, { required: true });
+  if (raw.translationAction !== undefined) {
+    if (!['start', 'stop'].includes(raw.translationAction)) fail('INVALID_TRANSLATION_CUE', 'Invalid translation action.');
+    normalized.translationAction = raw.translationAction;
+  }
   if (raw.itemId !== undefined && raw.itemId !== null) {
     normalized.itemId = id(raw.itemId, `Cue ${cueId} itemId`);
   }
@@ -2369,6 +2387,7 @@ function normalizeProjectItem(raw, channelIds, now) {
     updatedAt: timestamp(raw.updatedAt, `Item ${itemId} updatedAt`, now.toISOString()),
     operatorNotes: text(raw.operatorNotes, `Item ${itemId} operatorNotes`, 4000, { trim: false })
   };
+  if (raw.translationCues !== undefined) common.translationCues = normalizeTranslationCues(raw.translationCues);
   if (Object.prototype.hasOwnProperty.call(raw, 'plannedDurationSeconds')) {
     common.plannedDurationSeconds = finiteInteger(
       raw.plannedDurationSeconds,
@@ -4148,7 +4167,8 @@ function compileServiceProject(rawProject, options = {}) {
   const addCue = (item, leafKey, rawCue) => {
     const cueId = deterministicCueId(project.id, item.id, leafKey);
     if (cues[cueId]) fail('CUE_ID_COLLISION', `Compiled cue id collision at ${item.id}.`);
-    const cue = normalizeCue({ ...rawCue, id: cueId, itemId: item.id });
+    const cue = normalizeCue({ ...rawCue, id: cueId, itemId: item.id, sourceLeafKey: leafKey,
+      ...(item.translationCues?.[leafKey] ? { translationAction: item.translationCues[leafKey] } : {}) });
     cueIds.push(cueId);
     cues[cueId] = cue;
   };

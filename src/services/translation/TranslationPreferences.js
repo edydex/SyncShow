@@ -10,6 +10,22 @@ class TranslationPreferences {
     if (typeof venueId !== 'string' || !venueId || venueId.length > 128) throw new Error('Choose a venue before configuring translation.');
     return path.join(this.directory, `${createHash('sha256').update(venueId).digest('hex')}.json`);
   }
+  async readInput(venueId) {
+    try {
+      const { buffer } = await readFileNoFollow(this.file(venueId).replace(/\.json$/, '-input.json'), 8192);
+      return this.normalizeInput(JSON.parse(buffer.toString('utf8')));
+    } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  }
+  normalizeInput(input) {
+    if (!input || Object.keys(input).sort().join(',') !== 'id,label' || typeof input.id !== 'string'
+      || !input.id || input.id.length > 256 || ['default', 'communications'].includes(input.id)
+      || typeof input.label !== 'string' || !input.label.trim() || input.label.length > 512
+      || /[\x00-\x1f]/.test(input.id + input.label)) throw new Error('Choose a named mixer input.');
+    return { id: input.id, label: input.label };
+  }
+  async writeInput(venueId, input) {
+    await atomicWriteFile(this.file(venueId).replace(/\.json$/, '-input.json'), JSON.stringify(this.normalizeInput(input)) + '\n', { maximumBytes: 8192 });
+  }
   async read(venueId) {
     try {
       const { buffer } = await readFileNoFollow(this.file(venueId), 32768);

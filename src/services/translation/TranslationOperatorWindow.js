@@ -1,4 +1,6 @@
 'use strict';
+const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { communityOrigin } = require('./TranslationFeed');
 
 const ACCESS_PATH = '/api/community/translation/access';
@@ -44,34 +46,91 @@ function audioPermission({ webContents, owner, permission, origin, details, chec
 }
 
 class TranslationOperatorWindow {
-  constructor({ BrowserWindow, changed = () => {} }) {
+  constructor({ BrowserWindow, changed = () => {}, failed = () => {}, readyTimeoutMs = 15000, stopTimeoutMs = 5000 }) {
     this.BrowserWindow = BrowserWindow;
     this.changed = changed;
+    this.failed = failed;
+    this.readyTimeoutMs = readyTimeoutMs;
+    this.stopTimeoutMs = stopTimeoutMs;
+    this.readyTimer = null;
+    this.stopWaiter = null;
+    this.lastStatus = 'idle';
     this.window = null;
     this.connectionId = null;
+    this.command = null;
+    this.ready = false;
+  }
+
+  owns(event) {
+    return this.window && !this.window.isDestroyed() && event.sender === this.window.webContents
+      && event.senderFrame === event.sender.mainFrame && operatorPage(event.sender.getURL(), this.origin);
+  }
+  dispatch(command) {
+    this.command = command;
+    if (this.ready && this.window && !this.window.isDestroyed()) this.window.webContents.send('translation:cue-command', command);
+    else if (!this.ready && command.phase !== 'idle' && !this.readyTimer) {
+      this.readyTimer = setTimeout(() => {
+        this.readyTimer = null;
+        this.failed('Translation controls did not become ready. Open Translation controls to check the connection and processor version.');
+      }, this.readyTimeoutMs);
+      this.readyTimer.unref?.();
+    } else if (command.phase === 'idle') { clearTimeout(this.readyTimer); this.readyTimer = null; }
+  }
+  markReady() { clearTimeout(this.readyTimer); this.readyTimer = null; this.ready = true; if (this.command) this.dispatch(this.command); }
+  report(status) {
+    this.lastStatus = status.phase;
+    if (['idle', 'error'].includes(status.phase)) this.stopWaiter?.();
+  }
+  async shutdown() {
+    if (this.window && !this.window.isDestroyed() && this.command && (this.command.phase !== 'idle' || !['idle', 'error'].includes(this.lastStatus)) && this.ready) {
+      await new Promise(resolve => {
+        const timer = setTimeout(() => {
+          this.failed('The translation server did not confirm Stop. Check Live translation on the Community server.');
+          finish();
+        }, this.stopTimeoutMs);
+        const finish = () => { clearTimeout(timer); this.stopWaiter = null; resolve(); };
+        this.stopWaiter = finish;
+        this.dispatch({ ...this.command, phase: 'idle' });
+      });
+    }
+    this.close();
   }
 
   close() {
+    clearTimeout(this.readyTimer); this.readyTimer = null;
+    this.stopWaiter?.();
+    this.command = null; this.ready = false; this.origin = null;
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
     this.connectionId = null;
   }
 
-  async open(connection, parent) {
+  async open(connection, parent, { hidden = false, serviceId } = {}) {
     const origin = communityOrigin(connection.baseUrl);
     if (this.window && !this.window.isDestroyed()) {
-      if (this.connectionId === connection.id) { this.window.show(); this.window.focus(); return; }
-      this.close();
+      if (this.connectionId === connection.id && this.origin === origin) { if (!hidden) { this.window.show(); this.window.focus(); } return; }
+      await this.shutdown();
     }
     const win = new this.BrowserWindow({
       title: 'SyncShow — Live translation', width: 1180, height: 840,
       minWidth: 760, minHeight: 600, parent, show: false, backgroundColor: '#0b1220',
       webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true,
-        backgroundThrottling: false, partition: `syncshow-translation-${require('crypto').randomUUID()}` }
+        preload: path.join(__dirname, '../../renderer/translation-operator-preload.js'),
+        autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false,
+        partition: `persist:syncshow-translation-${createHash('sha256').update(connection.id).digest('hex')}` }
     });
     this.window = win;
     this.connectionId = connection.id;
+    this.origin = origin;
+    this.ready = false;
     const contents = win.webContents;
+    contents.on('did-start-loading', () => { this.ready = false; });
+    contents.on('render-process-gone', () => {
+      if (this.command?.phase && this.command.phase !== 'idle') this.failed('Translation controls stopped unexpectedly. Check Live translation before restarting.');
+      this.close();
+    });
+    // Closing the controls must not kill a running cue-owned audio input.
+    win.on('close', event => { if (this.command?.phase !== 'idle' && this.command) { event.preventDefault(); win.hide(); } });
     const session = contents.session;
     session.setPermissionRequestHandler((webContents, permission, callback, details) => {
       callback(audioPermission({ webContents, owner: contents, permission, origin, details }));
@@ -98,8 +157,10 @@ class TranslationOperatorWindow {
       this.changed();
     });
     try {
-      await win.loadURL(new URL(OPERATOR_PATH, origin).href);
-      if (!win.isDestroyed()) { win.show(); this.changed(); }
+      const url = new URL(OPERATOR_PATH, origin);
+      if (serviceId) url.searchParams.set('service', serviceId);
+      await win.loadURL(url.href);
+      if (!win.isDestroyed()) { if (!hidden) win.show(); this.changed(); }
     } catch (_error) {
       if (!win.isDestroyed()) win.destroy();
       throw new Error('Live translation could not load. Check the Community connection and try again.');

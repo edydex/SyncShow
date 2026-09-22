@@ -11,7 +11,7 @@ const {
 } = require('../project/NativeSlideRenderer');
 const { resolveNativeTextPreset } = require('../project/NativePresetCatalog');
 const { scriptureFlowText } = require('../bible/ScriptureText');
-const { scriptureDisplay } = require('../project/SlideFormatting');
+const { scriptureDisplay, scriptureCredit } = require('../project/SlideFormatting');
 
 const NATIVE_CUE_SCENE_SCHEMA_VERSION = 3;
 const NATIVE_CUE_SCENE_KIND = 'syncshow-native-cue-scene';
@@ -641,7 +641,7 @@ function textScene(cue, channel, canvas) {
     bodySpans,
     ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
     ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId } : {}),
-    ...(bibleBlock?.attribution ? { credit: bibleBlock.attribution } : {}),
+    ...(bibleBlock && scriptureCredit(bibleBlock) ? { credit: scriptureCredit(bibleBlock) } : {}),
     style: resolvedTextStyle(preset, hasTitle, cue.presetId)
   });
 }
