@@ -21,7 +21,7 @@ Canvas slides and text highlighting from Preview 30 remain supported.
 
 ## Download and install
 
-**Preview 35 is being verified for owner testing**, including Windows. Sign into GitHub
+**Preview 35 owner-testing downloads**, including Windows, are linked below. Sign into GitHub
 with access to the private `edydex/heritage-preview-builds` repository, then open
 the [Preview 35 release](https://github.com/edydex/heritage-preview-builds/releases/tag/syncshow-v1.4.0-preview.35).
 A signed-out browser can show a 404 for a private download.
