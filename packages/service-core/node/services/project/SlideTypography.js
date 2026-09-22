@@ -95,7 +95,7 @@ function applyTimelineTypography(project, cues, index) {
   }
   for (const entries of groups.values()) {
     const maximum = Math.min(...entries.map(cue => cue.textStyle?.bodySize || textPreset(cue.presetId).bodySize));
-    const minimum = entries[0].kind === 'song' ? Math.ceil(maximum * .75) : Math.min(maximum, 42);
+    const minimum = entries[0].kind === 'song' ? Math.max(32, Math.ceil(maximum * .75)) : Math.min(maximum, 42);
     const key = JSON.stringify([maximum, minimum, entries.map(cue => [cue.presetId,cueBodies(cue),Object.values(cue.channels).some(channel => channel.blocks.some(block => block.type === 'bible' && scriptureCredit(block)))])]);
     let size = fittedCache.get(key);
     if (!size) {
