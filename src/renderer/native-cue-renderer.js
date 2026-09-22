@@ -140,9 +140,15 @@
     });
   }
 
+  function alignment(value, field) {
+    if (!['left', 'center', 'right'].includes(value)) throw new TypeError(`${field} is invalid`);
+    return value;
+  }
+
   function textStyle(value) {
     exactKeys(value, [
       'bodyAlign',
+      ...(value.creditAlign !== undefined ? ['creditAlign'] : []),
       'bodyForeground',
       'bodyHeight',
       'bodyMinimumSize',
@@ -204,6 +210,7 @@
       bodyForeground: color(value.bodyForeground, 'scene.style.bodyForeground'),
       bodyWeight: value.bodyWeight,
       bodyAlign: value.bodyAlign,
+      ...(value.creditAlign !== undefined ? {creditAlign: alignment(value.creditAlign, 'scene.style.creditAlign')} : {}),
       bodyWidthPercent: integer(value.bodyWidthPercent, 'scene.style.bodyWidthPercent', 50, 100),
       bodyHeight: integer(value.bodyHeight, 'scene.style.bodyHeight', 50, 1080),
       bodyTopPercent: integer(value.bodyTopPercent, 'scene.style.bodyTopPercent', 0, 80),
@@ -221,6 +228,7 @@
 
   function songTitleStyle(value) {
     exactKeys(value, [
+      ...['titleAlign','subtitleAlign','creditAlign'].filter(key => value[key] !== undefined),
       'creditBottomPercent',
       'creditForeground',
       'creditMinimumSize',
@@ -273,6 +281,7 @@
       throw new TypeError('scene song-title style contains an unsupported weight');
     }
     return {
+      ...Object.fromEntries(['titleAlign','subtitleAlign','creditAlign'].filter(key => value[key] !== undefined).map(key => [key,alignment(value[key],`scene.style.${key}`)])),
       titleSize,
       titleMinimumSize,
       titleForeground: color(value.titleForeground, 'scene.style.titleForeground'),
@@ -691,6 +700,7 @@
             settleFittedTextHeight(title, titleMaximumHeight);
             titleBottom = (title.offsetTop + title.offsetHeight) / scale;
           }
+          if (credit && style.creditAlign) credit.style.textAlign = style.creditAlign;
           const configuredBodyTop = scene.canvas.height * style.bodyTopPercent / 100;
           const logicalTop = style.bodyPosition === 'top' && titleBottom > 0
             ? Math.max(configuredBodyTop, titleBottom + scene.canvas.height * 0.04)
@@ -724,7 +734,7 @@
             const creditScale = Math.min(1, scene.canvas.width / 1920, scene.canvas.height / 1080);
             fitText(credit, scene.quoteCredit ? parseFloat(body.style.fontSize) / scale : Math.max(8, 26 * creditScale), Math.max(6, (scene.quoteCredit ? 32 : 18) * creditScale), scale);
             settleFittedTextHeight(credit, scene.canvas.height * .10 * scale);
-            if (scene.quoteCredit) { credit.style.textAlign = 'right'; credit.style.bottom = 'auto'; credit.style.top = `${Math.min(surface.clientHeight * .98 - credit.offsetHeight, bodyRegion.offsetTop + body.offsetHeight + surface.clientHeight * .035)}px`; }
+            if (scene.quoteCredit) { credit.style.textAlign = style.creditAlign || 'right'; credit.style.bottom = 'auto'; credit.style.top = `${Math.min(surface.clientHeight * .98 - credit.offsetHeight, bodyRegion.offsetTop + body.offsetHeight + surface.clientHeight * .035)}px`; }
           }
         }
       });
@@ -749,6 +759,7 @@
       titleRegion.className = 'native-song-title-region';
       const title = document.createElement('div');
       title.className = 'native-song-title-text';
+      title.style.textAlign = style.titleAlign || 'center';
       title.textContent = scene.title;
       title.style.color = style.titleForeground;
       title.style.fontWeight = style.titleWeight;
@@ -757,6 +768,7 @@
       if (scene.subtitle) {
         subtitle = document.createElement('div');
         subtitle.className = 'native-song-title-subtitle';
+        subtitle.style.textAlign = style.subtitleAlign || 'center';
         subtitle.textContent = scene.subtitle;
         subtitle.style.color = style.subtitleForeground;
         subtitle.style.fontWeight = style.subtitleWeight;
@@ -767,6 +779,7 @@
       if (scene.credit) {
         credit = document.createElement('div');
         credit.className = 'native-song-title-credit';
+        credit.style.textAlign = style.creditAlign || 'right';
         credit.textContent = scene.credit;
         credit.style.color = style.creditForeground;
         credit.style.fontWeight = style.creditWeight;

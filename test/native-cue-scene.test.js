@@ -310,3 +310,15 @@ test('an edited Scripture excerpt survives native scene compilation without chan
   assert.equal(cue.channels.primary.blocks[1].verses[0].text,'Original words.');
   assert.deepEqual(JSON.parse(JSON.stringify(validateBrowserScene(scene))),scene);
 });
+
+
+test('compiled group typography and alignments survive both native scene validators', () => {
+  const scene = compileNativeCueScene(compiledTextCue({presetId:'wotbc-sermon-quote',textStyle:{bodySize:68,bodyAlign:'right',titleAlign:'left',creditAlign:'center'}}), 'primary', CANVAS);
+  assert.equal(scene.style.bodySize,68); assert.equal(scene.style.bodyMinimumSize,68);
+  assert.equal(scene.style.bodyAlign,'right'); assert.equal(scene.style.titleAlign,'left'); assert.equal(scene.style.creditAlign,'center');
+  assert.equal(validateBrowserScene(JSON.parse(serializeNativeCueScene(scene))).style.creditAlign,'center');
+  assert.throws(()=>validateBrowserScene({...scene,style:{...scene.style,creditAlign:'justify'}}),/creditAlign/);
+  const title = compileNativeCueScene(compiledTextCue({kind:'song',presetId:'wotbc-song-title',textStyle:{titleAlign:'left',bodyAlign:'right',creditAlign:'center'}}),'primary',CANVAS);
+  assert.equal(title.style.titleAlign,'left');assert.equal(title.style.subtitleAlign,'right');assert.equal(title.style.creditAlign,'center');
+  assert.equal(validateBrowserScene(JSON.parse(serializeNativeCueScene(title))).style.titleAlign,'left');
+});
