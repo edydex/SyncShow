@@ -1,4 +1,5 @@
 'use strict';
+const {textPreset} = require('../project/SlideTypography');
 const { normalizeCanvasObjects, canvasText } = require('../project/CanvasLayout');
 const { singerSourceCue, singerNextLine } = require('../project/SingerPresentation');
 
@@ -127,6 +128,7 @@ function normalizeSceneSpans(raw, text, field = 'scene.bodySpans') {
 function normalizeTextStyle(raw) {
   exactKeys(raw, [
     'bodyAlign',
+    ...(raw.creditAlign !== undefined ? ['creditAlign'] : []),
     'bodyForeground',
     'bodyHeight',
     'bodyMinimumSize',
@@ -200,6 +202,7 @@ function normalizeTextStyle(raw) {
     bodyForeground: safeColor(raw.bodyForeground, 'scene.style.bodyForeground'),
     bodyWeight: safeWeight(raw.bodyWeight, 'scene.style.bodyWeight'),
     bodyAlign: raw.bodyAlign,
+    ...(raw.creditAlign !== undefined ? {creditAlign: TEXT_ALIGNMENTS.has(raw.creditAlign) ? raw.creditAlign : fail('INVALID_NATIVE_SCENE','Invalid credit alignment.')} : {}),
     bodyWidthPercent: boundedInteger(raw.bodyWidthPercent, 'scene.style.bodyWidthPercent', 50, 100),
     bodyHeight: boundedInteger(raw.bodyHeight, 'scene.style.bodyHeight', 50, 1080),
     bodyTopPercent: boundedInteger(raw.bodyTopPercent, 'scene.style.bodyTopPercent', 0, 80),
@@ -217,6 +220,7 @@ function normalizeTextStyle(raw) {
 
 function normalizeSongTitleStyle(raw) {
   exactKeys(raw, [
+    ...['titleAlign','subtitleAlign','creditAlign'].filter(key => raw[key] !== undefined),
     'creditBottomPercent',
     'creditForeground',
     'creditMinimumSize',
@@ -264,6 +268,7 @@ function normalizeSongTitleStyle(raw) {
     fail('INVALID_NATIVE_SCENE', 'scene.style minimum text sizes cannot exceed their preferred sizes.');
   }
   return {
+    ...Object.fromEntries(['titleAlign','subtitleAlign','creditAlign'].filter(key => raw[key] !== undefined).map(key => [key, TEXT_ALIGNMENTS.has(raw[key]) ? raw[key] : fail('INVALID_NATIVE_SCENE', `Invalid ${key}.`)])),
     titleSize,
     titleMinimumSize,
     titleForeground: safeColor(raw.titleForeground, 'scene.style.titleForeground'),
@@ -535,6 +540,7 @@ function resolvedTextStyle(preset, hasTitle, presetId = '') {
     bodyForeground: preset.bodyForeground || '#f8fafc',
     bodyWeight: TEXT_WEIGHTS.has(preset.bodyWeight) ? preset.bodyWeight : '500',
     bodyAlign: preset.bodyAlign || 'center',
+    ...(preset.creditAlign ? {creditAlign:preset.creditAlign} : {}),
     bodyWidthPercent: preset.bodyWidthPercent || 82,
     bodyHeight: preset.bodyHeight,
     bodyTopPercent: preset.bodyTopPercent === undefined ? (hasTitle ? 26 : 10) : preset.bodyTopPercent,
@@ -558,6 +564,9 @@ function songTitleScene(cue, title, subtitle, credit, canvas) {
     subtitle,
     credit,
     style: {
+      ...(cue.textStyle?.titleAlign ? {titleAlign:cue.textStyle.titleAlign} : {}),
+      ...(cue.textStyle?.bodyAlign ? {subtitleAlign:cue.textStyle.bodyAlign} : {}),
+      ...(cue.textStyle?.creditAlign ? {creditAlign:cue.textStyle.creditAlign} : {}),
       titleSize: cue.presetId === 'wotbc-song-title' ? 144 : 128,
       titleMinimumSize: 52,
       titleForeground: '#ffffff',
@@ -627,7 +636,7 @@ function textScene(cue, channel, canvas) {
     }
   }
   if (!body.trim()) body = title || cue.title;
-  const preset = resolveNativeTextPreset(cue.presetId).render;
+  const preset = textPreset(cue.presetId, cue.textStyle);
   const hasTitle = Boolean(title.trim()) && preset.showTitle;
   if (bodySpans.length === 0) bodySpans = referenceSpans(body, preset);
   return normalizeNativeCueScene({

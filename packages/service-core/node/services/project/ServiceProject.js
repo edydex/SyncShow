@@ -1,4 +1,5 @@
 'use strict';
+const {normalizeTextStyle, applyTimelineTypography} = require('./SlideTypography');
 const { normalizeSermonOptions, sermonSlideBlocks } = require('./SermonPresentation');
 const { normalizeCanvasObjects, canvasAssetIds } = require('./CanvasLayout');
 const { scriptureFlowText } = require('./SlideFormatting');
@@ -533,6 +534,7 @@ function normalizeCue(raw, expectedId = null) {
     operatorNotes: text(raw.operatorNotes, `Cue ${cueId} operatorNotes`, 4000, { trim: false }),
     presetId: id(raw.presetId || defaultPresetForKind(raw.kind), `Cue ${cueId} presetId`)
   };
+  if (raw.textStyle !== undefined) normalized.textStyle = normalizeTextStyle(raw.textStyle);
   if (raw.sourceLeafKey !== undefined) normalized.sourceLeafKey = text(raw.sourceLeafKey, 'Source slide key', 300, { required: true });
   if (raw.translationAction !== undefined) {
     if (!['start', 'stop'].includes(raw.translationAction)) fail('INVALID_TRANSLATION_CUE', 'Invalid translation action.');
@@ -2393,6 +2395,7 @@ function normalizeProjectItem(raw, channelIds, now) {
     updatedAt: timestamp(raw.updatedAt, `Item ${itemId} updatedAt`, now.toISOString()),
     operatorNotes: text(raw.operatorNotes, `Item ${itemId} operatorNotes`, 4000, { trim: false })
   };
+  if (raw.textStyle !== undefined) common.textStyle = normalizeTextStyle(raw.textStyle);
   if (raw.translationCues !== undefined) common.translationCues = normalizeTranslationCues(raw.translationCues);
   if (Object.prototype.hasOwnProperty.call(raw, 'plannedDurationSeconds')) {
     common.plannedDurationSeconds = finiteInteger(
@@ -4413,7 +4416,7 @@ function compileServiceProject(rawProject, options = {}) {
               mode: projectionSource?.mode === 'condensed'
                 ? 'condensed'
                 : 'content',
-              blocks: sermonSlideBlocks(item, channelId)
+              blocks: sermonSlideBlocks(item.sermonTemplate === 'quote' && !item.titlesByChannel?.[channelId] && sermonHeadings.get(scope)?.[channelId] ? {...item, titlesByChannel: {...item.titlesByChannel, [channelId]: sermonHeadings.get(scope)[channelId]}} : item, channelId)
             }
           : { mode: 'hide', blocks: [] };
       }
@@ -4537,6 +4540,7 @@ function compileServiceProject(rawProject, options = {}) {
     else compileLeaf(item);
   };
   project.rootItemIds.forEach(walk);
+  applyTimelineTypography(project, cues, index);
   if (cueIds.length < 1 && options.allowEmpty !== true) fail('EMPTY_PROJECT', 'Add at least one projected item before publishing this service.');
 
   const timeline = normalizeServiceProject({

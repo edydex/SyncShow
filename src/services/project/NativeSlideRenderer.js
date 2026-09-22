@@ -1,4 +1,5 @@
 'use strict';
+const {textPreset} = require('./SlideTypography');
 const { normalizeCanvasObjects, canvasText, BRACE_PATH } = require('./CanvasLayout');
 
 const fs = require('fs');
@@ -539,10 +540,11 @@ class NativeSlideRenderer {
     titleSpans = [],
     backgroundAssetId = null,
     backgroundDimOpacity = 0.55,
+    textStyle = {},
     presetId = 'notice-text',
     onTypography = () => {}
   }) {
-    const preset = resolveNativeTextPreset(presetId).render;
+    const preset = textPreset(presetId, textStyle);
     const churchLayout = presetId.startsWith('wotbc-');
     const quoteCredit = presetId === 'wotbc-sermon-quote';
     const composites = [];
@@ -641,8 +643,8 @@ class NativeSlideRenderer {
     if (credit) {
       const creditLayer = await this._textLayer(credit, { exactBounds: true, width: this.width * .96, maxHeight: this.height * .10,
         fontSize: quoteCredit ? bodyLayer?.fontSize || preset.bodySize * resolutionScale : Math.max(8, 26 * resolutionScale), minimumFontSize: Math.max(6, (quoteCredit ? 32 : 18) * resolutionScale),
-        foreground: preset.bodyForeground || '#f8fafc', weight: '400', align: quoteCredit ? 'right' : 'center', lineSpacingPercent: 15 });
-      if (creditLayer) composites.push({ input: creditLayer.data, left: Math.round(quoteCredit ? this.width * .98 - creditLayer.info.width : (this.width - creditLayer.info.width) / 2), top: Math.round(quoteCredit ? Math.min(this.height * .98 - creditLayer.info.height, availableTop + (bodyLayer?.info.height || 0) + this.height * .035) : this.height * .98 - creditLayer.info.height) });
+        foreground: preset.bodyForeground || '#f8fafc', weight: '400', align: textStyle.creditAlign || (quoteCredit ? 'right' : 'center'), lineSpacingPercent: 15 });
+      if (creditLayer) composites.push({ input: creditLayer.data, left: alignedLayerLeft(this.width, creditLayer.info.width, this.width * .96, textStyle.creditAlign || (quoteCredit ? 'right' : 'center')), top: Math.round(quoteCredit ? Math.min(this.height * .98 - creditLayer.info.height, availableTop + (bodyLayer?.info.height || 0) + this.height * .035) : this.height * .98 - creditLayer.info.height) });
     }
     let background = this._background(preset.background);
     if (backgroundAssetId) {
@@ -658,6 +660,7 @@ class NativeSlideRenderer {
     subtitle = '',
     credit = '',
     presetId = 'song-title',
+    textStyle = {},
     onTypography = () => {}
   }) {
     const composites = [];
@@ -669,7 +672,7 @@ class NativeSlideRenderer {
       minimumFontSize: Math.round(52 * logicalScale),
       foreground: '#ffffff',
       weight: '700',
-      align: 'center',
+      align: textStyle.titleAlign || 'center',
       lineSpacingPercent: 12
     });
     const subtitleLayer = await this._textLayer(subtitle, {
@@ -679,7 +682,7 @@ class NativeSlideRenderer {
       minimumFontSize: Math.round(36 * logicalScale),
       foreground: presetId === 'wotbc-song-title' ? '#ffc000' : '#ffff00',
       weight: '500',
-      align: 'center',
+      align: textStyle.bodyAlign || 'center',
       lineSpacingPercent: 14
     });
     if (titleLayer) {
@@ -691,13 +694,13 @@ class NativeSlideRenderer {
       const contentTop = regionTop + Math.max(0, Math.round((regionHeight - contentHeight) / 2));
       composites.push({
         input: titleLayer.data,
-        left: Math.round((this.width - titleLayer.info.width) / 2),
+        left: alignedLayerLeft(this.width, titleLayer.info.width, this.width * .94, textStyle.titleAlign || 'center'),
         top: contentTop
       });
       if (subtitleLayer) {
         composites.push({
           input: subtitleLayer.data,
-          left: Math.round((this.width - subtitleLayer.info.width) / 2),
+          left: alignedLayerLeft(this.width, subtitleLayer.info.width, this.width * .90, textStyle.bodyAlign || 'center'),
           top: contentTop + titleLayer.info.height + gap
         });
       }
@@ -709,7 +712,7 @@ class NativeSlideRenderer {
       minimumFontSize: Math.round(24 * logicalScale),
       foreground: '#ffffff',
       weight: '500',
-      align: 'right',
+      align: textStyle.creditAlign || 'right',
       italic: true,
       lineSpacingPercent: 18
     });
@@ -718,7 +721,7 @@ class NativeSlideRenderer {
         input: creditLayer.data,
         left: Math.max(
           Math.round(this.width * 0.02),
-          this.width - creditLayer.info.width - Math.round(this.width * 0.02)
+          Math.round(this.width * .42 + ({left:0,center:(this.width * .56-creditLayer.info.width)/2,right:this.width * .56-creditLayer.info.width}[textStyle.creditAlign || 'right']))
         ),
         top: Math.max(
           Math.round(this.height * 0.02),
@@ -837,6 +840,7 @@ class NativeSlideRenderer {
         textValue = display.text;
         pipeline = await this._renderTextSlide({
           title: cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : bibleBlock.reference,
+          textStyle: cue.textStyle,
           credit: scriptureCredit(bibleBlock),
           body: textValue,
           bodySpans: display.spans,
@@ -850,6 +854,7 @@ class NativeSlideRenderer {
         if (cue.kind === 'song' && localizedTitle) {
           textValue = localizedTitle;
           pipeline = await this._renderSongTitleSlide({
+            textStyle: cue.textStyle,
             title: localizedTitle,
             subtitle,
             credit,
@@ -879,6 +884,7 @@ class NativeSlideRenderer {
           }
           textValue = bodyParts.join(bodySeparator);
           pipeline = await this._renderTextSlide({
+            textStyle: cue.textStyle,
             credit,
             // Sermon/notice rundown titles are operator-facing. Only an explicit
             // per-output title block belongs on those projected slides.

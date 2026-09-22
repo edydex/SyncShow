@@ -76,7 +76,11 @@ function remapTextSpans(before, after, spans) {
 // congregation-facing copyright notice. Imported-edition credits stay visible.
 function scriptureCredit(block) {
   const credit = block.attribution || '';
-  return block.translationId === 'BSB' && credit === 'Berean Standard Bible (BSB); exact text pinned from Heritage Study Bible reader data.' ? '' : credit;
+  const internalCredits = {
+    BSB: 'Berean Standard Bible (BSB); exact text pinned from Heritage Study Bible reader data.',
+    'SYNO-W': 'Russian Synodal Bible (SYNO-W); exact text pinned from Heritage Study Bible reader data.'
+  };
+  return credit === internalCredits[block.translationId] ? '' : credit;
 }
 function verseSelectionLabel(numbers) {
   const ranges = [];

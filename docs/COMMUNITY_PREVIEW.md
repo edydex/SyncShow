@@ -1,4 +1,6 @@
-# Community integration preview — 1.4.0-preview.32
+# Community integration preview — 1.4.0-preview.35
+
+Preview 35 uses one compiled font size across each reading or song, with the same bundled Noto Sans metrics in Community and SyncShow. Song lines fit with a minimal reduction of up to 25%; a saved library preference can be reused for future services. Left/center/right alignment, inherited quote headings and the pre-sermon reading template are preserved in offline packages. Community's **＋ Add slide** opens the palette beside the service order.
 
 Preview 32 adds separate reading and sermon Scripture layouts, a centered reading
 title, and the current sermon point above passage text. Sermon title pictures can
@@ -19,27 +21,26 @@ Canvas slides and text highlighting from Preview 30 remain supported.
 
 ## Download and install
 
-**Preview 32 is ready for owner testing**, including Windows. Sign into GitHub
+**Preview 35 is being verified for owner testing**, including Windows. Sign into GitHub
 with access to the private `edydex/heritage-preview-builds` repository, then open
-the [Preview 32 release](https://github.com/edydex/heritage-preview-builds/releases/tag/syncshow-v1.4.0-preview.32).
+the [Preview 35 release](https://github.com/edydex/heritage-preview-builds/releases/tag/syncshow-v1.4.0-preview.35).
 A signed-out browser can show a 404 for a private download.
 
 | Computer | Installer |
 | --- | --- |
-| Windows 10/11, x64 | [Windows installer](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/SyncShow.Setup.1.4.0-preview.32.exe) |
-| Mac, Apple silicon | [arm64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/SyncShow-1.4.0-preview.32-arm64.dmg) |
-| Mac, Intel | [x64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/SyncShow-1.4.0-preview.32-x64.dmg) |
-| Linux, x64 | [AppImage](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/SyncShow-1.4.0-preview.32.AppImage) or [Debian package](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.32/sync-show_1.4.0-preview.32_amd64.deb) |
+| Windows 10/11, x64 | [Windows installer](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.35/SyncShow.Setup.1.4.0-preview.35.exe) |
+| Mac, Apple silicon | [arm64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.35/SyncShow-1.4.0-preview.35-arm64.dmg) |
+| Mac, Intel | [x64 DMG](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.35/SyncShow-1.4.0-preview.35-x64.dmg) |
+| Linux, x64 | [AppImage](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.35/SyncShow-1.4.0-preview.35.AppImage) or [Debian package](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.35/sync-show_1.4.0-preview.35_amd64.deb) |
 
 Quit SyncShow before installing, keep your previous installer until rehearsal
-passes, and confirm version **1.4.0-preview.32** after opening the new copy.
+passes, and confirm version **1.4.0-preview.35** after opening the new copy.
 It uses your existing settings and service library. Windows is unsigned; the
 Mac preview is ad-hoc signed, without notarization. Checksums and exact-source
 verification files are attached to the release. There is no automatic updater
 for these private previews.
 
-The installers passed packaged-app launch and runtime checks on all four native
-CI platforms. They support **Heritage Community** and **This computer** services.
+The release is published only after packaged-app launch and runtime checks pass on all four native CI platforms. They support **Heritage Community** and **This computer** services.
 Direct Google Drive is not configured in these previews. The older public
 releases and their separate release workflow do not indicate whether this
 private testing installer is available.

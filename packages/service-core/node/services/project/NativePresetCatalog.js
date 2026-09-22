@@ -74,7 +74,7 @@ const RAW_PRESETS = [
   {
     id: 'wotbc-reading', label: 'Church reading · wide', description: 'Flowing, left-aligned reading text using almost the full screen.',
     selectable: true, kinds: ['bible'],
-    render: { mode: 'text', background: '#000000', bodySize: 96, bodyHeight: 980, bodyMinimumSize: 62,
+    render: { mode: 'text', background: '#000000', bodySize: 85, bodyHeight: 1015, bodyMinimumSize: 62,
       titleSize: 34, titleMinimumSize: 24, showTitle: false, bodyWeight: '500',
       bodyWidthPercent: 98, bodyTopPercent: 2, bodyPosition: 'top', bodyAlign: 'left', lineSpacingPercent: 8 }
   },
@@ -459,7 +459,7 @@ const NATIVE_PRESET_BY_ID = freezeDeep(Object.fromEntries(
 ));
 const DEFAULT_NATIVE_TEXT_PRESET_ID = 'default-text';
 const NATIVE_PRESET_CATALOG_VERSION = 5;
-const NATIVE_RENDERER_VERSION = 14;
+const NATIVE_RENDERER_VERSION = 15;
 
 function getNativePreset(presetId) {
   return typeof presetId === 'string' ? NATIVE_PRESET_BY_ID[presetId] || null : null;
