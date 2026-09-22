@@ -643,3 +643,17 @@ test('Bible raster output displays a separate credit footer without changing sem
   assert.equal(credited.metadata.text, without.metadata.text);
   assert.equal(credited.metadata.text, '¹\u00a0Exact supplied verse.');
 });
+
+
+test('quotation source is right-aligned beneath the body in rendered pixels', async () => {
+  const renderer = new NativeSlideRenderer({width: 640, height: 360});
+  const options = {title:'Heading',body:'A short quotation.',presetId:'wotbc-sermon-quote'};
+  const plain = await (await renderer._renderTextSlide(options)).ensureAlpha().raw().toBuffer();
+  const quoted = await (await renderer._renderTextSlide({...options,credit:'Author, Source'})).ensureAlpha().raw().toBuffer();
+  const changed=[];
+  for(let y=0;y<360;y++)for(let x=0;x<640;x++){const i=(y*640+x)*4;if(Math.abs(plain[i]-quoted[i])>32)changed.push({x,y});}
+  assert.ok(changed.length>100);
+  assert.ok(Math.max(...changed.map(p=>p.x))>610,'source should end at the right margin');
+  assert.ok(Math.min(...changed.map(p=>p.x))>320,'short source should start in the right half');
+  assert.ok(Math.max(...changed.map(p=>p.y))<220,'source should sit beneath the quotation, not at the bottom edge');
+});

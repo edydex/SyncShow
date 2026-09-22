@@ -642,7 +642,7 @@ class NativeSlideRenderer {
       const creditLayer = await this._textLayer(credit, { exactBounds: true, width: this.width * .96, maxHeight: this.height * .10,
         fontSize: quoteCredit ? bodyLayer?.fontSize || preset.bodySize * resolutionScale : Math.max(8, 26 * resolutionScale), minimumFontSize: Math.max(6, (quoteCredit ? 32 : 18) * resolutionScale),
         foreground: preset.bodyForeground || '#f8fafc', weight: '400', align: quoteCredit ? 'right' : 'center', lineSpacingPercent: 15 });
-      if (creditLayer) composites.push({ input: creditLayer.data, left: Math.round((this.width - creditLayer.info.width) / 2), top: Math.round(quoteCredit ? Math.min(this.height * .98 - creditLayer.info.height, availableTop + (bodyLayer?.info.height || 0) + this.height * .035) : this.height * .98 - creditLayer.info.height) });
+      if (creditLayer) composites.push({ input: creditLayer.data, left: Math.round(quoteCredit ? this.width * .98 - creditLayer.info.width : (this.width - creditLayer.info.width) / 2), top: Math.round(quoteCredit ? Math.min(this.height * .98 - creditLayer.info.height, availableTop + (bodyLayer?.info.height || 0) + this.height * .035) : this.height * .98 - creditLayer.info.height) });
     }
     let background = this._background(preset.background);
     if (backgroundAssetId) {
