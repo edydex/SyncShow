@@ -327,9 +327,9 @@ class ShowPackagePublisher {
       || manifest.handoffPath !== 'handoff.json'
       || !/^[a-f0-9]{64}$/.test(manifest.handoffSha256 || '')
       || manifest.compilerVersion !== 3
-      // Renderer 11 packages remain playable offline; newly prepared packages
-      // get version 12 identities so pre-credit artifacts cannot be reused.
-      || ![11, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
+      // Retain previously supported offline packages, including the last Mac
+      // test build, while new preparation receives a fresh renderer identity.
+      || ![11, 15, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
       || !Number.isSafeInteger(manifest.cueCount)
       || manifest.cueCount < 1
       || manifest.cueCount > MAX_PACKAGE_CUES
