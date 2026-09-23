@@ -559,6 +559,18 @@
     return minimum;
   }
 
+  let textMeasureContext;
+  function textBottomOverhang(element, size, lineHeight) {
+    // The planner budgets line boxes. With tight leading, Chromium's scroll
+    // bounds also include the font box below the last line. Measure that extra
+    // space instead of rejecting a fixed-size reading that fits its line budget.
+    textMeasureContext ||= document.createElement('canvas').getContext('2d');
+    const style = getComputedStyle(element);
+    textMeasureContext.font = `${style.fontWeight} ${size}px ${style.fontFamily}`;
+    const metrics = textMeasureContext.measureText('Ag');
+    return Math.max(0, (metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent - size * lineHeight) / 2);
+  }
+
   function buildStageText(scene) {
     const element = document.createElement('div');
     element.className = 'stage-current-text';
@@ -752,10 +764,13 @@
           const logicalTop = style.bodyPosition === 'top' && titleBottom > 0
             ? Math.max(configuredBodyTop, titleBottom + scene.canvas.height * 0.04)
             : configuredBodyTop;
+          const lineHeight = 1 + style.lineSpacingPercent / 100;
+          const bottomOverhang = textBottomOverhang(body, style.bodySize, lineHeight);
           let logicalRegionHeight = style.bodyPosition === 'top'
             ? Math.min(
-                style.bodyHeight,
-                Math.max(50, scene.canvas.height - logicalTop - scene.canvas.height * 0.06)
+                style.bodyHeight + bottomOverhang,
+                // Match the planner's 24px bottom inset at the 1080p canvas.
+                Math.max(50, scene.canvas.height - logicalTop - scene.canvas.height * 24 / 1080)
               )
             : scene.canvas.height * style.bodyRegionHeightPercent / 100;
           if (credit) logicalRegionHeight = Math.min(logicalRegionHeight, Math.max(50, scene.canvas.height * (scene.quoteCredit ? .74 : .84) - logicalTop));
@@ -771,7 +786,7 @@
           bodyRegion.style.top = `${logicalTop * scale}px`;
           bodyRegion.style.width = `${style.bodyWidthPercent}%`;
           bodyRegion.style.height = `${logicalRegionHeight * scale}px`;
-          body.style.lineHeight = String(1 + style.lineSpacingPercent / 100);
+          body.style.lineHeight = String(lineHeight);
           const bodyMaximumHeight = logicalFitHeight * scale;
           body.style.height = `${bodyMaximumHeight}px`;
           fitText(body, style.bodySize, bodyMinimumSize, scale);

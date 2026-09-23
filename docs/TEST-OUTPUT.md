@@ -30,6 +30,7 @@ If a renderer fails or an assigned monitor disappears, SyncShow hides the affect
 npm run ci
 SYNCSHOW_TEST_OUTPUT_PROOF=1 node scripts/verify-live-cue-navigation-electron.js
 node scripts/verify-live-cue-navigation-electron.js
+npx electron scripts/fixtures/native-text-fit-electron-app.js
 ```
 
 The demo proof uses an isolated temporary profile and one synthetic external display. It tests three real output renderers in both layouts at 0°, 90° and 270°, 16:9 logical bounds and full-size rotated scenes, acknowledged Next, Clear, Stop, Restore, local versus remote Restore permissions, and complete window cleanup. It also checks stage text enlargement, upright preview captures, Bible-to-same-slide and Next navigation, renderer-crash recovery, monitor disappearance/return, and Stop cancelling recovery. The normal Show proof checks acknowledgement/failure barriers, automatic recovery after a negative frame acknowledgement, and manual guarded Restore after explicitly stopping a timed-out transition.
@@ -38,8 +39,8 @@ Mac-only local installation build (no release/version bump or other platform pac
 
 ```sh
 npx electron-builder --mac --arm64 --dir --config.mac.identity=- \
-  --config.extraMetadata.version=1.4.0-preview.35-demo.4 \
-  --config.buildVersion=140039 --config.directories.output=dist-demo
+  --config.extraMetadata.version=1.4.0-preview.35-demo.5 \
+  --config.buildVersion=140040 --config.directories.output=dist-demo
 node scripts/verify-packaged-app-launch.js --root dist-demo/mac-arm64
 node scripts/verify-packaged-service-core.js --root dist-demo/mac-arm64
 node scripts/verify-packaged-sharp.js --root dist-demo/mac-arm64
