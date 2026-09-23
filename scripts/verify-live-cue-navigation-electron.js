@@ -122,7 +122,7 @@ async function main() {
       assert.equal(result.contract, 'syncshow-test-output-real-electron-v1');
       assert.equal(result.logicalOutputs, 3);
       assert.equal(result.syntheticExternalDisplays, 1);
-      assert.deepEqual(result.layouts.map(value => value.layout), ['vertical', 'horizontal']);
+      assert.deepEqual(result.layouts.map(value => [value.layout, value.rotation]), [0,90,270].flatMap(rotation => [['vertical',rotation],['horizontal',rotation]]));
       console.log(JSON.stringify(result, null, 2));
       return;
     }

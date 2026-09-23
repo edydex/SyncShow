@@ -506,7 +506,10 @@
   }
 
   function fitSurface(host, surface, logicalCanvas) {
-    const bounds = host.getBoundingClientRect();
+    // client dimensions precede the demo's 90-degree presentation transform.
+    const bounds = host.clientWidth && host.clientHeight
+      ? { width: host.clientWidth, height: host.clientHeight }
+      : host.getBoundingClientRect();
     const scale = Math.min(bounds.width / logicalCanvas.width, bounds.height / logicalCanvas.height);
     if (!Number.isFinite(scale) || scale <= 0) throw new Error('Native cue output has no display area');
     surface.style.width = `${Math.floor(logicalCanvas.width * scale)}px`;

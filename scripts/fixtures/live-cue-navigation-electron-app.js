@@ -300,7 +300,7 @@ function controlWindow() {
 function outputWindowCandidates() {
   return BrowserWindow.getAllWindows().filter(window =>
     !window.isDestroyed()
-    && window.webContents.getURL().endsWith('/src/renderer/display.html'));
+    && new URL(window.webContents.getURL() || 'about:blank').pathname.endsWith('/src/renderer/display.html'));
 }
 
 async function waitForOutputWindows(label) {
@@ -817,7 +817,7 @@ async function finishServiceThroughOperatorUi(control, published) {
   await waitFor(
     () => BrowserWindow.getAllWindows().filter(window => {
       if (window.isDestroyed()) return false;
-      const url = window.webContents.getURL();
+      const url = new URL(window.webContents.getURL() || 'about:blank').pathname;
       return url.endsWith('/src/renderer/display.html')
         || url.endsWith('/src/renderer/singer.html');
     }).length === 0,
@@ -1763,8 +1763,8 @@ async function runTestOutputProof() {
   assert.equal(published.success, true);
   const outputs = OUTPUT_ROUTES.map(route => ({ id: route.id, name: route.name, kind: route.kind, expectedRole: route.roleId, enabled: true, displayId: null }));
   const layouts = [];
-  for (const layout of ['vertical', 'horizontal']) {
-    await rendererInvoke(control, `return window.api.saveTestOutputSettings({enabled:true, displayId:'880001', layout:${JSON.stringify(layout)}});`);
+  for (const rotation of [0, 90, 270]) for (const layout of ['vertical', 'horizontal']) {
+    await rendererInvoke(control, `return window.api.saveTestOutputSettings({enabled:true, displayId:'880001', layout:${JSON.stringify(layout)}, rotation:${rotation}});`);
     const started = await rendererInvoke(control, `return window.api.startPresentation({testOutput:true, outputs:${JSON.stringify(outputs)}, decisions:{}, preferredTimelineRoleId:'front', settings:{fadeDuration:0}});`);
     assert.equal(started.success, true);
     const windows = await waitForOutputWindows('three demo renderers');
@@ -1773,17 +1773,35 @@ async function runTestOutputProof() {
     const bounds = [];
     for (const win of windows.values()) {
       const box = win.getBounds();
-      assert.equal(box.width * 9, box.height * 16);
+      assert.equal(rotation ? box.height * 9 : box.width * 9, rotation ? box.width * 16 : box.height * 16);
       assert.equal(win.isFullScreen(), false);
       assert.equal(win.isVisible(), true);
       bounds.push(box);
     }
-    assert.equal(new Set(bounds.map(box => layout === 'vertical' ? box.y : box.x)).size, 3);
+    assert.equal(new Set(bounds.map(box => (layout === 'vertical') !== Boolean(rotation) ? box.y : box.x)).size, 3);
     await invokeNext(control);
     const show = await waitForShowState(control, value => value.currentCue?.index === 1 && everyShowOutput(value, output => output.status === 'healthy'), 'all demo outputs acknowledged next');
     assert.equal(show.currentCue.index, 1);
     const surfaces = await readOutputSurfaces(windows);
     assert.ok(everySurface(surfaces, surface => surface.activeNativeText.includes(AUTHORITATIVE_RESTORE_TEXT)));
+    for (const win of windows.values()) {
+      const geometry = await rendererInvoke(win, `
+        const surface = document.querySelector('.native-cue-layer.active .native-scene-surface');
+        const body = document.body.getBoundingClientRect();
+        const scene = surface.getBoundingClientRect();
+        return { width: document.body.clientWidth, height: document.body.clientHeight,
+          rotation: Number(document.body.dataset.testOutputRotation || 0),
+          body: {x:body.x,y:body.y,width:body.width,height:body.height},
+          scene: {width:scene.width,height:scene.height}, window: {width:innerWidth,height:innerHeight} };
+      `);
+      assert.equal(geometry.rotation, rotation);
+      assert.equal(geometry.width * 9, geometry.height * 16);
+      assert.ok(Math.abs(geometry.body.x) < 1 && Math.abs(geometry.body.y) < 1);
+      assert.equal(geometry.body.width, geometry.window.width);
+      assert.equal(geometry.body.height, geometry.window.height);
+      assert.ok(Math.abs(geometry.scene.width - geometry.window.width) <= 1);
+      assert.ok(Math.abs(geometry.scene.height - geometry.window.height) <= 1);
+    }
     await rendererInvoke(control, 'return window.api.clearDisplays();');
     await rendererInvoke(control, 'return window.api.showDisplays();');
     await rendererInvoke(control, 'return window.api.stopPresentation();');
@@ -1797,7 +1815,7 @@ async function runTestOutputProof() {
     await rendererInvoke(control, 'return window.api.endPresentation();');
     assert.equal(background.isDestroyed(), true);
     for (const win of windows.values()) assert.equal(win.isDestroyed(), true);
-    layouts.push({layout, bounds, nextClearStopRestoreEndPassed:true});
+    layouts.push({layout, rotation, bounds, nextClearStopRestoreEndPassed:true});
   }
   return {ok:true, contract:'syncshow-test-output-real-electron-v1', profileIsolated:true, logicalOutputs:3, syntheticExternalDisplays:1, layouts};
 }

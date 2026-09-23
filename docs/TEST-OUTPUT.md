@@ -8,7 +8,7 @@ Load suggests the most recently edited local or Community Service Plan. Service 
 
 1. Open **Admin Settings → Screen Setup**.
 2. Enable **Show Test Output button** and choose the external demo screen.
-3. Choose **Vertical — stacked** or **Horizontal — side by side**. For a portrait monitor, set its rotation in macOS Display Settings before starting.
+3. Choose **Vertical — stacked** or **Horizontal — side by side**. Use **Rotate preview → 90° clockwise** (or counterclockwise) to turn the entire output for a physically rotated monitor. Leave macOS rotation unchanged when using this option; choose **No rotation** if macOS already rotates the monitor.
 4. Add/enable each logical output and choose its slideshow. Physical assignments can remain empty for this demo. Save screen setup.
 5. Load a service, close settings, and choose **Test Output**, immediately left of Admin Settings.
 
@@ -24,14 +24,14 @@ SYNCSHOW_TEST_OUTPUT_PROOF=1 node scripts/verify-live-cue-navigation-electron.js
 node scripts/verify-live-cue-navigation-electron.js
 ```
 
-The demo proof uses an isolated temporary profile and one synthetic external display. It tests three real output renderers in both layouts, 16:9 bounds, acknowledged Next, Clear, Stop, Restore, local versus remote Restore permissions, and complete window cleanup. The second command checks normal Show's acknowledgement/failure barriers.
+The demo proof uses an isolated temporary profile and one synthetic external display. It tests three real output renderers in both layouts at 0°, 90° and 270°, 16:9 logical bounds and full-size rotated scenes, acknowledged Next, Clear, Stop, Restore, local versus remote Restore permissions, and complete window cleanup. The second command checks normal Show's acknowledgement/failure barriers.
 
 Mac-only local installation build (no release/version bump or other platform packages):
 
 ```sh
 npx electron-builder --mac --arm64 --dir --config.mac.identity=- \
-  --config.extraMetadata.version=1.4.0-preview.35-demo.2 \
-  --config.buildVersion=140037 --config.directories.output=dist-demo
+  --config.extraMetadata.version=1.4.0-preview.35-demo.3 \
+  --config.buildVersion=140038 --config.directories.output=dist-demo
 node scripts/verify-packaged-app-launch.js --root dist-demo/mac-arm64
 node scripts/verify-packaged-service-core.js --root dist-demo/mac-arm64
 node scripts/verify-packaged-sharp.js --root dist-demo/mac-arm64

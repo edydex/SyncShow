@@ -32,7 +32,7 @@ const state = {
   prepareMode: 'community',
   loadMode: 'syncshow',
   suggestedService: null,
-  testOutput: { enabled: false, displayId: null, layout: 'vertical' },
+  testOutput: { enabled: false, displayId: null, layout: 'vertical', rotation: 0 },
   testOutputSaving: false,
   loadLocalServices: {
     items: [],
@@ -280,6 +280,7 @@ const elements = {
   testOutputEnabled: document.getElementById('testOutputEnabled'),
   testOutputDisplay: document.getElementById('testOutputDisplay'),
   testOutputLayout: document.getElementById('testOutputLayout'),
+  testOutputRotation: document.getElementById('testOutputRotation'),
   testOutputStatus: document.getElementById('testOutputStatus'),
   btnLoadSuggested: document.getElementById('btnLoadSuggested'),
   btnLoadOther: document.getElementById('btnLoadOther'),
@@ -651,7 +652,7 @@ function setupEventListeners() {
     finally { elements.btnLoadSuggested.disabled = false; }
   });
   elements.btnTestOutput.addEventListener('click', () => startPresentation(true));
-  [elements.testOutputEnabled, elements.testOutputDisplay, elements.testOutputLayout]
+  [elements.testOutputEnabled, elements.testOutputDisplay, elements.testOutputLayout, elements.testOutputRotation]
     .forEach(input => input.addEventListener('change', saveTestOutputSettings));
 
   // Display controls
@@ -1358,6 +1359,7 @@ function renderTestOutputSettings() {
   elements.btnTestOutput.hidden = !settings.enabled;
   elements.testOutputEnabled.checked = settings.enabled;
   elements.testOutputLayout.value = settings.layout;
+  elements.testOutputRotation.value = String(settings.rotation || 0);
   elements.testOutputDisplay.replaceChildren();
   const placeholder = document.createElement('option');
   placeholder.value = ''; placeholder.textContent = 'Choose external screen';
@@ -1378,11 +1380,12 @@ function renderTestOutputSettings() {
   elements.testOutputEnabled.disabled = locked;
   elements.testOutputDisplay.disabled = locked || !settings.enabled;
   elements.testOutputLayout.disabled = locked || !settings.enabled;
+  elements.testOutputRotation.disabled = locked || !settings.enabled;
 }
 
 async function saveTestOutputSettings() {
   state.testOutputSaving = true;
-  const draft = { enabled: elements.testOutputEnabled.checked, displayId: elements.testOutputDisplay.value || null, layout: elements.testOutputLayout.value };
+  const draft = { enabled: elements.testOutputEnabled.checked, displayId: elements.testOutputDisplay.value || null, layout: elements.testOutputLayout.value, rotation: Number(elements.testOutputRotation.value) };
   try {
     state.testOutput = await window.api.saveTestOutputSettings(draft);
     elements.testOutputStatus.textContent = 'Saved. Each preview stays 16:9. Use Add output below to configure more screens.';
@@ -7788,6 +7791,9 @@ async function backToSetup(targetStage = 'load') {
     updateBibleLiveIndicator();
     
     setWorkflowStage(targetStage === 'prepare' ? 'prepare' : 'load');
+    // The Load controls last rendered while the launch was in progress. Refresh
+    // them after the session ends so another Show can start without a reload.
+    checkReadyState();
     
     setStatus(targetStage === 'prepare' ? 'Returned to Prepare' : 'Returned to Load');
     if (targetStage === 'prepare') {

@@ -8193,7 +8193,12 @@ async function createTestOutputBackground(layout, sessionId) {
     testOutputBackground = null;
     if (sessionId === outputSessionId) handleUnexpectedOutputWindowClose('test-output', 'test-output-closed');
   });
-  const labels = layout.tiles.map(tile => `<div style="left:${tile.label.x - bounds.x}px;top:${tile.label.y - bounds.y}px;width:${tile.label.width}px;height:${tile.label.height}px">${escape(tile.name)}</div>`).join('');
+  const labels = layout.tiles.map(tile => {
+    const label = tile.label;
+    const transform = tile.rotation === 90 ? `translateX(${label.textHeight}px) rotate(90deg)`
+      : tile.rotation === 270 ? `translateY(${label.textWidth}px) rotate(270deg)` : 'none';
+    return `<div style="left:${label.x - bounds.x}px;top:${label.y - bounds.y}px;width:${label.textWidth}px;height:${label.textHeight}px;transform-origin:0 0;transform:${transform}">${escape(tile.name)}</div>`;
+  }).join('');
   await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>SyncShow · Test Output</title><style>html,body{margin:0;background:#000;overflow:hidden}div{position:absolute;color:#cbd5e1;font:14px/24px -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}</style>${labels}`)}`);
   if (sessionId !== outputSessionId || win.isDestroyed()) throw new Error('Test Output was cancelled.');
   const currentTarget = screen.getAllDisplays().find(display => display.id === layout.target.id);
@@ -8336,7 +8341,7 @@ function createDisplayWindow(displayInfo, output, sessionId) {
   if (displayInfo.testOutput) win.syncShowTestOutputBounds = { ...bounds };
   win.setIgnoreMouseEvents(true);
 
-  win.loadFile(path.join(__dirname, 'src', 'renderer', 'display.html')).catch(error => {
+  win.loadFile(path.join(__dirname, 'src', 'renderer', 'display.html'), displayInfo.testOutputRotation ? { query: { testOutputRotation: String(displayInfo.testOutputRotation) } } : {}).catch(error => {
     if (isCurrentOutputWindow(win, sessionId, output.id)) {
       console.error(`[Display] Failed to load ${output.name} window:`, error);
     }
@@ -8438,7 +8443,7 @@ function createSingerWindow(displayInfo, output, sessionId) {
     });
   }
 
-  win.loadFile(path.join(__dirname, 'src', 'renderer', 'singer.html')).catch(error => {
+  win.loadFile(path.join(__dirname, 'src', 'renderer', 'singer.html'), displayInfo.testOutputRotation ? { query: { testOutputRotation: String(displayInfo.testOutputRotation) } } : {}).catch(error => {
     if (isCurrentOutputWindow(win, sessionId, output.id)) {
       console.error(`[Singer] Failed to load ${output.name} window:`, error);
     }

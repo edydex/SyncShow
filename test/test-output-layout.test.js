@@ -38,3 +38,36 @@ test('malformed demo settings and unusable layouts fail before opening windows',
   assert.throws(() => normalizeTestOutputSettings({displayId: '../1'}), /connected/);
   assert.throws(() => testOutputTiles({x:0,y:0,width:80,height:60}, outputs), /too small/);
 });
+for (const rotation of [90, 270]) {
+  for (const layout of ['vertical', 'horizontal']) {
+    test(`${rotation}° ${layout} rotates all tiles and labels inside the physical monitor`, () => {
+      const monitor = { x: -1920, y: 110, width: 1920, height: 1080 };
+      const tiles = testOutputTiles(monitor, outputs, layout, rotation);
+      for (const tile of tiles) {
+        assert.equal(tile.viewport.width * 9, tile.viewport.height * 16);
+        assert.equal(tile.bounds.width, tile.viewport.height);
+        assert.equal(tile.bounds.height, tile.viewport.width);
+        for (const box of [tile.bounds, tile.label]) {
+          assert.ok(box.x >= monitor.x && box.y >= monitor.y);
+          assert.ok(box.x + box.width <= monitor.x + monitor.width);
+          assert.ok(box.y + box.height <= monitor.y + monitor.height);
+        }
+        // Labels and pictures stay adjacent after rotating the entire layout.
+        assert.equal(tile.label.height, tile.bounds.height);
+        assert.equal(tile.label.y, tile.bounds.y);
+        if (rotation === 90) assert.equal(tile.bounds.x + tile.bounds.width, tile.label.x);
+        else assert.equal(tile.label.x + tile.label.width, tile.bounds.x);
+      }
+      for (let a = 0; a < tiles.length; a++) for (let b = a + 1; b < tiles.length; b++) {
+        const x = tiles[a].bounds, y = tiles[b].bounds;
+        assert.ok(x.x + x.width < y.x || y.x + y.width < x.x || x.y + x.height < y.y || y.y + y.height < x.y);
+      }
+    });
+  }
+}
+test('rotation defaults safely for existing settings and rejects arbitrary angles', () => {
+  assert.equal(normalizeTestOutputSettings({enabled:true}).rotation, 0);
+  assert.equal(normalizeTestOutputSettings({rotation:270}).rotation, 270);
+  assert.throws(() => normalizeTestOutputSettings({rotation:45}), /rotation/);
+  assert.throws(() => normalizeTestOutputSettings({rotation:'90'}), /rotation/);
+});

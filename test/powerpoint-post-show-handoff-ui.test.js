@@ -306,6 +306,7 @@ test('Back to Load waits for endSession and passes only its verified receipt', a
     setWorkflowStage(stage) {
       events.push(`stage:${stage}`);
     },
+    checkReadyState() {},
     setStatus() {},
     openShowHandoffDialog(value) {
       events.push('dialog');
@@ -341,6 +342,7 @@ test('Back to Load waits for endSession and passes only its verified receipt', a
 
 test('a no-handoff Finish moves focus onto the visible Load stage', async () => {
   let loadFocused = 0;
+  let readinessRefreshed = 0;
   const state = {
     isPresenting: true,
     activeLaunchPlan: {},
@@ -369,6 +371,11 @@ test('a no-handoff Finish moves focus onto the visible Load stage', async () => 
     applyShowOutputActionResult: () => true,
     updateBibleLiveIndicator() {},
     setWorkflowStage() {},
+    checkReadyState() {
+      assert.equal(state.isPresenting, false);
+      assert.equal(state.activeLaunchPlan, null);
+      readinessRefreshed += 1;
+    },
     setStatus() {},
     openShowHandoffDialog: () => false,
     showOutputActionCanReportError: () => true,
@@ -390,6 +397,7 @@ test('a no-handoff Finish moves focus onto the visible Load stage', async () => 
 
   await backToSetup('load');
   assert.equal(loadFocused, 1);
+  assert.equal(readinessRefreshed, 1, 'refresh Load and Test Output after ending the session');
 });
 
 test('Finish service admits only one in-flight endSession and retains its receipt', async () => {
@@ -420,6 +428,7 @@ test('Finish service admits only one in-flight endSession and retains its receip
     applyShowOutputActionResult: () => true,
     updateBibleLiveIndicator() {},
     setWorkflowStage() {},
+    checkReadyState() {},
     setStatus() {},
     openShowHandoffDialog(value) {
       handoffCalls += 1;

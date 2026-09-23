@@ -1,2 +1,2 @@
-.teaching-ink { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 60; pointer-events: none; }
+.teaching-ink { position: fixed; inset: 0; width: calc(100 * var(--output-vw, 1vw)); height: calc(100 * var(--output-vh, 1vh)); z-index: 60; pointer-events: none; }
 .teaching-ink[hidden], .cleared .teaching-ink { display: none; }

@@ -12,19 +12,19 @@
     if (animation) cancelAnimationFrame(animation);
     animation = null;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    if (trailCanvas.width !== innerWidth * ratio || trailCanvas.height !== innerHeight * ratio) {
-      trailCanvas.width = innerWidth * ratio; trailCanvas.height = innerHeight * ratio;
+    if (trailCanvas.width !== document.body.clientWidth * ratio || trailCanvas.height !== document.body.clientHeight * ratio) {
+      trailCanvas.width = document.body.clientWidth * ratio; trailCanvas.height = document.body.clientHeight * ratio;
     }
     const context = trailCanvas.getContext('2d');
-    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, innerWidth, innerHeight);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, document.body.clientWidth, document.body.clientHeight);
     trailCanvas.hidden = !frame?.visible;
-    trails = frame?.visible ? trails.filter(trail => window.SyncShowTeachingTrail.paintTrail(context, trail, innerWidth, innerHeight, performance.now())) : [];
+    trails = frame?.visible ? trails.filter(trail => window.SyncShowTeachingTrail.paintTrail(context, trail, document.body.clientWidth, document.body.clientHeight, performance.now())) : [];
     if (trails.length) animation = requestAnimationFrame(paintTrails);
   }
   let frame;
   function paint() {
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    const width = innerWidth, height = innerHeight;
+    const width = document.body.clientWidth, height = document.body.clientHeight;
     canvas.width = width * ratio; canvas.height = height * ratio;
     const context = canvas.getContext('2d'); context.scale(ratio, ratio);
     canvas.hidden = !frame?.visible;

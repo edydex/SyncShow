@@ -196,7 +196,7 @@
       padding: 0.2em 0.45em;
       color: #f8fafc;
       background: rgba(0, 0, 0, 0.62);
-      font-size: clamp(18px, 1.25vw, 28px);
+      font-size: clamp(18px, calc(1.25 * var(--output-vw, 1vw)), 28px);
       font-weight: 500;
       line-height: 1.2;
       text-align: right;
@@ -216,10 +216,10 @@
       justify-content: center;
       overflow: hidden;
       padding: 1.5% 4%;
-      border-top: max(4px, 1.1vh) dashed #22d3ee;
+      border-top: max(4px, calc(1.1 * var(--output-vh, 1vh))) dashed #22d3ee;
       color: #f8fafc;
       background: #07111c;
-      font-size: clamp(22px, 2.3vw, 48px);
+      font-size: clamp(22px, calc(2.3 * var(--output-vw, 1vw)), 48px);
       line-height: 1.15;
       text-align: center;
       white-space: pre-wrap;
@@ -279,8 +279,8 @@
       z-index: 20;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto;
-      gap: 4vh;
-      padding: 7vh 8vw 5vh;
+      gap: calc(4 * var(--output-vh, 1vh));
+      padding: calc(7 * var(--output-vh, 1vh)) calc(8 * var(--output-vw, 1vw)) calc(5 * var(--output-vh, 1vh));
       color: #fff;
       background:
         radial-gradient(circle at 78% 14%, rgba(70, 92, 150, 0.24), transparent 32%),
@@ -299,7 +299,7 @@
 
     .bible-reference {
       color: #c9d5f9;
-      font-size: clamp(30px, 3.2vw, 62px);
+      font-size: clamp(30px, calc(3.2 * var(--output-vw, 1vw)), 62px);
       font-weight: 750;
       letter-spacing: -0.02em;
     }
@@ -312,28 +312,28 @@
       max-width: 1500px;
       overflow: hidden;
       font-family: Georgia, "Times New Roman", serif;
-      font-size: clamp(38px, 4.15vw, 78px);
+      font-size: clamp(38px, calc(4.15 * var(--output-vw, 1vw)), 78px);
       line-height: 1.28;
       text-wrap: balance;
     }
 
     .bible-overlay.medium .bible-verses {
-      font-size: clamp(34px, 3.45vw, 64px);
+      font-size: clamp(34px, calc(3.45 * var(--output-vw, 1vw)), 64px);
     }
 
     .bible-overlay.long .bible-verses {
-      font-size: clamp(28px, 2.75vw, 52px);
+      font-size: clamp(28px, calc(2.75 * var(--output-vw, 1vw)), 52px);
     }
 
     .bible-overlay.compact {
-      gap: 2.5vh;
-      padding-top: 5vh;
-      padding-bottom: 4vh;
+      gap: calc(2.5 * var(--output-vh, 1vh));
+      padding-top: calc(5 * var(--output-vh, 1vh));
+      padding-bottom: calc(4 * var(--output-vh, 1vh));
     }
 
     .bible-overlay.compact .bible-verses {
       gap: 0.22em;
-      font-size: clamp(24px, 2.25vw, 42px);
+      font-size: clamp(24px, calc(2.25 * var(--output-vw, 1vw)), 42px);
       line-height: 1.2;
     }
 
@@ -350,9 +350,9 @@
       display: flex;
       align-items: flex-end;
       justify-content: space-between;
-      gap: 3vw;
+      gap: calc(3 * var(--output-vw, 1vw));
       color: rgba(226, 232, 249, 0.72);
-      font-size: clamp(14px, 1.15vw, 23px);
+      font-size: clamp(14px, calc(1.15 * var(--output-vw, 1vw)), 23px);
     }
 
     .bible-translation {
@@ -403,6 +403,7 @@
     <div class="output-restore-guard" id="outputRestoreGuard" aria-hidden="true" hidden></div>
   </div>
   
+  <script src="output-viewport.js"></script>
   <script src="bible-overlay.js"></script>
   <script src="canvas-layout.js"></script>
   <script src="native-cue-renderer.js"></script>

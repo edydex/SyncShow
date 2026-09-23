@@ -94,7 +94,7 @@
     layer.lang = next.language;
     layer.hidden = next.layout === 'hidden';
     document.documentElement.style.setProperty('--translation-font', String(next.fontScale));
-    const band = next.layout === 'ticker' ? '12vh' : next.layout === 'lower-third' ? '29vh' : '0px';
+    const band = next.layout === 'ticker' ? 'calc(12 * var(--output-vh, 1vh))' : next.layout === 'lower-third' ? 'calc(29 * var(--output-vh, 1vh))' : '0px';
     document.documentElement.style.setProperty('--translation-band', band);
     document.documentElement.style.setProperty('--translation-content-scale', next.layout === 'ticker' ? '0.88' : next.layout === 'lower-third' ? '0.71' : '1');
     if (next.layout === 'hidden') return;
@@ -133,7 +133,7 @@
     lastTime = time;
     if (current && frame?.moving && !layer.hidden && !container.classList.contains('cleared')) {
       if (frame.layout === 'ticker') {
-        x -= delta / 1000 * Math.max(30, innerHeight * 0.085 * frame.fontScale);
+        x -= delta / 1000 * Math.max(30, document.body.clientHeight * 0.085 * frame.fontScale);
         copy.style.transform = `translateX(${x}px)`;
         if (x < -copy.scrollWidth) {
           if (queue.length) startNext();
