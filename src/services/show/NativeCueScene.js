@@ -595,6 +595,7 @@ function songTitleScene(cue, title, subtitle, credit, canvas) {
 function textScene(cue, channel, canvas, options = {}) {
   const legacy = options.rendererVersion !== undefined && options.rendererVersion < 16;
   const bibleBlock = channel.blocks?.find(block => block.type === 'bible');
+  const bibleCredit = bibleBlock ? scriptureCredit(bibleBlock, {hideEditionLabel: !(options.rendererVersion < 17)}) : '';
   const textBlocks = channel.blocks?.filter(block => block.type === 'text') || [];
   let title = '';
   let body = '';
@@ -655,7 +656,7 @@ function textScene(cue, channel, canvas, options = {}) {
     bodySpans,
     ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
     ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId, ...(!legacy ? {backgroundDimOpacity: channel.blocks.find(block => block.type === 'image' && block.role === 'background').dimOpacity ?? 0.55} : {}) } : {}),
-    ...(bibleBlock && scriptureCredit(bibleBlock) ? { credit: scriptureCredit(bibleBlock) } : {}),
+    ...(bibleCredit ? { credit: bibleCredit } : {}),
     ...(!bibleBlock && textBlocks.find(block=>block.role==='credit') ? {credit: textBlocks.find(block=>block.role==='credit').text, ...(cue.presetId === 'wotbc-sermon-quote' ? {quoteCredit: true} : {})} : {}),
     style: resolvedTextStyle(preset, hasTitle, cue.presetId)
   });

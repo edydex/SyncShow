@@ -36,7 +36,7 @@ function textCue(presetId, kind, title, text) {
 
 test('the built-in preset catalog is validated, immutable, and keeps original render tokens stable', () => {
   assert.equal(NATIVE_PRESET_CATALOG_VERSION, 5);
-  assert.equal(NATIVE_RENDERER_VERSION, 16);
+  assert.equal(NATIVE_RENDERER_VERSION, 17);
   assert.equal(DEFAULT_NATIVE_TEXT_PRESET_ID, 'default-text');
   assert.ok(Object.isFrozen(NATIVE_PRESETS));
   assert.ok(NATIVE_PRESETS.every(preset => Object.isFrozen(preset) && Object.isFrozen(preset.render)));

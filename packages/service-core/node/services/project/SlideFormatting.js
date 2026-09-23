@@ -75,8 +75,13 @@ function remapTextSpans(before, after, spans) {
 }
 // Built-in BSB source bookkeeping is retained in the document, but is not a
 // congregation-facing copyright notice. Imported-edition credits stay visible.
-function scriptureCredit(block) {
+function scriptureCredit(block, {hideEditionLabel = true} = {}) {
   const credit = block.attribution || '';
+  // The reading's title already names the edition. Suppress only a bare
+  // edition label; retain copyright notices and other authored attribution.
+  const label = credit.trim().replace(/^\(([^()]+)\)$/, '$1').toUpperCase();
+  const edition = String(block.translationId || '').toUpperCase();
+  if (hideEditionLabel && edition && (label === edition || (edition === 'NASB95' && label === 'NASB 1995'))) return '';
   const internalCredits = {
     BSB: 'Berean Standard Bible (BSB); exact text pinned from Heritage Study Bible reader data.',
     'SYNO-W': 'Russian Synodal Bible (SYNO-W); exact text pinned from Heritage Study Bible reader data.'

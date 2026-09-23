@@ -54,3 +54,18 @@ test('Stage blanks retain the next clue, audience blanks remain blank and the la
   presentation.scenes[1]=imageNext; presentation.metadata={slides:[{}, {firstLine:'Next sermon'}]};
   assert.deepEqual(resolveNativeCuePayload({presentation,cueIndex:0,stageFacing:true}).scene.next,{state:'text',text:'Next sermon'});
 });
+test('reading slides omit duplicate edition labels while cached scenes and full credits survive',async()=>{
+  const cue={id:'reading',kind:'bible',presetId:'wotbc-reading',title:'John 8:31',channels:{english:{mode:'content',blocks:[
+    {type:'bible',translationId:'LSB',reference:'John 8:31',verses:[{number:31,text:'Example verse text.'}],attribution:'(LSB)'}
+  ]}}};
+  assert.equal(compileNativeCueScene(cue,'english').credit,undefined);
+  assert.equal(compileNativeCueScene(cue,'english',{rendererVersion:16}).credit,'(LSB)');
+  assert.equal(compileNativeCueScene(cue,'english',{rendererVersion:15}).credit,'(LSB)');
+  const renderer=new NativeSlideRenderer({width:640,height:360,fontPath:path.resolve(__dirname,'../assets/fonts/NotoSans-Variable.ttf')});
+  const withLabel=await renderer.renderCue(cue,'english');
+  const block=cue.channels.english.blocks[0];block.attribution='';
+  const withoutLabel=await renderer.renderCue(cue,'english');
+  assert.deepEqual(withLabel.info.data,withoutLabel.info.data);
+  block.attribution='Copyright notice for this edition';
+  assert.equal(compileNativeCueScene(cue,'english').credit,block.attribution);
+});
