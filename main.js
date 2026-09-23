@@ -9514,7 +9514,7 @@ function dispatchCueToOutputs(slideIndex, { expectedOutputs = null } = {}) {
 
     const sourceRoleId = output.sourceRoleId;
     if (output.renderer === 'native-cue') {
-      const nativeCue = getNativeCuePayload(sourceRoleId, slideIndex, output.nativeVariant, output.kind === 'singer');
+      const nativeCue = getNativeCuePayload(sourceRoleId, slideIndex, output.nativeVariant, activeVenueProfile?.outputs.some(configured => configured.id === output.id && configured.kind === 'singer'));
       win.webContents.send('native-cue:goto', {
         ...slideData,
         outputId: output.id,
@@ -9583,7 +9583,7 @@ function videoOutputsForCue(slideIndex) {
   const matches = [];
   for (const output of launchPlan.outputs) {
     if (output.renderer !== 'native-cue') continue;
-    const payload = getNativeCuePayload(output.sourceRoleId, slideIndex, output.nativeVariant, output.kind === 'singer');
+    const payload = getNativeCuePayload(output.sourceRoleId, slideIndex, output.nativeVariant, activeVenueProfile?.outputs.some(configured => configured.id === output.id && configured.kind === 'singer'));
     if (!sceneContainsVideo(payload?.scene)) continue;
     matches.push({
       outputId: output.id,
