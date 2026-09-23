@@ -11078,3 +11078,13 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
 .test-output-toggle { display: flex; align-items: center; gap: 10px; margin: 14px 0; }
 .test-output-options { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 16px; }
 .test-output-options label { display: grid; gap: 8px; flex: 1; min-width: 180px; }
+
+/* The live sidebar has one upright preview; controls never shrink over labels. */
+.controls-column > * { flex-shrink: 0; }
+.controls-column .slide-counter-box, .controls-column #showCueContext { display: none; }
+.controls-column .preview-box { display: grid; gap: 8px; }
+.controls-column .preview-box[hidden], .show-output-state[hidden], .mini-preview-img[hidden] { display: none; }
+.live-preview-label { font-size: .72rem; color: var(--text-secondary); font-weight: 700; }
+#outputPreviewSelect { width: 100%; min-width: 0; padding: 8px; color: var(--text); background: #1b2841; border: 1px solid var(--border); border-radius: 6px; }
+#outputPreviewList .mini-preview-img { aspect-ratio: 16/9; min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; }
+#outputPreviewList .mini-preview-img img { width: 100%; height: 100%; max-height: none; object-fit: contain; }

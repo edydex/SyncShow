@@ -115,6 +115,7 @@ function productionNavigationHarness({ timeoutMs = 500 } = {}) {
       events.push(['clear']);
       return { accepted: true };
     },
+    requestOutputRecovery(reason) { events.push(['recover', reason]); },
     hideDisplayWindows() {
       events.push(['hide']);
       return { accepted: true };
@@ -301,6 +302,7 @@ test('the production wrapper preserves the prior cue and clears after a renderer
   assert.equal(harness.events.some(event => event[0] === 'commit'), false);
   assert.equal(harness.events.some(event => event[0] === 'mark-failed'), true);
   assert.equal(harness.events.some(event => event[0] === 'clear'), true);
+  assert.equal(harness.events.some(event => event[0] === 'recover'), true);
 });
 
 test('the production wrapper stops on timeout and treats explicit cancellation as preemption', async () => {
@@ -487,7 +489,7 @@ test('Bible and output Restore are unavailable while a cue transition is pending
   const confirmed = functionSection(mainSource, 'goToSlideConfirmed');
   assert.match(
     confirmed,
-    /if \(pendingBibleLookup \|\| activeBibleOverlay \|\| pendingBibleOverlay\)/u,
+    /if \(pendingBibleLookup \|\| pendingBibleOverlay\)/u,
     'navigation must reject while Bible lookup owns the opposite-order interlock'
   );
 });

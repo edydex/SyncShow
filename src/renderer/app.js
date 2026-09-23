@@ -439,6 +439,7 @@ const elements = {
 
   previewBox: document.getElementById('previewBox'),
   outputPreviewList: document.getElementById('outputPreviewList'),
+  outputPreviewSelect: document.getElementById('outputPreviewSelect'),
 
   // Singer font size
   singerFontSize: document.getElementById('singerFontSize'),
@@ -651,6 +652,7 @@ function setupEventListeners() {
     try { await sharedServiceController?.openById?.(service.id); }
     finally { elements.btnLoadSuggested.disabled = false; }
   });
+  elements.outputPreviewSelect.addEventListener('change', selectOutputPreview);
   elements.btnTestOutput.addEventListener('click', () => startPresentation(true));
   [elements.testOutputEnabled, elements.testOutputDisplay, elements.testOutputLayout, elements.testOutputRotation]
     .forEach(input => input.addEventListener('change', saveTestOutputSettings));
@@ -6899,12 +6901,10 @@ function updateBibleLiveIndicator() {
     || (!state.bible.isLive && controls.canShowBible === false);
   elements.btnPrevSlide.disabled =
     state.showEndSessionBusy
-    || state.bible.isLive
     || state.cueNavigationBusy
     || controls.canPrevious === false;
   elements.btnNextSlide.disabled =
     state.showEndSessionBusy
-    || state.bible.isLive
     || state.cueNavigationBusy
     || controls.canNext === false;
   const detail = elements.btnOpenBible.querySelector('small');
@@ -7816,10 +7816,6 @@ async function backToSetup(targetStage = 'load') {
 // Slide Navigation
 async function navigateSlide(delta, forwardInput = 'right') {
   if (showEndSessionBlocksAction()) return;
-  if (state.bible.isLive) {
-    setStatus('Return from the live Bible passage before changing slides');
-    return;
-  }
   if (delta !== -1 && delta !== 1) return;
   if (state.cueNavigationBusy) return;
   state.cueNavigationBusy = true;
@@ -7859,10 +7855,6 @@ async function navigateSlide(delta, forwardInput = 'right') {
 
 async function goToSlide(slideIndex) {
   if (showEndSessionBlocksAction()) return;
-  if (state.bible.isLive) {
-    setStatus('Return from the live Bible passage before changing slides');
-    return;
-  }
   if (slideIndex < 0 || slideIndex >= state.totalSlides) return;
   if (state.cueNavigationBusy) return;
 
@@ -8090,7 +8082,7 @@ function renderShowOutputState(showState = state.showState) {
     live: {
       title: state.bible.isLive ? 'Bible passage live' : 'Outputs live',
       detail: state.bible.isLive
-        ? 'Return to slides to reveal the current service cue.'
+        ? 'Select a slide or press Next to return to the service.'
         : `Showing slide ${Math.max(1, cueNumber)} of ${Math.max(0, total)}.`
     },
     cleared: {
@@ -8103,19 +8095,26 @@ function renderShowOutputState(showState = state.showState) {
     },
     interrupted: {
       title: 'Outputs interrupted',
-      detail: 'A display disconnected. Return to Load and confirm its screen assignment.'
+      detail: 'An output could not confirm its frame. Reconnecting to the current slide…'
     },
     idle: {
       title: 'Outputs idle',
       detail: 'Start Show from Load when the service is ready.'
     }
   };
-  const description = cueTransitionPending
+  const recovery = showState?.recovery;
+  const description = recovery ? {
+    title: recovery.phase === 'failed' ? 'Output recovery needs attention' : 'Reconnecting outputs…',
+    detail: recovery.phase === 'failed' ? 'Could not render the current slide after three attempts. Use Show / Restore to retry.'
+      : recovery.phase === 'waiting' ? 'Waiting for the assigned screen. The current slide will resume automatically.'
+      : 'Reopening the same screens at the last confirmed slide.'
+  } : cueTransitionPending
     ? {
         title: 'Changing cue…',
         detail: 'Waiting for every routed output to confirm the same rendered cue.'
       }
     : descriptions[phase] || descriptions.idle;
+  elements.showOutputState.hidden = phase === 'live' && !cueTransitionPending && !recovery;
   elements.showOutputState.dataset.phase = descriptions[phase] ? phase : 'idle';
   elements.showOutputState.setAttribute('aria-busy', String(cueTransitionPending));
   elements.showOutputStateTitle.textContent = description.title;
@@ -8125,6 +8124,7 @@ function renderShowOutputState(showState = state.showState) {
 function showOutputActionError(action, error) {
   const message = operatorErrorMessage(error, 'SyncShow could not complete that live action.');
   if (elements.showOutputState) {
+    elements.showOutputState.hidden = false;
     elements.showOutputState.dataset.phase = 'error';
     elements.showOutputStateTitle.textContent = action;
     elements.showOutputStateDetail.textContent = message;
@@ -8184,62 +8184,48 @@ function handleDisplayInterrupted({ affectedOutputs = [] } = {}) {
 }
 
 function renderOutputPreviews(plan = state.activeLaunchPlan) {
+  const previous = elements.outputPreviewSelect.value;
   outputPreviewElements.clear();
   elements.outputPreviewList.replaceChildren();
-  const outputs = (plan?.outputs || []).filter(output => output.operatorPreview);
+  elements.outputPreviewSelect.replaceChildren();
+  const outputs = plan?.outputs || [];
   elements.previewBox.hidden = outputs.length === 0;
-
   for (const output of outputs) {
-    const details = createElement('details', 'preview-accordion');
-    details.open = state.profile?.operator?.previewOpenOutputIds?.includes(output.id) !== false;
-    const summary = createElement('summary', 'preview-accordion-header');
-    summary.append(
-      document.createTextNode(`${output.name} preview `),
-      createElement('span', 'preview-info-icon', 'ⓘ')
-    );
-    const body = createElement('div', 'mini-preview');
-    const imageWrap = createElement('div', 'mini-preview-img');
+    const option = document.createElement('option');
+    option.value = output.id;
+    option.textContent = output.name;
+    elements.outputPreviewSelect.append(option);
+    const body = createElement('div', 'mini-preview-img');
     const image = document.createElement('img');
     image.alt = `${output.name} output`;
-    imageWrap.appendChild(image);
-    body.appendChild(imageWrap);
-    details.append(summary, body);
-    details.addEventListener('toggle', () => {
-      syncPreviewSubscriptions();
-      persistPreviewOpenPreference(output.id, details.open);
-    });
-    elements.outputPreviewList.appendChild(details);
-    outputPreviewElements.set(output.id, { details, image });
+    body.append(image);
+    elements.outputPreviewList.append(body);
+    outputPreviewElements.set(output.id, { body, image });
   }
+  const preferred = outputs.find(output => output.id === previous)
+    || outputs.find(output => output.renderer === 'singer-current-next' || output.nativeVariant === 'singer-current-next' || /stage|singer/i.test(output.name))
+    || outputs[0];
+  elements.outputPreviewSelect.value = preferred?.id || '';
+  selectOutputPreview();
+}
+
+function selectOutputPreview() {
+  for (const [id, preview] of outputPreviewElements) preview.body.hidden = id !== elements.outputPreviewSelect.value;
   syncPreviewSubscriptions();
 }
 
 function syncPreviewSubscriptions() {
-  const outputIds = [...outputPreviewElements.entries()]
-    .filter(([, preview]) => preview.details.open)
-    .map(([outputId]) => outputId);
+  const selected = elements.outputPreviewSelect.value;
+  const outputIds = outputPreviewElements.has(selected) ? [selected] : [];
+  // An operator preview choice is local UI state, not a saved venue change.
   window.api.setPreviewSubscriptions(outputIds);
-}
-
-function persistPreviewOpenPreference(outputId, open) {
-  queueProfilePreferenceSave(profile => {
-    const openIds = new Set(profile.operator.previewOpenOutputIds || []);
-    if (open) openIds.add(outputId);
-    else openIds.delete(outputId);
-    profile.operator.previewOpenOutputIds = profile.outputs
-      .map(output => output.id)
-      .filter(id => openIds.has(id));
-  }, 'preview visibility');
 }
 
 function handleOutputPreview({ outputId, outputName, dataUrl, cleared } = {}) {
   const preview = outputPreviewElements.get(outputId);
   if (!preview) return;
-  if (cleared) {
-    preview.image.removeAttribute('src');
-    return;
-  }
-  if (!preview.details.open || !dataUrl) return;
+  if (cleared) { preview.image.removeAttribute('src'); return; }
+  if (outputId !== elements.outputPreviewSelect.value || !dataUrl) return;
   preview.image.alt = `${outputName || outputId} output`;
   preview.image.src = dataUrl;
 }

@@ -559,6 +559,50 @@
     return minimum;
   }
 
+  function buildStageText(scene) {
+    const element = document.createElement('div');
+    element.className = 'stage-current-text';
+    const body = document.createElement('div');
+    body.className = 'native-scene-body';
+    appendStyledText(body, scene.body, scene.bodySpans || [], scene.style.paragraphGap);
+    Object.assign(body.style, { color: scene.style.bodyForeground, fontWeight: scene.style.bodyWeight,
+      textAlign: scene.style.bodyAlign,
+      whiteSpace: scene.sourceKind === 'song' ? 'pre' : 'pre-wrap',
+      overflowWrap: scene.sourceKind === 'song' ? 'normal' : 'anywhere',
+      lineHeight: String(1 + scene.style.lineSpacingPercent / 100) });
+    let heading = null;
+    if (scene.style.showTitle && scene.title) {
+      heading = document.createElement('div');
+      heading.className = 'stage-current-heading';
+      appendStyledText(heading, scene.title, scene.titleSpans || [], false);
+      Object.assign(heading.style, { color: scene.style.titleForeground, textAlign: scene.style.titleAlign, fontWeight: scene.style.titleWeight });
+      element.append(heading);
+    }
+    element.append(body);
+    return { element, relayout() {
+      if (heading) {
+        heading.style.height = `${element.clientHeight * .16}px`;
+        fitText(heading, element.clientHeight * .14, 1, 1);
+      }
+      const height = element.clientHeight - (heading ? heading.offsetHeight : 0);
+      body.style.height = `${height}px`;
+      // Start at the available height and shrink only until every authored line
+      // fits the width and all lines fit the current-text region.
+      // Binary search avoids hundreds of layout reads when enlarging a short
+      // stage passage. Each candidate must fit both dimensions without wrapping.
+      let low = 1;
+      let high = Math.max(1, Math.floor(height));
+      while (low < high) {
+        const size = Math.ceil((low + high) / 2);
+        body.style.fontSize = `${size}px`;
+        if (body.scrollWidth <= body.clientWidth + 1 && body.scrollHeight <= body.clientHeight + 1) low = size;
+        else high = size - 1;
+      }
+      body.style.fontSize = `${low}px`;
+      settleFittedTextHeight(body, height);
+    }};
+  }
+
   function settleFittedTextHeight(element, maximumHeight) {
     element.style.height = 'auto';
     element.style.maxHeight = 'none';
@@ -880,7 +924,8 @@
     } else if (scene.layout === 'singer-current-next') {
       const currentHost = document.createElement('div');
       currentHost.className = 'native-singer-current';
-      const current = buildScene(scene.current, options);
+      const current = scene.current.layout === 'text'
+        ? buildStageText(scene.current) : buildScene(scene.current, options);
       currentHost.appendChild(current.element);
       const next = document.createElement('div');
       next.className = 'native-singer-next';
@@ -910,7 +955,9 @@
           const availableHeight = next.clientHeight
             - (Number.parseFloat(nextStyle.paddingTop) || 0)
             - (Number.parseFloat(nextStyle.paddingBottom) || 0);
-          nextText.style.fontSize = `${Math.max(1, Math.min(preferred, Math.floor(availableHeight / 1.15)))}px`;
+          nextText.style.height = `${availableHeight}px`;
+          fitText(nextText, Math.max(1, Math.min(preferred, Math.floor(availableHeight / 1.15))), 1, 1);
+          settleFittedTextHeight(nextText, availableHeight);
           nextText.style.fontWeight = typography?.fontWeight || '600';
           nextText.style.fontFamily = typography?.fontFamily || 'inherit';
         }

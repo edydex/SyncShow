@@ -555,8 +555,8 @@ async function configureThreeOutputProfile(control) {
         enabled: true,
         kind: route.kind,
         expectedRoleId: route.roleId,
-        mode: 'role',
-        renderer: 'slides',
+        mode: ${DEMO_PROOF} && route.kind === 'singer' ? 'derive-next-text' : 'role',
+        renderer: ${DEMO_PROOF} && route.kind === 'singer' ? 'singer-current-next' : 'slides',
         sourceRoleId: route.roleId,
         sourceOutputId: null,
         displayFingerprint: null,
@@ -1019,10 +1019,9 @@ async function run() {
     control,
     state => state.phase === 'interrupted'
       && state.currentCue?.index === 1
-      && EARLY_ACK_OUTPUT_IDS.every(outputId =>
-        showOutput(state, outputId)?.status === 'cleared')
-      && showOutput(state, SINGER_OUTPUT_ID)?.status === 'unavailable',
-    'negative Singer acknowledgement to clear every output'
+      && state.recovery !== null
+      && everyShowOutput(state, output => output.visible === false),
+    'negative Singer acknowledgement to hide outputs before recovery'
   );
   const rejectedSurfaces = await waitFor(async () => {
     const surfaces = await readOutputSurfaces(outputs);
@@ -1031,8 +1030,11 @@ async function run() {
       : null;
   }, 'the three output renderers to apply Clear');
 
-  // A rejected renderer stays unavailable even though Clear reached it. Start
-  // a fresh output session before exercising the remaining independent races.
+  const afterRejectedRecovery = await waitForShowState(control, state => !state.recovery
+    && state.phase === 'live' && state.currentCue?.index === 1
+    && everyShowOutput(state, output => output.status === 'healthy'), 'negative ACK recovery');
+
+  // Use a fresh session for the independent Clear and Restore races.
   await rendererInvoke(control, 'return window.api.endPresentation();');
   await waitForShowState(
     control,
@@ -1340,6 +1342,9 @@ async function run() {
     'the timeout safety hide',
     10_000
   );
+  // Explicit Stop cancels the new automatic retry so the manual Restore
+  // guard can be fault-tested independently on the original windows.
+  await rendererInvoke(control, 'return window.api.stopPresentation();');
   const windowVisibilityAfterTimeout = windowVisibilities(outputs);
   assert.equal(Object.values(windowVisibilityAfterTimeout).some(Boolean), false);
   const timedOutSurfaces = await readOutputSurfaces(outputs);
@@ -1591,7 +1596,8 @@ async function run() {
       phase: afterRejected.phase,
       outputStatuses: stateStatuses(afterRejected),
       allRendererClearClassesApplied:
-        everySurface(rejectedSurfaces, surface => surface.cleared)
+        everySurface(rejectedSurfaces, surface => surface.cleared),
+      automaticallyRecovered: afterRejectedRecovery.currentCue.index === 1
     },
     clearAndLateAcknowledgement: {
       previousCueIndex: 1,
@@ -1752,6 +1758,80 @@ async function run() {
   };
 }
 
+async function proveLiveFeedback(control, outputs) {
+  await rendererInvoke(control, `return window.api.saveTestOutputSettings({enabled:true,displayId:'880001',layout:'vertical',rotation:90});`);
+  const started = await rendererInvoke(control, `return window.api.startPresentation({testOutput:true,outputs:${JSON.stringify(outputs)},decisions:{'singers-monitor':{mode:'derive-next-text',sourceRole:'front'}},preferredTimelineRoleId:'front',settings:{fadeDuration:350}});`);
+  assert.equal(started.success,true);
+  let windows = await waitForOutputWindows('feedback output windows');
+  const readFont = win => rendererInvoke(win, `const body=document.querySelector('.native-cue-layer.active .native-scene-body'); return {font:parseFloat(getComputedStyle(body).fontSize),width:body.clientWidth,scrollWidth:body.scrollWidth,height:body.clientHeight,scrollHeight:body.scrollHeight};`);
+  const front = await readFont(windows.get(OUTPUT_IDS[0]));
+  const stage = await readFont(windows.get(SINGER_OUTPUT_ID));
+  assert.ok(stage.font > front.font, JSON.stringify({stage,front}));
+  assert.ok(stage.scrollWidth <= stage.width + 2 && stage.scrollHeight <= stage.height + 2);
+
+  await rendererInvoke(control, `window.__feedbackPreviews={};window.api.onOutputPreview(data=>{if(data.dataUrl)window.__feedbackPreviews[data.outputId]=data.dataUrl;});window.api.setPreviewSubscriptions(${JSON.stringify(OUTPUT_IDS)});window.api.requestOutputPreviews();return true;`);
+  const previews = await waitFor(() => rendererInvoke(control, `return Object.keys(window.__feedbackPreviews).length===3 ? window.__feedbackPreviews : null;`), 'upright preview images');
+  const sharp = require('sharp');
+  for (const [id,url] of Object.entries(previews)) {
+    const metadata = await sharp(Buffer.from(url.split(',')[1],'base64')).metadata();
+    assert.ok(Math.abs(metadata.width/metadata.height-16/9)<.01, `${id} preview must remain landscape`);
+  }
+
+  await rendererInvoke(control, 'window.__feedbackPreviews={}; return true;');
+  await invokeNext(control);
+  const fadedPreviews = await waitFor(() => rendererInvoke(control, `return Object.keys(window.__feedbackPreviews).length===3 ? window.__feedbackPreviews : null;`), 'previews after slide fade');
+  await delay(400);
+  for (const [id,url] of Object.entries(fadedPreviews)) {
+    const stable = await windows.get(id).webContents.capturePage();
+    const expected = await sharp(stable.toPNG()).rotate(270).resize({width:960,withoutEnlargement:true}).jpeg({quality:75}).toBuffer();
+    assert.ok(expected.equals(Buffer.from(url.split(',')[1],'base64')), `${id} preview must not freeze a partial fade`);
+  }
+  await rendererInvoke(control,'return window.api.navigateToSlide(0);');
+
+  const showBible = () => rendererInvoke(control, `return window.api.showBiblePassage({query:'John 3:16',translationId:'BSB',targetOutputIds:${JSON.stringify(OUTPUT_IDS)}});`);
+  await showBible();
+  assert.equal((await readShowState(control)).bible.phase,'live');
+  await rendererInvoke(control, `return window.api.navigateToSlide(0);`);
+  assert.equal((await readShowState(control)).bible.phase,'idle');
+  await showBible();
+  await invokeNext(control);
+  assert.equal((await readShowState(control)).currentCue.index,1);
+  assert.equal((await readShowState(control)).bible.phase,'idle');
+
+  const oldIds = [...windows.values()].map(win=>win.id);
+  windows.get(SINGER_OUTPUT_ID).webContents.forcefullyCrashRenderer();
+  await waitForShowState(control, s=>s.recovery,'recovery starts');
+  const recovered = await waitForShowState(control,s=>!s.recovery&&s.phase==='live'&&everyShowOutput(s,o=>o.status==='healthy'), 'crashed renderer automatically recovered');
+  assert.equal(recovered.currentCue.index,1);
+  windows = await waitForOutputWindows('recovered windows');
+  assert.ok([...windows.values()].every(win=>!oldIds.includes(win.id)&&win.isVisible()));
+
+  // A transient monitor loss must never send output to the operator screen.
+  const fullDisplays = screen.getAllDisplays();
+  const external = fullDisplays.find(d=>d.id===880001);
+  screen.getAllDisplays = () => fullDisplays.filter(d=>d.id!==880001);
+  screen.emit('display-removed',{},external);
+  await waitForShowState(control,s=>s.recovery?.phase==='waiting','waiting for assigned display');
+  assert.ok([...windows.values()].every(win=>!win.isVisible()));
+  screen.getAllDisplays = syntheticGetAllDisplays;
+  screen.emit('display-added',{},external);
+  await waitForShowState(control,s=>!s.recovery&&s.phase==='live','monitor return recovery');
+  assert.equal((await readShowState(control)).currentCue.index,1);
+
+  windows = await waitForOutputWindows('monitor recovered windows');
+  windows.get(SINGER_OUTPUT_ID).destroy();
+  await rendererInvoke(control,'return window.api.stopPresentation();');
+  await delay(800);
+  const stopped = await readShowState(control);
+  assert.equal(stopped.recovery,null);
+  assert.ok(outputWindowCandidates().every(win=>!win.isVisible()));
+  assert.equal(stopped.operator.controls.canRestore,true);
+  await rendererInvoke(control,'return window.api.showDisplays();');
+  await waitForShowState(control,s=>!s.recovery&&s.phase==='live','operator retry after Stop');
+  await rendererInvoke(control,'return window.api.endPresentation();');
+  return {stageFont:stage.font,frontFont:front.font,uprightPreviews:3,previewWaitsForFade:true,bibleSameCueAndNext:true,crashRecovery:true,monitorReturnRecovery:true,stopCancelsRecovery:true};
+}
+
 async function runTestOutputProof() {
   assert.equal(fs.realpathSync(app.getPath('userData')), fs.realpathSync(process.env.SYNCSHOW_TEST_USER_DATA_DIR));
   const control = await waitFor(() => {
@@ -1765,7 +1845,7 @@ async function runTestOutputProof() {
   const layouts = [];
   for (const rotation of [0, 90, 270]) for (const layout of ['vertical', 'horizontal']) {
     await rendererInvoke(control, `return window.api.saveTestOutputSettings({enabled:true, displayId:'880001', layout:${JSON.stringify(layout)}, rotation:${rotation}});`);
-    const started = await rendererInvoke(control, `return window.api.startPresentation({testOutput:true, outputs:${JSON.stringify(outputs)}, decisions:{}, preferredTimelineRoleId:'front', settings:{fadeDuration:0}});`);
+    const started = await rendererInvoke(control, `return window.api.startPresentation({testOutput:true, outputs:${JSON.stringify(outputs)}, decisions:{'singers-monitor':{mode:'derive-next-text',sourceRole:'front'}}, preferredTimelineRoleId:'front', settings:{fadeDuration:0}});`);
     assert.equal(started.success, true);
     const windows = await waitForOutputWindows('three demo renderers');
     const background = BrowserWindow.getAllWindows().find(win => win.webContents.getURL().startsWith('data:text/html'));
@@ -1776,7 +1856,10 @@ async function runTestOutputProof() {
       assert.equal(rotation ? box.height * 9 : box.width * 9, rotation ? box.width * 16 : box.height * 16);
       assert.equal(win.isFullScreen(), false);
       assert.equal(win.isVisible(), true);
-      bounds.push(box);
+      // AppKit may move an off-screen synthetic window onto a real monitor.
+      // Tile coordinates are tested from the assigned bounds; rendered sizes
+      // and rotation are measured from the real window and DOM below.
+      bounds.push({...win.syncShowTestOutputBounds});
     }
     assert.equal(new Set(bounds.map(box => (layout === 'vertical') !== Boolean(rotation) ? box.y : box.x)).size, 3);
     await invokeNext(control);
@@ -1811,13 +1894,14 @@ async function runTestOutputProof() {
     for (const win of windows.values()) assert.equal(win.isVisible(), false);
     await rendererInvoke(control, 'return window.api.showDisplays();');
     assert.equal(background.isVisible(), true);
-    assert.deepEqual([...windows.values()].map(win => win.getBounds()), bounds);
+    assert.deepEqual([...windows.values()].map(win => win.syncShowTestOutputBounds), bounds);
+    assert.deepEqual([...windows.values()].map(win => {const {width,height}=win.getBounds();return {width,height};}), bounds.map(({width,height})=>({width,height})));
     await rendererInvoke(control, 'return window.api.endPresentation();');
     assert.equal(background.isDestroyed(), true);
     for (const win of windows.values()) assert.equal(win.isDestroyed(), true);
     layouts.push({layout, rotation, bounds, nextClearStopRestoreEndPassed:true});
   }
-  return {ok:true, contract:'syncshow-test-output-real-electron-v1', profileIsolated:true, logicalOutputs:3, syntheticExternalDisplays:1, layouts};
+  return {ok:true, contract:'syncshow-test-output-real-electron-v1', profileIsolated:true, logicalOutputs:3, syntheticExternalDisplays:1, layouts, feedback:await proveLiveFeedback(control,outputs)};
 }
 
 if (!PACKAGED_INSTRUMENTATION) require('../../main');

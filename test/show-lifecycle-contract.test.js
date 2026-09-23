@@ -21,7 +21,7 @@ test('main owns a revisioned sanitized Show gateway and publishes every lifecycl
   assert.match(mainSource, /publishShowState\('outputs-stopped'\)/);
   assert.match(mainSource, /publishShowState\('bible-preparing'\)/);
   assert.match(mainSource, /publishShowState\('bible-state-changed'\)/);
-  assert.match(mainSource, /publishShowState\('output-interrupted'\)/);
+  assert.match(mainSource, /publishShowState\('outputs-reconnecting'\)/);
   assert.match(mainSource, /webContents\.send\('show:stateChanged', \{ reason, state \}\)/);
 });
 

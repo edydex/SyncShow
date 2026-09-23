@@ -178,11 +178,12 @@ async function main() {
       authoritativeCueRetained: true,
       phase: 'interrupted',
       outputStatuses: {
-        'front-projector': 'cleared',
-        'translation-projector': 'cleared',
+        'front-projector': 'starting',
+        'translation-projector': 'starting',
         'singers-monitor': 'unavailable'
       },
-      allRendererClearClassesApplied: true
+      allRendererClearClassesApplied: true,
+      automaticallyRecovered: true
     });
     assert.deepEqual(result.clearAndLateAcknowledgement, {
       previousCueIndex: 1,

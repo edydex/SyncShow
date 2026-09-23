@@ -1298,10 +1298,11 @@
         </section>
 
         <aside class="controls-column" aria-label="Show controls">
-          <div class="show-heading">
-            <p class="section-kicker">LIVE CONTROL</p>
-            <h2>Show</h2>
-          </div>
+          <section class="preview-box" id="previewBox" aria-label="Live output preview" hidden>
+            <label class="live-preview-label" for="outputPreviewSelect">Live preview</label>
+            <select id="outputPreviewSelect" aria-label="Preview screen"></select>
+            <div id="outputPreviewList" aria-label="Selected output previews"></div>
+          </section>
 
           <section id="volunteerControlBar" class="volunteer-control-bar" aria-labelledby="volunteerControlTitle" hidden>
             <span class="volunteer-control-icon" aria-hidden="true">✓</span>
@@ -1386,11 +1387,6 @@
             </button>
           </div>
 
-          <div class="preview-box" id="previewBox" hidden>
-            <div id="outputPreviewList" aria-label="Selected output previews"></div>
-          </div>
-
-          <p class="hints-box">← / → navigate · Space advances · Esc clears</p>
           <button id="btnBackToSetup" class="btn btn-quiet btn-full" title="Stop outputs and return to the Load screen">
             Back to Load
           </button>

@@ -249,16 +249,18 @@ class RemoteCommandAdapter {
       && (phase === 'live' || phase === 'cleared')
       && !navigationPending
       && !hasPendingOutput
-      && bible.phase === 'idle';
+      && bible.phase !== 'preparing';
     const outputActionsAvailable = hasSession && (phase === 'live' || phase === 'cleared');
     const outputRestoreAvailable = outputActionsAvailable
       && !navigationPending
       && !hasPendingOutput;
-    // A local Stop disables remote resumption, but the desktop operator must
-    // retain Restore once every output is healthy and no transition is pending.
-    const localOutputRestoreAvailable = hasSession
-      && (outputActionsAvailable || raw.phase === 'locally-stopped')
-      && !navigationPending && !hasPendingOutput && !hasUnavailableOutput;
+    // Only the desktop operator may retry an exhausted recovery or resume a
+    // local Stop. Remote controllers cannot reopen stopped outputs.
+    const localOutputRestoreAvailable = hasSession && (
+      raw.recovery?.phase === 'failed'
+      || (raw.phase === 'locally-stopped' && !navigationPending)
+      || (outputActionsAvailable && !navigationPending && !hasPendingOutput && !hasUnavailableOutput)
+    );
     const policyControls = this._policyControls();
     const localOperator = sanitizeLocalOperatorState(raw.operator, hasSession);
     const localPolicyControls = localOperator.controls;
@@ -268,6 +270,8 @@ class RemoteCommandAdapter {
       revision: this.stateRevision,
       outputSessionId: hasSession ? this.publicSessionId : null,
       phase,
+      recovery: hasSession && ['waiting','reconnecting','failed'].includes(raw.recovery?.phase)
+        ? {phase:raw.recovery.phase,reason:boundedText(raw.recovery.reason,80),attempt:Number(raw.recovery.attempt) || 0} : null,
       profileName: hasSession ? boundedText(raw.profileName, 120) : '',
       totalCues: hasSession ? totalSlides : 0,
       currentCue: hasSession ? sanitizeCue(raw.currentCue, totalSlides) : null,
@@ -426,7 +430,7 @@ class RemoteCommandAdapter {
     this._requirePolicyAuthorization(command.type);
 
     const isNavigation = command.type.startsWith('cue.');
-    if (isNavigation && before.bible.phase !== 'idle') {
+    if (isNavigation && before.bible.phase === 'preparing') {
       fail('BIBLE_OVERLAY_ACTIVE', 'Return from the Bible passage before changing cues.');
     }
     if (isNavigation && command.type !== 'cue.jump') {
@@ -463,7 +467,7 @@ class RemoteCommandAdapter {
           totalCues: before.totalCues
         });
       }
-      if (before.currentCue?.index === command.cueIndex) {
+      if (before.currentCue?.index === command.cueIndex && before.bible.phase !== 'live') {
         return { success: true, applied: false, state: before };
       }
     }

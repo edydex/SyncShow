@@ -458,7 +458,7 @@ test('remote navigation requires the current session, revision, and cue expectat
   );
 });
 
-test('Bible state blocks navigation while Clear and Restore remain authoritative', async () => {
+test('live Bible permits slide navigation while Clear and Restore remain authoritative', async () => {
   const { adapter, runtime, calls } = createHarness();
   runtime.bible = {
     phase: 'live',
@@ -469,14 +469,13 @@ test('Bible state blocks navigation while Clear and Restore remain authoritative
   adapter.publish('bible-live');
   const bibleState = adapter.getState();
 
-  assert.equal(bibleState.controls.canNext, false);
+  assert.equal(bibleState.controls.canNext, true);
   assert.equal(bibleState.controls.canClear, true);
-  await rejectsCode(
-    adapter.execute(envelope(bibleState, { type: 'cue.next' }, { expectedCueIndex: 0 })),
-    'BIBLE_OVERLAY_ACTIVE'
-  );
+  const navigated = await adapter.execute(envelope(bibleState, { type: 'cue.next' }, { expectedCueIndex: 0 }));
+  assert.equal(navigated.state.currentCue.index, 1);
+  assert.equal(calls.at(-1), 'next');
 
-  const cleared = await adapter.execute(envelope(bibleState, { type: 'output.clear' }));
+  const cleared = await adapter.execute(envelope(navigated.state, { type: 'output.clear' }));
   assert.equal(cleared.state.phase, 'cleared');
   assert.equal(cleared.state.bible.phase, 'idle');
   assert.equal(calls.at(-1), 'clear');
@@ -655,8 +654,34 @@ test('a local Stop preserves desktop Restore while remote Restore remains disabl
   assert.equal(adapter.getState().operator.controls.canRestore, false);
   runtime.navigationPending = false;
   runtime.outputs[0].status = 'unavailable';
-  assert.equal(adapter.getState().operator.controls.canRestore, false);
+  assert.equal(adapter.getState().operator.controls.canRestore, true);
   runtime.outputs[0].status = 'healthy';
   runtime.phase = 'starting';
   assert.equal(adapter.getState().operator.controls.canRestore, false);
+});
+
+
+test('an in-flight Bible lookup still blocks competing navigation', async () => {
+  const {adapter,runtime} = createHarness();
+  runtime.bible = {phase:'preparing',targetOutputIds:['front']};
+  const state = adapter.getState();
+  assert.equal(state.controls.canNext,false);
+  await rejectsCode(adapter.execute(envelope(state,{type:'cue.next'},{expectedCueIndex:0})),'BIBLE_OVERLAY_ACTIVE');
+});
+
+test('failed recovery allows a local retry only, and Stop retains local Restore for missing outputs', () => {
+  const {adapter,runtime} = createHarness();
+  runtime.operator = {controls:{canRestore:true,canStop:true}};
+  runtime.outputs[0].status = 'unavailable';
+  runtime.navigationPending = true;
+  runtime.recovery = {phase:'failed',reason:'renderer-unavailable',attempt:3};
+  assert.equal(adapter.getState().operator.controls.canRestore,true);
+  assert.equal(adapter.getState().controls.canRestore,false);
+  runtime.recovery.phase = 'reconnecting';
+  assert.equal(adapter.getState().operator.controls.canRestore,false);
+  runtime.recovery = null;
+  runtime.navigationPending = false;
+  runtime.phase = 'locally-stopped';
+  assert.equal(adapter.getState().operator.controls.canRestore,true);
+  assert.equal(adapter.getState().controls.canRestore,false);
 });

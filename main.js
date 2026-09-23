@@ -358,6 +358,9 @@ let communityPlannerOrigin = null;
 let controlSettingsDraftState = { dirty: false, saving: false };
 let outputWindows = new Map();
 let testOutputBackground = null;
+let activeOutputTargets = null;
+let activeTestOutputSettings = null;
+let outputRecovery = null;
 let translationPreferencesVenue = null;
 let translationSettingsQueue = Promise.resolve();
 const translationProjection = new TranslationProjection();
@@ -2208,8 +2211,7 @@ function volunteerShowOperatorState() {
     || liveCueTransitionCoordinator?.isPending() === true;
   const cueBlocked = navigationPending
     || pendingBibleLookup !== null
-    || pendingBibleOverlay !== null
-    || activeBibleOverlay !== null;
+    || pendingBibleOverlay !== null;
   return {
     mode: activeShowControlMode,
     authority: grant ? 'unlocked' : 'locked',
@@ -2376,7 +2378,8 @@ function readShowRuntimeState() {
 
   return {
     hasActiveShow,
-    navigationPending: activeLiveCueNavigation !== null
+    recovery: outputRecovery ? {phase:outputRecovery.phase,reason:outputRecovery.reason,attempt:outputRecovery.attempt} : null,
+    navigationPending: Boolean(outputRecovery) || activeLiveCueNavigation !== null
       || liveCueTransitionCoordinator?.isPending() === true,
     phase: hasActiveShow ? outputLifecyclePhase : 'idle',
     profileName: activeVenueProfile?.name || 'SyncShow',
@@ -2508,6 +2511,11 @@ function scheduleShowStatePublish(reason, sessionId = outputSessionId) {
 }
 
 async function restoreOutputsForRemote() {
+  if (outputRecovery?.phase === 'failed' || (appState.activeLaunchPlan && activeOutputTargets
+    && currentLiveCueTransitionOutputs().accepted !== true)) {
+    requestOutputRecovery('operator-retry', { resumeVisible: true, resumeCleared: false, force: true });
+    return {accepted:true};
+  }
   if (pendingBibleLookup) {
     return {
       accepted: false,
@@ -2547,7 +2555,12 @@ showGateway = new RemoteCommandAdapter({
 
 outputHealthTracker = new OutputHealthTracker({
   maximumEntries: 32,
-  onChange: event => scheduleShowStatePublish(`output-health:${event.reason}`, event.sessionId)
+  onChange: event => {
+    scheduleShowStatePublish(`output-health:${event.reason}`, event.sessionId);
+    if (event.status === 'unavailable' && !activeLiveCueNavigation && !outputRecovery && outputLifecyclePhase === 'live') {
+      requestOutputRecovery(event.reason);
+    }
+  }
 });
 
 showGateway.subscribe(({ reason, state }) => {
@@ -8165,6 +8178,130 @@ ipcMain.on('output:videoState', (event, payload = {}) => {
   }
 });
 
+function cancelOutputRecovery() {
+  if (outputRecovery?.timer) clearTimeout(outputRecovery.timer);
+  outputRecovery = null;
+}
+
+function recoveryIsCurrent(recovery) {
+  return outputRecovery === recovery && recovery.sessionId === outputSessionId
+    && recovery.plan === appState.activeLaunchPlan;
+}
+
+function requestOutputRecovery(reason, { resumeVisible, resumeCleared, force = false } = {}) {
+  if (!appState.activeLaunchPlan || !activeOutputTargets || displayStartInProgress) return;
+  if (outputRecovery && !force) return;
+  cancelOutputRecovery();
+  const recovery = outputRecovery = {
+    sessionId: outputSessionId, plan: appState.activeLaunchPlan, cue: appState.currentSlide,
+    visible: resumeVisible ?? (outputsShouldBeVisible && outputLifecyclePhase !== 'locally-stopped'),
+    cleared: resumeCleared ?? appState.isCleared, reason, attempt: 0, phase: 'waiting', timer: null
+  };
+  console.warn(`[Output recovery] ${reason}; retaining cue ${recovery.cue + 1}`);
+  try {
+    const file = path.join(app.getPath('userData'), 'output-recovery.json');
+    let entries = [];
+    try { entries = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+    fs.writeFileSync(file, JSON.stringify([...entries.slice(-19), { at: new Date().toISOString(), reason, cue: recovery.cue + 1 }]), {mode:0o600});
+  } catch {}
+  liveCueTransitionCoordinator?.cancel('The output is reconnecting.', 'LIVE_CUE_TRANSITION_CANCELLED');
+  activeLiveCueNavigation = null;
+  if (activeBibleOverlay || pendingBibleOverlay) hideBibleOverlay({ restore: false });
+  pendingBibleLookup = null;
+  bibleOperationEpoch += 1;
+  for (const {win} of outputWindows.values()) if (!win.isDestroyed()) { win.setFullScreen(false); win.hide(); }
+  if (testOutputBackground && !testOutputBackground.isDestroyed()) testOutputBackground.hide();
+  outputLifecyclePhase = 'starting';
+  publishShowState('outputs-reconnecting');
+  recovery.timer = setTimeout(() => void recoverOutputWindows(recovery), 350);
+}
+
+async function recoverOutputWindows(recovery) {
+  if (!recoveryIsCurrent(recovery)) return;
+  recovery.timer = null;
+  try {
+    updateDisplayList();
+    const displays = screen.getAllDisplays();
+    const controlId = getControlDisplayId();
+    const resolved = new Map();
+    for (const [id, saved] of activeOutputTargets) {
+      let target = displays.find(display => String(display.id) === String(saved.id));
+      if (!target) {
+        const candidates = appState.displays.filter(display => display.fingerprint === saved.fingerprint && !display.isControl);
+        if (candidates.length === 1) target = displays.find(display => display.id === candidates[0].id);
+      }
+      if (!target || String(target.id) === String(controlId)) {
+        recovery.phase = 'waiting';
+        publishShowState('outputs-waiting-for-screen');
+        recovery.timer = setTimeout(() => void recoverOutputWindows(recovery), 2000);
+        return;
+      }
+      resolved.set(id, target);
+    }
+    recovery.phase = 'reconnecting';
+    recovery.attempt += 1;
+    const old = outputWindows;
+    outputWindows = new Map();
+    outputHealthTracker.clear();
+    const background = testOutputBackground;
+    testOutputBackground = null;
+    if (background && !background.isDestroyed()) background.destroy();
+    for (const {win} of old.values()) if (!win.isDestroyed()) win.destroy();
+    appState.displayAssignments.clear();
+    let demo = null;
+    if (activeTestOutputSettings) {
+      const target = resolved.values().next().value;
+      demo = buildTestOutputDisplayMap({settings:{...activeTestOutputSettings,displayId:String(target.id)}, outputs:recovery.plan.outputs,displays,controlDisplayId:controlId});
+      await createTestOutputBackground(demo, recovery.sessionId);
+      if (!recoveryIsCurrent(recovery)) return;
+    }
+    const ready = [];
+    for (const output of recovery.plan.outputs) {
+      const display = demo?.displays.get(String(output.displayId)) || resolved.get(output.id);
+      const win = output.renderer === 'singer-current-next' ? createSingerWindow(display,output,recovery.sessionId) : createDisplayWindow(display,output,recovery.sessionId);
+      outputWindows.set(output.id,{win,output,sessionId:recovery.sessionId});
+      trackOutputWindowHealth(win,output,recovery.sessionId);
+      appState.displayAssignments.set(output.id,display.id);
+      ready.push(waitForOutputWindowReady(win,output,recovery.sessionId));
+    }
+    await Promise.all(ready);
+    if (!recoveryIsCurrent(recovery)) return;
+    const frames = [...outputWindows.values()].map(({win,output}) => waitForInitialOutputFrame(win,output,recovery.sessionId,recovery.cue));
+    const dispatched = dispatchCueToOutputs(recovery.cue);
+    if (dispatched.accepted !== true) throw new Error('Frame dispatch failed');
+    await Promise.all(frames);
+    if (!recoveryIsCurrent(recovery)) return;
+    if (recovery.cleared) {
+      const outputs = [...outputWindows.values()].map(({win,output}) => ({outputId:output.id,sender:win.webContents}));
+      const guardId = nextOutputRestoreGuardId(recovery.sessionId);
+      await setOutputRestoreGuard({outputs,sessionId:recovery.sessionId,guardId,active:true});
+      if (!recoveryIsCurrent(recovery)) return;
+      for (const {win,output} of outputWindows.values()) {
+        win.webContents.send('display:clear');
+        outputHealthTracker.markCleared({outputId:output.id,sessionId:recovery.sessionId,sender:win.webContents});
+      }
+      await setOutputRestoreGuard({outputs,sessionId:recovery.sessionId,guardId,active:false,reveal:false});
+      if (!recoveryIsCurrent(recovery)) return;
+    }
+    appState.currentSlide = recovery.cue;
+    armVideoPlaybackForCue(recovery.cue);
+    appState.isCleared = recovery.cleared;
+    outputsShouldBeVisible = recovery.visible;
+    if (recovery.visible) for (const {win} of outputWindows.values()) showOutputWindow(win);
+    outputLifecyclePhase = !recovery.visible ? 'locally-stopped' : recovery.cleared ? 'cleared' : 'live';
+    outputRecovery = null;
+    publishShowState('outputs-reconnected');
+    captureOutputPreviews();
+  } catch (error) {
+    if (!recoveryIsCurrent(recovery)) return;
+    console.warn('[Output recovery] Frame recovery failed:', error.message);
+    for (const {win} of outputWindows.values()) if (!win.isDestroyed()) win.hide();
+    recovery.phase = recovery.attempt >= 3 ? 'failed' : 'reconnecting';
+    publishShowState('outputs-recovery-retry');
+    if (recovery.phase !== 'failed') recovery.timer = setTimeout(() => void recoverOutputWindows(recovery), 1500 * recovery.attempt);
+  }
+}
+
 function readTestOutputSettings() {
   try {
     return normalizeTestOutputSettings(JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'test-output.json'), 'utf8')));
@@ -8225,6 +8362,9 @@ function showOutputWindow(win) {
 }
 
 function destroyOutputWindows() {
+  cancelOutputRecovery();
+  activeOutputTargets = null;
+  activeTestOutputSettings = null;
   const background = testOutputBackground;
   testOutputBackground = null;
   if (background && !background.isDestroyed()) background.destroy();
@@ -8293,16 +8433,7 @@ function destroyOutputWindows() {
 }
 
 function handleUnexpectedOutputWindowClose(outputId, reason = 'output-closed') {
-  if (!appState.activeLaunchPlan) return;
-  outputLifecyclePhase = 'interrupted';
-  publishShowState('output-interrupted');
-  destroyOutputWindows();
-  if (controlWindow && !controlWindow.isDestroyed()) {
-    controlWindow.webContents.send('display:interrupted', {
-      reason,
-      affectedOutputs: [outputId]
-    });
-  }
+  requestOutputRecovery(reason);
 }
 
 function createDisplayWindow(displayInfo, output, sessionId) {
@@ -8338,7 +8469,10 @@ function createDisplayWindow(displayInfo, output, sessionId) {
     show: false
   });
 
-  if (displayInfo.testOutput) win.syncShowTestOutputBounds = { ...bounds };
+  if (displayInfo.testOutput) {
+    win.syncShowTestOutputBounds = { ...bounds };
+    win.syncShowTestOutputRotation = displayInfo.testOutputRotation || 0;
+  }
   win.setIgnoreMouseEvents(true);
 
   win.loadFile(path.join(__dirname, 'src', 'renderer', 'display.html'), displayInfo.testOutputRotation ? { query: { testOutputRotation: String(displayInfo.testOutputRotation) } } : {}).catch(error => {
@@ -8434,7 +8568,10 @@ function createSingerWindow(displayInfo, output, sessionId) {
     show: false
   });
 
-  if (displayInfo.testOutput) win.syncShowTestOutputBounds = { ...bounds };
+  if (displayInfo.testOutput) {
+    win.syncShowTestOutputBounds = { ...bounds };
+    win.syncShowTestOutputRotation = displayInfo.testOutputRotation || 0;
+  }
   win.setIgnoreMouseEvents(true);
 
   if (process.argv.includes('--dev')) {
@@ -8757,32 +8894,9 @@ async function identifyAllDisplays() {
 }
 
 function handleDisplayRemoved(removedDisplay) {
-  if (!removedDisplay) {
-    updateDisplayList();
-    return;
+  if (removedDisplay && [...appState.displayAssignments.values()].some(id => id === removedDisplay.id)) {
+    requestOutputRecovery('display-removed');
   }
-
-  const affectedOutputs = [...appState.displayAssignments.entries()]
-    .filter(([, displayId]) => displayId === removedDisplay.id)
-    .map(([output]) => output);
-
-  if (affectedOutputs.length > 0) {
-    // Fullscreen windows can be relocated onto a remaining/primary monitor by
-    // the OS after an unplug. Tear down the entire output session immediately
-    // so content cannot cover the controller or appear on the wrong screen.
-    outputLifecyclePhase = 'interrupted';
-    publishShowState('output-interrupted');
-    destroyOutputWindows();
-
-    if (controlWindow && !controlWindow.isDestroyed()) {
-      controlWindow.webContents.send('display:interrupted', {
-        reason: 'display-removed',
-        displayId: removedDisplay.id,
-        affectedOutputs
-      });
-    }
-  }
-
   updateDisplayList();
 }
 
@@ -9091,7 +9205,7 @@ async function goToSlideConfirmed(slideIndex) {
         : 'The outputs are not ready to change cues.'
     };
   }
-  if (pendingBibleLookup || activeBibleOverlay || pendingBibleOverlay) {
+  if (pendingBibleLookup || pendingBibleOverlay) {
     return {
       accepted: false,
       code: 'BIBLE_OVERLAY_ACTIVE',
@@ -9100,9 +9214,6 @@ async function goToSlideConfirmed(slideIndex) {
   }
   if (!Number.isInteger(slideIndex) || slideIndex < 0 || slideIndex >= appState.totalSlides) {
     return { accepted: false, code: 'INVALID_CUE_INDEX', message: 'That cue does not exist.' };
-  }
-  if (slideIndex === appState.currentSlide) {
-    return { accepted: true, applied: false };
   }
   if (
     activeLiveCueNavigation !== null
@@ -9115,8 +9226,12 @@ async function goToSlideConfirmed(slideIndex) {
     };
   }
 
+  const leavingBible = Boolean(activeBibleOverlay);
+  if (slideIndex === appState.currentSlide && !leavingBible) return { accepted: true, applied: false };
+
   const outputSnapshot = currentLiveCueTransitionOutputs();
   if (outputSnapshot.accepted !== true) return outputSnapshot;
+  if (leavingBible) hideBibleOverlay({ restore: false });
   const sessionId = outputSessionId;
   const fromCueIndex = appState.currentSlide;
   const outputs = outputSnapshot.outputs;
@@ -9130,12 +9245,14 @@ async function goToSlideConfirmed(slideIndex) {
   let operation;
 
   try {
-    operation = liveCueTransitionCoordinator.begin({
-      sessionId,
-      fromCueIndex,
-      toCueIndex: slideIndex,
-      outputs: [...outputs]
-    });
+    operation = slideIndex === fromCueIndex
+      ? liveCueTransitionCoordinator.beginRefresh({sessionId, cueIndex: slideIndex, outputs: [...outputs]})
+      : liveCueTransitionCoordinator.begin({
+        sessionId,
+        fromCueIndex,
+        toCueIndex: slideIndex,
+        outputs: [...outputs]
+      });
     activeLiveCueNavigation = transaction;
 
     let dispatched;
@@ -9222,6 +9339,7 @@ async function goToSlideConfirmed(slideIndex) {
       } else {
         clearAllDisplays();
       }
+      requestOutputRecovery(failure.code, { resumeVisible: true, resumeCleared: false });
     }
     return failure;
   } finally {
@@ -9247,6 +9365,7 @@ async function navigateSlideConfirmed(delta) {
   }
   const newSlide = appState.currentSlide + delta;
   if (newSlide < 0 || newSlide >= appState.totalSlides) {
+    if (activeBibleOverlay) return goToSlideConfirmed(appState.currentSlide);
     return {
       accepted: false,
       code: delta < 0 ? 'AT_FIRST_CUE' : 'AT_LAST_CUE',
@@ -9626,6 +9745,7 @@ function getSlideText(language, slideIndex) {
 }
 
 function hideDisplayWindows() {
+  cancelOutputRecovery();
   if (testOutputBackground && !testOutputBackground.isDestroyed()) testOutputBackground.hide();
   if (activeLiveCueNavigation?.kind === 'restore') {
     activeLiveCueNavigation.stopRequested = true;
@@ -9657,6 +9777,7 @@ function hideDisplayWindows() {
 
 // Clear all displays to black
 function clearAllDisplays() {
+  if (outputRecovery) { outputRecovery.cleared = true; appState.isCleared = true; publishShowState('outputs-recovery-cleared'); return {accepted:true}; }
   if (!appState.activeLaunchPlan || outputWindows.size === 0) {
     return { accepted: false, code: 'NO_ACTIVE_SHOW', message: 'There is no active Show.' };
   }
@@ -10122,8 +10243,7 @@ function captureOutputPreviews() {
 
   const previewEntries = [...outputWindows.values()]
     .filter(({ win, output }) =>
-      output.operatorPreview
-      && outputPreviewSubscriptions.has(output.id)
+      outputPreviewSubscriptions.has(output.id)
       && win
       && !win.isDestroyed()
     );
@@ -10142,7 +10262,9 @@ function captureOutputPreviews() {
         const image = await win.webContents.capturePage();
         if (!isCurrentOutputWindow(win, previewSessionId, output.id)) return;
         if (!controlWindow || controlWindow.isDestroyed()) return;
-        const dataUrl = 'data:image/jpeg;base64,' + image.toJPEG(60).toString('base64');
+        const preview = await require('sharp')(image.toPNG()).rotate((360 - (win.syncShowTestOutputRotation || 0)) % 360).resize({ width: 960, withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
+        if (!isCurrentOutputWindow(win, previewSessionId, output.id)) return;
+        const dataUrl = 'data:image/jpeg;base64,' + preview.toString('base64');
         controlWindow.webContents.send('output:preview', {
           outputId: output.id,
           outputName: output.name,
@@ -10155,7 +10277,7 @@ function captureOutputPreviews() {
         console.error(`[Preview] ${output.name} capture failed:`, err.message);
       }
     }));
-  }, 120);
+  }, Math.max(120, appState.fadeDuration || 0));
 }
 
 ipcMain.on('singer:requestPreview', (event) => {
@@ -10172,7 +10294,6 @@ ipcMain.on('output:setPreviewSubscriptions', (event, outputIds = []) => {
   if (!isControlSender(event) || !Array.isArray(outputIds)) return;
   const available = new Set(
     [...outputWindows.values()]
-      .filter(({ output }) => output.operatorPreview)
       .map(({ output }) => output.id)
   );
   const nextSubscriptions = new Set(
@@ -26272,6 +26393,11 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   appState.singerCharLimit = renderingSettings.singerCharLimit;
   appState.singerTextPadding = renderingSettings.singerTextPadding;
 
+  activeOutputTargets = new Map(launchPlan.outputs.map(output => {
+    const display = displayById.get(String(output.displayId));
+    return [output.id, {id:display.id, fingerprint:appState.displays.find(item => item.id === display.id)?.fingerprint}];
+  }));
+  activeTestOutputSettings = testing ? readTestOutputSettings() : null;
   appState.activeLaunchPlan = launchPlan;
   appState.currentSlide = 0;
   appState.totalSlides = launchPlan.totalSlides;
@@ -26646,7 +26772,7 @@ ipcMain.handle('show:navigateBy', async (event, delta, options = {}) => {
     failMainOperation('INVALID_CUE_DIRECTION', 'Show navigation must move one cue at a time.');
   }
   authorizeLocalShowCommand(delta === 1 ? 'cue.next' : 'cue.previous');
-  if (delta === 1) {
+  if (delta === 1 && !activeBibleOverlay) {
     const video = handleCurrentVideoForwardAction(
       options?.input === 'space' ? 'space' : 'right'
     );
