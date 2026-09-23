@@ -645,6 +645,7 @@ class ShowPackagePublisher {
             timeline.cues[cueId],
             channel.channelId,
             {
+              rendererVersion: manifest.rendererVersion,
               width: manifest.renderOptions.width,
               height: manifest.renderOptions.height,
               nextCue: nextCueId ? timeline.cues[nextCueId] : null

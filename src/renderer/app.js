@@ -440,6 +440,7 @@ const elements = {
   previewBox: document.getElementById('previewBox'),
   outputPreviewList: document.getElementById('outputPreviewList'),
   outputPreviewSelect: document.getElementById('outputPreviewSelect'),
+  showLanguageWarning: document.getElementById('showLanguageWarning'),
 
   // Singer font size
   singerFontSize: document.getElementById('singerFontSize'),
@@ -1984,6 +1985,14 @@ function cueAt(index) {
 }
 
 function renderShowCueContext() {
+  if (elements.showLanguageWarning) {
+    const warnings = getDeckRoles().flatMap(role => {
+      const slide = state.presentations[role.id]?.slides?.[state.currentSlide];
+      return slide?.fallbackFromChannelId ? [`${role.label} is not configured for this slide. Showing ${slide.fallbackFromLabel || 'the filled language'} content.`] : [];
+    });
+    elements.showLanguageWarning.textContent = warnings.join(' ');
+    elements.showLanguageWarning.hidden = !warnings.length || state.bible.isLive;
+  }
   if (!elements.showCueContext) return;
   const current = cueAt(state.currentSlide);
   const next = cueAt(state.currentSlide + 1);

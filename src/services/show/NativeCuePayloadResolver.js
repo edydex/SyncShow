@@ -37,7 +37,8 @@ function usableAssetPath(assetPath) {
 function resolveNativeCuePayload({
   presentation,
   cueIndex,
-  variant = null
+  variant = null,
+  stageFacing = false
 } = {}) {
   if (
     !isRecord(presentation)
@@ -54,10 +55,17 @@ function resolveNativeCuePayload({
 
   try {
     const currentScene = presentation.scenes[cueIndex];
-    const scene = variant === 'singer-current-next'
+    const nextScene = presentation.scenes[cueIndex + 1] || null;
+    let next = nativeSceneSingerNext(nextScene);
+    // A hidden title image still has an operator label for the next-slide clue.
+    if (next.state === 'blank' && nextScene && nextScene.layout !== 'blank') {
+      const label = presentation.metadata?.slides?.[cueIndex + 1]?.firstLine;
+      if (typeof label === 'string' && label.trim()) next = {state: 'text', text: label.split(/\r?\n/)[0].slice(0, 300)};
+    }
+    const scene = variant === 'singer-current-next' || (stageFacing && currentScene.layout === 'blank')
       ? deriveNativeSingerScene(
           currentScene,
-          nativeSceneSingerNext(presentation.scenes[cueIndex + 1] || null)
+          next
         )
       : currentScene;
     const assetPaths = {};

@@ -1663,6 +1663,9 @@ function rendererSlideSemantics(
     cueId: rendererSafeText(cue?.id || metadata.cueId, 128),
     title: rendererSafeText(cue?.title || metadata.title, 300),
     kind: rendererSafeText(cue?.kind || metadata.kind, 40),
+    fallbackFromChannelId: rendererSafeText(metadata.fallbackFromChannelId || '', 128),
+    fallbackFromLabel: metadata.fallbackFromChannelId ? rendererSafeText(
+      activeVenueProfile?.inputRoles?.find(role => appState.presentations[role.id]?.metadata?.channelId === metadata.fallbackFromChannelId)?.label || 'another configured language', 160) : '',
     groupPath,
     operatorNotes: rendererSafeText(cue?.operatorNotes || '', 4000, {
       multiline: true
@@ -9511,7 +9514,7 @@ function dispatchCueToOutputs(slideIndex, { expectedOutputs = null } = {}) {
 
     const sourceRoleId = output.sourceRoleId;
     if (output.renderer === 'native-cue') {
-      const nativeCue = getNativeCuePayload(sourceRoleId, slideIndex, output.nativeVariant);
+      const nativeCue = getNativeCuePayload(sourceRoleId, slideIndex, output.nativeVariant, output.kind === 'singer');
       win.webContents.send('native-cue:goto', {
         ...slideData,
         outputId: output.id,
@@ -9580,7 +9583,7 @@ function videoOutputsForCue(slideIndex) {
   const matches = [];
   for (const output of launchPlan.outputs) {
     if (output.renderer !== 'native-cue') continue;
-    const payload = getNativeCuePayload(output.sourceRoleId, slideIndex, output.nativeVariant);
+    const payload = getNativeCuePayload(output.sourceRoleId, slideIndex, output.nativeVariant, output.kind === 'singer');
     if (!sceneContainsVideo(payload?.scene)) continue;
     matches.push({
       outputId: output.id,
@@ -9716,11 +9719,12 @@ function getSlideImagePath(language, slideIndex) {
   return imagePath;
 }
 
-function getNativeCuePayload(roleId, slideIndex, variant = null) {
+function getNativeCuePayload(roleId, slideIndex, variant = null, stageFacing = false) {
   return resolveNativeCuePayload({
     presentation: appState.presentations[roleId],
     cueIndex: slideIndex,
-    variant
+    variant,
+    stageFacing
   });
 }
 

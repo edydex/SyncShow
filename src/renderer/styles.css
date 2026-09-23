@@ -11088,3 +11088,5 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
 #outputPreviewSelect { width: 100%; min-width: 0; padding: 8px; color: var(--text); background: #1b2841; border: 1px solid var(--border); border-radius: 6px; }
 #outputPreviewList .mini-preview-img { aspect-ratio: 16/9; min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; }
 #outputPreviewList .mini-preview-img img { width: 100%; height: 100%; max-height: none; object-fit: contain; }
+
+.show-language-warning { color: #ff9292; font-size: .85rem; line-height: 1.45; margin: 0; }

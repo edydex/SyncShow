@@ -369,7 +369,8 @@ function cueMetadataForChannel(cue, channelId) {
     kind: cue.kind,
     groupPath: [...(cue.groupPath || [])],
     text,
-    firstLine: meaningfulFirstLine(text) || cue.title
+    firstLine: meaningfulFirstLine(text) || cue.title,
+    ...(channel?.fallbackFromChannelId ? {fallbackFromChannelId: channel.fallbackFromChannelId} : {})
   };
 }
 
@@ -603,7 +604,7 @@ class NativeSlideRenderer {
     if (credit) bodyMaximumHeight = Math.min(bodyMaximumHeight, Math.max(50, this.height * (quoteCredit ? .74 : .84) - availableTop));
     const bodyWidth = this.width * (preset.bodyWidthPercent || 82) / 100;
     const bodyAlign = preset.bodyAlign || 'center';
-    const bodyLayer = await this._textLayer(body || title, {
+    const bodyLayer = await this._textLayer(body, {
       width: bodyWidth,
       maxHeight: bodyMaximumHeight,
       fontSize: churchLayout ? preset.bodySize * resolutionScale : preset.bodySize,

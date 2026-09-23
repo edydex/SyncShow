@@ -342,6 +342,7 @@
         ...(raw.credit !== undefined ? ['credit'] : []),
         ...(raw.quoteCredit !== undefined ? ['quoteCredit'] : []),
         ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
+        ...(raw.backgroundDimOpacity !== undefined ? ['backgroundDimOpacity'] : []),
         ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
         'background',
         'body',
@@ -356,7 +357,8 @@
         'title'
       ], 'scene');
       if (raw.quoteCredit !== undefined && raw.quoteCredit !== true) throw new TypeError('Invalid quotation source layout');
-      const body = string(raw.body, 'scene.body', 12000, true);
+      const body = string(raw.body, 'scene.body', 12000, !raw.backgroundAssetId && !raw.title);
+      if (raw.backgroundDimOpacity !== undefined && (typeof raw.backgroundDimOpacity !== 'number' || !Number.isFinite(raw.backgroundDimOpacity) || raw.backgroundDimOpacity < 0 || raw.backgroundDimOpacity > 1)) throw new TypeError('Invalid background dimming');
       if (raw.backgroundAssetId !== undefined && !ASSET_ID_PATTERN.test(raw.backgroundAssetId)) throw new TypeError('Invalid slide background image');
       if (body.split(/\r\n|\r|\n/).length > 240) throw new TypeError('scene.body has too many lines');
       return {
@@ -366,6 +368,7 @@
         bodySpans: spans(raw.bodySpans, body),
         ...(raw.titleSpans !== undefined ? { titleSpans: spans(raw.titleSpans, raw.title) } : {}),
         ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: raw.backgroundAssetId } : {}),
+        ...(raw.backgroundDimOpacity !== undefined ? { backgroundDimOpacity: raw.backgroundDimOpacity } : {}),
         ...(raw.credit !== undefined ? { credit: string(raw.credit, 'scene.credit', 500) } : {}),
         ...(raw.quoteCredit ? {quoteCredit:true} : {}),
         style: textStyle(raw.style)
@@ -702,6 +705,7 @@
         if (!source) throw new Error('Slide background image is unavailable');
         const background = document.createElement('img');
         background.className = 'native-scene-background';
+        background.style.filter = `brightness(${1 - (scene.backgroundDimOpacity ?? 0.55)})`;
         background.alt = '';
         background.src = source;
         surface.appendChild(background);

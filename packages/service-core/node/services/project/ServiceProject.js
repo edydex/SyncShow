@@ -3,6 +3,7 @@ const {normalizeTextStyle, applyTimelineTypography} = require('./SlideTypography
 const { normalizeSermonOptions, sermonSlideBlocks } = require('./SermonPresentation');
 const { normalizeCanvasObjects, canvasAssetIds } = require('./CanvasLayout');
 const { scriptureFlowText } = require('./SlideFormatting');
+const { localizeReadingBlocks } = require('./ReadingLabels');
 
 const { normalizeSongPresentation, presentationTitleBlocks, presentationLyricBlocks } = require('./SongPresentation');
 
@@ -446,6 +447,10 @@ function normalizeChannel(raw, field, channelId) {
     mode,
     blocks: raw.blocks.map((block, index) => normalizeBlock(block, `${field}.blocks[${index}]`))
   };
+  if (raw.fallbackFromChannelId !== undefined) {
+    normalized.fallbackFromChannelId = id(raw.fallbackFromChannelId, `${field}.fallbackFromChannelId`);
+    if (normalized.fallbackFromChannelId === channelId) fail('INVALID_CHANNEL', 'An output cannot fall back to itself.');
+  }
   if (mode === 'condensed' && raw.sourceChannelId !== undefined) {
     normalized.sourceChannelId = id(raw.sourceChannelId, `${field}.sourceChannelId`);
     if (normalized.sourceChannelId === channelId) {
@@ -4184,6 +4189,13 @@ function compileServiceProject(rawProject, options = {}) {
     if (cues[cueId]) fail('CUE_ID_COLLISION', `Compiled cue id collision at ${item.id}.`);
     const cue = normalizeCue({ ...rawCue, id: cueId, itemId: item.id, sourceLeafKey: leafKey,
       ...(item.translationCues?.[leafKey] ? { translationAction: item.translationCues[leafKey] } : {}) });
+    if (cue.presetId === 'wotbc-reading-title') {
+      for (const channelId of project.channelIds) {
+        const language = project.channels[channelId].language;
+        cue.channels[channelId].blocks = localizeReadingBlocks(cue.channels[channelId].blocks,
+          channelId === 'media' && language === 'und' ? project.channels.russian?.language || language : language);
+      }
+    }
     cueIds.push(cueId);
     cues[cueId] = cue;
   };
@@ -4419,6 +4431,17 @@ function compileServiceProject(rawProject, options = {}) {
               blocks: sermonSlideBlocks(item.sermonTemplate === 'quote' && !item.titlesByChannel?.[channelId] && sermonHeadings.get(scope)?.[channelId] ? {...item, titlesByChannel: {...item.titlesByChannel, [channelId]: sermonHeadings.get(scope)[channelId]}} : item, channelId)
             }
           : { mode: 'hide', blocks: [] };
+      }
+      // An unconfigured sermon output borrows a complete authored output. Do
+      // not treat deliberately hidden outputs or image-only titles as missing.
+      const filled = project.channelIds.filter(channelId => channels[channelId].blocks.some(block =>
+        block.type === 'text' ? Boolean(block.text.trim()) : block.type === 'canvas' ? block.objects.some(object => object.type !== 'text' || object.text.trim()) : true));
+      for (const channelId of project.channelIds) {
+        const channel = channels[channelId];
+        if (channel.mode === 'hide' || filled.includes(channelId) || item.sermonPresentation?.showText === false) continue;
+        const preferred = channelId === 'media' ? 'ru' : 'en';
+        const from = filled.find(candidate => project.channels[candidate].language.split('-')[0] === preferred) || filled[0];
+        if (from) channels[channelId] = {mode: 'content', blocks: channels[from].blocks, fallbackFromChannelId: from};
       }
       addCue(item, 'self', {
         kind: item.kind,

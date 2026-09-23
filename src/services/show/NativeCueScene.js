@@ -399,6 +399,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
       ...(raw.credit !== undefined ? ['credit'] : []),
       ...(raw.quoteCredit !== undefined ? ['quoteCredit'] : []),
       ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
+      ...(raw.backgroundDimOpacity !== undefined ? ['backgroundDimOpacity'] : []),
       ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
       'background',
       'body',
@@ -413,7 +414,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
       'title'
     ], 'scene');
     const title = boundedString(raw.title, 'scene.title', 500);
-    const body = boundedString(raw.body, 'scene.body', MAX_SCENE_TEXT, { required: true });
+    const body = boundedString(raw.body, 'scene.body', MAX_SCENE_TEXT, { required: !raw.backgroundAssetId && !title });
     if (body.split(/\r\n|\r|\n/).length > MAX_SCENE_LINES) {
       fail('INVALID_NATIVE_SCENE', `scene.body may contain at most ${MAX_SCENE_LINES} lines.`);
     }
@@ -424,6 +425,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
       bodySpans: normalizeSceneSpans(raw.bodySpans, body),
       ...(raw.titleSpans !== undefined ? { titleSpans: normalizeSceneSpans(raw.titleSpans, title, 'scene.titleSpans') } : {}),
       ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: ASSET_ID_PATTERN.test(raw.backgroundAssetId) ? raw.backgroundAssetId : fail('INVALID_NATIVE_SCENE', 'Invalid background image.') } : {}),
+      ...(raw.backgroundDimOpacity !== undefined ? { backgroundDimOpacity: typeof raw.backgroundDimOpacity === 'number' && raw.backgroundDimOpacity >= 0 && raw.backgroundDimOpacity <= 1 ? raw.backgroundDimOpacity : fail('INVALID_NATIVE_SCENE', 'Invalid background dimming.') } : {}),
       ...(raw.credit !== undefined ? { credit: boundedString(raw.credit, 'scene.credit', 500) } : {}),
       ...(raw.quoteCredit !== undefined ? { quoteCredit: raw.quoteCredit === true ? true : fail('INVALID_NATIVE_SCENE', 'Invalid quotation source layout.') } : {}),
       style: normalizeTextStyle(raw.style)
@@ -590,14 +592,15 @@ function songTitleScene(cue, title, subtitle, credit, canvas) {
   });
 }
 
-function textScene(cue, channel, canvas) {
+function textScene(cue, channel, canvas, options = {}) {
+  const legacy = options.rendererVersion !== undefined && options.rendererVersion < 16;
   const bibleBlock = channel.blocks?.find(block => block.type === 'bible');
   const textBlocks = channel.blocks?.filter(block => block.type === 'text') || [];
   let title = '';
   let body = '';
   let bodySpans = [];
   if (bibleBlock) {
-    const display = scriptureDisplay(bibleBlock, cue.presetId);
+    const display = scriptureDisplay(bibleBlock, cue.presetId, {localizeReference: !legacy});
     title = cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : bibleBlock.reference;
     body = display.text;
     bodySpans = display.spans;
@@ -630,12 +633,12 @@ function textScene(cue, channel, canvas) {
       : (cue.kind === 'sermon' || cue.kind === 'notice'
           ? localizedTitle
           : (localizedTitle || cue.title));
-    if (!body) {
+    if (!body && (legacy || (cue.kind !== 'sermon' && cue.kind !== 'notice'))) {
       body = localizedTitle;
       bodySpans = [];
     }
   }
-  if (!body.trim()) body = title || cue.title;
+  if (!body.trim() && (legacy || (cue.kind !== 'sermon' && cue.kind !== 'notice'))) body = title || cue.title;
   const preset = textPreset(cue.presetId, cue.textStyle);
   const hasTitle = Boolean(title.trim()) && preset.showTitle;
   if (bodySpans.length === 0) bodySpans = referenceSpans(body, preset);
@@ -651,7 +654,7 @@ function textScene(cue, channel, canvas) {
     body,
     bodySpans,
     ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
-    ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId } : {}),
+    ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId, ...(!legacy ? {backgroundDimOpacity: channel.blocks.find(block => block.type === 'image' && block.role === 'background').dimOpacity ?? 0.55} : {}) } : {}),
     ...(bibleBlock && scriptureCredit(bibleBlock) ? { credit: scriptureCredit(bibleBlock) } : {}),
     ...(!bibleBlock && textBlocks.find(block=>block.role==='credit') ? {credit: textBlocks.find(block=>block.role==='credit').text, ...(cue.presetId === 'wotbc-sermon-quote' ? {quoteCredit: true} : {})} : {}),
     style: resolvedTextStyle(preset, hasTitle, cue.presetId)
@@ -665,7 +668,7 @@ function compileNativeCueScene(cue, channelId, options = {}) {
     height: Number.isSafeInteger(options.height) ? options.height : 1080
   };
   const channel = cue.channels?.[channelId];
-  if (!channel || channel.mode === 'hide' || channel.blocks?.some(block => block.type === 'blank')) {
+  if (!channel || channel.mode === 'hide' || (!channel.blocks?.length && !(options.rendererVersion < 16)) || channel.blocks?.some(block => block.type === 'blank')) {
     return normalizeNativeCueScene({
       schemaVersion: NATIVE_CUE_SCENE_SCHEMA_VERSION,
       kind: NATIVE_CUE_SCENE_KIND,
@@ -728,7 +731,7 @@ function compileNativeCueScene(cue, channelId, options = {}) {
       }
     });
   }
-  return textScene(cue, channel, canvas);
+  return textScene(cue, channel, canvas, options);
 }
 
 function deriveNativeSingerScene(scene, next) {
@@ -755,6 +758,7 @@ function nativeSceneSingerLine(scene) {
   }
   if (normalized.layout === 'canvas') return meaningfulFirstLine(canvasText(normalized.objects));
   if (normalized.layout === 'song-title') return meaningfulFirstLine(normalized.title);
+  if (normalized.layout === 'picture') return meaningfulFirstLine(normalized.picture.altText);
   if (normalized.layout !== 'text') return '';
 
   // NativeSlideRenderer's Singer contract reads the next compiled channel's

@@ -7,9 +7,10 @@ function scriptureFlowText(verses) {
   }).join(' ');
 }
 
-function scriptureDisplay(passage, presetId) {
+function scriptureDisplay(passage, presetId, {localizeReference = true} = {}) {
   if (passage.displayText !== undefined) return { text: passage.displayText, spans: passage.displaySpans || [], prefixLength: 0, bodyStart: 0, sourceStart: 0 };
-  const prefix = presetId === 'wotbc-sermon-scripture' ? `${passage.reference} ` : '';
+  const reference = require('./ReadingLabels').localizedReference(passage.reference, localizeReference && ['SYNO', 'SYNO-W'].includes(passage.translationId) ? 'ru' : 'en');
+  const prefix = presetId === 'wotbc-sermon-scripture' ? `${reference} ` : '';
   const flow = scriptureFlowText(passage.verses);
   // A single-verse reference already gives its verse number. Keep the source
   // flow intact for saved formatting; remove only that redundant display marker.
