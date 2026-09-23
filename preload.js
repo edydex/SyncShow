@@ -643,6 +643,8 @@ contextBridge.exposeInMainWorld('api', {
   
   // Display operations
   startPresentation: (displays) => ipcRenderer.invoke('display:start', displays),
+  getTestOutputSettings: () => ipcRenderer.invoke('testOutput:settings'),
+  saveTestOutputSettings: settings => ipcRenderer.invoke('testOutput:save', settings),
   stopPresentation: () => ipcRenderer.invoke('display:stop'),
   endPresentation: () => ipcRenderer.invoke('display:endSession'),
   showDisplays: () => ipcRenderer.invoke('display:show'),

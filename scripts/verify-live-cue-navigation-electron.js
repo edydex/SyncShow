@@ -118,6 +118,14 @@ async function main() {
     assert.equal(child.timedOut, false, 'Electron verification timed out.');
     assert.equal(child.code, 0, child.stderr || child.stdout);
     assert.equal(result.ok, true, result.stack || result.error);
+    if (process.env.SYNCSHOW_TEST_OUTPUT_PROOF === '1') {
+      assert.equal(result.contract, 'syncshow-test-output-real-electron-v1');
+      assert.equal(result.logicalOutputs, 3);
+      assert.equal(result.syntheticExternalDisplays, 1);
+      assert.deepEqual(result.layouts.map(value => value.layout), ['vertical', 'horizontal']);
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     assert.equal(
       result.contract,
       'syncshow-live-cue-navigation-real-electron-v3'

@@ -642,3 +642,21 @@ test('cue thumbnails are session-scoped and rechecked after asynchronous reads',
   await rejectsCode(pending, 'OUTPUT_SESSION_REPLACED');
   assert.deepEqual(calls, [1]);
 });
+
+
+test('a local Stop preserves desktop Restore while remote Restore remains disabled', () => {
+  const {adapter, runtime} = createHarness();
+  runtime.phase = 'locally-stopped';
+  runtime.outputs[0].visible = false;
+  runtime.operator = {controls:{canRestore:true}};
+  assert.equal(adapter.getState().operator.controls.canRestore, true);
+  assert.equal(adapter.getState().controls.canRestore, false);
+  runtime.navigationPending = true;
+  assert.equal(adapter.getState().operator.controls.canRestore, false);
+  runtime.navigationPending = false;
+  runtime.outputs[0].status = 'unavailable';
+  assert.equal(adapter.getState().operator.controls.canRestore, false);
+  runtime.outputs[0].status = 'healthy';
+  runtime.phase = 'starting';
+  assert.equal(adapter.getState().operator.controls.canRestore, false);
+});

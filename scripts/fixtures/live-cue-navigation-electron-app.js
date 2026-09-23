@@ -30,6 +30,7 @@ const EXPECTED_PACKAGED_EXECUTABLE =
 const EXPECTED_PACKAGED_PRELOAD =
   process.env.SYNCSHOW_EXPECTED_PACKAGED_PRELOAD || '';
 
+const DEMO_PROOF = process.env.SYNCSHOW_TEST_OUTPUT_PROOF === '1';
 const CONTRACT = 'syncshow-live-cue-navigation-real-electron-v3';
 const RESULT_FILE = 'live-cue-navigation-electron.json';
 const RESULT_PATH = process.env.SYNCSHOW_LIVE_CUE_NAVIGATION_RESULT || '';
@@ -148,12 +149,12 @@ function installSyntheticDisplays() {
       display.bounds.x + display.bounds.width));
     return [
       ...realDisplays,
-      ...OUTPUT_ROUTES.map((route, index) => {
+      ...(DEMO_PROOF ? OUTPUT_ROUTES.slice(0, 1) : OUTPUT_ROUTES).map((route, index) => {
         const syntheticBounds = {
           x: rightEdge + 200 + (index * 700),
           y: realDisplays[0]?.bounds?.y || 0,
-          width: 640,
-          height: 360
+          width: DEMO_PROOF ? 1080 : 640,
+          height: DEMO_PROOF ? 1920 : 360
         };
         return {
           id: route.displayId,
@@ -1751,12 +1752,62 @@ async function run() {
   };
 }
 
+async function runTestOutputProof() {
+  assert.equal(fs.realpathSync(app.getPath('userData')), fs.realpathSync(process.env.SYNCSHOW_TEST_USER_DATA_DIR));
+  const control = await waitFor(() => {
+    const candidate = controlWindow();
+    return candidate?.webContents?.isLoading() ? null : candidate;
+  }, 'control window');
+  await configureThreeOutputProfile(control);
+  const published = await createAndPublishService(control);
+  assert.equal(published.success, true);
+  const outputs = OUTPUT_ROUTES.map(route => ({ id: route.id, name: route.name, kind: route.kind, expectedRole: route.roleId, enabled: true, displayId: null }));
+  const layouts = [];
+  for (const layout of ['vertical', 'horizontal']) {
+    await rendererInvoke(control, `return window.api.saveTestOutputSettings({enabled:true, displayId:'880001', layout:${JSON.stringify(layout)}});`);
+    const started = await rendererInvoke(control, `return window.api.startPresentation({testOutput:true, outputs:${JSON.stringify(outputs)}, decisions:{}, preferredTimelineRoleId:'front', settings:{fadeDuration:0}});`);
+    assert.equal(started.success, true);
+    const windows = await waitForOutputWindows('three demo renderers');
+    const background = BrowserWindow.getAllWindows().find(win => win.webContents.getURL().startsWith('data:text/html'));
+    assert.ok(background && background.isVisible());
+    const bounds = [];
+    for (const win of windows.values()) {
+      const box = win.getBounds();
+      assert.equal(box.width * 9, box.height * 16);
+      assert.equal(win.isFullScreen(), false);
+      assert.equal(win.isVisible(), true);
+      bounds.push(box);
+    }
+    assert.equal(new Set(bounds.map(box => layout === 'vertical' ? box.y : box.x)).size, 3);
+    await invokeNext(control);
+    const show = await waitForShowState(control, value => value.currentCue?.index === 1 && everyShowOutput(value, output => output.status === 'healthy'), 'all demo outputs acknowledged next');
+    assert.equal(show.currentCue.index, 1);
+    const surfaces = await readOutputSurfaces(windows);
+    assert.ok(everySurface(surfaces, surface => surface.activeNativeText.includes(AUTHORITATIVE_RESTORE_TEXT)));
+    await rendererInvoke(control, 'return window.api.clearDisplays();');
+    await rendererInvoke(control, 'return window.api.showDisplays();');
+    await rendererInvoke(control, 'return window.api.stopPresentation();');
+    assert.equal((await readShowState(control)).operator.controls.canRestore, true);
+    assert.equal((await readShowState(control)).controls.canRestore, false);
+    assert.equal(background.isVisible(), false);
+    for (const win of windows.values()) assert.equal(win.isVisible(), false);
+    await rendererInvoke(control, 'return window.api.showDisplays();');
+    assert.equal(background.isVisible(), true);
+    assert.deepEqual([...windows.values()].map(win => win.getBounds()), bounds);
+    await rendererInvoke(control, 'return window.api.endPresentation();');
+    assert.equal(background.isDestroyed(), true);
+    for (const win of windows.values()) assert.equal(win.isDestroyed(), true);
+    layouts.push({layout, bounds, nextClearStopRestoreEndPassed:true});
+  }
+  return {ok:true, contract:'syncshow-test-output-real-electron-v1', profileIsolated:true, logicalOutputs:3, syntheticExternalDisplays:1, layouts};
+}
+
 if (!PACKAGED_INSTRUMENTATION) require('../../main');
 
 app.whenReady().then(async () => {
   let exitCode = 0;
   try {
-    const result = await run();
+    const result = await (DEMO_PROOF ? runTestOutputProof() : run());
     await writeResult(result);
   } catch (error) {
     exitCode = 1;

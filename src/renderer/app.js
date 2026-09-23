@@ -31,6 +31,9 @@ const state = {
   settingsTab: 'community',
   prepareMode: 'community',
   loadMode: 'syncshow',
+  suggestedService: null,
+  testOutput: { enabled: false, displayId: null, layout: 'vertical' },
+  testOutputSaving: false,
   loadLocalServices: {
     items: [],
     busy: false,
@@ -273,6 +276,16 @@ const elements = {
   btnOpenPptxImportFromLoad: document.getElementById('btnOpenPptxImportFromLoad'),
   loadModeTabs: Array.from(document.querySelectorAll('[data-load-tab]')),
   loadModePanels: Array.from(document.querySelectorAll('[data-load-panel]')),
+  btnTestOutput: document.getElementById('btnTestOutput'),
+  testOutputEnabled: document.getElementById('testOutputEnabled'),
+  testOutputDisplay: document.getElementById('testOutputDisplay'),
+  testOutputLayout: document.getElementById('testOutputLayout'),
+  testOutputStatus: document.getElementById('testOutputStatus'),
+  btnLoadSuggested: document.getElementById('btnLoadSuggested'),
+  btnLoadOther: document.getElementById('btnLoadOther'),
+  loadOtherOptions: document.getElementById('loadOtherOptions'),
+  suggestedServiceTitle: document.getElementById('suggestedServiceTitle'),
+  suggestedServiceDetail: document.getElementById('suggestedServiceDetail'),
   loadLocalServiceList: document.getElementById('loadLocalServiceList'),
   btnRefreshLocalServices: document.getElementById('btnRefreshLocalServices'),
   inputCardsHostLoad: document.getElementById('inputCardsHostLoad'),
@@ -601,8 +614,18 @@ function setupEventListeners() {
     }
   });
   elements.btnImportSyncShowFileFromLoad.addEventListener('click', async () => {
-    await setWorkflowStage('prepare', { localTools: true });
-    await prepareController?.importProject?.();
+    const button = elements.btnImportSyncShowFileFromLoad;
+    button.disabled = true;
+    try {
+      const imported = await window.api.importServiceProject();
+      if (imported?.project?.id && imported.revisionId) {
+        const result = await window.api.publishServiceProject({ projectId: imported.project.id, revisionId: imported.revisionId });
+        await refreshPublishedProject(result, { project: imported.project });
+        elements.loadOtherOptions.hidden = true;
+        elements.btnLoadOther.setAttribute('aria-expanded', 'false');
+      }
+    } catch (error) { setStatus(operatorErrorMessage(error, 'The service file could not be loaded.')); }
+    finally { button.disabled = false; }
   });
   elements.btnOpenPptxImportFromLoad.addEventListener('click', () => {
     openSettings('google-drive');
@@ -614,6 +637,22 @@ function setupEventListeners() {
   elements.btnRefreshLocalServices.addEventListener('click', refreshLoadLocalServices);
   elements.btnEditLoadedService.addEventListener('click', openLoadedServiceInPrepare);
   elements.btnLoadedServiceScreens.addEventListener('click', () => openSettings('screens'));
+
+  elements.btnLoadOther.addEventListener('click', () => {
+    elements.loadOtherOptions.hidden = !elements.loadOtherOptions.hidden;
+    elements.btnLoadOther.setAttribute('aria-expanded', String(!elements.loadOtherOptions.hidden));
+  });
+  elements.btnLoadSuggested.addEventListener('click', async () => {
+    const service = state.suggestedService;
+    if (!service) return;
+    if (service.source === 'local') return loadLocalService(service, elements.btnLoadSuggested);
+    elements.btnLoadSuggested.disabled = true;
+    try { await sharedServiceController?.openById?.(service.id); }
+    finally { elements.btnLoadSuggested.disabled = false; }
+  });
+  elements.btnTestOutput.addEventListener('click', () => startPresentation(true));
+  [elements.testOutputEnabled, elements.testOutputDisplay, elements.testOutputLayout]
+    .forEach(input => input.addEventListener('change', saveTestOutputSettings));
 
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
@@ -1244,7 +1283,7 @@ function renderLoadLocalServices() {
     elements.loadLocalServiceList.appendChild(
       createElement('p', 'local-service-empty is-error', state.loadLocalServices.error)
     );
-    return;
+    if (state.loadLocalServices.items.length === 0) return;
   }
   if (state.loadLocalServices.items.length === 0) {
     elements.loadLocalServiceList.appendChild(
@@ -1286,24 +1325,69 @@ async function refreshLoadLocalServices() {
   if (state.loadLocalServices.busy || typeof window.api?.listServiceProjects !== 'function') return;
   state.loadLocalServices.busy = true;
   state.loadLocalServices.error = null;
+  elements.btnLoadSuggested.disabled = true;
+  const helper = window.SyncShowRecentServices;
+  const results = await Promise.allSettled([
+    helper.collectPages(options => window.api.listServiceProjects({ query: '', ...options }), { local: true }),
+    (async () => {
+      const response = await window.api.getCommunityStatus();
+      if (response?.success === false) throw new Error('Community could not be reached.');
+      const status = response?.data || response;
+      if (!status?.connected || !status?.connection?.canReadServiceDocuments) return [];
+      return helper.collectPages(options => window.api.listCommunityServiceDocuments(options));
+    })()
+  ]);
+  const [local, remote] = results;
+  if (local.status === 'fulfilled') state.loadLocalServices.items = local.value;
+  else state.loadLocalServices.error = operatorErrorMessage(local.reason, 'Saved services could not be listed.');
+  state.suggestedService = helper.selectLatestService(state.loadLocalServices.items, remote.status === 'fulfilled' ? remote.value : []);
+  const service = state.suggestedService;
+  elements.suggestedServiceTitle.textContent = service?.title || 'Choose your first service';
+  const edited = service?.changedAt || service?.updatedAt;
+  const date = edited && Number.isFinite(Date.parse(edited)) ? new Date(edited).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  elements.suggestedServiceDetail.textContent = service
+    ? [service.source === 'community' ? 'Heritage Community' : 'Saved on this Mac', formatServiceDate(service.serviceDate), date ? `Edited ${date}` : '', remote.status === 'rejected' ? 'Community unavailable — showing saved services.' : ''].filter(Boolean).join(' · ')
+    : 'Open a Community service or upload a service file with Load other.';
+  elements.btnLoadSuggested.disabled = !service;
+  state.loadLocalServices.busy = false;
   renderLoadLocalServices();
-  try {
-    const result = await window.api.listServiceProjects({
-      query: '',
-      pageSize: 8,
-      offset: 0
-    });
-    state.loadLocalServices.items = Array.isArray(result?.items) ? result.items : [];
-  } catch (error) {
-    state.loadLocalServices.items = [];
-    state.loadLocalServices.error = operatorErrorMessage(
-      error,
-      'Saved services could not be listed.'
-    );
-  } finally {
-    state.loadLocalServices.busy = false;
-    renderLoadLocalServices();
+}
+
+function renderTestOutputSettings() {
+  const settings = state.testOutput;
+  elements.btnTestOutput.hidden = !settings.enabled;
+  elements.testOutputEnabled.checked = settings.enabled;
+  elements.testOutputLayout.value = settings.layout;
+  elements.testOutputDisplay.replaceChildren();
+  const placeholder = document.createElement('option');
+  placeholder.value = ''; placeholder.textContent = 'Choose external screen';
+  elements.testOutputDisplay.append(placeholder);
+  for (const display of state.displays.filter(display => !display.isControl)) {
+    const option = document.createElement('option');
+    option.value = String(display.id);
+    option.textContent = display.label || display.name || `Screen ${display.id}`;
+    elements.testOutputDisplay.append(option);
   }
+  if (settings.displayId && !state.displays.some(display => String(display.id) === settings.displayId && !display.isControl)) {
+    const missing = document.createElement('option');
+    missing.value = settings.displayId; missing.textContent = 'Saved demo screen — disconnected';
+    elements.testOutputDisplay.append(missing);
+  }
+  elements.testOutputDisplay.value = settings.displayId || '';
+  const locked = state.isPresenting || state.isStarting || !!state.startAttempt || state.testOutputSaving;
+  elements.testOutputEnabled.disabled = locked;
+  elements.testOutputDisplay.disabled = locked || !settings.enabled;
+  elements.testOutputLayout.disabled = locked || !settings.enabled;
+}
+
+async function saveTestOutputSettings() {
+  state.testOutputSaving = true;
+  const draft = { enabled: elements.testOutputEnabled.checked, displayId: elements.testOutputDisplay.value || null, layout: elements.testOutputLayout.value };
+  try {
+    state.testOutput = await window.api.saveTestOutputSettings(draft);
+    elements.testOutputStatus.textContent = 'Saved. Each preview stays 16:9. Use Add output below to configure more screens.';
+  } catch (error) { elements.testOutputStatus.textContent = operatorErrorMessage(error, 'Test Output settings could not be saved.'); }
+  finally { state.testOutputSaving = false; renderTestOutputSettings(); checkReadyState(); }
 }
 
 async function openLocalServiceInPrepare(projectId) {
@@ -2019,6 +2103,8 @@ async function loadSavedSettings() {
   state.isApplyingSettings = true;
   try {
     const settings = await window.api.loadSettings();
+    state.testOutput = await window.api.getTestOutputSettings();
+    renderTestOutputSettings();
     applyCommittedProfile(settings.venueProfile);
     state.profileRecoveryWarning = settings.recoveryWarning || null;
     if (state.profileRecoveryWarning) setStatus(state.profileRecoveryWarning);
@@ -5921,7 +6007,7 @@ function getLoadedRoles({ requireExtractedText = false } = {}) {
   });
 }
 
-function getReadinessState() {
+function getReadinessState(testOutput = false) {
   const outputs = getConfiguredOutputs();
   const routes = outputs.map(output => ({
     output,
@@ -5930,13 +6016,13 @@ function getReadinessState() {
   const activeRoutes = routes.filter(route => route.decision?.mode !== 'disabled');
   const activeOutputs = activeRoutes.map(route => route.output);
   const conversionPending = Object.values(state.presentations).some(presentation => presentation.pending);
-  const missingDisplays = activeOutputs.filter(output => output.displayId === null);
-  const operatorDisplayOutputs = activeOutputs.filter(output => output.usesOperatorDisplay);
+  const missingDisplays = testOutput ? [] : activeOutputs.filter(output => output.displayId === null);
+  const operatorDisplayOutputs = testOutput ? [] : activeOutputs.filter(output => output.usesOperatorDisplay);
   const unsupportedProfileRoutes = activeOutputs.filter(output => output.hasUnsupportedProfileRoute);
   const assignments = activeOutputs
     .filter(output => output.displayId !== null)
     .map(output => output.displayId);
-  const hasDisplayConflict = new Set(assignments).size !== assignments.length;
+  const hasDisplayConflict = !testOutput && new Set(assignments).size !== assignments.length;
   const directRoles = [...new Set(activeRoutes
     .map(route => decisionSourceRole(route.output, route.decision))
     .filter(role => role && state.presentations[role]?.loaded))];
@@ -5946,6 +6032,9 @@ function getReadinessState() {
     .filter(route => route.decision === null)
     .map(route => route.output);
   const issues = [];
+  const demoTarget = state.displays.find(display => String(display.id) === state.testOutput.displayId && !display.isControl);
+  const demoReady = !testOutput || (state.testOutput.enabled && !!demoTarget && !state.testOutputSaving);
+  if (!demoReady) issues.push('Choose a connected external demo screen in Admin Settings → Screen Setup');
 
   if (outputs.length === 0) issues.push('Choose at least one output screen in Admin Settings');
   if (outputs.length > 0 && activeOutputs.length === 0) {
@@ -5976,7 +6065,7 @@ function getReadinessState() {
   if (state.isStarting) issues.push('Output windows are starting');
   if (state.startAttempt && !state.isStarting) issues.push('Finish or cancel the current Start Show choices');
 
-  const isReady = activeOutputs.length > 0
+  const isReady = demoReady && activeOutputs.length > 0
     && !conversionPending
     && !state.isStarting
     && !state.startAttempt
@@ -6022,7 +6111,7 @@ function renderReadiness(readiness) {
     if (needsChoices.length > 0) {
       elements.readinessIcon.textContent = '→';
       elements.readinessTitle.textContent = 'Ready for a quick choice';
-      elements.readinessSummary.textContent = `Start Show will ask what to use for ${needsChoices.length === 1 ? needsChoices[0].name : `${needsChoices.length} outputs`}.`;
+      elements.readinessSummary.textContent = `${state.testOutput.enabled ? 'Test Output' : 'Start Show'} will ask what to use for ${needsChoices.length === 1 ? needsChoices[0].name : `${needsChoices.length} outputs`}.`;
     } else {
       elements.readinessIcon.textContent = '✓';
       elements.readinessTitle.textContent = 'Ready to start';
@@ -6075,7 +6164,11 @@ function checkReadyState() {
   } = readiness;
 
   elements.btnStartPresentation.disabled = !isReady;
-  renderReadiness(readiness);
+  renderTestOutputSettings();
+  const demoReadiness = getReadinessState(true);
+  elements.btnTestOutput.disabled = state.isPresenting || !demoReadiness.isReady;
+  elements.btnTestOutput.title = demoReadiness.issues.join(' · ') || 'Preview all outputs together';
+  renderReadiness(state.testOutput.enabled ? demoReadiness : readiness);
 
   // Display rescans and preference saves can occur while Show is live. Keep
   // those background readiness updates from replacing the operator's live
@@ -6122,8 +6215,9 @@ function confirmPreparedServiceDate() {
   return false;
 }
 
-async function startPresentation() {
-  const readiness = getReadinessState();
+async function startPresentation(testOutput = false) {
+  testOutput = testOutput === true;
+  const readiness = getReadinessState(testOutput);
   if (!readiness.isReady) return;
   if (!confirmPreparedServiceDate()) return;
 
@@ -6147,6 +6241,7 @@ async function startPresentation() {
     id: Date.now(),
     status: 'question',
     snapshot: {
+      testOutput,
       outputs: readiness.outputs,
       settings: {
         fadeDuration: parseIntegerOr(elements.fadeDuration.value, 300),
@@ -6489,6 +6584,7 @@ async function launchStartAttempt() {
       }
     ]));
     const launchRequest = {
+      testOutput: attempt.snapshot.testOutput === true,
       outputs: attempt.snapshot.outputs,
       decisions,
       preferredTimelineRoleId: attempt.snapshot.preferredTimelineRoleId,
@@ -6518,7 +6614,7 @@ async function launchStartAttempt() {
     renderThumbnails();
     updateSlideCounter();
     window.api.requestOutputPreviews();
-    setStatus('Presentation started');
+    setStatus(attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor' : 'Presentation started');
     window.setTimeout(() => {
       const target = !elements.btnNextSlide.disabled
         ? elements.btnNextSlide

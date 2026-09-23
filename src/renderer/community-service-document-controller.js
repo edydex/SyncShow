@@ -446,6 +446,11 @@
         return controller;
       },
       open: browseServices,
+      async openById(syncId) {
+        if (!await refreshCapability()) return false;
+        if (!elements.dialog.open) elements.dialog.showModal();
+        return openService(syncId);
+      },
       projectChanged,
       refresh: refreshCapability
     });

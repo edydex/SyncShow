@@ -73,7 +73,7 @@ test('Load is the friendly startup surface and Start blockers have visible reaso
   assert.match(html, /id="readinessIssues"/);
   assert.match(html, /id="btnRestorePrevious"[^>]+hidden/);
   assert.doesNotMatch(html, /setupSlideNum|setupTotalSlides|btnStopPresentation/);
-  assert.match(appSource, /function getReadinessState\(\)/);
+  assert.match(appSource, /function getReadinessState\(testOutput = false\)/);
   assert.match(html, /id="inputCards"[^>]+Service slideshow inputs/);
   assert.match(appSource, /getDeckRoles\(\)\.forEach/);
   assert.match(appSource, /state\.cachedPresentations = plan\?\.caches/);

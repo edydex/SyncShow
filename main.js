@@ -20,6 +20,7 @@ const QRCode = require('qrcode');
 const { TranslationProjection } = require('./src/services/translation/TranslationProjection');
 const { TranslationScreens } = require('./src/services/translation/TranslationScreens');
 const { TeachingSurface } = require('./src/services/show/TeachingSurface');
+const { normalizeTestOutputSettings, buildTestOutputDisplayMap } = require('./src/services/show/TestOutputLayout');
 const { TranslationPreferences } = require('./src/services/translation/TranslationPreferences');
 const { TranslationFeed } = require('./src/services/translation/TranslationFeed');
 const { TranslationOperatorWindow } = require('./src/services/translation/TranslationOperatorWindow');
@@ -356,6 +357,7 @@ let communityPlannerView = null;
 let communityPlannerOrigin = null;
 let controlSettingsDraftState = { dirty: false, saving: false };
 let outputWindows = new Map();
+let testOutputBackground = null;
 let translationPreferencesVenue = null;
 let translationSettingsQueue = Promise.resolve();
 const translationProjection = new TranslationProjection();
@@ -8163,6 +8165,43 @@ ipcMain.on('output:videoState', (event, payload = {}) => {
   }
 });
 
+function readTestOutputSettings() {
+  try {
+    return normalizeTestOutputSettings(JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'test-output.json'), 'utf8')));
+  } catch { return normalizeTestOutputSettings(); }
+}
+
+async function createTestOutputBackground(layout, sessionId) {
+  const escape = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+  const { bounds } = layout.target;
+  const win = new BrowserWindow({
+    ...bounds,
+    frame: false,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#000000',
+    show: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true }
+  });
+  testOutputBackground = win;
+  win.setIgnoreMouseEvents(true);
+  win.on('closed', () => {
+    if (testOutputBackground !== win) return;
+    testOutputBackground = null;
+    if (sessionId === outputSessionId) handleUnexpectedOutputWindowClose('test-output', 'test-output-closed');
+  });
+  const labels = layout.tiles.map(tile => `<div style="left:${tile.label.x - bounds.x}px;top:${tile.label.y - bounds.y}px;width:${tile.label.width}px;height:${tile.label.height}px">${escape(tile.name)}</div>`).join('');
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>SyncShow · Test Output</title><style>html,body{margin:0;background:#000;overflow:hidden}div{position:absolute;color:#cbd5e1;font:14px/24px -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}</style>${labels}`)}`);
+  if (sessionId !== outputSessionId || win.isDestroyed()) throw new Error('Test Output was cancelled.');
+  const currentTarget = screen.getAllDisplays().find(display => display.id === layout.target.id);
+  if (!currentTarget || ['x', 'y', 'width', 'height'].some(key => currentTarget.bounds[key] !== bounds[key])) {
+    throw new Error('The demo screen changed while starting. Choose it again in Admin Settings.');
+  }
+}
+
 function showOutputWindow(win) {
   if (!win || win.isDestroyed()) return;
 
@@ -8170,12 +8209,20 @@ function showOutputWindow(win) {
   // inactive prevents Start/Show from taking navigation away from the control
   // panel (especially on Windows when a fullscreen window is revealed).
   win.setIgnoreMouseEvents(true);
+  if (win.syncShowTestOutputBounds && testOutputBackground && !testOutputBackground.isDestroyed() && !testOutputBackground.isVisible()) {
+    testOutputBackground.showInactive();
+    testOutputBackground.setAlwaysOnTop(true, 'floating');
+  }
   win.showInactive();
-  win.setFullScreen(true);
+  win.setFullScreen(!win.syncShowTestOutputBounds);
+  if (win.syncShowTestOutputBounds) win.setBounds(win.syncShowTestOutputBounds);
   win.setAlwaysOnTop(true, 'screen-saver');
 }
 
 function destroyOutputWindows() {
+  const background = testOutputBackground;
+  testOutputBackground = null;
+  if (background && !background.isDestroyed()) background.destroy();
   translationScreens.closeAll();
   liveCueTransitionCoordinator?.cancel(
     'The output session ended while changing cues.',
@@ -8286,6 +8333,7 @@ function createDisplayWindow(displayInfo, output, sessionId) {
     show: false
   });
 
+  if (displayInfo.testOutput) win.syncShowTestOutputBounds = { ...bounds };
   win.setIgnoreMouseEvents(true);
 
   win.loadFile(path.join(__dirname, 'src', 'renderer', 'display.html')).catch(error => {
@@ -8381,6 +8429,7 @@ function createSingerWindow(displayInfo, output, sessionId) {
     show: false
   });
 
+  if (displayInfo.testOutput) win.syncShowTestOutputBounds = { ...bounds };
   win.setIgnoreMouseEvents(true);
 
   if (process.argv.includes('--dev')) {
@@ -9572,6 +9621,7 @@ function getSlideText(language, slideIndex) {
 }
 
 function hideDisplayWindows() {
+  if (testOutputBackground && !testOutputBackground.isDestroyed()) testOutputBackground.hide();
   if (activeLiveCueNavigation?.kind === 'restore') {
     activeLiveCueNavigation.stopRequested = true;
   }
@@ -26075,6 +26125,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     preferredTimelineRoleId,
     settings = {}
   } = options;
+  if (options.testOutput !== undefined && typeof options.testOutput !== 'boolean') throw new TypeError('Test Output must be true or false.');
 
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
     throw new TypeError('Launch settings must be an object');
@@ -26110,9 +26161,13 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   // Resolve and freeze all per-service decisions before touching the active
   // output session. A malformed or incomplete Start therefore leaves the
   // currently running show intact.
+  const testing = options.testOutput === true;
+  const launchOutputs = testing && Array.isArray(outputs)
+    ? outputs.map(output => ({ ...output, displayId: `test-output:${output.id}` }))
+    : outputs;
   const launchPlan = resolveLaunchPlan({
     presentations: appState.presentations,
-    outputs,
+    outputs: launchOutputs,
     decisions,
     preferredTimelineRoleId
   });
@@ -26136,8 +26191,9 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     : null;
 
   const displays = screen.getAllDisplays();
-  const displayById = new Map(displays.map(display => [String(display.id), display]));
   const controlDisplayId = getControlDisplayId();
+  const testLayout = testing ? buildTestOutputDisplayMap({ settings: readTestOutputSettings(), outputs: launchPlan.outputs, displays, controlDisplayId }) : null;
+  const displayById = testLayout?.displays || new Map(displays.map(display => [String(display.id), display]));
   for (const output of launchPlan.outputs) {
     if (!displayById.has(String(output.displayId))) {
       throw new Error(`${output.name} is assigned to a display that is no longer connected`);
@@ -26221,6 +26277,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   );
 
   try {
+    if (testLayout) await createTestOutputBackground(testLayout, sessionId);
     for (const output of launchPlan.outputs) {
       const displayInfo = displayById.get(String(output.displayId));
       const win = output.renderer === 'singer-current-next'
@@ -26832,6 +26889,20 @@ ipcMain.handle('settings:save', async (event, settings) => {
 ipcMain.handle('settings:defaultProfile', async (event) => {
   requireControlSender(event);
   return normalizeUserSettings({}).venueProfile;
+});
+
+ipcMain.handle('testOutput:settings', event => {
+  requireControlSender(event);
+  return readTestOutputSettings();
+});
+ipcMain.handle('testOutput:save', (event, request) => {
+  requireControlSender(event);
+  requireNoActiveShowForPresentationMutation();
+  const settings = normalizeTestOutputSettings(request);
+  const destination = path.join(app.getPath('userData'), 'test-output.json');
+  fs.writeFileSync(`${destination}.tmp`, `${JSON.stringify(settings)}\n`, { mode: 0o600 });
+  fs.renameSync(`${destination}.tmp`, destination);
+  return settings;
 });
 
 ipcMain.on('settings:draftState', (event, draftState = {}) => {

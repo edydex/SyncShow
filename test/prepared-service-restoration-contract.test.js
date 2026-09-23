@@ -135,7 +135,7 @@ test('renderer keeps restored native service primary and confirms a date mismatc
   const dateConfirmation = between(
     rendererSource,
     'function confirmPreparedServiceDate()',
-    'async function startPresentation()'
+    'async function startPresentation('
   );
   assert.match(dateConfirmation, /preparedServiceDateConfirmations/);
   assert.match(
@@ -146,7 +146,7 @@ test('renderer keeps restored native service primary and confirms a date mismatc
 
   const start = between(
     rendererSource,
-    'async function startPresentation()',
+    'async function startPresentation(',
     'function getAttemptOutput('
   );
   assert.match(start, /if \(!confirmPreparedServiceDate\(\)\) return/);

@@ -254,6 +254,11 @@ class RemoteCommandAdapter {
     const outputRestoreAvailable = outputActionsAvailable
       && !navigationPending
       && !hasPendingOutput;
+    // A local Stop disables remote resumption, but the desktop operator must
+    // retain Restore once every output is healthy and no transition is pending.
+    const localOutputRestoreAvailable = hasSession
+      && (outputActionsAvailable || raw.phase === 'locally-stopped')
+      && !navigationPending && !hasPendingOutput && !hasUnavailableOutput;
     const policyControls = this._policyControls();
     const localOperator = sanitizeLocalOperatorState(raw.operator, hasSession);
     const localPolicyControls = localOperator.controls;
@@ -286,7 +291,7 @@ class RemoteCommandAdapter {
             && totalSlides > 0
             && localPolicyControls.canJump,
           canRestore:
-            outputRestoreAvailable
+            localOutputRestoreAvailable
             && localPolicyControls.canRestore,
           canClear:
             outputActionsAvailable

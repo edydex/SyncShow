@@ -12,7 +12,7 @@ const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8'
 test('Load separates native SyncShow services from the legacy PPTX workflow', () => {
   assert.match(html, /id="loadTabSyncShow"[\s\S]*SyncShow service/u);
   assert.match(html, /id="loadTabPptx"[\s\S]*Legacy PPTX files/u);
-  assert.match(html, /id="loadSyncShowPanel"[\s\S]*Heritage Community[\s\S]*Import SyncShow file[\s\S]*Saved on this computer/u);
+  assert.match(html, /id="loadSyncShowPanel"[\s\S]*Heritage Community[\s\S]*Upload \.syncshow-service file[\s\S]*Saved on this computer/u);
   assert.match(html, /id="loadPptxPanel"[\s\S]*one, two, three, or more files/u);
   assert.match(app, /function activateLoadMode\(mode/u);
   assert.match(app, /publishServiceProject\(\{[\s\S]*projectId: project\.id,[\s\S]*revisionId: project\.revisionId/u);

@@ -11069,3 +11069,12 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
 .remote-navigation-notice[hidden] { display: none; }
 .remote-navigation-notice button { width: 44px; height: 44px; flex-shrink: 0;
   border: 1px solid #17203355; border-radius: 8px; background: transparent; color: inherit; font-size: 28px; cursor: pointer; }
+
+/* Keep the weekly Load choice small; secondary sources are revealed on demand. */
+.suggested-service { padding: 28px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-raised); margin-bottom: 18px; }
+.suggested-service h3 { font-size: 1.65rem; margin: 8px 0; }
+.suggested-service-actions { display: flex; gap: 12px; margin-top: 22px; flex-wrap: wrap; }
+#loadOtherOptions[hidden], #btnTestOutput[hidden] { display: none; }
+.test-output-toggle { display: flex; align-items: center; gap: 10px; margin: 14px 0; }
+.test-output-options { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 16px; }
+.test-output-options label { display: grid; gap: 8px; flex: 1; min-width: 180px; }

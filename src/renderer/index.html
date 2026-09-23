@@ -40,6 +40,7 @@
 
       <div class="header-right header-load-actions">
         <button type="button" class="btn btn-secondary" data-open-translation aria-haspopup="dialog" aria-controls="translationDialog">Translation</button>
+        <button id="btnTestOutput" class="btn btn-secondary" type="button" hidden>Test Output</button>
         <button id="btnOpenSettings" class="btn btn-secondary" aria-controls="advancedSetupDetails">
           Admin Settings
         </button>
@@ -721,7 +722,7 @@
             <div>
               <p class="section-kicker">LOAD</p>
               <h2 id="loadHeading">Load today’s service</h2>
-              <p>Choose a SyncShow service, or use the legacy PowerPoint workflow.</p>
+              <p>Your latest service plan is ready to pick up here.</p>
             </div>
           </div>
 
@@ -737,6 +738,16 @@
           </nav>
 
           <section id="loadSyncShowPanel" class="load-mode-panel" role="tabpanel" aria-labelledby="loadTabSyncShow" data-load-panel="syncshow">
+            <section class="suggested-service" aria-labelledby="suggestedServiceTitle">
+              <p class="section-kicker">LAST WORKED ON</p>
+              <h3 id="suggestedServiceTitle">Finding your latest service…</h3>
+              <p id="suggestedServiceDetail" aria-live="polite"></p>
+              <div class="suggested-service-actions">
+                <button id="btnLoadSuggested" type="button" class="btn btn-primary" disabled>Load service</button>
+                <button id="btnLoadOther" type="button" class="btn btn-secondary" aria-expanded="false" aria-controls="loadOtherOptions">Load other</button>
+              </div>
+            </section>
+            <div id="loadOtherOptions" hidden>
             <div class="load-source-actions">
               <button type="button" id="btnOpenCommunityServiceFromLoad" class="load-source-choice is-primary" aria-haspopup="dialog" aria-controls="sharedServicesDialog">
                 <span class="load-source-choice-mark" aria-hidden="true">H</span>
@@ -745,7 +756,7 @@
               </button>
               <button type="button" id="btnImportSyncShowFileFromLoad" class="load-source-choice">
                 <span class="load-source-choice-mark" aria-hidden="true">↥</span>
-                <span><strong>Import SyncShow file</strong><small>Open a portable service without a server</small></span>
+                <span><strong>Upload .syncshow-service file</strong><small>Open a portable service without a server</small></span>
                 <span class="load-source-choice-action" aria-hidden="true">Import&nbsp; →</span>
               </button>
             </div>
@@ -762,6 +773,8 @@
                 <p class="local-service-empty">Loading saved services…</p>
               </div>
             </section>
+
+            </div>
 
             <section id="loadServiceHandoff" class="load-service-handoff" aria-labelledby="loadServiceHandoffTitle" hidden>
               <div class="load-service-handoff-heading">
@@ -1053,6 +1066,16 @@
               </section>
 
               <section id="settingsScreensPanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabScreens" data-settings-panel="screens" tabindex="0" hidden>
+              <section class="settings-section" aria-labelledby="testOutputHeading">
+                <h3 id="testOutputHeading">Test Output</h3>
+                <label class="test-output-toggle"><input id="testOutputEnabled" type="checkbox"> Show Test Output button</label>
+                <p>Preview all enabled outputs together on one external monitor. Add English, Russian and Stage-Facing outputs below, even without separate monitors.</p>
+                <div class="test-output-options">
+                  <label>Demo screen<select id="testOutputDisplay" class="display-dropdown"></select></label>
+                  <label>Arrangement<select id="testOutputLayout" class="display-dropdown"><option value="vertical">Vertical — stacked</option><option value="horizontal">Horizontal — side by side</option></select></label>
+                </div>
+                <p id="testOutputStatus" class="settings-note" role="status">Each preview stays 16:9. Rotate your monitor in macOS Display Settings for a portrait demo.</p>
+              </section>
               <section class="settings-section display-tools-section" aria-labelledby="displayToolsHeading">
                 <div class="settings-section-heading">
                   <div>
@@ -1080,7 +1103,7 @@
                   <p class="section-kicker">STEP 2</p>
                   <h3 id="outputSettingsHeading">Choose what appears where</h3>
                 </div>
-                <p>Each output gets one physical screen and one slideshow.</p>
+                <p>Choose a slideshow for each output. Separate physical screens are required for normal Show; Test Output combines them.</p>
               </div>
               <div id="outputHealthSummary" class="output-health-summary" role="status" aria-live="polite"></div>
               <div id="inputCardsHostScreens" class="service-routing-settings" hidden>
@@ -3081,6 +3104,7 @@
   <script src="native-workflow-continuation.js"></script>
   <script src="bible-import-controller.js"></script>
   <script src="prepare-controller.js"></script>
+  <script src="recent-services.js"></script>
   <script src="community-service-document-controller.js"></script>
   <script src="app.js"></script>
   <script src="translation-controls.js"></script>
