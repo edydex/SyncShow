@@ -1,0 +1,161 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(require.resolve('../src/renderer/translation-display.js'), 'utf8');
+
+// Execute the actual isolated output renderer. The DOM model supplies a bounded
+// text area; browser rehearsal covers real font wrapping and rendered colors.
+function display(capacity = 1000) {
+  let receive, tick, resize, time = 0, cleared = false;
+  class Element {
+    children = []; dataset = {}; attributes = {}; style = {}; hidden = false; value = '';
+    classList = { contains: () => cleared };
+    setAttribute(key, value) { this.attributes[key] = value; }
+    append(child) { child.parent = this; this.children.push(child); }
+    prepend(child) { child.parent = this; this.children.unshift(child); }
+    replaceChildren() { this.value = ''; this.children = []; }
+    remove() { this.parent.children = this.parent.children.filter(value => value !== this); }
+    set textContent(value) { this.children = []; this.value = value; }
+    get textContent() { return this.value + this.children.map(child => child.textContent).join(''); }
+    get clientHeight() { return capacity; }
+    get scrollHeight() { return [...this.textContent].length; }
+    get clientWidth() { return 100; }
+    get scrollWidth() { return this.textContent.length; }
+  }
+  const container = new Element();
+  vm.runInNewContext(source, {
+    Intl, console,
+    document: { getElementById: () => container, createElement: () => new Element(),
+      documentElement: { style: { setProperty() {} } }, body: { clientHeight: 100 } },
+    window: { api: { onTranslationFrame: fn => { receive = fn; } } },
+    requestAnimationFrame: fn => { tick = fn; },
+    ResizeObserver: class { constructor(fn) { resize = fn; } observe() {} }
+  });
+  const layer = container.children[0], copy = layer.children[0];
+  let last;
+  return {
+    layer, copy,
+    current: () => copy.children.find(child => child.attributes['aria-current'] === 'true')?.textContent,
+    previous: () => copy.children.filter(child => child.className.includes('previous')).map(child => child.textContent.trim()),
+    send(phrases, options = {}) {
+      last = { outputId: 'ru', sessionId: 'one', language: 'en', layout: 'lower-third', fontScale: 1,
+        moving: true, manual: false, ...options,
+        phrases: phrases.map((text, index) => typeof text === 'string' ? { key: String(index), revision: 0, text } : text) };
+      receive(last);
+    },
+    update(options) { last = { ...last, ...options }; receive(last); },
+    advance(ms) { for (let i = 0; i < ms; i += 50) tick(time += 50); },
+    resize(value) { capacity = value; resize(); },
+    clear(value) { cleared = value; }
+  };
+}
+
+test('a multi-sentence chunk advances one sentence at a time; old text grays and rolls out', () => {
+  const d = display(29);
+  d.send(['First is here. Next is here. Last is here.']);
+  assert.equal(d.current(), 'First is here.');
+  assert.deepEqual(d.previous(), []);
+  d.advance(1500);
+  assert.equal(d.current(), 'Next is here.');
+  assert.deepEqual(d.previous(), ['First is here.']);
+  d.advance(1500);
+  assert.equal(d.current(), 'Last is here.');
+  assert.deepEqual(d.previous(), ['Next is here.']);
+  d.advance(15000);
+  assert.equal(d.current(), 'Last is here.', 'No blank interval while waiting for the next sentence');
+});
+
+test('Russian punctuation, quotations, decimals and common English honorifics stay faithful', () => {
+  const d = display();
+  d.send(['Мир вам. Он сказал: «Не бойтесь». Число 3.14.'], { language: 'ru' });
+  assert.equal(d.current(), 'Мир вам.');
+  d.advance(1500);
+  assert.equal(d.current(), 'Он сказал: «Не бойтесь».');
+  d.advance(1500);
+  assert.equal(d.current(), 'Число 3.14.');
+  d.send(['Dr. Smith reads John 3:16. GOD. We listen.'], { sessionId: 'two' });
+  assert.equal(d.current(), 'Dr. Smith reads John 3:16.');
+  d.advance(2000);
+  assert.equal(d.current(), 'GOD.');
+});
+
+test('new chunks queue behind the current sentence without replaying duplicate or completed revisions', () => {
+  const d = display();
+  const one = { key: '1', revision: 0, text: 'First thought. Second thought.' };
+  const two = { key: '2', revision: 0, text: 'Third thought.' };
+  d.send([one]);
+  d.send([one, two]);
+  assert.equal(d.current(), 'First thought.');
+  d.advance(1500);
+  assert.equal(d.current(), 'Second thought.');
+  d.advance(1500);
+  assert.equal(d.current(), 'Third thought.');
+  d.send([{ ...one, revision: 1, text: 'Corrected older thought.' }, two]);
+  d.advance(10000);
+  assert.equal(d.current(), 'Third thought.');
+});
+
+test('mid-sermon joins show history in gray and start at the latest chunk', () => {
+  const d = display();
+  d.send(['Long past. Earlier sentence.', 'Latest sentence. Coming next.'], { layout: 'full-screen' });
+  assert.equal(d.current(), 'Latest sentence.');
+  assert.deepEqual(d.previous(), ['Long past.', 'Earlier sentence.']);
+  d.advance(1500);
+  assert.equal(d.current(), 'Coming next.');
+});
+
+test('freeze/disconnection and cleared outputs pause progression; sessions and manual overrides reset it', () => {
+  const d = display();
+  d.send(['First. Second.'], { moving: false });
+  d.advance(10000);
+  assert.equal(d.current(), 'First.');
+  d.update({ moving: true });
+  d.clear(true);
+  d.advance(10000);
+  assert.equal(d.current(), 'First.');
+  d.clear(false);
+  d.advance(1500);
+  assert.equal(d.current(), 'Second.');
+  d.send(['New service.'], { sessionId: 'two' });
+  assert.deepEqual(d.previous(), []);
+  d.send(['Operator announcement.'], { manual: true });
+  assert.equal(d.current(), 'Operator announcement.');
+  d.send([], { layout: 'hidden' });
+  assert.equal(d.layer.hidden, true);
+  assert.equal(d.copy.textContent, '');
+});
+
+test('oversized sentences continue at word boundaries without losing text', () => {
+  const d = display(25);
+  const text = 'This long sentence has enough words to require several continuation views without losing any of them.';
+  d.send([text]);
+  const parts = [d.current()];
+  for (let i = 0; i < 20; i++) {
+    d.advance(1500);
+    if (parts.at(-1) !== d.current()) parts.push(d.current());
+  }
+  assert.ok(parts.length > 2);
+  assert.equal(parts.join(''), text);
+});
+
+test('font and viewport changes keep the current position rather than restarting the chunk', () => {
+  const d = display();
+  d.send(['First sentence. Second sentence. Third sentence.']);
+  d.advance(1500);
+  assert.equal(d.current(), 'Second sentence.');
+  d.update({ fontScale: 1.2 });
+  assert.equal(d.current(), 'Second sentence.');
+  d.resize(80);
+  assert.equal(d.current(), 'Second sentence.');
+});
+
+test('ticker text remains continuous and does not use sentence pacing', () => {
+  const d = display();
+  d.send(['First sentence. Next sentence.'], { layout: 'ticker' });
+  assert.equal(d.copy.textContent, 'First sentence. Next sentence.');
+  d.advance(1500);
+  assert.equal(d.copy.textContent, 'First sentence. Next sentence.');
+  assert.ok(d.copy.style.transform.startsWith('translateX('));
+});

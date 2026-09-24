@@ -16,6 +16,6 @@
 .translation-layer[data-layout="ticker"] { padding: 0; display: flex; align-items: center; font-size: calc(calc(4.8 * var(--output-vh, 1vh)) * var(--translation-font, 1)); }
 .translation-layer[data-layout="ticker"][hidden], .cleared .translation-layer[data-layout="ticker"] { display: none; }
 .translation-copy { height: 100%; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
-.translation-copy p { margin: 0 0 0.65em; }
-.translation-copy p:last-child { margin-bottom: 0; }
+.translation-sentence.previous { color: #a6adb9; }
+.translation-sentence.current { color: #fff; }
 .translation-layer[data-layout="ticker"] .translation-copy { flex: 0 0 auto; height: auto; white-space: pre; overflow: visible; will-change: transform; }

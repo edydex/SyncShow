@@ -22,8 +22,24 @@
   let lastTime = 0;
   let history = [];
 
-  // Measure at the chosen readable font size; paginate without dropping text.
-  function paginate(text) {
+  // ICU handles English/Russian punctuation, quotations and decimal numbers.
+  // Join common honorifics that ICU treats as standalone sentences.
+  function sentences(text) {
+    const result = [];
+    let pending = '';
+    for (const { segment } of new Intl.Segmenter(frame.language, { granularity: 'sentence' }).segment(text)) {
+      pending += segment;
+      if (/(?:\b(?:Mr|Mrs|Ms|Dr|Prof|Rev|St|Sr|Jr)|(?<!\p{L})[A-ZА-ЯЁ])\.\s*$/u.test(pending.trim())) continue;
+      if (pending.trim()) result.push(pending.trim());
+      pending = '';
+    }
+    if (pending.trim()) result.push(pending.trim());
+    return result;
+  }
+
+  // Keep a sentence intact when it fits. Only unusually long sentences need
+  // continuation pages, measured at the chosen font size without dropping text.
+  function paginateSentence(text) {
     const points = Array.from(text);
     const result = [];
     let offset = 0;
@@ -46,6 +62,27 @@
     return result;
   }
 
+  function paginate(text) {
+    let offset = 0;
+    return sentences(text).flatMap(sentence => paginateSentence(sentence).map(part => {
+      const page = { text: part, offset };
+      offset += part.length;
+      return page;
+    }));
+  }
+
+  function repaginate() {
+    const offset = pages[page]?.offset ?? 0;
+    pages = paginate(current.text);
+    // Resizing must not replay the beginning of a translated paragraph.
+    page = Math.max(0, pages.findLastIndex(part => part.offset <= offset));
+    showPage();
+  }
+
+  function rememberPage() {
+    if (pages[page]?.text) history = [...history, { text: pages[page].text }].slice(-7);
+  }
+
   function showPage() {
     copy.replaceChildren();
     copy.style.transform = '';
@@ -55,28 +92,30 @@
       copy.style.transform = `translateX(${x}px)`;
       return;
     }
-    const latest = document.createElement('p');
-    latest.textContent = pages[page] || '';
+    const latest = document.createElement('span');
+    latest.className = 'translation-sentence current';
+    latest.setAttribute('aria-current', 'true');
+    latest.textContent = pages[page]?.text || '';
     copy.append(latest);
-    // Full-screen keeps as much preceding text as fits, newest at the bottom.
-    if (frame.layout === 'full-screen' && pages.length === 1) {
-      for (const previous of history.slice(-7).reverse()) {
-        const paragraph = document.createElement('p');
-        paragraph.textContent = previous.text;
-        copy.prepend(paragraph);
-        if (copy.scrollHeight > copy.clientHeight + 1) { paragraph.remove(); break; }
-      }
+    // A rolling paragraph in both sentence layouts: old sentences are gray,
+    // the current sentence is white, and the oldest leaves when space runs out.
+    for (const previous of history.slice().reverse()) {
+      const sentence = document.createElement('span');
+      sentence.className = 'translation-sentence previous';
+      sentence.textContent = previous.text.trimEnd() + ' ';
+      copy.prepend(sentence);
+      if (copy.scrollHeight > copy.clientHeight + 1) { sentence.remove(); break; }
     }
   }
 
   function startNext() {
     if (!queue.length) return;
-    if (current) history = [...history, current].slice(-7);
+    if (current && frame.layout !== 'ticker') rememberPage();
     current = queue.shift();
     page = 0;
     elapsed = 0;
     x = layer.clientWidth;
-    pages = frame.layout === 'ticker' ? [current.text] : paginate(current.text);
+    pages = frame.layout === 'ticker' ? [] : paginate(current.text);
     showPage();
   }
 
@@ -98,25 +137,25 @@
     document.documentElement.style.setProperty('--translation-band', band);
 
     if (next.layout === 'hidden') return;
-    if (!next.phrases.length) { current = null; queue = []; history = []; copy.replaceChildren(); }
+    if (!next.phrases.length) { current = null; queue = []; history = []; seen.clear(); copy.replaceChildren(); }
     if (!seen.size && next.phrases.length) {
       // A screen joining mid-sermon starts at the current phrase. History is
       // useful in the full-screen feed, but must not become a delayed ticker.
       for (const phrase of next.phrases.slice(0, -1)) seen.set(phrase.key, phrase.revision);
-      history = next.phrases.slice(0, -1).slice(-7);
+      history = next.phrases.slice(0, -1).flatMap(phrase => sentences(phrase.text).map(text => ({ text }))).slice(-7);
     }
     for (const phrase of next.phrases) {
       if (seen.has(phrase.key) && seen.get(phrase.key) >= phrase.revision) continue;
+      const alreadyReceived = seen.has(phrase.key);
       seen.set(phrase.key, phrase.revision);
       if (current?.key === phrase.key) {
         current = phrase;
-        pages = next.layout === 'ticker' ? [phrase.text] : paginate(phrase.text);
-        page = Math.min(page, pages.length - 1);
-        showPage();
+        if (next.layout === 'ticker') showPage();
+        else repaginate();
       } else {
         const index = queue.findIndex(item => item.key === phrase.key);
         if (index >= 0) queue[index] = phrase;
-        else if (!history.some(item => item.key === phrase.key)) queue.push(phrase);
+        else if (!alreadyReceived) queue.push(phrase);
       }
     }
     // Bound memory and catch up after a prolonged renderer stall.
@@ -124,7 +163,7 @@
     queue = queue.slice(-12);
     if (!current) startNext();
     else if (oldScale !== next.fontScale && next.layout !== 'ticker') {
-      pages = paginate(current.text); page = Math.min(page, pages.length - 1); showPage();
+      repaginate();
     }
   }
 
@@ -141,9 +180,12 @@
         }
       } else {
         elapsed += delta;
-        const duration = Math.max(4000, Math.min(16000, (pages[page]?.length || 0) * 55));
+        const words = (pages[page]?.text || '').trim().split(/\s+/u).length;
+        // Roughly 250 words/minute; no paragraph-sized minimum dwell. Waiting
+        // for another sentence leaves this one visible rather than clearing it.
+        const duration = Math.max(1500, Math.min(9500, words * 240 + 500));
         if (elapsed >= duration) {
-          if (page + 1 < pages.length) { page++; elapsed = 0; showPage(); }
+          if (page + 1 < pages.length) { rememberPage(); page++; elapsed = 0; showPage(); }
           else if (queue.length) startNext();
         }
       }
@@ -152,7 +194,7 @@
   }
   new ResizeObserver(() => {
     if (current && frame.layout !== 'ticker') {
-      pages = paginate(current.text); page = Math.min(page, pages.length - 1); showPage();
+      repaginate();
     }
   }).observe(layer);
   window.api.onTranslationFrame(receive);
