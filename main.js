@@ -10254,7 +10254,7 @@ async function showAllDisplays() {
 // Capture each configured operator preview and send it to the control panel.
 // Captures are deliberately deferred and coalesced so they never delay output
 // navigation or the first-frame reveal barrier.
-function captureOutputPreviews() {
+function captureOutputPreviews({ coalesceOnly = false } = {}) {
   if (!controlWindow || controlWindow.isDestroyed()) return;
 
   const previewEntries = [...outputWindows.values()]
@@ -10268,6 +10268,7 @@ function captureOutputPreviews() {
   const previewSessionId = outputSessionId;
 
   // Debounce: if rapid slide changes, only capture after settling
+  if (outputPreviewTimer && coalesceOnly) return;
   if (outputPreviewTimer) clearTimeout(outputPreviewTimer);
   outputPreviewTimer = setTimeout(async () => {
     outputPreviewTimer = null;
@@ -18098,6 +18099,10 @@ function notifyTranslationChanged() {
     }
   }
   translationScreens.sendFrames();
+  // Preview the captions actually painted on the selected output as they arrive.
+  // Unlike slide-navigation debounce, a continuous text feed must not keep
+  // postponing the pending capture indefinitely.
+  captureOutputPreviews({ coalesceOnly: true });
 }
 
 async function connectTranslation({ control = false, hidden = false, serviceId } = {}) {
