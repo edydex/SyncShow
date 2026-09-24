@@ -23,10 +23,12 @@ function display(capacity = 1000) {
     get scrollHeight() { return [...this.textContent].length; }
     get clientWidth() { return 100; }
     get scrollWidth() { return this.textContent.length; }
+    getBoundingClientRect() { return { width: this.scrollWidth }; }
   }
   const container = new Element();
   vm.runInNewContext(source, {
     Intl, console,
+    getComputedStyle: () => ({ fontSize: '10px' }),
     document: { getElementById: () => container, createElement: () => new Element(),
       documentElement: { style: { setProperty() {} } }, body: { clientHeight: 100 } },
     window: { api: { onTranslationFrame: fn => { receive = fn; } } },
@@ -154,10 +156,50 @@ test('font and viewport changes keep the current position rather than restarting
 test('ticker text remains continuous and does not use sentence pacing', () => {
   const d = display();
   d.send(['First sentence. Next sentence.'], { layout: 'ticker' });
-  assert.equal(d.copy.textContent, 'First sentence. Next sentence.');
+  assert.equal(d.copy.textContent.trim(), 'First sentence. Next sentence.');
   d.advance(1500);
-  assert.equal(d.copy.textContent, 'First sentence. Next sentence.');
+  assert.equal(d.copy.textContent.trim(), 'First sentence. Next sentence.');
   assert.ok(d.copy.style.transform.startsWith('translateX('));
+});
+
+test('ticker appends live sentences without blank gaps, reset or duplicate final text', () => {
+  const d = display();
+  const first = { key: 'a', revision: 1, streaming: true, text: 'First '.repeat(25) };
+  d.send([first], { layout: 'ticker' });
+  d.advance(200);
+  const position = d.copy.style.transform;
+  const second = { key: 'b', revision: 1, streaming: true, text: 'Next partial' };
+  d.send([first, second], { layout: 'ticker' });
+  assert.equal(d.copy.style.transform, position, 'new text must not restart at the right edge');
+  assert.ok(d.copy.textContent.endsWith('Next partial  '));
+  d.send([first, { ...second, revision: 2, final: true, text: 'Next partial sentence.' }], { layout: 'ticker' });
+  assert.equal(d.copy.children.length, 2);
+  assert.ok(d.copy.textContent.endsWith('Next partial sentence.  '));
+  d.advance(20000);
+  assert.ok(d.copy.textContent.includes('Next partial sentence.'), 'retain the tail while waiting for more speech');
+  d.send([first, { ...second, revision: 2, final: true, text: 'Next partial sentence.' }, { key: 'c', revision: 1, text: 'New words '.repeat(20), streaming: true }], { layout: 'ticker' });
+  d.advance(20000);
+  assert.ok(!d.copy.textContent.includes('First'), 'consumed sentences are removed without losing following text');
+});
+
+test('ticker smoothly catches up with backlog and pauses when disconnected or cleared', () => {
+  const small = display(), large = display();
+  small.send(['x'.repeat(300)], { layout: 'ticker' });
+  large.send(['x'.repeat(1800)], { layout: 'ticker' });
+  small.advance(1000); large.advance(1000);
+  const offset = d => -parseFloat(d.copy.style.transform.slice(11));
+  assert.ok(offset(large) > offset(small) * 1.5, 'more queued text increases travel speed');
+  large.update({ moving: false });
+  const frozen = large.copy.style.transform;
+  large.advance(3000);
+  assert.equal(large.copy.style.transform, frozen);
+  large.update({ moving: true }); large.clear(true); large.advance(3000);
+  assert.equal(large.copy.style.transform, frozen);
+  large.clear(false); large.advance(200);
+  assert.notEqual(large.copy.style.transform, frozen);
+  large.send(['Fresh'], { layout: 'ticker', sessionId: 'next' });
+  assert.equal(large.copy.textContent.trim(), 'Fresh');
+  assert.equal(large.copy.style.transform, 'translateX(0px)');
 });
 
 

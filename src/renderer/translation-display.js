@@ -21,6 +21,56 @@
   let x = 0;
   let lastTime = 0;
   let history = [];
+  let ribbon = [];
+  let tickerSpeed = 0;
+
+  function receiveTicker(phrases) {
+    if (!phrases.length) {
+      ribbon = []; seen.clear(); x = 0; tickerSpeed = 0; copy.replaceChildren();
+      return;
+    }
+    if (!seen.size) {
+      // Joining a live stream starts now, without replaying its entire history.
+      for (const phrase of phrases.slice(0, -1)) seen.set(phrase.key, phrase.revision);
+    }
+    for (const phrase of phrases) {
+      if (seen.has(phrase.key) && seen.get(phrase.key) >= phrase.revision) continue;
+      const known = seen.has(phrase.key);
+      seen.set(phrase.key, phrase.revision);
+      let part = ribbon.find(item => item.key === phrase.key);
+      if (!part && !known) {
+        const node = document.createElement('span');
+        copy.append(node);
+        part = { key: phrase.key, node };
+        ribbon.push(part);
+      }
+      // Revisions extend the same span. They never restart its travel or replay
+      // an already-scrolled sentence when its final event arrives.
+      if (part) part.node.textContent = phrase.text.replace(/\s+/gu, ' ').trim() + '  ';
+    }
+    seen = new Map([...seen].slice(-160));
+    copy.style.transform = `translateX(${x}px)`;
+  }
+
+  function tickTicker(delta) {
+    if (!ribbon.length) return;
+    const width = layer.clientWidth;
+    const font = parseFloat(getComputedStyle(copy).fontSize) || 32;
+    const ahead = Math.max(0, x + copy.scrollWidth - width);
+    // Approximately normal reading speed with an increasingly faster catch-up
+    // rate. Ease speed changes, and stop at the tail instead of inserting a
+    // screen-width blank between sentences or letting a live partial disappear.
+    const base = font * 7;
+    const desired = Math.min(font * 24, base + ahead / 5);
+    tickerSpeed += (desired - tickerSpeed) * (1 - Math.exp(-delta / 650));
+    const tail = Math.min(0, width * 0.9 - copy.scrollWidth);
+    x = Math.max(tail, x - tickerSpeed * delta / 1000);
+    while (ribbon.length > 1 && x + ribbon[0].node.getBoundingClientRect().width <= 0) {
+      x += ribbon[0].node.getBoundingClientRect().width;
+      ribbon.shift().node.remove();
+    }
+    copy.style.transform = `translateX(${x}px)`;
+  }
 
   // ICU handles English/Russian punctuation, quotations and decimal numbers.
   // Join common honorifics that ICU treats as standalone sentences.
@@ -88,11 +138,6 @@
     copy.replaceChildren();
     copy.style.transform = '';
     if (!current) return;
-    if (frame.layout === 'ticker') {
-      copy.textContent = current.text.replace(/\r?\n/g, ' ');
-      copy.style.transform = `translateX(${x}px)`;
-      return;
-    }
     const latest = document.createElement('span');
     latest.className = 'translation-sentence current';
     latest.setAttribute('aria-current', 'true');
@@ -111,12 +156,11 @@
 
   function startNext() {
     if (!queue.length) return;
-    if (current && frame.layout !== 'ticker') rememberPage();
+    if (current) rememberPage();
     current = queue.shift();
     page = 0;
     elapsed = 0;
-    x = layer.clientWidth;
-    pages = frame.layout === 'ticker' ? [] : paginate(current.text);
+    pages = paginate(current.text);
     showPage();
   }
 
@@ -138,6 +182,7 @@
     if (identity !== nextIdentity) {
       identity = nextIdentity;
       seen = new Map(); queue = []; current = null; history = []; pages = [];
+      ribbon = []; x = 0; tickerSpeed = 0;
       copy.replaceChildren();
     }
     const oldScale = frame?.fontScale;
@@ -150,7 +195,8 @@
     document.documentElement.style.setProperty('--translation-band', band);
 
     if (next.layout === 'hidden') return;
-    if (next.layout !== 'ticker' && !next.manual && next.phrases.at(-1)?.streaming) {
+    if (next.layout === 'ticker') { receiveTicker(next.phrases); return; }
+    if (!next.manual && next.phrases.at(-1)?.streaming) {
       showStreaming();
       return;
     }
@@ -167,8 +213,7 @@
       seen.set(phrase.key, phrase.revision);
       if (current?.key === phrase.key) {
         current = phrase;
-        if (next.layout === 'ticker') showPage();
-        else repaginate();
+        repaginate();
       } else {
         const index = queue.findIndex(item => item.key === phrase.key);
         if (index >= 0) queue[index] = phrase;
@@ -179,7 +224,7 @@
     seen = new Map([...seen].slice(-160));
     queue = queue.slice(-12);
     if (!current) startNext();
-    else if (oldScale !== next.fontScale && next.layout !== 'ticker') {
+    else if (oldScale !== next.fontScale) {
       repaginate();
     }
   }
@@ -187,15 +232,10 @@
   function tick(time) {
     const delta = Math.min(100, Math.max(0, time - lastTime));
     lastTime = time;
-    if (current && frame?.moving && !layer.hidden && !container.classList.contains('cleared')) {
+    if (frame?.moving && !layer.hidden && !container.classList.contains('cleared')) {
       if (frame.layout === 'ticker') {
-        x -= delta / 1000 * Math.max(30, document.body.clientHeight * 0.085 * frame.fontScale);
-        copy.style.transform = `translateX(${x}px)`;
-        if (x < -copy.scrollWidth) {
-          if (queue.length) startNext();
-          else { copy.textContent = ''; current = null; }
-        }
-      } else if (!current.streaming) {
+        tickTicker(delta);
+      } else if (current && !current.streaming) {
         elapsed += delta;
         const words = (pages[page]?.text || '').trim().split(/\s+/u).length;
         // Roughly 250 words/minute; no paragraph-sized minimum dwell. Waiting

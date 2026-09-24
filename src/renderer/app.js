@@ -1622,6 +1622,7 @@ function setWorkflowStage(stage) {
 }
 
 async function navigateWorkflowStage(stage) {
+  if (state.community.handoffBusy) return;
   if (stage === state.workflowStage) {
     if (stage === 'prepare' && state.prepareMode === 'community') {
       await openCommunityPrepare();
@@ -1647,6 +1648,22 @@ async function navigateWorkflowStage(stage) {
     return;
   }
 
+  if (stage === 'load' && state.workflowStage === 'prepare' && state.prepareMode === 'community') {
+    state.community.handoffBusy = true;
+    elements.btnStageLoad.disabled = true;
+    try {
+      setStatus('Waiting for Prepare, then loading the saved service…');
+      const handoff = communityCheckedResult(await window.api.prepareCommunityPlannerForLoad());
+      await setWorkflowStage('load');
+      if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId);
+    } catch (error) {
+      setStatus(operatorErrorMessage(error, 'Prepare could not hand this service to Load.'));
+    } finally {
+      state.community.handoffBusy = false;
+      updateWorkflowNavigationAvailability();
+    }
+    return;
+  }
   setWorkflowStage(stage);
 }
 

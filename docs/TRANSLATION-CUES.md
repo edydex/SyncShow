@@ -1,6 +1,6 @@
 # Planned translation cues
 
-Prepare Start/Stop Translate cues in Heritage Community. Start opens a settings dialog for language, optional listener voice, screen language and ticker or sentence captions. Existing cues offer Edit Translation Settings. Save the service and load its exact revision in SyncShow.
+Prepare Start/Stop Translate cues in Heritage Community. Start opens a settings dialog for language, optional listener voice, screen language and ticker or sentence captions. Existing cues offer Edit Translation Settings. Save the service. Moving from embedded Prepare to Load waits for pending document requests, refreshes that selected service from Community, and rebuilds its package. The usual conflict review protects local changes. A failed save blocks the handoff; it must be resolved in Prepare.
 
 Caption bands reserve 12% (ticker) or 29% (sentences) of the slide height, across the full width. Content wraps within the remaining area and text reduces only when necessary; the whole slide is not scaled down. Plan images and objects inside that area. Thumbnails and live native scenes share the reservation. Stage-facing screens keep their full area. Renderer version 18 marks this layout behavior; version 17 packages remain readable with their original renderer behavior.
 
@@ -10,6 +10,10 @@ In Show, the slide before Start prepares the local input and processor without s
 
 Optional translated audio for listeners follows the planned setting. Prepared slides remain available offline; live translation requires the church server and network. Physical mixer routing remains a venue acceptance check.
 
-Sentence captions advance one sentence at a time, even when a provider returns several sentences together. The current sentence is white; earlier sentences remain gray until the oldest must leave the reserved area. Long sentences continue at word boundaries if necessary. Text is not paraphrased or shortened. Ticker captions retain their continuous scrolling behavior.
+Sentence captions show continuous interpreter text as it arrives, without an extra sentence dwell queue. The current sentence is white; earlier sentences remain gray until the oldest must leave the reserved area. Long sentences continue at word boundaries if necessary. Text is not paraphrased or shortened. Non-streaming providers still advance completed captions by sentence.
 
-With the current WOTBC connection, audio streams from SyncShow to the church translation processor, which streams English audio to Muse. Recognized text goes through the processor’s OpenAI translation channel, then the public caption feed returns text to SyncShow and phone listeners. Provider keys remain on the church server. This is not a direct desktop-to-Muse connection.
+Ticker captions append translated partials into one continuous ribbon. Sentence boundaries do not reset its position or insert a screen-width gap. Speed eases upward as queued text grows, within a cap; the tail remains visible while waiting for more text. Final revisions update their existing span without replaying it. Disconnect and Clear freeze movement; a new session clears the old text.
+
+Stop outputs and Back to Load both stop cue-owned capture and translation and await the operator's Stop acknowledgement. A failed acknowledgement stays an error and can be retried. Restoring outputs inside a translation segment starts that segment again, after any previous Stop completes. Clear to black only conceals the output; it does not end the service or translation.
+
+WOTBC's continuous path streams audio from SyncShow through the church processor to OpenAI's realtime translation service. Translated partials return through the public caption feed. The alternative Muse recognition path uses a separate text translation step. Provider keys remain on the church server; the desktop does not connect directly using a provider key.

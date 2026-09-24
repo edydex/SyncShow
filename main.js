@@ -355,6 +355,7 @@ const sermonExtractionProposalCoordinator = new SermonSourceExtractionCoordinato
 let controlWindow = null;
 let communityPlannerView = null;
 let communityPlannerOrigin = null;
+let communityPlannerHandoff = null;
 let controlSettingsDraftState = { dirty: false, saving: false };
 let outputWindows = new Map();
 let testOutputBackground = null;
@@ -398,8 +399,7 @@ const slideTranslation = new SlideTranslationCues({
     if (command.phase === 'idle') {
       for (const [id,settings] of translationProjection.outputs) translationProjection.configure(id,{...settings,layout:'hidden'});
       notifyTranslationChanged();
-      translationOperator.dispatch(command);
-      return;
+      return translationOperator.stop(command);
     }
     await connectTranslation({ control: true, hidden: true, serviceId: command.serviceId });
     if (desiredSlideTranslation === command) {
@@ -7471,8 +7471,8 @@ function clearCommunitySermonMediaOperationState() {
 }
 
 async function cancelCommunityTransientOperations() {
+  await slideTranslation.stop();
   await translationOperator.shutdown();
-  slideTranslation.stop();
   translationFeed.stop();
   communityOperationEpoch += 1;
   communitySyncAbortController?.abort();
@@ -7655,6 +7655,7 @@ async function openCommunityPlannerWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      backgroundThrottling: false,
       partition: 'syncshow-community-planner'
     }
   });
@@ -7665,6 +7666,15 @@ async function openCommunityPlannerWindow() {
   communityPlannerView = planner;
   communityPlannerOrigin = plannerOrigin;
   const plannerSession = planner.webContents.session;
+  const { CommunityPlannerHandoff } = require('./src/services/community/CommunityPlannerHandoff');
+  const handoff = new CommunityPlannerHandoff({ origin: plannerOrigin, webContentsId: planner.webContents.id });
+  communityPlannerHandoff = handoff;
+  plannerSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+    handoff.begin(details);
+    callback({});
+  });
+  plannerSession.webRequest.onCompleted({ urls: ['<all_urls>'] }, details => handoff.finish(details));
+  plannerSession.webRequest.onErrorOccurred({ urls: ['<all_urls>'] }, details => handoff.finish(details));
 
   plannerSession.setPermissionRequestHandler(
     (_webContents, _permission, callback) => callback(false)
@@ -7710,6 +7720,10 @@ async function openCommunityPlannerWindow() {
     if (!planner.webContents.isDestroyed()) notifyCommunityPlannerState();
   });
   planner.webContents.on('destroyed', () => {
+    plannerSession.webRequest.onBeforeRequest(null);
+    plannerSession.webRequest.onCompleted(null);
+    plannerSession.webRequest.onErrorOccurred(null);
+    if (communityPlannerHandoff === handoff) communityPlannerHandoff = null;
     plannerSession.webRequest.onBeforeSendHeaders(null);
     if (communityPlannerView === planner) {
       communityPlannerView = null;
@@ -8430,7 +8444,7 @@ function destroyOutputWindows() {
   // then fail its session/reference check instead of touching a replacement.
   outputWindows = new Map();
   appState.displayAssignments = new Map();
-  slideTranslation.stop();
+  void slideTranslation.stop().catch(() => {});
   appState.activeLaunchPlan = null;
   activePowerPointShowReceipt = null;
   appState.isCleared = false;
@@ -9761,6 +9775,7 @@ function getSlideText(language, slideIndex) {
 }
 
 function hideDisplayWindows() {
+  void slideTranslation.stop().catch(() => {});
   cancelOutputRecovery();
   if (testOutputBackground && !testOutputBackground.isDestroyed()) testOutputBackground.hide();
   if (activeLiveCueNavigation?.kind === 'restore') {
@@ -10159,6 +10174,7 @@ async function showAllDisplays() {
     activeLiveCueNavigation = null;
     captureOutputPreviews();
     publishShowState('outputs-restored');
+    void slideTranslation.navigate(appState.presentations[launchPlan.timelineRoleId], cueIndex);
     return { accepted: true, applied: true, receipt };
   } catch (error) {
     const failure = normalizeLiveCueNavigationFailure(error);
@@ -18228,6 +18244,14 @@ ipcMain.handle('community:planner:open', async (event) => {
 ipcMain.handle('community:planner:state', async (event) => {
   requireControlSender(event);
   return communityIpcResult(async () => communityPlannerStatePayload());
+});
+
+ipcMain.handle('community:planner:prepareLoad', async event => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    if (appState.activeLaunchPlan) throw new Error('Stop the Show before loading Prepare changes.');
+    return communityPlannerHandoff ? communityPlannerHandoff.ready() : { serviceId: null };
+  });
 });
 
 ipcMain.handle('community:planner:layout', async (event, request = {}) => {
@@ -26632,6 +26656,7 @@ ipcMain.handle('display:stop', async (event) => {
   requireControlSender(event);
   authorizeLocalShowCommand('output.stop');
   const result = hideDisplayWindows();
+  await slideTranslation.stop();
   // unregisterGlobalShortcuts(); // deprecated
   return { success: result.accepted !== false, showState: showGateway.getState() };
 });
@@ -26664,6 +26689,7 @@ ipcMain.handle('display:endSession', async (event) => {
   const endedPowerPointShowReceipt = activePowerPointShowReceipt;
   destroyOutputWindows();
   const endedOutputSessionId = outputSessionId;
+  await slideTranslation.stop();
   const powerPointServiceHandoff = await finalizePowerPointServiceHandoff(
     endedPowerPointShowReceipt,
     endedOutputSessionId
@@ -27671,7 +27697,7 @@ app.on('before-quit', event => {
   if (translationQuitReady || !translationOperator.window) return;
   event.preventDefault();
   translationQuitReady = true;
-  translationOperator.shutdown().finally(() => app.quit());
+  translationOperator.shutdown().catch(error => console.warn('Translation shutdown:', error.message)).finally(() => app.quit());
 });
 
 app.on('will-quit', () => {

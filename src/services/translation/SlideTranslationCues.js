@@ -19,14 +19,17 @@ class SlideTranslationCues {
   constructor({ send, resolve, changed }) {
     this.send = send; this.resolve = resolve; this.changed = changed;
     this.sequence = 0; this.last = null; this.status = { phase: 'idle' };
+    this.stopCommand = null; this.stopPending = null;
   }
   report(status) { this.status = status; this.changed(); }
   async navigate(presentation, index) {
     const generation = ++this.sequence;
     const cues = presentation?.translationCues || [];
     const intent = translationIntent(cues, index);
-    if (!intent) { this.stop(); return; }
+    if (!intent) { await this.stop().catch(() => {}); return; }
     try {
+      await this.flushStop();
+      if (generation !== this.sequence) return;
       const binding = await this.resolve(presentation);
       if (generation !== this.sequence) return;
       const command = { ...binding, ...intent };
@@ -40,10 +43,23 @@ class SlideTranslationCues {
   }
   stop() {
     ++this.sequence;
-    if (!this.last) return;
-    const command = { ...this.last, phase: 'idle' };
+    if (this.last) this.stopCommand = { ...this.last, phase: 'idle' };
     this.last = null;
-    Promise.resolve(this.send(command)).catch(error => this.report({ phase: 'error', message: error.message }));
+    return this.flushStop();
+  }
+  flushStop() {
+    if (this.stopPending) return this.stopPending;
+    if (!this.stopCommand) return Promise.resolve();
+    const command = this.stopCommand;
+    this.report({ phase: 'stopping' });
+    this.stopPending = Promise.resolve().then(() => this.send(command)).then(() => {
+      this.stopCommand = null;
+      this.report({ phase: 'idle' });
+    }).catch(error => {
+      this.report({ phase: 'error', message: error.message });
+      throw error;
+    }).finally(() => { this.stopPending = null; });
+    return this.stopPending;
   }
 }
 module.exports = { translationIntent, SlideTranslationCues };

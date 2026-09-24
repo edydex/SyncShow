@@ -50,7 +50,7 @@ function audioPermission({ webContents, owner, permission, origin, details, chec
 }
 
 class TranslationOperatorWindow {
-  constructor({ BrowserWindow, desktopCapturer, changed = () => {}, failed = () => {}, readyTimeoutMs = 15000, stopTimeoutMs = 5000 }) {
+  constructor({ BrowserWindow, desktopCapturer, changed = () => {}, failed = () => {}, readyTimeoutMs = 15000, stopTimeoutMs = 55000 }) {
     this.BrowserWindow = BrowserWindow;
     this.desktopCapturer = desktopCapturer;
     this.computerAudioSelected = false;
@@ -60,6 +60,7 @@ class TranslationOperatorWindow {
     this.stopTimeoutMs = stopTimeoutMs;
     this.readyTimer = null;
     this.stopWaiter = null;
+    this.stopPending = null;
     this.lastStatus = 'idle';
     this.window = null;
     this.connectionId = null;
@@ -85,26 +86,33 @@ class TranslationOperatorWindow {
   markReady() { clearTimeout(this.readyTimer); this.readyTimer = null; this.ready = true; if (this.command) this.dispatch(this.command); }
   report(status) {
     this.lastStatus = status.phase;
-    if (['idle', 'error'].includes(status.phase)) this.stopWaiter?.();
+    if (status.phase === 'idle') this.stopWaiter?.();
+    else if (status.phase === 'error') this.stopWaiter?.(new Error(status.message || 'Translation Stop was not confirmed.'));
+  }
+  stop(command = this.command) {
+    if (this.stopPending) return this.stopPending;
+    if (!command || !this.window || this.window.isDestroyed()) return Promise.resolve();
+    if (this.command?.phase === 'idle' && this.lastStatus === 'idle') return Promise.resolve();
+    this.stopPending = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => finish(new Error('The translation server did not confirm Stop. Retry Stop or check Live translation on the Community server.')), this.stopTimeoutMs);
+      const finish = error => {
+        clearTimeout(timer); this.stopWaiter = null;
+        if (error) { this.failed(error.message); reject(error); } else resolve();
+      };
+      this.stopWaiter = finish;
+      // Queue Stop even if the operator page is still loading: a late Ready
+      // must never dispatch the obsolete Start that this command replaces.
+      this.dispatch({ ...command, phase: 'idle' });
+    }).finally(() => { this.stopPending = null; });
+    return this.stopPending;
   }
   async shutdown() {
-    if (this.window && !this.window.isDestroyed() && this.command && (this.command.phase !== 'idle' || !['idle', 'error'].includes(this.lastStatus)) && this.ready) {
-      await new Promise(resolve => {
-        const timer = setTimeout(() => {
-          this.failed('The translation server did not confirm Stop. Check Live translation on the Community server.');
-          finish();
-        }, this.stopTimeoutMs);
-        const finish = () => { clearTimeout(timer); this.stopWaiter = null; resolve(); };
-        this.stopWaiter = finish;
-        this.dispatch({ ...this.command, phase: 'idle' });
-      });
-    }
-    this.close();
+    try { await this.stop(); } finally { this.close(); }
   }
 
   close() {
     clearTimeout(this.readyTimer); this.readyTimer = null;
-    this.stopWaiter?.();
+    this.stopWaiter?.(new Error('Translation controls closed before Stop was confirmed.'));
     this.command = null; this.ready = false; this.origin = null;
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;

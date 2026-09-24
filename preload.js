@@ -430,6 +430,7 @@ contextBridge.exposeInMainWorld('api', {
   getCommunityStatus: () => ipcRenderer.invoke('community:status'),
   openCommunityPlanner: () => ipcRenderer.invoke('community:planner:open'),
   getCommunityPlannerState: () => ipcRenderer.invoke('community:planner:state'),
+  prepareCommunityPlannerForLoad: () => ipcRenderer.invoke('community:planner:prepareLoad'),
   layoutCommunityPlanner: (request = {}) => ipcRenderer.invoke('community:planner:layout', {
     visible: request?.visible === true,
     bounds: request?.bounds

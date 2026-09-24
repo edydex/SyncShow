@@ -112,6 +112,32 @@ test('an unavailable processor reports a bounded readiness failure; ready cancel
   assert.equal(failures.length, 1); operator.close();
 });
 
+test('stopping during operator startup replaces Start and waits for an idle acknowledgement', async () => {
+  const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
+  const sent = [];
+  const operator = new TranslationOperatorWindow({ BrowserWindow: null, stopTimeoutMs: 100 });
+  operator.window = { isDestroyed: () => false, destroy() {}, webContents: { send: (_event, command) => sent.push(command.phase) } };
+  operator.dispatch({ phase: 'live' });
+  const stop = operator.stop();
+  operator.markReady();
+  assert.deepEqual(sent, ['idle']);
+  operator.report({ phase: 'stopping' });
+  assert.ok(operator.stopWaiter);
+  operator.report({ phase: 'idle' }); await stop;
+  operator.close();
+});
+
+test('a Stop failure is not treated as a successful stop acknowledgement', async () => {
+  const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
+  const operator = new TranslationOperatorWindow({ BrowserWindow: null, stopTimeoutMs: 100 });
+  operator.window = { isDestroyed: () => false, destroy() {}, webContents: { send() {} } };
+  operator.ready = true; operator.dispatch({ phase: 'live' });
+  const stopped = operator.stop();
+  operator.report({ phase: 'error', message: 'Server unreachable' });
+  await assert.rejects(stopped, /Server unreachable/);
+  operator.close();
+});
+
 test('computer audio capture requires an explicit source selection and the owned operator frame', async () => {
   const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
   const handlers = {}; let destroyed = false; let sourceReads = 0;

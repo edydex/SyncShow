@@ -30,15 +30,19 @@ test('final captions replace provisional revisions once and stay source-faithful
 test('continuous translated text projects immediately but recognition drafts remain hidden', () => {
   const projection = new TranslationProjection();
   projection.configure('screen', { language: 'ru', layout: 'lower-third' });
+  projection.configure('ticker', { language: 'ru', layout: 'ticker' });
   projection.accept(state());
   projection.accept(caption(1, { final: false, revision: 1, text: 'Recognition draft' }));
   assert.equal(projection.frame('screen').phrases.length, 0);
+  assert.equal(projection.frame('ticker').phrases.length, 0);
   projection.accept(caption(2, { final: false, revision: 1, delivery: 'streaming', text: 'Мир' }));
   assert.equal(projection.frame('screen').phrases[0].text, 'Мир');
   assert.equal(projection.frame('screen').phrases[0].streaming, true);
+  assert.equal(projection.frame('ticker').phrases[0].text, 'Мир');
   projection.accept(caption(2, { final: false, revision: 2, delivery: 'streaming', text: 'Мир вам' }));
   assert.equal(projection.frame('screen').phrases.length, 1);
   assert.equal(projection.frame('screen').phrases[0].text, 'Мир вам');
+  assert.equal(projection.frame('ticker').phrases[0].text, 'Мир вам');
   projection.accept(caption(2, { final: true, revision: 3, delivery: 'streaming', text: 'Мир вам.' }));
   assert.equal(projection.frame('screen').phrases[0].text, 'Мир вам.');
 });
