@@ -1,7 +1,8 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
-// A projection surface can only receive public caption frames.
+// Public caption frames plus content-free local rendering diagnostics.
 contextBridge.exposeInMainWorld('api', {
+  reportTranslationRendered: report => ipcRenderer.send('translation:rendered', report),
   onTranslationFrame(callback) {
     const listener = (_event, frame) => callback(frame);
     ipcRenderer.on('translation:frame', listener);

@@ -23,6 +23,7 @@
   let history = [];
   let ribbon = [];
   let tickerSpeed = 0;
+  let lastReportedAt = -Infinity;
 
   function receiveTicker(phrases) {
     if (!phrases.length) {
@@ -232,6 +233,14 @@
   function tick(time) {
     const delta = Math.min(100, Math.max(0, time - lastTime));
     lastTime = time;
+    if (frame && time - lastReportedAt >= 5000) {
+      lastReportedAt = time;
+      const latest = frame.phrases.at(-1);
+      window.api.reportTranslationRendered?.({ sessionId: frame.sessionId,
+        sequence: latest?.sequence, revision: latest?.revision,
+        characters: copy.textContent.length,
+        visible: !layer.hidden && !container.classList.contains('cleared') });
+    }
     if (frame?.moving && !layer.hidden && !container.classList.contains('cleared')) {
       if (frame.layout === 'ticker') {
         tickTicker(delta);

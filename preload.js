@@ -416,6 +416,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('translation:frame', listener);
     return () => ipcRenderer.removeListener('translation:frame', listener);
   },
+  reportTranslationRendered: report => ipcRenderer.send('translation:rendered', report),
   onTeachingFrame: callback => {
     const listener = (_event, frame) => callback(frame);
     ipcRenderer.on('teaching:frame', listener);

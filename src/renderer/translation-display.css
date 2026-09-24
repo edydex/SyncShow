@@ -8,12 +8,12 @@
   position: fixed; inset: auto 0 0; z-index: 40;
   height: var(--translation-band); overflow: hidden;
   background: #070b12; color: #fff; border-top: 2px solid #7f9ba8;
-  font: 500 calc(calc(4.1 * var(--output-vh, 1vh)) * var(--translation-font, 1))/1.35 system-ui, sans-serif;
+  font: 500 calc(calc(8.2 * var(--output-vh, 1vh)) * var(--translation-font, 1))/1.2 system-ui, sans-serif;
   padding: calc(2 * var(--output-vh, 1vh)) calc(4 * var(--output-vw, 1vw)); pointer-events: none;
 }
 .translation-layer[hidden], .cleared .translation-layer { display: none; }
-.translation-layer[data-layout="full-screen"] { inset: 0; height: 100%; padding: calc(5 * var(--output-vh, 1vh)) calc(6 * var(--output-vw, 1vw)); border: 0; font-size: calc(calc(5.2 * var(--output-vh, 1vh)) * var(--translation-font, 1)); }
-.translation-layer[data-layout="ticker"] { padding: 0; display: flex; align-items: center; font-size: calc(calc(4.8 * var(--output-vh, 1vh)) * var(--translation-font, 1)); }
+.translation-layer[data-layout="full-screen"] { inset: 0; height: 100%; padding: calc(5 * var(--output-vh, 1vh)) calc(6 * var(--output-vw, 1vw)); border: 0; font-size: calc(calc(10.4 * var(--output-vh, 1vh)) * var(--translation-font, 1)); }
+.translation-layer[data-layout="ticker"] { padding: 0; display: flex; align-items: center; font-size: min(calc(10 * var(--output-vh, 1vh)), calc(9.6 * var(--output-vh, 1vh) * var(--translation-font, 1))); line-height: 1.05; }
 .translation-layer[data-layout="ticker"][hidden], .cleared .translation-layer[data-layout="ticker"] { display: none; }
 .translation-copy { height: 100%; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
 .translation-sentence.previous { color: #a6adb9; }

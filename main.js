@@ -23,6 +23,7 @@ const { TeachingSurface } = require('./src/services/show/TeachingSurface');
 const { normalizeTestOutputSettings, buildTestOutputDisplayMap } = require('./src/services/show/TestOutputLayout');
 const { TranslationPreferences } = require('./src/services/translation/TranslationPreferences');
 const { TranslationFeed } = require('./src/services/translation/TranslationFeed');
+const { TranslationDiagnostics } = require('./src/services/translation/TranslationDiagnostics');
 const { TranslationOperatorWindow } = require('./src/services/translation/TranslationOperatorWindow');
 const {
   configureIsolatedTestUserData
@@ -365,6 +366,7 @@ let outputRecovery = null;
 let translationPreferencesVenue = null;
 let translationSettingsQueue = Promise.resolve();
 const translationProjection = new TranslationProjection();
+const translationDiagnostics = new TranslationDiagnostics({ directory: () => path.join(app.getPath('userData'), 'logs') });
 const translationScreens = new TranslationScreens({
   BrowserWindow, projection: translationProjection, changed: notifyTranslationChanged,
   context: () => ({
@@ -8133,6 +8135,7 @@ function trackOutputWindowHealth(win, output, sessionId) {
 
   win.on('unresponsive', () => {
     if (!isCurrentOutputWindow(win, sessionId, output.id)) return;
+    translationDiagnostics.outputEvent(output.id, 'unresponsive');
     outputHealthTracker.markUnresponsive(identity);
     liveCueTransitionCoordinator?.outputFailed({
       outputId: output.id,
@@ -8144,10 +8147,12 @@ function trackOutputWindowHealth(win, output, sessionId) {
   });
   win.on('responsive', () => {
     if (!isCurrentOutputWindow(win, sessionId, output.id)) return;
+    translationDiagnostics.outputEvent(output.id, 'responsive');
     outputHealthTracker.markResponsive(identity);
   });
   sender.on('render-process-gone', (_event, details) => {
     if (!isCurrentOutputWindow(win, sessionId, output.id)) return;
+    translationDiagnostics.outputEvent(output.id, 'process-gone');
     console.error(`[Display] ${output.name} renderer process exited:`, details);
     outputHealthTracker.markProcessGone(identity);
     liveCueTransitionCoordinator?.outputFailed({
@@ -18100,14 +18105,17 @@ function translationOutputs() {
 }
 
 function translationStatePayload() {
-  return { ...translationProjection.snapshot(), automation: slideTranslation.status, origin: translationFeed.origin,
+  const state = { ...translationProjection.snapshot(), automation: slideTranslation.status, origin: translationFeed.origin,
     operatorOpen: Boolean(translationOperator.window && !translationOperator.window.isDestroyed()),
     outputs: translationOutputs() };
+  state.connectionWarning = translationDiagnostics.observe(state);
+  return state;
 }
 
 function notifyTranslationChanged() {
+  const state = translationStatePayload();
   if (controlWindow && !controlWindow.isDestroyed()) {
-    controlWindow.webContents.send('translation:stateChanged', translationStatePayload());
+    controlWindow.webContents.send('translation:stateChanged', state);
   }
   for (const [outputId, entry] of outputWindows) {
     if (!entry.win.isDestroyed() && entry.win.syncShowReady) {
@@ -18120,6 +18128,16 @@ function notifyTranslationChanged() {
   // postponing the pending capture indefinitely.
   captureOutputPreviews({ coalesceOnly: true });
 }
+
+ipcMain.on('translation:rendered', (event, report) => {
+  // Derive output identity from the owning window, never from renderer input.
+  for (const [outputId, entry] of [...outputWindows, ...translationScreens.windows]) {
+    if (!entry.win.isDestroyed() && entry.win.webContents === event.sender) {
+      translationDiagnostics.rendered(outputId, report);
+      break;
+    }
+  }
+});
 
 async function connectTranslation({ control = false, hidden = false, serviceId } = {}) {
   await ensureTranslationPreferences();
@@ -27643,6 +27661,14 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    const translationHealthTimer = setInterval(() => {
+      const previousWarning = translationDiagnostics.warning;
+      const state = translationStatePayload();
+      if (previousWarning !== state.connectionWarning && controlWindow && !controlWindow.isDestroyed()) {
+        controlWindow.webContents.send('translation:stateChanged', state);
+      }
+    }, 1000);
+    translationHealthTimer.unref();
     // Ensure cache directory exists now that app is ready
     ensureCacheDir();
     registerSermonRecordingPlaybackProtocol();

@@ -49,6 +49,9 @@
       cueStatus.hidden = automation.phase === 'idle';
       const labels = { preparing: 'Preparing the translation audio feed…', ready: 'Translation ready · starts on the next slide',
         starting: 'Starting translation…', live: 'Translation is live', stopping: 'Stopping translation…', error: 'Translation needs attention' };
+      if (automation.phase === 'live' && next.connectionWarning) {
+        labels.live = 'Reconnecting caption feed · screens hold their last text';
+      }
       cueStatus.textContent = `${labels[automation.phase] || ''}${automation.message ? ` · ${automation.message}` : ''}`;
       if (automation.phase === 'error') {
         const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Open translation controls';

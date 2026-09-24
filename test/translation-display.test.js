@@ -9,6 +9,7 @@ const source = fs.readFileSync(require.resolve('../src/renderer/translation-disp
 // text area; browser rehearsal covers real font wrapping and rendered colors.
 function display(capacity = 1000) {
   let receive, tick, resize, time = 0, cleared = false;
+  const reports = [];
   class Element {
     children = []; dataset = {}; attributes = {}; style = {}; hidden = false; value = '';
     classList = { contains: () => cleared };
@@ -31,14 +32,14 @@ function display(capacity = 1000) {
     getComputedStyle: () => ({ fontSize: '10px' }),
     document: { getElementById: () => container, createElement: () => new Element(),
       documentElement: { style: { setProperty() {} } }, body: { clientHeight: 100 } },
-    window: { api: { onTranslationFrame: fn => { receive = fn; } } },
+    window: { api: { onTranslationFrame: fn => { receive = fn; }, reportTranslationRendered: report => reports.push(report) } },
     requestAnimationFrame: fn => { tick = fn; },
     ResizeObserver: class { constructor(fn) { resize = fn; } observe() {} }
   });
   const layer = container.children[0], copy = layer.children[0];
   let last;
   return {
-    layer, copy,
+    layer, copy, reports,
     current: () => copy.children.find(child => child.attributes['aria-current'] === 'true')?.textContent,
     previous: () => copy.children.filter(child => child.className.includes('previous')).map(child => child.textContent.trim()),
     send(phrases, options = {}) {
@@ -53,6 +54,21 @@ function display(capacity = 1000) {
     clear(value) { cleared = value; }
   };
 }
+
+test('rendering heartbeat records progress without caption text, including cleared outputs', () => {
+  const d = display();
+  d.send([{ key: '1', sequence: 8, revision: 5, text: 'Private sermon words.', streaming: true }]);
+  d.advance(1000);
+  assert.equal(d.reports.length, 1);
+  assert.equal(d.reports[0].sequence, 8);
+  assert.equal(d.reports[0].revision, 5);
+  assert.equal(d.reports[0].visible, true);
+  assert.equal(JSON.stringify(d.reports).includes('Private'), false);
+  d.clear(true);
+  d.advance(5000);
+  assert.equal(d.reports.length, 2);
+  assert.equal(d.reports[1].visible, false);
+});
 
 test('a multi-sentence chunk advances one sentence at a time; old text grays and rolls out', () => {
   const d = display(29);
