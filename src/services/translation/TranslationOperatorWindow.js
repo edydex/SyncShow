@@ -46,8 +46,10 @@ function audioPermission({ webContents, owner, permission, origin, details, chec
 }
 
 class TranslationOperatorWindow {
-  constructor({ BrowserWindow, changed = () => {}, failed = () => {}, readyTimeoutMs = 15000, stopTimeoutMs = 5000 }) {
+  constructor({ BrowserWindow, desktopCapturer, changed = () => {}, failed = () => {}, readyTimeoutMs = 15000, stopTimeoutMs = 5000 }) {
     this.BrowserWindow = BrowserWindow;
+    this.desktopCapturer = desktopCapturer;
+    this.computerAudioSelected = false;
     this.changed = changed;
     this.failed = failed;
     this.readyTimeoutMs = readyTimeoutMs;
@@ -133,13 +135,23 @@ class TranslationOperatorWindow {
     win.on('close', event => { if (this.command?.phase !== 'idle' && this.command) { event.preventDefault(); win.hide(); } });
     const session = contents.session;
     session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      if(permission==='display-capture') return callback(Boolean(this.computerAudioSelected && webContents===contents && details?.isMainFrame===true && operatorPage(contents.getURL(),origin) && operatorPage(details.requestingUrl,origin)));
       callback(audioPermission({ webContents, owner: contents, permission, origin, details }));
     });
     session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
       if (requestingOrigin !== origin && requestingOrigin !== `${origin}/`) return false;
+      if(permission==='display-capture') return Boolean(this.computerAudioSelected && webContents===contents && details?.isMainFrame===true && operatorPage(contents.getURL(),origin) && operatorPage(details.requestingUrl,origin));
       return audioPermission({ webContents, owner: contents, permission, origin, details, check: true });
     });
-    session.setDisplayMediaRequestHandler((_request, callback) => callback({}));
+    session.setDisplayMediaRequestHandler(async (request, callback) => {
+      if (!this.computerAudioSelected || !request.audioRequested || !this.owns({sender:contents,senderFrame:request.frame})
+        || !operatorPage(request.frame?.url,origin) || request.frame!==contents.mainFrame || !this.desktopCapturer) return callback({});
+      try {
+        const sources = await this.desktopCapturer.getSources({types:['screen'],thumbnailSize:{width:0,height:0}});
+        if(this.window!==win || win.isDestroyed() || !this.computerAudioSelected || !sources.length)return callback({});
+        callback({video:sources[0],audio:'loopback'});
+      } catch { callback({}); }
+    });
     session.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
       callback({ requestHeaders: operatorRequestHeaders(details, origin, connection.accessToken, contents.id) });
     });

@@ -36,6 +36,15 @@ function normalizeSermonOptions(raw, channelIds, fail, normalizeSpans) {
       result.quoteSourcesByChannel[channel] = text;
     }
   }
+  if (raw.sermonInheritance !== undefined) {
+    if (!['point','quote'].includes(raw.sermonTemplate) || !raw.sermonInheritance || typeof raw.sermonInheritance !== 'object' || Array.isArray(raw.sermonInheritance)) fail('INVALID_SERMON_TEMPLATE', 'Invalid sermon inheritance.');
+    result.sermonInheritance = {};
+    for (const [channel, value] of Object.entries(raw.sermonInheritance)) {
+      if (!channelIds.includes(channel) || !value || typeof value.heading !== 'boolean' || !Array.isArray(value.pointKeys)
+        || value.pointKeys.length > 500 || value.pointKeys.some(key => typeof key !== 'string' || !/^[A-Za-zА-Яа-я0-9/-]{1,80}$/.test(key))) fail('INVALID_SERMON_TEMPLATE', 'Invalid sermon inheritance output.');
+      result.sermonInheritance[channel] = {heading:value.heading, pointKeys:[...new Set(value.pointKeys)]};
+    }
+  }
   if (raw.pendingPointChannels !== undefined) {
     if (raw.sermonTemplate !== 'point' || !Array.isArray(raw.pendingPointChannels)
       || raw.pendingPointChannels.some(id => !channelIds.includes(id))

@@ -377,7 +377,7 @@ const translationScreens = new TranslationScreens({
 const teachingPainted = new Map();
 const teachingSurface = new TeachingSurface({ readContext: readTeachingContext, changed: sendTeachingFrames });
 const translationFeed = new TranslationFeed({ projection: translationProjection, changed: notifyTranslationChanged });
-const translationOperator = new TranslationOperatorWindow({ BrowserWindow, changed: notifyTranslationChanged,
+const translationOperator = new TranslationOperatorWindow({ BrowserWindow, desktopCapturer: require('electron').desktopCapturer, changed: notifyTranslationChanged,
   failed: message => slideTranslation.report({ phase: 'error', message }) });
 let desiredSlideTranslation = null;
 const { SlideTranslationCues } = require('./src/services/translation/SlideTranslationCues');
@@ -396,11 +396,23 @@ const slideTranslation = new SlideTranslationCues({
   send: async command => {
     desiredSlideTranslation = command;
     if (command.phase === 'idle') {
+      for (const [id,settings] of translationProjection.outputs) translationProjection.configure(id,{...settings,layout:'hidden'});
+      notifyTranslationChanged();
       translationOperator.dispatch(command);
       return;
     }
     await connectTranslation({ control: true, hidden: true, serviceId: command.serviceId });
-    if (desiredSlideTranslation === command) translationOperator.dispatch(command);
+    if (desiredSlideTranslation === command) {
+      if (command.settings) {
+        for (const output of appState.activeLaunchPlan?.outputs || activeVenueProfile?.outputs || []) {
+          const channel = output.sourceRoleId || output.expectedRoleId || output.expectedRole;
+          const selected = command.settings.captionChannel==='both' || command.settings.captionChannel===channel;
+          translationProjection.configure(output.id,{language:command.settings.targetLanguage,layout:command.phase==='live' && selected && output.kind!=='singer' && output.renderer!=='singer-current-next' ? command.settings.captionStyle : 'hidden',fontScale:1});
+        }
+        notifyTranslationChanged();
+      }
+      translationOperator.dispatch(command);
+    }
   }
 });
 let outputSessionId = 0;
@@ -18127,11 +18139,13 @@ ipcMain.handle('translation:cue-status', (event, status) => {
 });
 ipcMain.handle('translation:input:read', event => {
   requireTranslationOperatorSender(event);
-  return new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).readInput(translationInputScope());
+  return new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).readInput(translationInputScope()).then(input=>{translationOperator.computerAudioSelected=input?.id==='syncshow:computer-audio';return input});
 });
 ipcMain.handle('translation:input:write', (event, input) => {
   requireTranslationOperatorSender(event);
-  return new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).writeInput(translationInputScope(), input);
+  const preferences = new TranslationPreferences(path.join(app.getPath('userData'), 'translation'));
+  const normalized = preferences.normalizeInput(input);
+  return preferences.writeInput(translationInputScope(), normalized).then(()=>{translationOperator.computerAudioSelected=normalized.id==='syncshow:computer-audio';});
 });
 
 ipcMain.handle('translation:state', event => {

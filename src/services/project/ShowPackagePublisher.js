@@ -534,7 +534,7 @@ class ShowPackagePublisher {
       fail('SHOW_PACKAGE_CORRUPT', 'The Show timeline does not match its package manifest.');
     }
 
-    Object.defineProperty(manifest, 'translationCues', { value: timeline.cueIds.map(id => ({ id, ...(timeline.cues[id].translationAction ? { translationAction: timeline.cues[id].translationAction } : {}) })) });
+    Object.defineProperty(manifest, 'translationCues', { value: timeline.cueIds.map(id => ({ id, ...(timeline.cues[id].translationAction ? { translationAction: timeline.cues[id].translationAction, ...(timeline.cues[id].translationSettings ? {translationSettings:timeline.cues[id].translationSettings} : {}) } : {}) })) });
     let serviceHandoff;
     let handoffSource;
     try {

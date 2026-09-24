@@ -113,7 +113,8 @@
           "NSAllowsArbitraryLoads": false,
           "NSAllowsLocalNetworking": true
         },
-        "NSMicrophoneUsageDescription": "SyncShow uses the microphone or mixer you choose when you connect audio for live sermon translation."
+        "NSMicrophoneUsageDescription": "SyncShow uses the microphone or mixer you choose when you connect audio for live sermon translation.",
+        "NSAudioCaptureUsageDescription": "SyncShow captures computer audio only when you choose Computer audio for service translation."
       }
     },
     "linux": {

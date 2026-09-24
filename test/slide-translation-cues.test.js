@@ -27,3 +27,14 @@ test('staying within a live range does not send repeated starts, ending Show sen
   controller.stop();
   assert.deepEqual(sent.map(command => command.phase), ['live', 'idle']);
 });
+test('the exact segment settings travel through preparation, live navigation and stop', async()=>{
+  const settings={sourceLanguage:'ru',targetLanguage:'en',voice:'marin',speechEnabled:false,captionStyle:'lower-third',captionChannel:'english'};
+  const configured=cues.map(cue=>cue.id==='b'?{...cue,translationSettings:settings}:cue);
+  const sent=[];
+  const controller=new SlideTranslationCues({resolve:async()=>({serviceId:'test',serviceRevision:'a'.repeat(64)}),send:async command=>sent.push(command),changed(){}});
+  await controller.navigate({translationCues:configured},0);
+  await controller.navigate({translationCues:configured},2);
+  await controller.navigate({translationCues:configured},3);
+  assert.deepEqual(sent.map(command=>command.phase),['prepare','live','idle']);
+  assert.ok(sent.every(command=>JSON.stringify(command.settings)===JSON.stringify(settings)));
+});

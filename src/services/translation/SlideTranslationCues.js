@@ -9,9 +9,9 @@ function translationIntent(cues, index) {
     if (cue.translationAction === 'start') start = cue;
     else if (cue.translationAction === 'stop') start = null;
   }
-  if (start) return { phase: 'live', segmentId: start.id };
+  if (start) return { phase: 'live', segmentId: start.id, ...(start.translationSettings ? {settings:start.translationSettings}: {}) };
   const next = cues[index + 1];
-  if (next?.translationAction === 'start') return { phase: 'prepare', segmentId: next.id };
+  if (next?.translationAction === 'start') return { phase: 'prepare', segmentId: next.id, ...(next.translationSettings ? {settings:next.translationSettings}: {}) };
   return null;
 }
 
