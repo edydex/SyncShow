@@ -7,8 +7,9 @@ const MAC_LOCAL_NETWORK_USAGE_DESCRIPTION =
   'SyncShow uses your trusted local network so a phone you pair can control the active presentation.';
 const MAC_MICROPHONE_USAGE_DESCRIPTION =
   'SyncShow uses the microphone or mixer you choose when you connect audio for live sermon translation.';
+const MAC_AUDIO_CAPTURE_USAGE_DESCRIPTION =
+  'SyncShow captures computer audio only when you choose Computer audio for service translation.';
 const MAC_UNRELATED_DEVICE_USAGE_KEYS = Object.freeze([
-  'NSAudioCaptureUsageDescription',
   'NSBluetoothAlwaysUsageDescription',
   'NSBluetoothPeripheralUsageDescription',
   'NSCameraUsageDescription'
@@ -88,6 +89,13 @@ function verifyMacRemoteNetworkMetadata(infoPlistPath, options = {}) {
     throw error;
   }
 
+  const audioCaptureUsageDescription = readPlistValue(infoPlistPath, 'NSAudioCaptureUsageDescription', options);
+  if (audioCaptureUsageDescription !== MAC_AUDIO_CAPTURE_USAGE_DESCRIPTION) {
+    const error = new Error('The packaged app must explain its optional computer audio capture.');
+    error.code = 'MAC_TRANSLATION_AUDIO_CAPTURE_DESCRIPTION_MISMATCH';
+    throw error;
+  }
+
   for (const key of MAC_UNRELATED_DEVICE_USAGE_KEYS) {
     try {
       readPlistValue(infoPlistPath, key, options);
@@ -106,13 +114,15 @@ function verifyMacRemoteNetworkMetadata(infoPlistPath, options = {}) {
   return Object.freeze({
     allowsLocalNetworking: true,
     usageDescription,
-    microphoneUsageDescription
+    microphoneUsageDescription,
+    audioCaptureUsageDescription
   });
 }
 
 module.exports = {
   MAC_LOCAL_NETWORK_USAGE_DESCRIPTION,
   MAC_MICROPHONE_USAGE_DESCRIPTION,
+  MAC_AUDIO_CAPTURE_USAGE_DESCRIPTION,
   MAC_UNRELATED_DEVICE_USAGE_KEYS,
   readPlistValue,
   requireInfoPlistPath,
