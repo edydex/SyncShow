@@ -315,6 +315,11 @@
   }
 
   function validateScene(raw, expectedCueId = null) {
+    if (raw?.captionReservation !== undefined) {
+      const {captionReservation, ...content} = raw;
+      if (![.12, .29].includes(captionReservation) || raw.layout === 'singer-current-next') throw new TypeError('Invalid caption reservation');
+      return {...validateScene(content, expectedCueId), captionReservation};
+    }
     if (!record(raw)
       || raw.schemaVersion !== SCHEMA_VERSION
       || raw.kind !== KIND
@@ -508,7 +513,7 @@
     if (offset < text.length) append(text.slice(offset));
   }
 
-  function fitSurface(host, surface, logicalCanvas) {
+  function fitSurface(host, surface, logicalCanvas, reservation = 0) {
     // client dimensions precede the demo's 90-degree presentation transform.
     const bounds = host.clientWidth && host.clientHeight
       ? { width: host.clientWidth, height: host.clientHeight }
@@ -516,7 +521,10 @@
     const scale = Math.min(bounds.width / logicalCanvas.width, bounds.height / logicalCanvas.height);
     if (!Number.isFinite(scale) || scale <= 0) throw new Error('Native cue output has no display area');
     surface.style.width = `${Math.floor(logicalCanvas.width * scale)}px`;
-    surface.style.height = `${Math.floor(logicalCanvas.height * scale)}px`;
+    surface.style.height = `${Math.floor(logicalCanvas.height * (1 - reservation) * scale)}px`;
+    // Keep the full-width frame in its original position, taking the caption
+    // band out of the content height instead of scaling the entire slide.
+    surface.style.top = `${-logicalCanvas.height * reservation * scale / 2}px`;
     return scale;
   }
 
@@ -653,6 +661,7 @@
 
   function buildScene(rawScene, options = {}) {
     const scene = validateScene(rawScene);
+    const contentHeight = scene.canvas.height * (1 - (scene.captionReservation || 0));
     const host = document.createElement('div');
     host.className = 'native-scene-host';
     const surface = document.createElement('div');
@@ -717,7 +726,7 @@
         scene.canvas
       );
       const bodyMinimumSize = scaledTextMinimum(
-        style.bodyMinimumSize,
+        scene.captionReservation ? Math.min(32, style.bodyMinimumSize) : style.bodyMinimumSize,
         scene.canvas
       );
       let title = null;
@@ -756,7 +765,7 @@
             title.style.left = `${(100 - style.titleWidthPercent) / 2}%`;
             title.style.top = `${style.titleTopPercent}%`;
             title.style.width = `${style.titleWidthPercent}%`;
-            const titleMaximumHeight = scene.canvas.height * 0.16 * scale;
+            const titleMaximumHeight = contentHeight * 0.16 * scale;
             title.style.height = `${titleMaximumHeight}px`;
             title.style.lineHeight = '1.18';
             fitText(title, style.titleSize, titleMinimumSize, scale);
@@ -764,9 +773,9 @@
             titleBottom = (title.offsetTop + title.offsetHeight) / scale;
           }
           if (credit && style.creditAlign) credit.style.textAlign = style.creditAlign;
-          const configuredBodyTop = scene.canvas.height * style.bodyTopPercent / 100;
+          const configuredBodyTop = contentHeight * style.bodyTopPercent / 100;
           const logicalTop = style.bodyPosition === 'top' && titleBottom > 0
-            ? Math.max(configuredBodyTop, titleBottom + scene.canvas.height * 0.04)
+            ? Math.max(configuredBodyTop, titleBottom + contentHeight * 0.04)
             : configuredBodyTop;
           const lineHeight = 1 + style.lineSpacingPercent / 100;
           const bottomOverhang = textBottomOverhang(body, style.bodySize, lineHeight);
@@ -774,15 +783,15 @@
             ? Math.min(
                 style.bodyHeight + bottomOverhang,
                 // Match the planner's 24px bottom inset at the 1080p canvas.
-                Math.max(50, scene.canvas.height - logicalTop - scene.canvas.height * 24 / 1080)
+                Math.max(50, contentHeight - logicalTop - contentHeight * 24 / 1080)
               )
-            : scene.canvas.height * style.bodyRegionHeightPercent / 100;
-          if (credit) logicalRegionHeight = Math.min(logicalRegionHeight, Math.max(50, scene.canvas.height * (scene.quoteCredit ? .74 : .84) - logicalTop));
+            : contentHeight * style.bodyRegionHeightPercent / 100;
+          if (credit) logicalRegionHeight = Math.min(logicalRegionHeight, Math.max(50, contentHeight * (scene.quoteCredit ? .74 : .84) - logicalTop));
           const logicalFitHeight = style.bodyPosition === 'top'
             ? logicalRegionHeight
             : Math.min(
                 style.bodyHeight, logicalRegionHeight,
-                scene.canvas.height * (style.showTitle
+                contentHeight * (style.showTitle
                   ? style.bodyRegionHeightPercent
                   : Math.max(10, style.bodyRegionHeightPercent - 2)) / 100
               );
@@ -796,10 +805,10 @@
           fitText(body, style.bodySize, bodyMinimumSize, scale);
           settleFittedTextHeight(body, bodyMaximumHeight);
           if (credit) {
-            credit.style.height = `${scene.canvas.height * .10 * scale}px`;
+            credit.style.height = `${contentHeight * .10 * scale}px`;
             const creditScale = Math.min(1, scene.canvas.width / 1920, scene.canvas.height / 1080);
             fitText(credit, scene.quoteCredit ? parseFloat(body.style.fontSize) / scale : Math.max(8, 26 * creditScale), Math.max(6, (scene.quoteCredit ? 32 : 18) * creditScale), scale);
-            settleFittedTextHeight(credit, scene.canvas.height * .10 * scale);
+            settleFittedTextHeight(credit, contentHeight * .10 * scale);
             if (scene.quoteCredit) { credit.style.textAlign = style.creditAlign || 'right'; credit.style.bottom = 'auto'; credit.style.top = `${Math.min(surface.clientHeight * .98 - credit.offsetHeight, bodyRegion.offsetTop + body.offsetHeight + surface.clientHeight * .035)}px`; }
           }
         }
@@ -857,11 +866,11 @@
           titleRegion.style.top = `${style.titleTopPercent}%`;
           titleRegion.style.width = '100%';
           titleRegion.style.height = `${style.titleRegionHeightPercent}%`;
-          titleRegion.style.gap = `${scene.canvas.height * 0.025 * scale}px`;
+          titleRegion.style.gap = `${contentHeight * 0.025 * scale}px`;
           const titleShare = subtitle ? 0.58 : 1;
           title.style.width = `${style.titleWidthPercent}%`;
           const titleMaximumHeight =
-            scene.canvas.height * style.titleRegionHeightPercent / 100
+            contentHeight * style.titleRegionHeightPercent / 100
             * titleShare * scale;
           title.style.height = `${titleMaximumHeight}px`;
           fitText(title, titleSizes.preferred, titleSizes.minimum, scale);
@@ -869,7 +878,7 @@
           if (subtitle) {
             subtitle.style.width = `${style.subtitleWidthPercent}%`;
             const subtitleMaximumHeight =
-              scene.canvas.height * style.titleRegionHeightPercent / 100
+              contentHeight * style.titleRegionHeightPercent / 100
               * 0.36 * scale;
             subtitle.style.height = `${subtitleMaximumHeight}px`;
             fitText(
@@ -884,7 +893,7 @@
             credit.style.right = `${style.creditRightPercent}%`;
             credit.style.bottom = `${style.creditBottomPercent}%`;
             credit.style.width = `${style.creditWidthPercent}%`;
-            const creditMaximumHeight = scene.canvas.height * 0.18 * scale;
+            const creditMaximumHeight = contentHeight * 0.18 * scale;
             credit.style.height = `${creditMaximumHeight}px`;
             fitText(credit, creditSizes.preferred, creditSizes.minimum, scale);
             settleFittedTextHeight(credit, creditMaximumHeight);
@@ -962,14 +971,14 @@
       children.push(current);
       children.push({
         relayout(scale) {
-          next.style.borderTopWidth = `${Math.max(4, scene.canvas.height * 0.011 * scale)}px`;
+          next.style.borderTopWidth = `${Math.max(4, contentHeight * 0.011 * scale)}px`;
           // Prefer the current cue's typography, bounded by the next-line
           // region when the presentation is reduced above a caption band.
           const primary = currentHost.querySelector('.native-scene-body')
             || currentHost.querySelector('.native-song-title-text')
             || currentHost.querySelector('.native-scene-title');
           const typography = primary ? global.getComputedStyle(primary) : null;
-          const preferred = Number.parseFloat(typography?.fontSize) || scene.canvas.height * 0.075 * scale;
+          const preferred = Number.parseFloat(typography?.fontSize) || contentHeight * 0.075 * scale;
           const nextStyle = global.getComputedStyle(next);
           const availableHeight = next.clientHeight
             - (Number.parseFloat(nextStyle.paddingTop) || 0)
@@ -984,7 +993,7 @@
     }
 
     function relayout() {
-      const scale = fitSurface(host, surface, scene.canvas);
+      const scale = fitSurface(host, surface, scene.canvas, scene.captionReservation || 0);
       for (const child of children) {
         if (typeof child.relayout === 'function') child.relayout(scale);
       }

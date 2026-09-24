@@ -322,3 +322,20 @@ test('compiled group typography and alignments survive both native scene validat
   assert.equal(title.style.titleAlign,'left');assert.equal(title.style.subtitleAlign,'right');assert.equal(title.style.creditAlign,'center');
   assert.equal(validateBrowserScene(JSON.parse(serializeNativeCueScene(title))).style.titleAlign,'left');
 });
+
+test('planned captions reserve full-width content space only on the selected audience outputs', () => {
+  const original = compiledTextCue({translationSettings: {captionStyle:'lower-third',captionChannel:'both'}});
+  original.channels.english = original.channels.primary;
+  original.channels.media = original.channels.primary;
+  const before = JSON.stringify(original);
+  const scene = compileNativeCueScene(original, 'english');
+  assert.deepEqual(scene.canvas, CANVAS);
+  assert.equal(scene.captionReservation, .29);
+  assert.equal(scene.style.bodySize, compileNativeCueScene({...original,translationSettings:undefined},'english').style.bodySize);
+  assert.equal(JSON.stringify(validateBrowserScene(scene)), JSON.stringify(scene));
+  assert.equal(compileNativeCueScene(original, 'media').captionReservation, undefined);
+  assert.equal(compileNativeCueScene(original, 'english', {rendererVersion:17}).captionReservation, undefined);
+  assert.throws(()=>normalizeNativeCueScene({...scene,captionReservation:.9}), /reservation/);
+  assert.throws(()=>validateBrowserScene({...scene,captionReservation:-1}), /reservation/);
+  assert.equal(JSON.stringify(original),before);
+});

@@ -657,3 +657,27 @@ test('quotation source is right-aligned beneath the body in rendered pixels', as
   assert.ok(Math.min(...changed.map(p=>p.x))>320,'short source should start in the right half');
   assert.ok(Math.max(...changed.map(p=>p.y))<220,'source should sit beneath the quotation, not at the bottom edge');
 });
+
+test('caption thumbnails retain full width and font size when text fits, leaving a real empty band', async () => {
+  const renderer = new NativeSlideRenderer({fontPath:FONT_PATH});
+  const cue = textCue('Short text should not shrink.', {presetId:'wotbc-reading', textStyle:{bodySize:78}});
+  cue.channels.english = cue.channels.primary;
+  cue.channels.media = cue.channels.primary;
+  const normal = await renderer.renderCue(cue,'english');
+  cue.translationSettings = {captionStyle:'lower-third',captionChannel:'both'};
+  const before = JSON.stringify(cue);
+  const reserved = await renderer.renderCue(cue,'english');
+  assert.equal(reserved.info.width,1920);
+  assert.equal(reserved.info.height,1080);
+  assert.equal(reserved.typography.fontSize,normal.typography.fontSize);
+  const bandPixels = await sharp(reserved.info.data).extract({left:0,top:800,width:1920,height:280}).toBuffer();
+  const band = await sharp(bandPixels).stats();
+  assert.ok(band.channels.every(channel=>channel.max<3));
+  const stage = await renderer.renderCue(cue,'media');
+  assert.deepEqual(stage.info.data,normal.info.data);
+  assert.equal(JSON.stringify(cue),before);
+  cue.channels.english.blocks[0].text=Array.from({length:12},(_,i)=>`Line ${i+1}: The caption band reduces the available height.`).join('\n');
+  const dense = await renderer.renderCue(cue,'english');
+  assert.ok(dense.typography.fontSize < 78);
+  assert.ok(dense.typography.fontSize >= 32);
+});

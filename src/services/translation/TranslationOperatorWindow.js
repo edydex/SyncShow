@@ -37,10 +37,14 @@ function operatorRequestHeaders(details, origin, accessToken, webContentsId) {
   return headers;
 }
 
-function audioPermission({ webContents, owner, permission, origin, details, check = false }) {
+function audioPermission({ webContents, owner, permission, origin, details, check = false, computerAudioSelected = false }) {
   if (webContents !== owner || owner.isDestroyed() || permission !== 'media'
     || details?.isMainFrame !== true || !operatorPage(owner.getURL(), origin)
     || !operatorPage(details.requestingUrl, origin)) return false;
+  // Electron 43 reports getDisplayMedia as media with no device mediaTypes.
+  // Only the explicitly selected computer source may reach the separately
+  // guarded display handler; camera requests still carry video and are denied.
+  if (!check && computerAudioSelected && Array.isArray(details.mediaTypes) && details.mediaTypes.length === 0) return true;
   return check ? details.mediaType === 'audio'
     : Array.isArray(details.mediaTypes) && details.mediaTypes.length === 1 && details.mediaTypes[0] === 'audio';
 }
@@ -136,7 +140,7 @@ class TranslationOperatorWindow {
     const session = contents.session;
     session.setPermissionRequestHandler((webContents, permission, callback, details) => {
       if(permission==='display-capture') return callback(Boolean(this.computerAudioSelected && webContents===contents && details?.isMainFrame===true && operatorPage(contents.getURL(),origin) && operatorPage(details.requestingUrl,origin)));
-      callback(audioPermission({ webContents, owner: contents, permission, origin, details }));
+      callback(audioPermission({ webContents, owner: contents, permission, origin, details, computerAudioSelected: this.computerAudioSelected }));
     });
     session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
       if (requestingOrigin !== origin && requestingOrigin !== `${origin}/`) return false;

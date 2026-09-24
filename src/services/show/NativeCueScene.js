@@ -1,4 +1,5 @@
 'use strict';
+const {reservation} = require('../project/TranslationCueSettings');
 const {textPreset} = require('../project/SlideTypography');
 const { normalizeCanvasObjects, canvasText } = require('../project/CanvasLayout');
 const { singerSourceCue, singerNextLine } = require('../project/SingerPresentation');
@@ -385,6 +386,11 @@ function commonScene(raw, expected = {}) {
 }
 
 function normalizeNativeCueScene(raw, expected = {}) {
+  if (raw?.captionReservation !== undefined) {
+    const {captionReservation, ...content} = raw;
+    if (![.12, .29].includes(captionReservation) || raw.layout === 'singer-current-next') fail('INVALID_NATIVE_SCENE', 'Invalid caption reservation.');
+    return {...normalizeNativeCueScene(content, expected), captionReservation};
+  }
   const common = commonScene(raw, expected);
   if (common.layout === 'canvas') {
     exactKeys(raw, ['background','canvas','cueId','kind','layout','objects','schemaVersion','sourceKind'], 'scene');
@@ -664,6 +670,11 @@ function textScene(cue, channel, canvas, options = {}) {
 
 function compileNativeCueScene(cue, channelId, options = {}) {
   if (!cue || typeof cue !== 'object') throw new TypeError('A compiled cue is required.');
+  const reserved = reservation(cue.translationSettings, channelId);
+  if (reserved > 0 && !(options.rendererVersion < 18)) {
+    const content = compileNativeCueScene({...cue, translationSettings: undefined}, channelId, options);
+    return normalizeNativeCueScene({...content, captionReservation: reserved});
+  }
   const canvas = {
     width: Number.isSafeInteger(options.width) ? options.width : 1920,
     height: Number.isSafeInteger(options.height) ? options.height : 1080
@@ -688,7 +699,7 @@ function compileNativeCueScene(cue, channelId, options = {}) {
     );
   }
   if (channel.mode === 'condensed' && channel.sourceChannelId) {
-    const current = compileNativeCueScene(singerSourceCue(cue, channel.sourceChannelId), channel.sourceChannelId, options);
+    const current = compileNativeCueScene({...singerSourceCue(cue, channel.sourceChannelId), translationSettings: undefined}, channel.sourceChannelId, options);
     return deriveNativeSingerScene(
       current,
       nativeCueSingerNext(options.nextCue, channel.sourceChannelId)

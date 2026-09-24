@@ -96,7 +96,7 @@
     document.documentElement.style.setProperty('--translation-font', String(next.fontScale));
     const band = next.layout === 'ticker' ? 'calc(12 * var(--output-vh, 1vh))' : next.layout === 'lower-third' ? 'calc(29 * var(--output-vh, 1vh))' : '0px';
     document.documentElement.style.setProperty('--translation-band', band);
-    document.documentElement.style.setProperty('--translation-content-scale', next.layout === 'ticker' ? '0.88' : next.layout === 'lower-third' ? '0.71' : '1');
+
     if (next.layout === 'hidden') return;
     if (!next.phrases.length) { current = null; queue = []; history = []; copy.replaceChildren(); }
     if (!seen.size && next.phrases.length) {

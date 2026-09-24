@@ -140,6 +140,15 @@ test('computer audio capture requires an explicit source selection and the owned
   assert.deepEqual(await capture(), { video: { id: 'screen:1' }, audio: 'loopback' });
   assert.equal(sourceReads, 1);
   const details = { isMainFrame: true, requestingUrl: contents.getURL() };
+  const requestPermission = (types, overrides = {}) => new Promise(resolve => handlers.permission(contents, 'media', resolve, {...details, mediaTypes:types, ...overrides}));
+  assert.equal(await requestPermission([]), true, 'Electron display capture has no device mediaTypes');
+  assert.equal(await requestPermission(['video']), false, 'camera remains denied');
+  assert.equal(await requestPermission(['audio','video']), false);
+  assert.equal(await requestPermission([], {isMainFrame:false}), false);
+  operator.computerAudioSelected = false;
+  assert.equal(await requestPermission([]), false);
+  operator.computerAudioSelected = true;
+
   assert.equal(handlers.check(contents, 'display-capture', origin, details), true);
   assert.equal(handlers.check(contents, 'display-capture', 'https://other.test', details), false);
   assert.equal(handlers.check(contents, 'display-capture', origin, { ...details, isMainFrame: false }), false);
