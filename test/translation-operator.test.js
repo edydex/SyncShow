@@ -111,3 +111,38 @@ test('an unavailable processor reports a bounded readiness failure; ready cancel
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(failures.length, 1); operator.close();
 });
+
+test('computer audio capture requires an explicit source selection and the owned operator frame', async () => {
+  const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
+  const handlers = {}; let destroyed = false; let sourceReads = 0;
+  const contents = { id: 8, mainFrame: { url: `${origin}/admin/live-translation` },
+    isDestroyed: () => destroyed, getURL: () => `${origin}/admin/live-translation`, on() {},
+    setWindowOpenHandler() {}, session: {
+      setPermissionRequestHandler(handler) { handlers.permission = handler; },
+      setPermissionCheckHandler(handler) { handlers.check = handler; },
+      setDisplayMediaRequestHandler(handler) { handlers.capture = handler; },
+      webRequest: { onBeforeSendHeaders() {} }, on() {},
+    } };
+  class FakeWindow {
+    constructor() { this.webContents = contents; }
+    on() {} isDestroyed() { return destroyed; } destroy() { destroyed = true; }
+    async loadURL() {} show() {} focus() {}
+  }
+  const operator = new TranslationOperatorWindow({ BrowserWindow: FakeWindow,
+    desktopCapturer: { async getSources() { sourceReads++; return [{ id: 'screen:1' }]; } } });
+  await operator.open({ id: 'test', baseUrl: origin, accessToken: 'test-only' }, null, { hidden: true });
+  const capture = (changes = {}) => new Promise(resolve => handlers.capture({ frame: contents.mainFrame, audioRequested: true, ...changes }, resolve));
+  assert.deepEqual(await capture(), {});
+  assert.equal(sourceReads, 0);
+  operator.computerAudioSelected = true;
+  assert.deepEqual(await capture({ frame: { url: contents.getURL() } }), {});
+  assert.deepEqual(await capture({ audioRequested: false }), {});
+  assert.deepEqual(await capture(), { video: { id: 'screen:1' }, audio: 'loopback' });
+  assert.equal(sourceReads, 1);
+  const details = { isMainFrame: true, requestingUrl: contents.getURL() };
+  assert.equal(handlers.check(contents, 'display-capture', origin, details), true);
+  assert.equal(handlers.check(contents, 'display-capture', 'https://other.test', details), false);
+  assert.equal(handlers.check(contents, 'display-capture', origin, { ...details, isMainFrame: false }), false);
+  operator.close();
+  assert.deepEqual(await capture(), {});
+});
