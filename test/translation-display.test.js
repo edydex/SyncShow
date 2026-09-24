@@ -159,3 +159,22 @@ test('ticker text remains continuous and does not use sentence pacing', () => {
   assert.equal(d.copy.textContent, 'First sentence. Next sentence.');
   assert.ok(d.copy.style.transform.startsWith('translateX('));
 });
+
+
+test('continuous interpreter revisions show immediately without a sentence dwell queue', () => {
+  const d = display();
+  const a = { key: 'a', revision: 1, streaming: true, text: 'Мир' };
+  d.send([a], { language: 'ru' });
+  assert.equal(d.current(), 'Мир');
+  const complete = { ...a, revision: 2, text: 'Мир вам.' };
+  d.send([complete], { language: 'ru' });
+  assert.equal(d.current(), 'Мир вам.');
+  const b = { key: 'b', revision: 1, streaming: true, text: 'Благодать' };
+  d.send([complete, b], { language: 'ru' });
+  assert.equal(d.current(), 'Благодать');
+  assert.deepEqual(d.previous(), ['Мир вам.']);
+  d.send([complete, { ...b, revision: 2, text: 'Благодать вам и мир.' }], { language: 'ru' });
+  assert.equal(d.current(), 'Благодать вам и мир.');
+  d.advance(20000);
+  assert.equal(d.current(), 'Благодать вам и мир.');
+});

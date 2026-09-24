@@ -102,6 +102,7 @@ class TranslationProjection {
       sequence: segment.sequence,
       revision,
       final: segment.final,
+      streaming: segment.delivery === 'streaming',
       text: segment.text,
       language: segment.language
     });
@@ -157,7 +158,7 @@ class TranslationProjection {
       manual: Boolean(manual),
       moving: snapshot.status === 'live' || Boolean(manual),
       phrases: manual ? [{ key: `manual:${outputId}:${manual.version}`, text: manual.text, final: true, revision: manual.version }]
-        : available ? (snapshot.captions[settings.language] ?? []).filter(item => item.final) : []
+        : available ? (snapshot.captions[settings.language] ?? []).filter(item => item.final || (item.streaming && settings.layout !== 'ticker')) : []
     };
   }
 }

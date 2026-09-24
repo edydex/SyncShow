@@ -1,4 +1,4 @@
-/* Final captions only. No network, microphone, HTML injection, or session control. */
+/* Final captions and append-only interpreter captions. No network, microphone, HTML injection, or session control. */
 (() => {
   'use strict';
   const container = document.getElementById('displayContainer') || document.getElementById('singerContainer');
@@ -72,6 +72,7 @@
   }
 
   function repaginate() {
+    if (current?.streaming) { showStreaming(); return; }
     const offset = pages[page]?.offset ?? 0;
     pages = paginate(current.text);
     // Resizing must not replay the beginning of a translated paragraph.
@@ -119,6 +120,18 @@
     showPage();
   }
 
+  function showStreaming() {
+    const parts = frame.phrases.flatMap(phrase => paginate(phrase.text).map(part => ({ text: part.text })));
+    if (!parts.length) return;
+    current = frame.phrases.at(-1);
+    queue = [];
+    pages = [parts.at(-1)];
+    page = 0;
+    elapsed = 0;
+    history = parts.slice(0, -1).slice(-7);
+    showPage();
+  }
+
   function receive(next) {
     if (!next || !['hidden', 'full-screen', 'lower-third', 'ticker'].includes(next.layout)) return;
     const nextIdentity = `${next.outputId}:${next.sessionId}:${next.language}:${next.layout}:${next.manual ? next.phrases[0]?.key : false}`;
@@ -137,6 +150,10 @@
     document.documentElement.style.setProperty('--translation-band', band);
 
     if (next.layout === 'hidden') return;
+    if (next.layout !== 'ticker' && !next.manual && next.phrases.at(-1)?.streaming) {
+      showStreaming();
+      return;
+    }
     if (!next.phrases.length) { current = null; queue = []; history = []; seen.clear(); copy.replaceChildren(); }
     if (!seen.size && next.phrases.length) {
       // A screen joining mid-sermon starts at the current phrase. History is
@@ -178,7 +195,7 @@
           if (queue.length) startNext();
           else { copy.textContent = ''; current = null; }
         }
-      } else {
+      } else if (!current.streaming) {
         elapsed += delta;
         const words = (pages[page]?.text || '').trim().split(/\s+/u).length;
         // Roughly 250 words/minute; no paragraph-sized minimum dwell. Waiting
