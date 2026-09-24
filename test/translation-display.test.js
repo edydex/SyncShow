@@ -7,41 +7,64 @@ const source = fs.readFileSync(require.resolve('../src/renderer/translation-disp
 
 // Execute the actual isolated output renderer. The DOM model supplies a bounded
 // text area; browser rehearsal covers real font wrapping and rendered colors.
-function display(capacity = 1000) {
+function display(capacity = 1000, { lineWidth, reducedMotion = false } = {}) {
   let receive, tick, resize, time = 0, cleared = false;
   const reports = [];
+  const animations = [];
+  const height = text => lineWidth ? Math.ceil([...text].length / lineWidth) * 10 : [...text].length;
   class Element {
     children = []; dataset = {}; attributes = {}; style = {}; hidden = false; value = '';
-    classList = { contains: () => cleared };
+    classes = new Set();
+    classList = { contains: name => name === 'cleared' ? cleared : this.classes.has(name),
+      add: name => this.classes.add(name), remove: name => this.classes.delete(name) };
     setAttribute(key, value) { this.attributes[key] = value; }
     append(child) { child.parent = this; this.children.push(child); }
     prepend(child) { child.parent = this; this.children.unshift(child); }
-    replaceChildren() { this.value = ''; this.children = []; }
+    replaceChildren(...children) { this.value = ''; this.children = []; children.forEach(child => this.append(child)); }
     remove() { this.parent.children = this.parent.children.filter(value => value !== this); }
     set textContent(value) { this.children = []; this.value = value; }
     get textContent() { return this.value + this.children.map(child => child.textContent).join(''); }
     get clientHeight() { return capacity; }
-    get scrollHeight() { return [...this.textContent].length; }
+    get scrollHeight() { return height(this.textContent); }
     get clientWidth() { return 100; }
     get scrollWidth() { return this.textContent.length; }
-    getBoundingClientRect() { return { width: this.scrollWidth }; }
+    get offsetTop() {
+      const before = this.parent?.children.slice(0, this.parent.children.indexOf(this)).map(child => child.textContent).join('') || '';
+      return lineWidth ? Math.floor([...before].length / lineWidth) * 10 : 0;
+    }
+    getBoundingClientRect() {
+      const before = this.parent?.children.slice(0, this.parent.children.indexOf(this)).map(child => child.textContent).join('') || '';
+      const lineTop = lineWidth ? Math.floor([...before].length / lineWidth) * 10 : 0;
+      return { width: this.scrollWidth,
+        height: this.className === 'translation-lines' ? this.scrollHeight : capacity,
+        top: (this.parent?.getBoundingClientRect().top || 0) + (this.parent?.className === 'translation-lines' ? lineTop : 0)
+          + (parseFloat(this.style.transform?.match(/translateY\(([-\d.]+)/)?.[1]) || 0) };
+    }
+    animate(keyframes, options) {
+      const animation = { keyframes, options, cancelled: false, cancel() { this.cancelled = true; } };
+      animations.push(animation);
+      return animation;
+    }
   }
   const container = new Element();
   vm.runInNewContext(source, {
     Intl, console,
-    getComputedStyle: () => ({ fontSize: '10px' }),
+    getComputedStyle: element => ({ fontSize: '10px', height: String(element.getBoundingClientRect().height),
+      transform: `matrix(1, 0, 0, 1, 0, ${parseFloat(element.style.transform?.match(/translateY\(([-\d.]+)/)?.[1]) || 0})` }),
     document: { getElementById: () => container, createElement: () => new Element(),
       documentElement: { style: { setProperty() {} } }, body: { clientHeight: 100 } },
-    window: { api: { onTranslationFrame: fn => { receive = fn; }, reportTranslationRendered: report => reports.push(report) } },
+    window: { matchMedia: () => ({ matches: reducedMotion }),
+      api: { onTranslationFrame: fn => { receive = fn; }, reportTranslationRendered: report => reports.push(report) } },
     requestAnimationFrame: fn => { tick = fn; },
     ResizeObserver: class { constructor(fn) { resize = fn; } observe() {} }
   });
   const layer = container.children[0], copy = layer.children[0];
+  const spans = () => copy.children[0]?.className === 'translation-lines' ? copy.children[0].children : copy.children;
   let last;
   return {
-    layer, copy, reports,
-    current: () => copy.children.find(child => child.attributes['aria-current'] === 'true')?.textContent,
-    previous: () => copy.children.filter(child => child.className.includes('previous')).map(child => child.textContent.trim()),
+    layer, copy, reports, animations,
+    current: () => spans().find(child => child.attributes['aria-current'] === 'true')?.textContent,
+    previous: () => spans().filter(child => child.className.includes('previous')).map(child => child.textContent.trim()),
     send(phrases, options = {}) {
       last = { outputId: 'ru', sessionId: 'one', language: 'en', layout: 'lower-third', fontScale: 1,
         moving: true, manual: false, ...options,
@@ -72,7 +95,7 @@ test('rendering heartbeat records progress without caption text, including clear
 
 test('a multi-sentence chunk advances one sentence at a time; old text grays and rolls out', () => {
   const d = display(29);
-  d.send(['First is here. Next is here. Last is here.']);
+  d.send(['First is here. Next is here. Last is here.'], { layout: 'full-screen' });
   assert.equal(d.current(), 'First is here.');
   assert.deepEqual(d.previous(), []);
   d.advance(1500);
@@ -235,4 +258,55 @@ test('continuous interpreter revisions show immediately without a sentence dwell
   assert.equal(d.current(), 'Благодать вам и мир.');
   d.advance(20000);
   assert.equal(d.current(), 'Благодать вам и мир.');
+});
+
+test('three wrapped lines remain until the fourth arrives, then move up without waiting for punctuation', () => {
+  const d = display(30, { lineWidth: 10 });
+  const phrase = { key: 'a', revision: 1, streaming: true, text: 'abcdefghij'.repeat(3) };
+  d.send([phrase]);
+  assert.equal(d.animations.length, 0);
+  assert.equal(d.current(), phrase.text);
+  d.send([{ ...phrase, revision: 2, text: phrase.text + 'k' }]);
+  assert.equal(d.current(), phrase.text + 'k', 'partial text is not held for sentence completion');
+  assert.equal(d.animations.length, 1);
+  assert.equal(d.animations[0].keyframes[0].transform, 'translateY(0px)');
+  assert.equal(d.animations[0].keyframes[1].transform, 'translateY(-10px)');
+  assert.ok(d.animations[0].options.duration <= 250, 'movement must not introduce a reading queue');
+  d.send([{ ...phrase, revision: 3, text: phrase.text + 'klmnop' }]);
+  assert.equal(d.animations.length, 1, 'words on the same line do not restart movement');
+  assert.equal(d.animations[0].cancelled, false);
+  d.animations[0].onfinish();
+  assert.equal(d.copy.classList.contains('rolling'), false);
+});
+
+test('rolling history can expire without replay, and new sessions clear it', () => {
+  const d = display(30, { lineWidth: 10 });
+  const a = { key: 'a', revision: 1, streaming: true, text: 'A'.repeat(19) + '.' };
+  const b = { key: 'b', revision: 1, streaming: true, text: 'B'.repeat(19) + '.' };
+  d.send([a, b]);
+  assert.equal(d.animations.length, 0, 'join at the current text without replay');
+  d.send([b, { key: 'c', revision: 1, streaming: true, text: 'C'.repeat(30) }]);
+  assert.equal(d.current(), 'C'.repeat(30));
+  assert.ok(!d.copy.textContent.includes('A'));
+  assert.equal(d.animations.length, 1);
+  assert.ok(parseFloat(d.animations[0].keyframes[0].transform.slice(11)) > parseFloat(d.animations[0].keyframes[1].transform.slice(11)));
+  d.send([{ ...a, text: 'New session.' }], { sessionId: 'next' });
+  assert.equal(d.animations[0].cancelled, true);
+  assert.equal(d.copy.textContent, 'New session.');
+  assert.deepEqual(d.previous(), []);
+});
+
+test('reduced motion, resize, and hidden layouts do not leave a moving caption behind', () => {
+  const d = display(30, { lineWidth: 10, reducedMotion: true });
+  const phrase = { key: 'a', revision: 1, streaming: true, text: 'abcdefghij'.repeat(3) };
+  d.send([phrase]);
+  d.send([{ ...phrase, revision: 2, text: phrase.text + 'k' }]);
+  assert.equal(d.animations.length, 0);
+  assert.equal(d.copy.children[0].style.transform, 'translateY(-10px)');
+  d.resize(20);
+  assert.equal(d.copy.children[0].style.transform, 'translateY(-20px)');
+  assert.equal(d.current(), phrase.text + 'k');
+  d.send([], { layout: 'hidden' });
+  assert.equal(d.layer.hidden, true);
+  assert.equal(d.copy.textContent, '');
 });

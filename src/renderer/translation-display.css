@@ -12,6 +12,11 @@
   padding: calc(2 * var(--output-vh, 1vh)) calc(4 * var(--output-vw, 1vw)); pointer-events: none;
 }
 .translation-layer[hidden], .cleared .translation-layer { display: none; }
+.translation-layer[data-layout="lower-third"] { line-height: 1.08; padding-block: calc(.8 * var(--output-vh, 1vh)); }
+.translation-layer[data-layout="lower-third"] .translation-copy { max-height: 3lh; }
+.translation-lines { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; will-change: transform; }
+.translation-copy.rolling { mask-image: linear-gradient(to bottom, transparent, #000 .2lh); }
+.translation-measure { position: absolute; top: 0; left: 0; visibility: hidden; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
 .translation-layer[data-layout="full-screen"] { inset: 0; height: 100%; padding: calc(5 * var(--output-vh, 1vh)) calc(6 * var(--output-vw, 1vw)); border: 0; font-size: calc(calc(10.4 * var(--output-vh, 1vh)) * var(--translation-font, 1)); }
 .translation-layer[data-layout="ticker"] { padding: 0; display: flex; align-items: center; font-size: min(calc(10 * var(--output-vh, 1vh)), calc(9.6 * var(--output-vh, 1vh) * var(--translation-font, 1))); line-height: 1.05; }
 .translation-layer[data-layout="ticker"][hidden], .cleared .translation-layer[data-layout="ticker"] { display: none; }
