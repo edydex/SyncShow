@@ -34,6 +34,8 @@ const state = {
   suggestedService: null,
   testOutput: { enabled: false, displayId: null, layout: 'vertical', rotation: 0 },
   testOutputSaving: false,
+  presentationMode: 'auto',
+  lastSingleScreenRole: null,
   loadLocalServices: {
     items: [],
     busy: false,
@@ -277,6 +279,9 @@ const elements = {
   loadModeTabs: Array.from(document.querySelectorAll('[data-load-tab]')),
   loadModePanels: Array.from(document.querySelectorAll('[data-load-panel]')),
   btnTestOutput: document.getElementById('btnTestOutput'),
+  presentationMode: document.getElementById('presentationMode'),
+  presentationScreenSummary: document.getElementById('presentationScreenSummary'),
+  presentationModeHelp: document.getElementById('presentationModeHelp'),
   testOutputEnabled: document.getElementById('testOutputEnabled'),
   testOutputDisplay: document.getElementById('testOutputDisplay'),
   testOutputLayout: document.getElementById('testOutputLayout'),
@@ -672,6 +677,10 @@ function setupEventListeners() {
     tab.addEventListener('keydown', handlePrepareAddTabKeydown);
   });
   elements.btnStartPresentation.addEventListener('click', startPresentation);
+  elements.presentationMode.addEventListener('change', () => {
+    state.presentationMode = elements.presentationMode.value;
+    checkReadyState();
+  });
   elements.btnRestorePrevious.addEventListener('click', restoreCachedPresentations);
   elements.btnChooseServiceFolder.addEventListener('click', chooseAndLinkServiceFolder);
   elements.btnConnectPrivateDrive.addEventListener('click', connectPrivateDrive);
@@ -5983,6 +5992,7 @@ function handleDisplaysUpdated(displays) {
   renderProfileEditor();
   renderOutputHealth();
   checkReadyState();
+  if (state.startAttempt?.snapshot.singleScreen && !state.isStarting) renderStartPreflight();
 }
 
 async function refreshDisplays() {
@@ -6038,11 +6048,46 @@ function getLoadedRoles({ requireExtractedText = false } = {}) {
   });
 }
 
+function getSingleScreenRoles() {
+  return window.SyncShowPresentationMode.singleScreenRoles(
+    state.profile?.inputRoles, state.presentations, state.profile?.outputs
+  ).filter(role => state.presentations[role.id]?.loaded);
+}
+
+function buildSingleScreenOutput(roleId, displayId) {
+  return window.SyncShowPresentationMode.singleScreenOutput({
+    roleId, displayId, displays: state.displays,
+    roles: state.profile?.inputRoles, presentations: state.presentations,
+    outputs: state.profile?.outputs
+  });
+}
+
+function renderPresentationMode() {
+  const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
+  const mode = window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode);
+  elements.presentationMode.value = state.presentationMode;
+  elements.presentationMode.disabled = state.isPresenting || state.isStarting || !!state.startAttempt;
+  elements.presentationMode.options[0].textContent = `Automatic · ${external.length <= 1 ? 'one screen' : 'saved screen setup'}`;
+  elements.presentationScreenSummary.textContent = external.length === 0
+    ? 'Connect a presentation screen'
+    : `${external.length} external ${external.length === 1 ? 'screen' : 'screens'} connected`;
+  elements.presentationModeHelp.textContent = external.length === 0
+    ? 'Connect a TV or projector in extended-display mode. Your controls stay on this screen.'
+    : mode === 'single'
+      ? 'Start Show asks which language to present full-screen. Your saved screen setup stays unchanged.'
+      : 'Use your saved audience and stage screens, or choose One screen for a simpler setup.';
+}
+
 function getReadinessState(testOutput = false) {
-  const outputs = getConfiguredOutputs();
+  const singleScreen = !testOutput && window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode) === 'single';
+  const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
+  const singleRoles = getSingleScreenRoles();
+  const outputs = singleScreen
+    ? (external.length && singleRoles.length ? [buildSingleScreenOutput(singleRoles[0].id, external[0].id)] : [])
+    : getConfiguredOutputs();
   const routes = outputs.map(output => ({
     output,
-    decision: getServiceOutputDecision(output)
+    decision: singleScreen ? { mode: 'direct' } : getServiceOutputDecision(output)
   }));
   const activeRoutes = routes.filter(route => route.decision?.mode !== 'disabled');
   const activeOutputs = activeRoutes.map(route => route.output);
@@ -6067,7 +6112,9 @@ function getReadinessState(testOutput = false) {
   const demoReady = !testOutput || (state.testOutput.enabled && !!demoTarget && !state.testOutputSaving);
   if (!demoReady) issues.push('Choose a connected external demo screen in Admin Settings → Screen Setup');
 
-  if (outputs.length === 0) issues.push('Choose at least one output screen in Admin Settings');
+  if (singleScreen && external.length === 0) issues.push('Connect an external presentation screen');
+  if (singleScreen && singleRoles.length === 0) issues.push('Load a service or a language slideshow');
+  if (!singleScreen && outputs.length === 0) issues.push('Choose at least one output screen in Admin Settings');
   if (outputs.length > 0 && activeOutputs.length === 0) {
     issues.push('Use at least one configured screen for this service');
   }
@@ -6111,6 +6158,7 @@ function getReadinessState(testOutput = false) {
 
   return {
     isReady,
+    singleScreen,
     issues,
     outputs,
     activeOutputs,
@@ -6139,7 +6187,11 @@ function renderReadiness(readiness) {
   elements.readinessCard.hidden = state.friendlyMode && isReady && needsChoices.length === 0;
 
   if (isReady) {
-    if (needsChoices.length > 0) {
+    if (readiness.singleScreen) {
+      elements.readinessIcon.textContent = '→';
+      elements.readinessTitle.textContent = 'Ready for one screen';
+      elements.readinessSummary.textContent = 'Start Show will ask which language to present.';
+    } else if (needsChoices.length > 0) {
       elements.readinessIcon.textContent = '→';
       elements.readinessTitle.textContent = 'Ready for a quick choice';
       elements.readinessSummary.textContent = `${state.testOutput.enabled ? 'Test Output' : 'Start Show'} will ask what to use for ${needsChoices.length === 1 ? needsChoices[0].name : `${needsChoices.length} outputs`}.`;
@@ -6162,6 +6214,9 @@ function renderReadiness(readiness) {
     } else if (state.serviceFolder.staleRoleIds.length > 0) {
       elements.readinessTitle.textContent = 'Finish loading today’s files';
       elements.readinessSummary.textContent = 'A newer service is only partly loaded. The previous service will not be mixed into it.';
+    } else if (readiness.singleScreen) {
+      elements.readinessTitle.textContent = 'One-screen presentation';
+      elements.readinessSummary.textContent = issues.join(' · ');
     } else {
       elements.readinessTitle.textContent = 'Admin setup needed';
       elements.readinessSummary.textContent = 'An output screen needs attention. Open Admin Settings to finish the venue setup.';
@@ -6185,6 +6240,7 @@ function renderReadiness(readiness) {
 }
 
 function checkReadyState() {
+  renderPresentationMode();
   const readiness = getReadinessState();
   const {
     isReady,
@@ -6199,7 +6255,7 @@ function checkReadyState() {
   const demoReadiness = getReadinessState(true);
   elements.btnTestOutput.disabled = state.isPresenting || !demoReadiness.isReady;
   elements.btnTestOutput.title = demoReadiness.issues.join(' · ') || 'Preview all outputs together';
-  renderReadiness(state.testOutput.enabled ? demoReadiness : readiness);
+  renderReadiness(readiness);
 
   // Display rescans and preference saves can occur while Show is live. Keep
   // those background readiness updates from replacing the operator's live
@@ -6251,6 +6307,19 @@ async function startPresentation(testOutput = false) {
   const readiness = getReadinessState(testOutput);
   if (!readiness.isReady) return;
   if (!confirmPreparedServiceDate()) return;
+  if (readiness.singleScreen) {
+    state.startAttempt = {
+      id: Date.now(), status: 'single-screen', error: null, decisions: {}, questionIds: [], cursor: 0,
+      snapshot: { singleScreen: true, testOutput: false, outputs: [], settings: {
+        fadeDuration: parseIntegerOr(elements.fadeDuration.value, 300), syncMode: elements.syncMode.checked || false,
+        singerFontSize: state.singerFontSize, singerCharLimit: state.singerCharLimit, singerTextPadding: state.singerTextPadding
+      } }
+    };
+    checkReadyState();
+    renderStartPreflight();
+    elements.startPreflightDialog.showModal();
+    return;
+  }
 
   const serviceDecisions = window.SyncShowServiceOutputPlan.filterDecisionsForOutputs(
     readiness.outputs,
@@ -6348,6 +6417,7 @@ function createPreflightSourceSelect(mode, roles, selectedRole) {
 }
 
 function updatePreflightSourceVisibility() {
+  if (state.startAttempt?.snapshot.singleScreen) return;
   const selectedMode = elements.preflightChoices
     .querySelector('input[name="preflightAction"]:checked')?.value;
   elements.preflightChoices.querySelectorAll('.preflight-source').forEach(label => {
@@ -6355,11 +6425,53 @@ function updatePreflightSourceVisibility() {
   });
 }
 
+function renderSingleScreenPreflight(attempt) {
+  const previousRole = elements.preflightChoices.querySelector('input[name="preflightAction"]:checked')?.value;
+  const previousDisplay = document.getElementById('singleScreenDisplay')?.value;
+  const displays = window.SyncShowPresentationMode.externalDisplays(state.displays);
+  const roles = getSingleScreenRoles();
+  elements.preflightProgress.textContent = 'ONE SCREEN';
+  elements.preflightTitle.textContent = 'Which language would you like to present?';
+  elements.preflightDescription.textContent = 'One full-screen presentation. Your controls stay on this computer.';
+  elements.preflightChoices.replaceChildren();
+  elements.preflightChoices.hidden = false;
+  elements.preflightReview.hidden = true;
+  elements.preflightError.hidden = !attempt.error;
+  elements.preflightError.textContent = attempt.error || '';
+  for (const role of roles) {
+    createPreflightChoice({ value: role.id, title: getRoleLabel(role.id),
+      description: `${state.presentations[role.id].slideCount} slides`,
+      checked: role.id === (previousRole || state.lastSingleScreenRole)
+    });
+  }
+  const label = document.createElement('label');
+  label.className = 'preflight-source'; label.textContent = 'Presentation screen';
+  const select = document.createElement('select');
+  select.id = 'singleScreenDisplay'; select.className = 'display-dropdown';
+  for (const display of displays) {
+    const option = document.createElement('option'); option.value = String(display.id);
+    option.textContent = display.label; select.append(option);
+  }
+  if (displays.some(display => String(display.id) === previousDisplay)) select.value = previousDisplay;
+  select.disabled = displays.length < 2;
+  label.append(select); elements.preflightChoices.append(label);
+  elements.btnPreflightBack.hidden = true;
+  elements.btnPreflightContinue.textContent = 'Start Show';
+  elements.btnPreflightContinue.disabled = !displays.length || !roles.length;
+  if (!displays.length) {
+    elements.preflightError.hidden = false;
+    elements.preflightError.textContent = 'Connect an external presentation screen to continue.';
+  }
+}
+
 function renderStartPreflight() {
   const attempt = state.startAttempt;
   if (!attempt) return;
 
+  if (attempt.snapshot.singleScreen) { renderSingleScreenPreflight(attempt); return; }
+
   const isReview = attempt.status === 'review';
+  elements.btnPreflightContinue.disabled = false;
   elements.preflightChoices.replaceChildren();
   elements.preflightReview.replaceChildren();
   elements.preflightChoices.hidden = isReview;
@@ -6504,6 +6616,20 @@ async function handlePreflightSubmit(event) {
   if (!attempt) return;
 
   attempt.error = null;
+  if (attempt.snapshot.singleScreen) {
+    const roleId = elements.preflightChoices.querySelector('input[name="preflightAction"]:checked')?.value;
+    const displayId = document.getElementById('singleScreenDisplay')?.value;
+    try {
+      if (!roleId) throw new Error('Choose a language to present.');
+      const output = buildSingleScreenOutput(roleId, displayId);
+      attempt.snapshot.outputs = [output];
+      attempt.snapshot.preferredTimelineRoleId = roleId;
+      attempt.decisions = { [output.id]: { mode: 'direct', explicit: true } };
+      state.lastSingleScreenRole = roleId;
+      await launchStartAttempt();
+    } catch (error) { attempt.error = error.message; renderStartPreflight(); }
+    return;
+  }
   if (attempt.status === 'review') {
     await launchStartAttempt();
     return;
@@ -6645,7 +6771,8 @@ async function launchStartAttempt() {
     renderThumbnails();
     updateSlideCounter();
     window.api.requestOutputPreviews();
-    setStatus(attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor' : 'Presentation started');
+    setStatus(attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor'
+      : attempt.snapshot.singleScreen ? `${getRoleLabel(attempt.snapshot.preferredTimelineRoleId)} — presenting on one screen` : 'Presentation started');
     window.setTimeout(() => {
       const target = !elements.btnNextSlide.disabled
         ? elements.btnNextSlide

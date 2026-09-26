@@ -726,6 +726,17 @@
             </div>
           </div>
 
+          <section class="presentation-mode-card" aria-label="Presentation screens">
+            <div><strong id="presentationScreenSummary">Detecting connected screens…</strong><p id="presentationModeHelp"></p></div>
+            <label>Present to
+              <select id="presentationMode" class="display-dropdown">
+                <option value="auto">Automatic</option>
+                <option value="single">One screen</option>
+                <option value="configured">Saved screen setup</option>
+              </select>
+            </label>
+          </section>
+
           <nav class="load-mode-tabs" role="tablist" aria-label="Service file type">
             <button type="button" id="loadTabSyncShow" class="load-mode-tab is-active" role="tab" aria-selected="true" aria-controls="loadSyncShowPanel" data-load-tab="syncshow">
               <span class="load-source-choice-mark" aria-hidden="true">S</span>
@@ -3092,6 +3103,7 @@
   <script src="error-messages.js"></script>
   <script src="google-drive-oauth-state.js"></script>
   <script src="service-output-plan.js"></script>
+  <script src="presentation-mode.js"></script>
   <script src="show-accessibility.js"></script>
   <script src="service-handoff.js"></script>
   <script src="prepared-service-guard.js"></script>

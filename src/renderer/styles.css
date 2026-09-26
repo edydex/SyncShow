@@ -11090,3 +11090,10 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
 #outputPreviewList .mini-preview-img img { width: 100%; height: 100%; max-height: none; object-fit: contain; }
 
 .show-language-warning { color: #ff9292; font-size: .85rem; line-height: 1.45; margin: 0; }
+
+.presentation-mode-card { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:18px 22px; margin-bottom:20px; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-secondary); }
+.presentation-mode-card strong { font-size:16px; }
+.presentation-mode-card p { margin:6px 0 0; color:var(--text-secondary); font-size:14px; }
+.presentation-mode-card label { display:grid; gap:6px; flex-shrink:0; font-size:13px; color:var(--text-secondary); }
+.presentation-mode-card select { min-width:220px; }
+@media (max-width:800px) { .presentation-mode-card { align-items:stretch; flex-direction:column; gap:12px; } }
