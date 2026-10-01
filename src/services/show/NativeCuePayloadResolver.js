@@ -56,13 +56,14 @@ function resolveNativeCuePayload({
   try {
     const currentScene = presentation.scenes[cueIndex];
     const nextScene = presentation.scenes[cueIndex + 1] || null;
-    let next = nativeSceneSingerNext(nextScene);
+    const hint = presentation.stageHints?.[cueIndex];
+    let next = hint?.text ? { state: 'text', text: hint.text } : nativeSceneSingerNext(nextScene);
     // A hidden title image still has an operator label for the next-slide clue.
     if (next.state === 'blank' && nextScene && nextScene.layout !== 'blank') {
       const label = presentation.metadata?.slides?.[cueIndex + 1]?.firstLine;
       if (typeof label === 'string' && label.trim()) next = {state: 'text', text: label.split(/\r?\n/)[0].slice(0, 300)};
     }
-    const scene = variant === 'singer-current-next' || (stageFacing && currentScene.layout === 'blank')
+    const scene = hint?.show !== false && (variant === 'singer-current-next' || (stageFacing && currentScene.layout === 'blank'))
       ? deriveNativeSingerScene(
           currentScene,
           next

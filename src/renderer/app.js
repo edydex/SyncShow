@@ -125,7 +125,7 @@ const state = {
     busy: false,
     error: null
   },
-  thumbnailSelection: 'all',
+  thumbnailSelection: 'default',
   thumbnailZoom: 100,  // percentage, 50-200
   singerFontSize: 36,   // px, 12-120
   singerCharLimit: 70,  // characters, 10-500
@@ -175,6 +175,7 @@ function setSelectValuePreservingCustomOption(select, value, formatLabel) {
 
 // DOM Elements
 const elements = {
+  loadPrepareWarning: document.getElementById('loadPrepareWarning'),
   appSubtitle: document.getElementById('appSubtitle'),
   btnStagePrepare: document.getElementById('btnStagePrepare'),
   btnStageLoad: document.getElementById('btnStageLoad'),
@@ -392,6 +393,11 @@ const elements = {
   btnClearDisplays: document.getElementById('btnClearDisplays'),
   btnStopDisplays: document.getElementById('btnStopDisplays'),
   btnBackToSetup: document.getElementById('btnBackToSetup'),
+  btnShowAdjust: document.getElementById('btnShowAdjust'),
+  btnCloseShowAdjust: document.getElementById('btnCloseShowAdjust'),
+  showAdjustPanel: document.getElementById('showAdjustPanel'),
+  showAdjustViewport: document.getElementById('showAdjustViewport'),
+  showAdjustStatus: document.getElementById('showAdjustStatus'),
   btnPrevSlide: document.getElementById('btnPrevSlide'),
   btnNextSlide: document.getElementById('btnNextSlide'),
   volunteerControlBar: document.getElementById('volunteerControlBar'),
@@ -485,6 +491,9 @@ let communityPollTimer = null;
 let communityStatusUnsubscribe = null;
 let communityPlannerStateUnsubscribe = null;
 let communityPlannerLayoutFrame = null;
+let showAdjustOpen = false;
+let showAdjustBusy = false;
+let plannerConflictReview = null;
 
 function setTextIfChanged(element, value) {
   const text = String(value ?? '');
@@ -607,6 +616,10 @@ function setupEventListeners() {
   elements.btnStagePrepare.addEventListener('click', () => navigateWorkflowStage('prepare'));
   elements.btnStageLoad.addEventListener('click', () => navigateWorkflowStage('load'));
   elements.btnStageShow.addEventListener('click', () => navigateWorkflowStage('show'));
+  document.addEventListener('pointerdown', cancelPendingPrepareLoad, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') cancelPendingPrepareLoad();
+  }, true);
   elements.btnPrepareModeCommunity.addEventListener('click', () => activatePrepareMode('community'));
   elements.btnPrepareModeLocal.addEventListener('click', () => activatePrepareMode('local'));
   elements.btnOpenCommunityServiceFromLoad.addEventListener('click', async () => {
@@ -736,6 +749,12 @@ function setupEventListeners() {
   elements.btnClearDisplays.addEventListener('click', clearDisplays);
   elements.btnStopDisplays.addEventListener('click', stopDisplays);
   elements.btnBackToSetup.addEventListener('click', () => backToSetup('load'));
+  document.getElementById('btnReviewPlannerConflict').addEventListener('click', reviewPlannerConflict);
+  document.getElementById('btnReviewAdjustConflict').addEventListener('click', reviewPlannerConflict);
+  document.getElementById('btnPlannerUseCommunity').addEventListener('click', () => resolvePlannerConflict('use-community'));
+  document.getElementById('btnPlannerKeepLocal').addEventListener('click', () => resolvePlannerConflict('keep-local'));
+  elements.btnShowAdjust.addEventListener('click', toggleShowAdjust);
+  elements.btnCloseShowAdjust.addEventListener('click', closeShowAdjust);
   elements.btnShowHandoffCompleted.addEventListener(
     'click',
     completeAndOpenPostShowSermonHandoff
@@ -1406,8 +1425,8 @@ async function saveTestOutputSettings() {
 }
 
 async function openLocalServiceInPrepare(projectId) {
-  await setWorkflowStage('prepare', { localTools: true });
-  await prepareController?.openProjectById?.(projectId);
+  await setWorkflowStage('prepare');
+  if (state.community.plannerOpen) communityCheckedResult(await window.api.openPlannerService(projectId));
 }
 
 async function loadLocalService(project, button) {
@@ -1587,6 +1606,7 @@ function setWorkflowStage(stage) {
     : undefined;
   if (!['prepare', 'load', 'show'].includes(stage)) return Promise.resolve(false);
   state.workflowStage = stage;
+  if (stage !== 'show') { window.api.setPlannerShowMode?.(false).catch(() => {}); showAdjustOpen = false; elements.showAdjustPanel.hidden = true; elements.btnShowAdjust.setAttribute('aria-pressed', 'false'); }
   for (const candidate of ['prepare', 'load', 'show']) {
     document.body.classList.toggle(`${candidate}-stage`, candidate === stage);
   }
@@ -1614,11 +1634,7 @@ function setWorkflowStage(stage) {
 
   let activation = Promise.resolve(true);
   if (stage === 'prepare') {
-    const requestedMode = activationOptions?.localTools === true
-      ? 'local'
-      : communityIsConnected()
-        ? state.prepareMode
-        : 'local';
+    const requestedMode = 'community';
     activation = activatePrepareMode(requestedMode, activationOptions);
   } else if (stage === 'load') {
     scheduleCommunityPlannerLayout();
@@ -1630,15 +1646,27 @@ function setWorkflowStage(stage) {
   return activation;
 }
 
+function setPrepareLoadWarning(message) {
+  elements.loadPrepareWarning.textContent = message;
+  elements.loadPrepareWarning.hidden = !message;
+}
+
+function cancelPendingPrepareLoad() {
+  if (state.workflowStage !== 'load' || !state.community.handoffBusy) return;
+  state.community.handoffGeneration++;
+  state.community.handoffBusy = false;
+  setPrepareLoadWarning('Prepare’s latest edits have not been loaded. Choose a saved service, or return to Prepare to save.');
+}
+
 async function navigateWorkflowStage(stage) {
-  if (state.community.handoffBusy) return;
   if (stage === state.workflowStage) {
     if (stage === 'prepare' && state.prepareMode === 'community') {
       await openCommunityPrepare();
     }
     return;
   }
-  if (state.workflowStage === 'prepare' && prepareController?.isBusy?.()) {
+  if (state.workflowStage === 'prepare' && prepareController?.isBusy?.()
+    && !(stage === 'load' && state.prepareMode === 'community')) {
     setStatus('Wait for the current Prepare change to finish before leaving this screen');
     return;
   }
@@ -1658,17 +1686,38 @@ async function navigateWorkflowStage(stage) {
   }
 
   if (stage === 'load' && state.workflowStage === 'prepare' && state.prepareMode === 'community') {
+    const generation = state.community.handoffGeneration = (state.community.handoffGeneration || 0) + 1;
+    const loadedService = state.serviceHandoff;
+    const current = () => state.community.handoffGeneration === generation
+      && state.workflowStage === 'load' && state.loadMode === 'syncshow'
+      && state.serviceHandoff === loadedService && !state.activeLaunchPlan && !state.isStarting;
     state.community.handoffBusy = true;
-    elements.btnStageLoad.disabled = true;
+    setPrepareLoadWarning('Load is open. Checking Prepare’s save; the previously loaded slides remain unchanged until saving is confirmed.');
+    await setWorkflowStage('load');
+    if (!current()) {
+      if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
+      return;
+    }
+    let timeout;
     try {
-      setStatus('Waiting for Prepare, then loading the saved service…');
-      const handoff = communityCheckedResult(await window.api.prepareCommunityPlannerForLoad());
-      await setWorkflowStage('load');
+      const handoff = communityCheckedResult(await Promise.race([
+        window.api.prepareCommunityPlannerForLoad(),
+        new Promise((resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error('Prepare has not confirmed saving yet. Its latest edits have not been loaded. Return to Prepare to save, or choose a saved service below.')), 3000);
+        })
+      ]));
+      if (!current()) return;
+      setPrepareLoadWarning('');
       if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId);
     } catch (error) {
-      setStatus(operatorErrorMessage(error, 'Prepare could not hand this service to Load.'));
+      if (current()) {
+        const warning = `Load is available, but Prepare’s latest edits have not been loaded. ${operatorErrorMessage(error, 'Save in Prepare before loading that service.')}`;
+        setPrepareLoadWarning(warning);
+        setStatus(warning);
+      }
     } finally {
-      state.community.handoffBusy = false;
+      clearTimeout(timeout);
+      if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
       updateWorkflowNavigationAvailability();
     }
     return;
@@ -2757,6 +2806,91 @@ function renderCommunitySettings() {
   }
 }
 
+async function reviewPlannerConflict() {
+  try {
+    plannerConflictReview = communityCheckedResult(await window.api.reviewPlannerConflict());
+    const describe = value => `${value.title} · version ${value.syncVersion} · ${new Date(value.changedAt).toLocaleString()}`;
+    document.getElementById('plannerConflictLocal').textContent = describe(plannerConflictReview.local);
+    document.getElementById('plannerConflictRemote').textContent = describe(plannerConflictReview.remote);
+    await window.api.layoutCommunityPlanner({visible:false});
+    document.getElementById('plannerConflictDialog').showModal();
+    document.getElementById('plannerConflictDialog').addEventListener('close', scheduleCommunityPlannerLayout, {once:true});
+  } catch (error) { setStatus(error.message); }
+}
+async function resolvePlannerConflict(resolution) {
+  if (!plannerConflictReview) return;
+  try {
+    const result = communityCheckedResult(await window.api.resolvePlannerConflict({syncId:plannerConflictReview.syncId,remoteRevision:plannerConflictReview.remoteRevision,resolution}));
+    if (!result.resolved) throw new Error('Community changed again. Review both versions before choosing.');
+    document.getElementById('plannerConflictDialog').close();
+    plannerConflictReview = null;
+    setStatus('Version choice saved. Click a slide or Next to show the saved changes.');
+  } catch (error) { document.getElementById('plannerConflictStatus').textContent = error.message; }
+}
+
+function renderShowAdjustStatus() {
+  document.getElementById('showAdjustDraft').textContent = state.community.plannerShowDraft
+    ? 'Backstage draft · changes are not on screen yet'
+    : 'Adjust backstage · click a slide or Next to show edits';
+  elements.showAdjustStatus.textContent = state.community.plannerConflicts?.length
+    ? 'Both versions changed. Your edits are safe on this computer; review Community sync. Click a slide or Next to show the draft.'
+    : state.community.plannerPending
+      ? 'Saved on this computer. Waiting to sync. Click a slide or Next to show the draft.'
+      : 'Changes are saved backstage. Click a slide or Next to show them.';
+}
+
+async function toggleShowAdjust() {
+  if (showAdjustOpen) return closeShowAdjust();
+  if (!state.serviceHandoff?.project?.id) {
+    setStatus('Adjust is available for a prepared native service. Prepare a service before using Adjust.'); return;
+  }
+  showAdjustOpen = true;
+  elements.showAdjustPanel.hidden = false;
+  elements.btnShowAdjust.setAttribute('aria-pressed', 'true');
+  renderShowAdjustStatus();
+  try {
+    await openCommunityPrepare();
+    if (!state.community.plannerOpen) throw new Error('Prepare could not open.');
+    communityCheckedResult(await window.api.openPlannerService(state.serviceHandoff.project.id));
+    await window.api.setPlannerShowMode(true);
+    scheduleCommunityPlannerLayout();
+  } catch (error) { elements.showAdjustStatus.textContent = error.message; }
+}
+
+async function closeShowAdjust() {
+  if (showAdjustBusy) return;
+  if (state.community.plannerOpen) {
+    try { communityCheckedResult(await window.api.flushCommunityPlanner()); }
+    catch (error) { elements.showAdjustStatus.textContent = error.message; return; }
+  }
+  await window.api.setPlannerShowMode(false);
+  showAdjustOpen = false;
+  elements.showAdjustPanel.hidden = true;
+  elements.btnShowAdjust.setAttribute('aria-pressed', 'false');
+  scheduleCommunityPlannerLayout();
+  elements.btnShowAdjust.focus();
+}
+
+let backstageRefreshPromise = null;
+async function refreshTakenBackstageDraft() {
+  if (backstageRefreshPromise) return backstageRefreshPromise;
+  backstageRefreshPromise = (async () => {
+    const current = await window.api.getAppState();
+    state.currentSlide = current.currentSlide; state.totalSlides = current.totalSlides;
+    state.activeLaunchPlan = current.activeLaunchPlan;
+    applyServiceHandoff(current.serviceHandoff);
+    applyRuntimePresentationState(current.presentations, { replaceSource: true });
+    if (current.showState) handleShowStateChanged(current.showState);
+    await loadSlidesIfNeeded(); renderThumbnails();
+    renderShowAdjustStatus();
+    setStatus(current.showState?.phase === 'live'
+      ? 'Saved draft shown. Further edits stay backstage until you click a slide or Next.'
+      : 'Saved draft loaded. Restore the outputs before continuing.');
+  })();
+  try { return await backstageRefreshPromise; }
+  finally { backstageRefreshPromise = null; }
+}
+
 function renderCommunityPrepare() {
   const available = typeof window.api?.openCommunityPlanner === 'function';
   const connected = available && communityIsConnected();
@@ -2769,7 +2903,7 @@ function renderCommunityPrepare() {
   } else if (!connected) {
     elements.communityPrepareStatus.dataset.kind = 'warning';
     elements.communityPrepareStatus.textContent =
-      'Connect Heritage Community from Admin Settings on the Load page, or use This computer.';
+      'Connect Heritage Community once in Admin Settings. The same editor and downloaded library stay available offline.';
   } else if (state.community.plannerError) {
     elements.communityPrepareStatus.dataset.kind = 'error';
     elements.communityPrepareStatus.textContent = state.community.plannerError;
@@ -2778,8 +2912,10 @@ function renderCommunityPrepare() {
       'Opening the planner supplied by Heritage Community…';
   } else if (state.community.plannerOpen) {
     elements.communityPrepareStatus.dataset.kind = 'success';
-    elements.communityPrepareStatus.textContent =
-      'Connected. Loading the shared planner…';
+    elements.communityPrepareStatus.textContent = state.community.plannerConflicts?.length
+      ? 'Both versions changed. Local edits are saved; review Community before syncing.'
+      : state.community.plannerPending ? 'Saved on this computer. Waiting to sync.'
+      : state.community.plannerOffline ? 'Working offline with the same editor.' : 'Connected. Loading the shared planner…';
   } else {
     elements.communityPrepareStatus.textContent =
       'Loading the shared planner…';
@@ -2788,11 +2924,12 @@ function renderCommunityPrepare() {
 }
 
 function communityPlannerShouldBeVisible() {
-  return state.workflowStage === 'prepare'
-    && state.prepareMode === 'community'
+  return ((state.workflowStage === 'show' && showAdjustOpen)
+    || (state.workflowStage === 'prepare' && state.prepareMode === 'community'))
     && communityIsConnected()
+    && !document.getElementById('plannerConflictDialog').open
     && state.community.plannerOpen
-    && !elements.communityPrepareShell.hidden;
+    && (showAdjustOpen || !elements.communityPrepareShell.hidden);
 }
 
 async function syncCommunityPlannerLayout() {
@@ -2801,7 +2938,7 @@ async function syncCommunityPlannerLayout() {
     await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
     return;
   }
-  const rect = elements.communityPlannerViewport.getBoundingClientRect();
+  const rect = (showAdjustOpen ? elements.showAdjustViewport : elements.communityPlannerViewport).getBoundingClientRect();
   if (rect.width < 640 || rect.height < 420) {
     await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
     return;
@@ -2834,7 +2971,7 @@ function scheduleCommunityPlannerLayout() {
 }
 
 async function activatePrepareMode(mode, options = {}) {
-  const selected = mode === 'local' ? 'local' : 'community';
+  const selected = 'community';
   state.prepareMode = selected;
   const local = selected === 'local';
   elements.communityPrepareShell.hidden = local;
@@ -2865,6 +3002,16 @@ async function activatePrepareMode(mode, options = {}) {
 
 function handleCommunityPlannerStateChanged(payload = {}) {
   const wasOpen = state.community.plannerOpen;
+  state.community.plannerOffline = payload.offline === true;
+  state.community.plannerPending = payload.pending || 0;
+  state.community.plannerConflicts = payload.conflicts || [];
+  state.community.plannerShowDraft = payload.showDraft === true;
+  if (showAdjustOpen) renderShowAdjustStatus();
+  const hasConflicts = state.community.plannerConflicts.length > 0;
+  document.getElementById('plannerSyncStrip').hidden = !hasConflicts && !payload.offline && !payload.pending;
+  document.getElementById('plannerSyncStatus').textContent = hasConflicts ? 'Both versions changed. Your local edits are preserved.' : payload.pending ? 'Saved on this computer. Waiting to sync.' : 'Working offline with your downloaded library.';
+  document.getElementById('btnReviewPlannerConflict').hidden = !hasConflicts;
+  document.getElementById('btnReviewAdjustConflict').hidden = !hasConflicts;
   state.community.plannerOpen = payload?.open === true;
   state.community.plannerBusy = false;
   state.community.plannerError = typeof payload?.error?.message === 'string'
@@ -7981,6 +8128,7 @@ async function navigateSlide(delta, forwardInput = 'right') {
       ? window.api.prevSlide()
       : window.api.nextSlide(forwardInput));
     applyShowOutputActionResult(action, result);
+    if (result?.preparedChanged) await refreshTakenBackstageDraft();
     if (result?.videoHandled) {
       setStatus(result.videoState === 'playing'
         ? 'Video playing — Space pauses; Right skips to the next cue'
@@ -8019,6 +8167,7 @@ async function goToSlide(slideIndex) {
   try {
     const result = await window.api.navigateToSlide(slideIndex);
     applyShowOutputActionResult(action, result);
+    if (result?.preparedChanged) await refreshTakenBackstageDraft();
   } catch (error) {
     console.error('Error changing slides:', error);
     if (action.id === state.showActionRequest) {
@@ -8084,6 +8233,7 @@ function renderVolunteerShowControls(showState = state.showState) {
     : 0;
 
   document.body.classList.toggle('volunteer-show-locked', locked);
+  elements.btnShowAdjust.disabled = locked;
   elements.volunteerControlBar.hidden = !volunteer;
   elements.btnUnlockVolunteerControls.hidden = !volunteer || !locked;
   elements.btnLockVolunteerControls.hidden = !volunteer || locked;
@@ -8187,6 +8337,7 @@ function handleShowStateChanged(payload = {}) {
   if (state.showState && next.revision < state.showState.revision) return false;
 
   state.showState = next;
+  if (['backstage-draft-taken', 'backstage-draft-recovery'].includes(payload?.reason)) refreshTakenBackstageDraft().catch(error => setStatus(error.message));
   if (next.currentCue && Number.isInteger(next.currentCue.index)) {
     state.currentSlide = next.currentCue.index;
   }
@@ -8348,7 +8499,11 @@ function renderOutputPreviews(plan = state.activeLaunchPlan) {
     option.value = output.id;
     option.textContent = output.name;
     elements.outputPreviewSelect.append(option);
-    const body = createElement('div', 'mini-preview-img');
+    const body = createElement('button', 'mini-preview-img');
+    body.type = 'button';
+    body.title = 'Click to take the current slide again, including saved edits';
+    body.setAttribute('aria-label', `${output.name}: take current slide again`);
+    body.addEventListener('click', () => goToSlide(state.currentSlide));
     const image = document.createElement('img');
     image.alt = `${output.name} output`;
     body.append(image);
@@ -8396,6 +8551,7 @@ function updateSlideCounter() {
 }
 
 function updateThumbnailHighlight() {
+  updateShowSectionHighlight();
   document.querySelectorAll('.thumbnail-item').forEach(item => {
     const index = Number.parseInt(item.dataset.index, 10);
     window.SyncShowShowAccessibility.setThumbnailCurrentState(
@@ -8463,9 +8619,9 @@ function persistThumbnailZoom() {
 
 function applyThumbnailZoom() {
   const zoom = state.thumbnailZoom / 100;
-  const imgHeight = Math.round(150 * zoom);
-  const itemMinHeight = Math.round(175 * zoom);
-  const minWidth = Math.round(250 * zoom);
+  const imgHeight = Math.round(112 * zoom);
+  const itemMinHeight = Math.round(142 * zoom);
+  const minWidth = Math.round(200 * zoom);
 
   elements.zoomLevel.textContent = `${state.thumbnailZoom}%`;
   elements.thumbnailsGrid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${minWidth}px, 1fr))`;
@@ -8534,17 +8690,18 @@ function getThumbnailSelection() {
   const availableRoles = roleOrder.filter(role =>
     slidesByRole[role].length > 0 && (!routedRoles || routedRoles.has(role))
   );
+  if (availableRoles.length === 0) {
+    renderThumbnailRoleSelector([]);
+    return { slidesByRole, selectedRoles: [] };
+  }
   let selection = state.thumbnailSelection;
   if (selection === 'all' && availableRoles.length < 2) {
     selection = availableRoles.includes(state.activeLaunchPlan?.timelineRoleId)
       ? state.activeLaunchPlan.timelineRoleId
       : availableRoles[0];
   } else if (selection !== 'all' && !availableRoles.includes(selection)) {
-    selection = availableRoles.length > 1
-      ? 'all'
-      : (availableRoles.includes(state.activeLaunchPlan?.timelineRoleId)
-        ? state.activeLaunchPlan.timelineRoleId
-        : availableRoles[0]);
+    selection = availableRoles.includes(state.activeLaunchPlan?.timelineRoleId)
+      ? state.activeLaunchPlan.timelineRoleId : availableRoles[0];
   }
   state.thumbnailSelection = selection || 'all';
   renderThumbnailRoleSelector(availableRoles);
@@ -8606,12 +8763,22 @@ function renderThumbnails() {
   
   // Compute pixel heights from zoom level
   const zoom = state.thumbnailZoom / 100;
-  const imgHeight = Math.round(150 * zoom);
-  const itemMinHeight = Math.round(175 * zoom);
+  const imgHeight = Math.round(112 * zoom);
+  const itemMinHeight = Math.round(142 * zoom);
 
   const fragment = document.createDocumentFragment();
+  const sections = showServiceSections(count);
+  renderShowServiceSections(sections);
 
   for (let i = 0; i < count; i++) {
+    const section = sections.find(value => value.start === i);
+    if (section) {
+      const heading = createElement('div', 'show-grid-section');
+      heading.dataset.sectionStart = String(i);
+      heading.dataset.kind = section.kind;
+      heading.append(createElement('strong', '', section.title), createElement('span', '', `${section.count} slides`));
+      fragment.append(heading);
+    }
     const slides = selectedRoles.map(role => ({ role, slide: slidesByRole[role][i] }));
     const text = (slides.find(({ slide }) => slide?.text)?.slide.text || '').substring(0, 80) || '—';
     const isCurrent = i === state.currentSlide;
@@ -8688,6 +8855,47 @@ function renderThumbnails() {
   }
 
   grid.replaceChildren(fragment);
+}
+
+function showServiceSections(count = state.totalSlides) {
+  const sections = [];
+  for (let index = 0; index < count; index++) {
+    const cue = cueAt(index);
+    const title = cue?.groupPath?.[0] || cue?.title || 'Slides';
+    const key = cue?.itemPathIds?.[0] || cue?.groupPath?.[0] || cue?.itemId || 'slides';
+    const previous = sections.at(-1);
+    if (previous?.key === key) previous.count += 1;
+    else sections.push({ key, title, kind: cue?.kind || 'slides', start: index, count: 1 });
+  }
+  return sections;
+}
+
+function renderShowServiceSections(sections) {
+  document.getElementById('showServiceTitle').textContent = state.serviceHandoff?.project?.title || 'Loaded slides';
+  const list = document.getElementById('showServiceSections');
+  list.replaceChildren();
+  for (const section of sections) {
+    const button = createElement('button', 'show-service-section');
+    button.type = 'button'; button.dataset.sectionStart = String(section.start);
+    button.append(createElement('span', '', section.title), createElement('small', '', String(section.count)));
+    button.addEventListener('click', () => {
+      const heading = elements.thumbnailsGrid.querySelector(`[data-section-start="${section.start}"]`);
+      heading?.scrollIntoView({block:'start',behavior:'smooth'});
+      for (const item of list.children) item.classList.toggle('is-browsing', item === button);
+    });
+    list.append(button);
+  }
+  updateShowSectionHighlight();
+}
+
+function updateShowSectionHighlight() {
+  const buttons = [...document.getElementById('showServiceSections').children];
+  buttons.forEach((button, index) => {
+    const active = state.currentSlide >= Number(button.dataset.sectionStart)
+      && (index === buttons.length - 1 || state.currentSlide < Number(buttons[index + 1].dataset.sectionStart));
+    button.classList.toggle('is-live', active);
+    if (active) button.setAttribute('aria-current', 'location'); else button.removeAttribute('aria-current');
+  });
 }
 
 // Keyboard Handling

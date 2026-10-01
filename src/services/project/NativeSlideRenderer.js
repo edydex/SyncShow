@@ -11,7 +11,7 @@ const { parseBibleReference } = require('../bible/BibleReferenceParser');
 const { scriptureFlowText } = require('../bible/ScriptureText');
 const { scriptureDisplay, scriptureCredit } = require('./SlideFormatting');
 const { resolveNativeTextPreset } = require('./NativePresetCatalog');
-const { singerSourceCue, singerNextLine } = require('./SingerPresentation');
+const { singerSourceCue, nextSlideHint, singerNextLine } = require('./SingerPresentation');
 const { MAX_IMAGE_PIXELS } = require('./ServiceProject');
 
 const MAX_RENDER_PIXELS = 3840 * 2160;
@@ -332,7 +332,7 @@ function cueTextForChannel(cue, channelId) {
 function nativeCueSingerNext(nextCue, channelId) {
   return singerNextFromText(
     nextCue !== null && nextCue !== undefined,
-    singerNextLine(cueTextForChannel(singerSourceCue(nextCue, channelId), channelId))
+    nextSlideHint(singerSourceCue(nextCue, channelId), channelId)
   );
 }
 
@@ -380,7 +380,7 @@ function singerCueMetadata(cue, sourceChannelId, nextCue = null) {
     ...cueMetadataForChannel(singerSourceCue(cue, sourceChannelId), sourceChannelId),
     layout: 'singer-current-next',
     sourceChannelId,
-    next: nativeCueSingerNext(nextCue, sourceChannelId)
+    next: cue.showNextSlideHints === false ? {state: 'blank', text: ''} : nativeCueSingerNext(nextCue, sourceChannelId)
   };
 }
 
@@ -854,7 +854,7 @@ class NativeSlideRenderer {
         const display = scriptureDisplay(bibleBlock, cue.presetId);
         textValue = display.text;
         pipeline = await this._renderTextSlide({
-          title: cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : bibleBlock.reference,
+          title: cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : (bibleBlock.displayReference ?? bibleBlock.reference),
           textStyle: cue.textStyle,
           credit: scriptureCredit(bibleBlock),
           body: textValue,
@@ -942,6 +942,7 @@ class NativeSlideRenderer {
   async renderSingerPreview(cue, sourceChannelId, nextCue = null, outputPath = null) {
     cue = {...singerSourceCue(cue, sourceChannelId), translationSettings: undefined};
     const current = await this.renderCue(cue, sourceChannelId);
+    if (cue.showNextSlideHints === false) return { ...current, metadata: singerCueMetadata(cue, sourceChannelId, nextCue) };
     const padding = Math.max(8, Math.round(this.width * 0.012));
     const footerHeight = Math.max(68, Math.round(this.height * 0.19));
     const dividerThickness = Math.max(4, Math.round(this.height * 0.011));
@@ -957,7 +958,7 @@ class NativeSlideRenderer {
       .jpeg({ quality: this.jpegQuality, chromaSubsampling: '4:4:4' })
       .toBuffer();
 
-    const next = nativeCueSingerNext(nextCue, sourceChannelId);
+    const next = cue.showNextSlideHints === false ? {state: 'blank', text: ''} : nativeCueSingerNext(nextCue, sourceChannelId);
     const footerText = next.state === 'text'
       ? next.text
       : next.state === 'end' ? 'End of presentation' : '';

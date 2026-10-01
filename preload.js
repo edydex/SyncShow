@@ -430,6 +430,11 @@ contextBridge.exposeInMainWorld('api', {
   teachingFramePainted: frameId => ipcRenderer.send('teaching:painted', frameId),
   getCommunityStatus: () => ipcRenderer.invoke('community:status'),
   openCommunityPlanner: () => ipcRenderer.invoke('community:planner:open'),
+  openPlannerService: (syncId) => ipcRenderer.invoke('community:planner:openService', { syncId }),
+  flushCommunityPlanner: () => ipcRenderer.invoke('community:planner:flush'),
+  setPlannerShowMode: enabled => ipcRenderer.invoke('community:planner:showMode', enabled === true),
+  reviewPlannerConflict: () => ipcRenderer.invoke('community:planner:reviewConflict'),
+  resolvePlannerConflict: request => ipcRenderer.invoke('community:planner:resolveConflict', {syncId:request?.syncId,resolution:request?.resolution,remoteRevision:request?.remoteRevision}),
   getCommunityPlannerState: () => ipcRenderer.invoke('community:planner:state'),
   prepareCommunityPlannerForLoad: () => ipcRenderer.invoke('community:planner:prepareLoad'),
   layoutCommunityPlanner: (request = {}) => ipcRenderer.invoke('community:planner:layout', {

@@ -608,7 +608,7 @@ function textScene(cue, channel, canvas, options = {}) {
   let bodySpans = [];
   if (bibleBlock) {
     const display = scriptureDisplay(bibleBlock, cue.presetId, {localizeReference: !legacy});
-    title = cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : bibleBlock.reference;
+    title = cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : (bibleBlock.displayReference ?? bibleBlock.reference);
     body = display.text;
     bodySpans = display.spans;
   } else {
@@ -700,9 +700,10 @@ function compileNativeCueScene(cue, channelId, options = {}) {
   }
   if (channel.mode === 'condensed' && channel.sourceChannelId) {
     const current = compileNativeCueScene({...singerSourceCue(cue, channel.sourceChannelId), translationSettings: undefined}, channel.sourceChannelId, options);
+    if (cue.showNextSlideHints === false) return current;
     return deriveNativeSingerScene(
       current,
-      nativeCueSingerNext(options.nextCue, channel.sourceChannelId)
+      cue.showNextSlideHints === false ? {state: 'blank', text: ''} : nativeCueSingerNext(options.nextCue, channel.sourceChannelId)
     );
   }
   const canvasBlock = channel.blocks?.find(block => block.type === 'canvas');

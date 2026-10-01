@@ -52,7 +52,7 @@
     <div id="translationCueStatus" role="status" hidden style="padding:8px 18px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color)"></div>
 
     <section id="preparePanel" class="prepare-panel" aria-labelledby="communityPrepareHeading">
-      <nav class="prepare-mode-tabs" role="tablist" aria-label="Prepare location">
+      <nav class="prepare-mode-tabs" hidden role="tablist" aria-label="Prepare location">
         <button type="button" id="btnPrepareModeCommunity" class="prepare-mode-tab is-active" role="tab" aria-selected="true" aria-controls="communityPrepareShell">
           Heritage Community
           <small>Online</small>
@@ -64,12 +64,13 @@
       </nav>
 
       <div id="communityPrepareShell" class="community-prepare-shell">
+        <div id="plannerSyncStrip" class="planner-sync-strip" hidden><span id="plannerSyncStatus" role="status"></span><button id="btnReviewPlannerConflict" class="btn btn-secondary" type="button">Review versions</button></div>
         <h2 id="communityPrepareHeading" class="sr-only" tabindex="-1">Community planner</h2>
         <p class="sr-only">This is the same planner used by Heritage Community, shown inside SyncShow. Uses only your Heritage Community admin account—never the computer’s system password.</p>
         <div id="communityPlannerViewport" class="community-planner-viewport" aria-label="Embedded Heritage Community service planner">
           <div class="community-planner-placeholder">
             <span class="community-prepare-mark" aria-hidden="true">H</span>
-            <strong>Heritage Community Prepare</strong>
+            <strong>Prepare your service</strong>
             <small id="communityPrepareStatus" class="community-prepare-status" role="status" aria-live="polite">Checking this computer’s Community connection…</small>
           </div>
         </div>
@@ -748,6 +749,7 @@
             </button>
           </nav>
 
+          <p id="loadPrepareWarning" class="load-prepare-warning" role="alert" hidden></p>
           <section id="loadSyncShowPanel" class="load-mode-panel" role="tabpanel" aria-labelledby="loadTabSyncShow" data-load-panel="syncshow">
             <section class="suggested-service" aria-labelledby="suggestedServiceTitle">
               <p class="section-kicker">LAST WORKED ON</p>
@@ -1290,11 +1292,15 @@
 
     <main class="main-content" id="mainContent">
       <div class="main-horizontal-layout">
+        <aside class="show-service-sidebar" aria-label="Service playlist">
+          <div class="show-service-heading"><span>THIS SERVICE</span><strong id="showServiceTitle">Service</strong></div>
+          <nav id="showServiceSections" aria-label="Service sections"></nav>
+          <p class="show-service-browse-hint">Select a section to browse.<br>Click a slide to show it.</p>
+        </aside>
         <section class="thumbnails-section" aria-labelledby="allSlidesHeading">
           <div class="thumbnails-header">
             <div>
-              <p class="section-kicker">SHOW</p>
-              <h2 id="allSlidesHeading">All slides</h2>
+              <h2 id="allSlidesHeading">Service slides</h2>
             </div>
             <div class="thumbnails-header-controls">
               <div class="lang-selector" id="thumbnailRoleSelector" role="group" aria-label="Thumbnail content"></div>
@@ -1303,6 +1309,7 @@
                 <span class="zoom-level" id="zoomLevel">100%</span>
                 <button class="zoom-btn" id="zoomIn" aria-label="Larger thumbnails">+</button>
               </div>
+              <button id="btnShowAdjust" class="btn btn-secondary" type="button" aria-pressed="false" aria-controls="showAdjustPanel">Adjust</button>
             </div>
           </div>
           <div class="thumbnails-grid" id="thumbnailsGrid" aria-label="Slides"></div>
@@ -1310,7 +1317,7 @@
 
         <aside class="controls-column" aria-label="Show controls">
           <section class="preview-box" id="previewBox" aria-label="Live output preview" hidden>
-            <label class="live-preview-label" for="outputPreviewSelect">Live preview</label>
+            <label class="live-preview-label" for="outputPreviewSelect"><span class="live-preview-dot" aria-hidden="true"></span> LIVE OUTPUT</label>
             <select id="outputPreviewSelect" aria-label="Preview screen"></select>
             <div id="outputPreviewList" aria-label="Selected output previews"></div>
           </section>
@@ -1392,18 +1399,32 @@
             <button id="btnClearDisplays" class="btn btn-secondary btn-full" title="Turn every output black without closing it">
               Clear to black
             </button>
+          </div>
+          <details class="show-extra-tools"><summary>More controls</summary>
             <button id="btnStopDisplays" class="btn btn-warning btn-full" title="Hide output windows and stop keyboard control">
               Stop outputs
             </button>
-          </div>
-
           <button id="btnBackToSetup" class="btn btn-quiet btn-full" title="Stop outputs and return to the Load screen">
             Back to Load
           </button>
+          </details>
         </aside>
       </div>
     </main>
 
+    <section id="showAdjustPanel" class="show-adjust-panel" aria-label="Adjust the service backstage" hidden>
+      <header class="show-adjust-header"><div><strong id="showAdjustDraft">Backstage draft · changes are not on screen yet</strong><small id="showAdjustStatus" role="status">Changes are saved backstage. Click a slide or Next to show them.</small></div>
+        <button id="btnReviewAdjustConflict" type="button" class="btn btn-secondary" hidden>Review versions</button>
+        <button id="btnCloseShowAdjust" type="button" class="btn btn-secondary">Close</button>
+      </header>
+      <div id="showAdjustViewport" class="show-adjust-viewport"></div>
+    </section>
+    <dialog id="plannerConflictDialog" class="prepare-dialog"><form method="dialog"><h2>Choose which version to keep</h2>
+      <p id="plannerConflictStatus">Community and this computer both changed. Both copies are preserved until you choose.</p>
+      <div class="planner-conflict-copies"><div><strong>This computer</strong><p id="plannerConflictLocal"></p></div><div><strong>Community</strong><p id="plannerConflictRemote"></p></div></div>
+      <p>Keeping this computer saves its version to Community. Using Community replaces the editor copy. The projected Show changes when you click a slide or Next.</p>
+      <div class="prepare-dialog-actions"><button id="btnPlannerUseCommunity" class="btn btn-secondary" type="button">Use Community</button><button id="btnPlannerKeepLocal" class="btn btn-primary" type="button">Keep this computer</button><button class="btn btn-quiet">Cancel</button></div>
+    </form></dialog>
     <footer class="status-bar">
       <div class="status-left">
         <span class="status-dot" aria-hidden="true"></span>

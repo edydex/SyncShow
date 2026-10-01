@@ -19,7 +19,7 @@ const {
 
 test('ships BSB as the immutable default and preserves LSV attribution', () => {
   assert.equal(DEFAULT_TRANSLATION_ID, 'BSB');
-  assert.deepEqual(translations.map(translation => translation.id), ['BSB', 'LSV']);
+  assert.deepEqual(translations.map(translation => translation.id), ['SYNO-W', 'BSB', 'LSV']);
   assert.ok(Object.isFrozen(translations));
   assert.ok(Object.isFrozen(translations[0].source));
 

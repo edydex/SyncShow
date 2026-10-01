@@ -402,7 +402,7 @@ function loadServicePacketHandlers({
   );
   const projectedBibleLibrary = new BibleLibrary({ maxVerses: 8 });
   vm.runInNewContext(`${bibleOutputHelpers}\n${serviceSource}`, {
-    ipcMain: { handle(channel, handler) { handlers.set(channel, handler); } },
+    ipcMain: { handle(channel, handler) { handlers.set(channel, handler); }, on() {} },
     serviceSermonPacketProposals: proposals,
     linkedServiceSermonSourceProposals: linkedSourceProposals,
     SERVICE_SERMON_PACKET_PROPOSAL_LIMIT: proposalLimit,
