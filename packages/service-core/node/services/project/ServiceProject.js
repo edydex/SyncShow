@@ -7,7 +7,7 @@ const { normalizeCanvasObjects, canvasAssetIds } = require('./CanvasLayout');
 const { scriptureFlowText } = require('./SlideFormatting');
 const { localizeReadingBlocks } = require('./ReadingLabels');
 
-const { normalizeSongPresentation, presentationTitleBlocks, presentationLyricBlocks } = require('./SongPresentation');
+const { normalizeSongPresentation, presentationTitleBlocks, presentationLyricBlocks, presentationPrimaryChannelId } = require('./SongPresentation');
 
 const { Buffer, crypto } = require('../../runtime');
 const { isValidIsoDate } = require('../service-set/ServiceDate');
@@ -374,6 +374,7 @@ function normalizeBlock(raw, field) {
         actual: normalized.contentSha256
       });
     }
+    if (raw.displayReference !== undefined) normalized.displayReference = text(raw.displayReference, `${field}.displayReference`, 160);
     if (raw.displayText !== undefined) {
       normalized.displayText = text(raw.displayText, `${field}.displayText`, 20000, { required: true, trim: false });
       if (!normalized.displayText.trim()) fail('MISSING_TEXT', 'Slide text cannot be empty. Use a blank slide instead.');
@@ -551,6 +552,10 @@ function normalizeCue(raw, expectedId = null) {
     operatorNotes: text(raw.operatorNotes, `Cue ${cueId} operatorNotes`, 4000, { trim: false }),
     presetId: id(raw.presetId || defaultPresetForKind(raw.kind), `Cue ${cueId} presetId`)
   };
+  if (raw.showNextSlideHints !== undefined) {
+    if (typeof raw.showNextSlideHints !== 'boolean') fail('INVALID_SERMON_PRESENTATION', 'Next-slide hint visibility must be a boolean.');
+    normalized.showNextSlideHints = raw.showNextSlideHints;
+  }
   if (raw.translationSettings !== undefined) normalized.translationSettings = translationCueSettings.normalizeSettings(raw.translationSettings);
   if (raw.textStyle !== undefined) normalized.textStyle = normalizeTextStyle(raw.textStyle);
   if (raw.sourceLeafKey !== undefined) normalized.sourceLeafKey = text(raw.sourceLeafKey, 'Source slide key', 300, { required: true });
@@ -4206,6 +4211,7 @@ function compileServiceProject(rawProject, options = {}) {
     const cueId = deterministicCueId(project.id, item.id, leafKey);
     if (cues[cueId]) fail('CUE_ID_COLLISION', `Compiled cue id collision at ${item.id}.`);
     const cue = normalizeCue({ ...rawCue, id: cueId, itemId: item.id, sourceLeafKey: leafKey,
+      ...(sermonContext[item.id]?.showNextSlideHints === false ? {showNextSlideHints:false} : {}),
       ...(activeTranslationSettings ? {translationSettings:activeTranslationSettings} : {}),
       ...(item.translationCues?.[leafKey] ? { translationAction: item.translationCues[leafKey] } : {}) });
     if (cue.presetId === 'wotbc-reading-title') {
@@ -4311,8 +4317,8 @@ function compileServiceProject(rawProject, options = {}) {
         titleChannels[channelId] = {
           mode: resolved.mode === 'derive' ? 'condensed' : 'content',
           ...(resolved.mode === 'derive'
-            ? { sourceChannelId: item.songPresentation?.primaryChannelId || resolved.sourceChannelId,
-                sourceBlocks: [{ type: 'text', role: 'title', text: resolvedByChannel[item.songPresentation?.primaryChannelId || resolved.sourceChannelId].resource.document.title }] }
+            ? { sourceChannelId: presentationPrimaryChannelId(item, 'title') || resolved.sourceChannelId,
+                sourceBlocks: [{ type: 'text', role: 'title', text: resolvedByChannel[presentationPrimaryChannelId(item, 'title') || resolved.sourceChannelId].resource.document.title }] }
             : {}),
           blocks: presentationTitleBlocks(item, resolvedByChannel, channelId) || titleBlocks
         };
@@ -4349,10 +4355,10 @@ function compileServiceProject(rawProject, options = {}) {
             channels[channelId] = {
               mode: resolved.mode === 'derive' ? 'condensed' : 'content',
               ...(resolved.mode === 'derive'
-                ? { sourceChannelId: item.songPresentation?.primaryChannelId || resolved.sourceChannelId,
-                    sourceBlocks: [{ type: 'text', role: 'lyrics', text: resolvedByChannel[item.songPresentation?.primaryChannelId || resolved.sourceChannelId].resource.document.sections.find(candidate => candidate.id === entry.sectionId).slides[slideIndex].lines.join('\n') }] }
+                ? { sourceChannelId: presentationPrimaryChannelId(item, `${entry.id}/${sourceSlide.id}`) || resolved.sourceChannelId,
+                    sourceBlocks: [{ type: 'text', role: 'lyrics', text: resolvedByChannel[presentationPrimaryChannelId(item, `${entry.id}/${sourceSlide.id}`) || resolved.sourceChannelId].resource.document.sections.find(candidate => candidate.id === entry.sectionId).slides[slideIndex].lines.join('\n') }] }
                 : {}),
-              blocks: presentationLyricBlocks(item, resolvedByChannel, channelId, entry.sectionId, slideIndex)
+              blocks: presentationLyricBlocks(item, resolvedByChannel, channelId, entry.sectionId, slideIndex, `${entry.id}/${sourceSlide.id}`)
                 || [{ type: 'text', role: 'lyrics', text: lines.join('\n') }]
             };
           }

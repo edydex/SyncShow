@@ -19,6 +19,15 @@ function deepFreeze(value) {
  */
 const translations = deepFreeze([
   {
+    id: 'SYNO-W', abbr: 'SYNO-W', name: 'Russian Synodal Bible',
+    description: 'Russian Synodal text aligned to Western verse numbering',
+    language: 'Russian', versification: 'western', license: 'Public Domain',
+    attribution: 'Russian Synodal Bible (SYNO-W); exact text pinned from Heritage Study Bible reader data.',
+    attributionRequired: false,
+    source: { repository: 'https://github.com/edydex/heritage_study_bible',
+      note: 'Copied without changing text from Heritage Study Bible SYNO-W per-book reader data on 2026-09-30.' }
+  },
+  {
     id: 'BSB',
     abbr: 'BSB',
     name: 'Berean Standard Bible',

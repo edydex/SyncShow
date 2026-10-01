@@ -357,6 +357,9 @@ let controlWindow = null;
 let communityPlannerView = null;
 let communityPlannerOrigin = null;
 let communityPlannerHandoff = null;
+let communityPlannerCache = null;
+let communityPlannerRetryTimer = null;
+let showAdjustInProgress = false;
 let controlSettingsDraftState = { dirty: false, saving: false };
 let outputWindows = new Map();
 let testOutputBackground = null;
@@ -3781,7 +3784,9 @@ async function installCommunityServiceDocument(context, remote, local) {
   const assetBuffers = new Map();
   for (const assetId of Object.keys(remote.project.assets).sort()) {
     const asset = remote.project.assets[assetId];
-    assetBuffers.set(assetId, await context.client.getServiceDocumentAsset({
+    assetBuffers.set(assetId, communityPlannerCache?.envelope(remote.syncId)
+      ? await communityPlannerCache.asset(remote.syncId, assetId)
+      : await context.client.getServiceDocumentAsset({
       syncId: remote.syncId,
       asset,
       accessToken: context.connection.accessToken
@@ -3798,7 +3803,7 @@ async function installCommunityServiceDocument(context, remote, local) {
   const binding = await saveServiceDocumentBinding({
     ...context,
     localRevisionId: installed.revisionId,
-    remote
+    remote: { ...remote, ...(communityPlannerCache?.state.remoteBases[remote.syncId] || {}) }
   });
   return {
     state: 'opened',
@@ -7524,14 +7529,50 @@ function guardControlWindowClose(event) {
   if (response !== 1) event.preventDefault();
 }
 
+let offlinePlannerBible = null;
+async function resolveOfflinePlannerRequest(request) {
+  const url = new URL(request.url);
+  if (request.method === 'POST' && url.pathname === '/api/community/service-documents/library/bible-passage') {
+    if (!offlinePlannerBible) offlinePlannerBible = require('./src/services/community/OfflinePlannerBible').createOfflinePlannerBible({ installedLibrary: installedBibleSource });
+    try {
+      const passage = await offlinePlannerBible(await request.json());
+      return new Response(JSON.stringify({ schemaVersion: 1, passage }), { headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: error.message, code: 'BIBLE_NOT_AVAILABLE_OFFLINE' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+  return null;
+}
+
+async function flushEmbeddedPlanner() {
+  if (!communityPlannerView || communityPlannerView.webContents.isDestroyed()) return { ok: false, error: 'Open Prepare before saving.' };
+  const requestId = crypto.randomUUID();
+  return communityPlannerView.webContents.executeJavaScript(`new Promise(resolve => {
+    const requestId = ${JSON.stringify(requestId)};
+    const timeout = setTimeout(() => { window.removeEventListener('message', receive); resolve({ok:false,error:'Prepare did not confirm its save. Update Community and try again.'}); }, 30000);
+    function receive(event) {
+      if (event.source !== window || event.data?.type !== 'heritage-editor:flushed' || event.data.requestId !== requestId) return;
+      clearTimeout(timeout); window.removeEventListener('message', receive); resolve(event.data);
+    }
+    window.addEventListener('message', receive);
+    window.postMessage({type:'heritage-editor:flush',requestId}, window.location.origin);
+  })`);
+}
+
 function communityPlannerStatePayload({ error = null } = {}) {
   const open = Boolean(
     communityPlannerView
     && !communityPlannerView.webContents.isDestroyed()
   );
+  const document = communityPlannerCache?.envelope(currentPreparedServicePointer?.projectId);
+  const showDraft = Boolean(appState.activeLaunchPlan && document
+    && crypto.createHash('sha256').update(require('./src/services/project/ServiceProject').serializeServiceProject(document.project)).digest('hex')
+      !== currentPreparedServicePointer.projectRevisionId);
   return {
     open,
     embedded: true,
+    ...(communityPlannerCache?.summary() || {}),
+    showDraft,
     visible: open && communityPlannerView.getVisible(),
     origin: open ? communityPlannerOrigin : null,
     error: error && typeof error === 'object'
@@ -7589,7 +7630,9 @@ function communityPlannerRequestHeaders(details, plannerOrigin, accessToken) {
     return details.requestHeaders;
   }
   const serviceDocumentApi = target.pathname === '/api/community/service-documents'
-    || target.pathname.startsWith('/api/community/service-documents/');
+    || target.pathname.startsWith('/api/community/service-documents/')
+    || target.pathname === '/api/community/sermon-presentations'
+    || target.pathname.startsWith('/api/community/sermon-presentations/');
   if (target.origin !== plannerOrigin || !serviceDocumentApi) {
     return details.requestHeaders;
   }
@@ -7603,7 +7646,7 @@ function communityPlannerRequestHeaders(details, plannerOrigin, accessToken) {
 
 async function openCommunityPlannerWindow() {
   const connection = await currentCommunityConnectionSummary({
-    refreshCapabilities: true
+    refreshCapabilities: false
   });
   if (!connection || communityConnectionExpired(connection)) {
     failMainOperation(
@@ -7658,7 +7701,7 @@ async function openCommunityPlannerWindow() {
       contextIsolation: true,
       sandbox: true,
       backgroundThrottling: false,
-      partition: 'syncshow-community-planner'
+      partition: `persist:syncshow-community-planner-${connection.id}`
     }
   });
   planner.setBackgroundColor('#0b1220');
@@ -7668,6 +7711,33 @@ async function openCommunityPlannerWindow() {
   communityPlannerView = planner;
   communityPlannerOrigin = plannerOrigin;
   const plannerSession = planner.webContents.session;
+  const { CommunityPlannerCache } = require('./src/services/community/CommunityPlannerCache');
+  const cache = new CommunityPlannerCache({
+    rootPath: path.join(app.getPath('userData'), 'community', 'planner', connection.id),
+    origin: plannerOrigin,
+    inspectImage: bytes => require('sharp')(bytes).metadata(),
+    fetch: request => {
+      const headers = new Headers(request.headers);
+      const url = new URL(request.url);
+      if (url.origin === plannerOrigin && (url.pathname === '/api/community/service-documents'
+        || url.pathname.startsWith('/api/community/service-documents/')
+        || url.pathname === '/api/community/sermon-presentations'
+        || url.pathname.startsWith('/api/community/sermon-presentations/'))) {
+        headers.set('Authorization', `SyncShow ${authenticatedConnection.accessToken}`);
+      }
+      const forwarded = new Request(request, { headers });
+      return plannerSession.fetch(forwarded, { bypassCustomProtocolHandlers: true });
+    },
+    onState: () => notifyCommunityPlannerState(),
+    localRequest: request => resolveOfflinePlannerRequest(request, cache)
+  });
+  communityPlannerCache = cache;
+  await cache.loaded;
+  plannerSession.protocol.handle(plannerUrl.protocol.replace(':', ''), request => cache.request(request));
+  communityPlannerRetryTimer = setInterval(() => {
+    cache.flush().catch(error => console.warn('[CommunityPlanner] Retry failed:', error.code || error.name));
+  }, 15000);
+
   const { CommunityPlannerHandoff } = require('./src/services/community/CommunityPlannerHandoff');
   const handoff = new CommunityPlannerHandoff({ origin: plannerOrigin, webContentsId: planner.webContents.id });
   communityPlannerHandoff = handoff;
@@ -7722,6 +7792,10 @@ async function openCommunityPlannerWindow() {
     if (!planner.webContents.isDestroyed()) notifyCommunityPlannerState();
   });
   planner.webContents.on('destroyed', () => {
+    clearInterval(communityPlannerRetryTimer);
+    communityPlannerRetryTimer = null;
+    plannerSession.protocol.unhandle(plannerUrl.protocol.replace(':', ''));
+    if (communityPlannerCache === cache) communityPlannerCache = null;
     plannerSession.webRequest.onBeforeRequest(null);
     plannerSession.webRequest.onCompleted(null);
     plannerSession.webRequest.onErrorOccurred(null);
@@ -9223,7 +9297,7 @@ function markLiveCueTransitionFailure(outputs, sessionId, cueIndex) {
   }
 }
 
-async function goToSlideConfirmed(slideIndex) {
+async function goToSlideConfirmed(slideIndex, { forceRefresh = false } = {}) {
   const launchPlan = appState.activeLaunchPlan;
   if (!launchPlan) {
     return { accepted: false, code: 'NO_ACTIVE_SHOW', message: 'There is no active Show.' };
@@ -9261,7 +9335,7 @@ async function goToSlideConfirmed(slideIndex) {
   }
 
   const leavingBible = Boolean(activeBibleOverlay);
-  if (slideIndex === appState.currentSlide && !leavingBible) return { accepted: true, applied: false };
+  if (slideIndex === appState.currentSlide && !leavingBible && !forceRefresh) return { accepted: true, applied: false };
 
   const outputSnapshot = currentLiveCueTransitionOutputs();
   if (outputSnapshot.accepted !== true) return outputSnapshot;
@@ -18254,6 +18328,139 @@ ipcMain.handle('community:status', async (event) => {
   }));
 });
 
+ipcMain.handle('community:planner:openService', async (event, request = {}) => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    const syncId = prepareId(request.syncId, 'Service project');
+    await openCommunityPlannerWindow();
+    if (!communityPlannerCache.envelope(syncId)) {
+      const context = await communityServiceDocumentContext({ refreshCapabilities: false });
+      const local = await readLocalServiceDocument(context.projectStore, syncId);
+      if (local) {
+        const binding = await context.bindingStore.get(syncId);
+        const source = coreServiceDocumentEnvelope(local, binding);
+        communityPlannerCache.state.documents[syncId] = source;
+        if (!binding || local.documentRevision !== binding.documentRevision) {
+          communityPlannerCache.state.pending[syncId] = {
+            mode: binding ? 'update' : 'create',
+            create: binding ? null : {schemaVersion:1,requestId:crypto.randomUUID(),syncId,title:local.project.title,serviceDate:local.project.serviceDate},
+            baseRevision: binding?.documentRevision || null, baseSyncVersion: binding?.syncVersion || null,
+            requestId: crypto.randomUUID(), documentSource: source.documentSource, status: 'planning', saveKind: 'manual'
+          };
+        }
+        await communityPlannerCache.persist();
+      }
+    }
+    await communityPlannerView.webContents.executeJavaScript(`window.postMessage({type:'heritage-editor:open',syncId:${JSON.stringify(syncId)}},window.location.origin)`);
+    return { opened: true, syncId };
+  });
+});
+
+function coreServiceDocumentEnvelope(local, binding) {
+  const { validateHeritageServiceDocumentSource } = require('./src/services/community/HeritageServiceDocument');
+  const validated = validateHeritageServiceDocumentSource(local.documentSource);
+  return { schemaVersion: 1, syncId: local.project.id, syncVersion: binding?.syncVersion || 1,
+    revision: validated.revision, documentSource: validated.documentSource, document: validated.document,
+    project: validated.project, status: 'planning', changedAt: local.project.updatedAt };
+}
+
+ipcMain.handle('community:planner:reviewConflict', async event => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    const flushed = await flushEmbeddedPlanner();
+    if (!flushed.ok) throw new Error(flushed.error || 'Save the local copy before reviewing synchronization.');
+    const id = communityPlannerCache?.summary().conflicts[0];
+    if (!id) throw new Error('There are no synchronization conflicts.');
+    const review = await communityPlannerCache.reviewConflict(id);
+    return { syncId: id, remoteRevision: review.remote.revision,
+      local: { title: review.local.project.title, changedAt: review.local.changedAt, syncVersion: review.local.syncVersion },
+      remote: { title: review.remote.project.title, changedAt: review.remote.changedAt, syncVersion: review.remote.syncVersion } };
+  });
+});
+ipcMain.handle('community:planner:resolveConflict', async (event, request = {}) => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    communityRequestKeys(request, ['syncId','resolution','remoteRevision'], 'Sync resolution');
+    const id = prepareId(request.syncId, 'Service project');
+    const remoteRevision = prepareRevision(request.remoteRevision, 'Community revision');
+    const result = await communityPlannerCache.resolveConflict(id, request.resolution, remoteRevision);
+    await communityPlannerView.webContents.executeJavaScript(`window.postMessage({type:'heritage-editor:open',syncId:${JSON.stringify(id)}},window.location.origin)`);
+    return { resolved: !result.desktop.conflict, syncId: id };
+  });
+});
+
+ipcMain.handle('show:adjust:apply', async event => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    if (showAdjustInProgress) throw new Error('Wait for Apply to finish.');
+    authorizeLocalShowCommand('session.end');
+    if (!appState.activeLaunchPlan || pendingBibleLookup || activeBibleOverlay || pendingBibleOverlay || activeLiveCueNavigation || outputRecovery) {
+      throw new Error('Return to a healthy service slide before applying changes.');
+    }
+    showAdjustInProgress = true;
+    try {
+      const sessionId = outputSessionId, oldPlan = appState.activeLaunchPlan, oldRevision = presentationRevision;
+      const flush = await flushEmbeddedPlanner();
+      if (!flush.ok || !flush.serviceDocument?.syncId) throw new Error(flush.error || 'Open and save the service before Apply.');
+      const syncId = flush.serviceDocument.syncId;
+      if (syncId !== currentPreparedServicePointer?.projectId) throw new Error('Adjust must edit the service currently being shown. Close Adjust and reopen it.');
+      const remote = communityPlannerCache.envelope(syncId);
+      if (!remote) throw new Error('The saved service is not available on this computer.');
+      const context = await communityServiceDocumentContext({ refreshCapabilities: false });
+      const local = await readLocalServiceDocument(context.projectStore, syncId);
+      const selected = await installCommunityServiceDocument(context, remote, local);
+      const services = getPrepareServices();
+      const published = await services.showPackagePublisher.publish({ projectId: selected.project.id,
+        revisionId: selected.revisionId, roleMapping: nativeProjectRoleMapping(selected.project),
+        width: CONFIG.displayWidth, height: CONFIG.displayHeight, thumbnailWidth: CONFIG.thumbnailWidth });
+      // Compilation may take time. Until this final check, every live output
+      // retains the previous immutable package and can continue navigating it.
+      if (sessionId !== outputSessionId || oldPlan !== appState.activeLaunchPlan || oldRevision !== presentationRevision
+        || activeLiveCueNavigation || outputRecovery || activeBibleOverlay || pendingBibleOverlay || pendingBibleLookup) {
+        throw new Error('The Show changed while Apply was preparing. Your backstage save is safe; apply again.');
+      }
+      const previousPresentation = appState.presentations[oldPlan.timelineRoleId];
+      const currentCueId = previousPresentation?.metadata?.slides?.[appState.currentSlide]?.cueId;
+      const matchingIndex = published.manifest.cueIds.indexOf(currentCueId);
+      const currentIndex = matchingIndex >= 0 ? matchingIndex : Math.min(appState.currentSlide, published.manifest.cueCount - 1);
+      const outputs = oldPlan.outputs.map(output => ({ id: output.id, name: output.name, displayId: output.displayId,
+        expectedRole: output.sourceRoleId, kind: output.nativeVariant === 'singer-current-next' ? 'singer' : 'normal', operatorPreview: output.operatorPreview }));
+      const decisions = Object.fromEntries(oldPlan.outputs.map(output => [output.id,
+        output.nativeVariant === 'singer-current-next' ? { mode: 'derive-next-text', sourceRole: output.sourceRoleId } : { mode: 'direct' }]));
+      const nextPlan = resolveLaunchPlan({ presentations: published.presentations, outputs, decisions, preferredTimelineRoleId: oldPlan.timelineRoleId });
+      if (nextPlan.outputs.some(output => !outputWindows.get(output.id)?.win || output.renderer !== 'native-cue') || currentLiveCueTransitionOutputs().accepted !== true) throw new Error('Every output must be healthy before Apply.');
+      const activation = await activateCurrentPreparedService(services, published);
+      if (sessionId !== outputSessionId || oldPlan !== appState.activeLaunchPlan || oldRevision !== presentationRevision
+        || activeLiveCueNavigation || outputRecovery || activeBibleOverlay || pendingBibleOverlay || pendingBibleLookup
+        || currentLiveCueTransitionOutputs().accepted !== true) {
+        await rollbackCurrentPreparedServiceActivation(services, activation);
+        throw new Error('The Show changed during Apply. Your backstage save is safe; apply again.');
+      }
+      try { authorizeLocalShowCommand('session.end'); }
+      catch (error) { await rollbackCurrentPreparedServiceActivation(services, activation); throw error; }
+      // The user explicitly clicked Apply. Replace the complete verified graph
+      // in one synchronous boundary, preserve routing and current cue identity.
+      appState.presentations = published.presentations;
+      presentationRevision += 1;
+      appState.activeLaunchPlan = nextPlan;
+      appState.totalSlides = nextPlan.totalSlides;
+      activeVolunteerShowBinding = createActiveVolunteerShowBinding(nextPlan, showGateway.getState().outputSessionId);
+      relockVolunteerShowControls({ deferPublish: true });
+      currentPreparedServicePointer = activation.pointer;
+      setCurrentPreparedServiceRestore('restored', activation.pointer);
+      for (const output of nextPlan.outputs) outputWindows.get(output.id).output = output;
+      const wasCleared = appState.isCleared;
+      appState.currentSlide = currentIndex;
+      if (!wasCleared && outputsShouldBeVisible) {
+        const navigation = await goToSlideConfirmed(currentIndex, { forceRefresh: true });
+        if (navigation.accepted !== true) throw new Error(navigation.message || 'The saved package was applied, but outputs need Restore before continuing.');
+      }
+      publishShowState('backstage-adjust-applied');
+      return { applied: true, cueCount: nextPlan.totalSlides, currentSlide: currentIndex };
+    } finally { showAdjustInProgress = false; }
+  });
+});
+
 ipcMain.handle('community:planner:open', async (event) => {
   requireControlSender(event);
   return communityIpcResult(() => openCommunityPlannerWindow());
@@ -18268,7 +18475,19 @@ ipcMain.handle('community:planner:prepareLoad', async event => {
   requireControlSender(event);
   return communityIpcResult(async () => {
     if (appState.activeLaunchPlan) throw new Error('Stop the Show before loading Prepare changes.');
-    return communityPlannerHandoff ? communityPlannerHandoff.ready() : { serviceId: null };
+    const flushed = await flushEmbeddedPlanner();
+    if (!flushed.ok) throw new Error(flushed.error || 'Save the service before going to Load.');
+    const handoff = communityPlannerHandoff ? await communityPlannerHandoff.ready() : { serviceId: null };
+    return { ...handoff, serviceId: flushed.serviceDocument?.syncId || handoff.serviceId };
+  });
+});
+
+ipcMain.handle('community:planner:flush', async event => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    const flushed = await flushEmbeddedPlanner();
+    if (!flushed.ok) throw new Error(flushed.error || 'Save the service before closing Adjust.');
+    return { saved: true, serviceId: flushed.serviceDocument?.syncId || null };
   });
 });
 
@@ -18338,13 +18557,14 @@ ipcMain.handle('community:serviceDocuments:open', async (event, request = {}) =>
       );
     }
     const context = await communityServiceDocumentContext({
-      requireWrite: resolution === 'keep-local'
+      requireWrite: resolution === 'keep-local', refreshCapabilities: false
     });
-    const remote = await context.client.getServiceDocument({
-      syncId,
-      accessToken: context.connection.accessToken
+    const cached = communityPlannerCache?.envelope(syncId);
+    const remote = cached || await context.client.getServiceDocument({
+      syncId, accessToken: context.connection.accessToken
     });
     const local = await readLocalServiceDocument(context.projectStore, syncId);
+    if (cached) return installCommunityServiceDocument(context, remote, local);
     if (!local) return installCommunityServiceDocument(context, remote, null);
 
     const binding = await context.bindingStore.get(syncId);

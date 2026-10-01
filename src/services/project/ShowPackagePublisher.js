@@ -1,4 +1,5 @@
 'use strict';
+const { nextSlideHint, singerSourceCue } = require('./SingerPresentation');
 
 const crypto = require('crypto');
 const fs = require('fs/promises');
@@ -672,6 +673,10 @@ class ShowPackagePublisher {
         }
         scenes.push(scene);
       }
+      channel.stageHints = timeline.cueIds.map((id, index) => ({
+        show: timeline.cues[id].showNextSlideHints !== false,
+        text: nextSlideHint(singerSourceCue(timeline.cues[timeline.cueIds[index + 1]] || null, channel.channelId), channel.channelId)
+      }));
       channel.metadata = metadata;
       channel.scenes = scenes;
     }
@@ -706,6 +711,7 @@ class ShowPackagePublisher {
         slideCount: manifest.cueCount,
         metadata: channel.metadata,
         scenes: channel.scenes,
+        stageHints: channel.stageHints,
         assetPaths: Object.fromEntries(manifest.assets.map(asset => [
           asset.id,
           path.resolve(packagePath, asset.path)

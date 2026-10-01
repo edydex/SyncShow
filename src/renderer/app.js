@@ -392,6 +392,12 @@ const elements = {
   btnClearDisplays: document.getElementById('btnClearDisplays'),
   btnStopDisplays: document.getElementById('btnStopDisplays'),
   btnBackToSetup: document.getElementById('btnBackToSetup'),
+  btnShowAdjust: document.getElementById('btnShowAdjust'),
+  btnApplyShowAdjust: document.getElementById('btnApplyShowAdjust'),
+  btnCloseShowAdjust: document.getElementById('btnCloseShowAdjust'),
+  showAdjustPanel: document.getElementById('showAdjustPanel'),
+  showAdjustViewport: document.getElementById('showAdjustViewport'),
+  showAdjustStatus: document.getElementById('showAdjustStatus'),
   btnPrevSlide: document.getElementById('btnPrevSlide'),
   btnNextSlide: document.getElementById('btnNextSlide'),
   volunteerControlBar: document.getElementById('volunteerControlBar'),
@@ -485,6 +491,9 @@ let communityPollTimer = null;
 let communityStatusUnsubscribe = null;
 let communityPlannerStateUnsubscribe = null;
 let communityPlannerLayoutFrame = null;
+let showAdjustOpen = false;
+let showAdjustBusy = false;
+let plannerConflictReview = null;
 
 function setTextIfChanged(element, value) {
   const text = String(value ?? '');
@@ -736,6 +745,13 @@ function setupEventListeners() {
   elements.btnClearDisplays.addEventListener('click', clearDisplays);
   elements.btnStopDisplays.addEventListener('click', stopDisplays);
   elements.btnBackToSetup.addEventListener('click', () => backToSetup('load'));
+  document.getElementById('btnReviewPlannerConflict').addEventListener('click', reviewPlannerConflict);
+  document.getElementById('btnReviewAdjustConflict').addEventListener('click', reviewPlannerConflict);
+  document.getElementById('btnPlannerUseCommunity').addEventListener('click', () => resolvePlannerConflict('use-community'));
+  document.getElementById('btnPlannerKeepLocal').addEventListener('click', () => resolvePlannerConflict('keep-local'));
+  elements.btnShowAdjust.addEventListener('click', toggleShowAdjust);
+  elements.btnCloseShowAdjust.addEventListener('click', closeShowAdjust);
+  elements.btnApplyShowAdjust.addEventListener('click', applyShowAdjust);
   elements.btnShowHandoffCompleted.addEventListener(
     'click',
     completeAndOpenPostShowSermonHandoff
@@ -1406,8 +1422,8 @@ async function saveTestOutputSettings() {
 }
 
 async function openLocalServiceInPrepare(projectId) {
-  await setWorkflowStage('prepare', { localTools: true });
-  await prepareController?.openProjectById?.(projectId);
+  await setWorkflowStage('prepare');
+  if (state.community.plannerOpen) communityCheckedResult(await window.api.openPlannerService(projectId));
 }
 
 async function loadLocalService(project, button) {
@@ -1587,6 +1603,7 @@ function setWorkflowStage(stage) {
     : undefined;
   if (!['prepare', 'load', 'show'].includes(stage)) return Promise.resolve(false);
   state.workflowStage = stage;
+  if (stage !== 'show') { showAdjustOpen = false; elements.showAdjustPanel.hidden = true; elements.btnShowAdjust.setAttribute('aria-pressed', 'false'); }
   for (const candidate of ['prepare', 'load', 'show']) {
     document.body.classList.toggle(`${candidate}-stage`, candidate === stage);
   }
@@ -1614,11 +1631,7 @@ function setWorkflowStage(stage) {
 
   let activation = Promise.resolve(true);
   if (stage === 'prepare') {
-    const requestedMode = activationOptions?.localTools === true
-      ? 'local'
-      : communityIsConnected()
-        ? state.prepareMode
-        : 'local';
+    const requestedMode = 'community';
     activation = activatePrepareMode(requestedMode, activationOptions);
   } else if (stage === 'load') {
     scheduleCommunityPlannerLayout();
@@ -2757,6 +2770,90 @@ function renderCommunitySettings() {
   }
 }
 
+async function reviewPlannerConflict() {
+  try {
+    plannerConflictReview = communityCheckedResult(await window.api.reviewPlannerConflict());
+    const describe = value => `${value.title} · version ${value.syncVersion} · ${new Date(value.changedAt).toLocaleString()}`;
+    document.getElementById('plannerConflictLocal').textContent = describe(plannerConflictReview.local);
+    document.getElementById('plannerConflictRemote').textContent = describe(plannerConflictReview.remote);
+    await window.api.layoutCommunityPlanner({visible:false});
+    document.getElementById('plannerConflictDialog').showModal();
+    document.getElementById('plannerConflictDialog').addEventListener('close', scheduleCommunityPlannerLayout, {once:true});
+  } catch (error) { setStatus(error.message); }
+}
+async function resolvePlannerConflict(resolution) {
+  if (!plannerConflictReview) return;
+  try {
+    const result = communityCheckedResult(await window.api.resolvePlannerConflict({syncId:plannerConflictReview.syncId,remoteRevision:plannerConflictReview.remoteRevision,resolution}));
+    if (!result.resolved) throw new Error('Community changed again. Review both versions before choosing.');
+    document.getElementById('plannerConflictDialog').close();
+    plannerConflictReview = null;
+    setStatus('Version choice saved. The live Show remains as it was until Apply.');
+  } catch (error) { document.getElementById('plannerConflictStatus').textContent = error.message; }
+}
+
+function renderShowAdjustStatus() {
+  document.getElementById('showAdjustDraft').textContent = state.community.plannerShowDraft
+    ? 'Backstage draft · changes are not on screen yet'
+    : 'Adjust backstage · edits go live when you click Apply';
+  elements.showAdjustStatus.textContent = state.community.plannerConflicts?.length
+    ? 'Both versions changed. Your edits are safe on this computer; Community sync needs review. Apply only updates this Show.'
+    : state.community.plannerPending
+      ? 'Saved on this computer. Waiting to sync with Community. Apply updates the live service.'
+      : 'Changes are saved backstage. Click Apply to update the live service.';
+}
+
+async function toggleShowAdjust() {
+  if (showAdjustOpen) return closeShowAdjust();
+  if (!state.serviceHandoff?.project?.id) {
+    setStatus('Adjust is available for a prepared native service. Prepare a service before using Adjust.'); return;
+  }
+  showAdjustOpen = true;
+  elements.showAdjustPanel.hidden = false;
+  elements.btnShowAdjust.setAttribute('aria-pressed', 'true');
+  renderShowAdjustStatus();
+  try {
+    await openCommunityPrepare();
+    if (!state.community.plannerOpen) throw new Error('Prepare could not open.');
+    communityCheckedResult(await window.api.openPlannerService(state.serviceHandoff.project.id));
+    scheduleCommunityPlannerLayout();
+  } catch (error) { elements.showAdjustStatus.textContent = error.message; }
+}
+
+async function closeShowAdjust() {
+  if (showAdjustBusy) return;
+  if (state.community.plannerOpen) {
+    try { communityCheckedResult(await window.api.flushCommunityPlanner()); }
+    catch (error) { elements.showAdjustStatus.textContent = error.message; return; }
+  }
+  showAdjustOpen = false;
+  elements.showAdjustPanel.hidden = true;
+  elements.btnShowAdjust.setAttribute('aria-pressed', 'false');
+  scheduleCommunityPlannerLayout();
+  elements.btnShowAdjust.focus();
+}
+
+async function applyShowAdjust() {
+  if (showAdjustBusy) return;
+  showAdjustBusy = true;
+  elements.btnApplyShowAdjust.disabled = true;
+  elements.btnCloseShowAdjust.disabled = true;
+  elements.showAdjustStatus.textContent = 'Preparing the saved changes. The live screen stays on its current slide…';
+  try {
+    communityCheckedResult(await window.api.applyShowAdjust());
+    const current = await window.api.getAppState();
+    state.currentSlide = current.currentSlide; state.totalSlides = current.totalSlides;
+    applyServiceHandoff(current.serviceHandoff);
+    applyRuntimePresentationState(current.presentations, { replaceSource: true });
+    if (current.showState) handleShowStateChanged(current.showState);
+    await loadSlidesIfNeeded(); renderThumbnails();
+    elements.showAdjustStatus.textContent = 'Applied to Show. Continue adjusting, or close this panel.';
+    document.getElementById('showAdjustDraft').textContent = 'Applied to Show · new edits stay backstage';
+    setStatus('Backstage changes applied to the live service');
+  } catch (error) { elements.showAdjustStatus.textContent = error.message; }
+  finally { showAdjustBusy = false; elements.btnApplyShowAdjust.disabled = false; elements.btnCloseShowAdjust.disabled = false; }
+}
+
 function renderCommunityPrepare() {
   const available = typeof window.api?.openCommunityPlanner === 'function';
   const connected = available && communityIsConnected();
@@ -2769,7 +2866,7 @@ function renderCommunityPrepare() {
   } else if (!connected) {
     elements.communityPrepareStatus.dataset.kind = 'warning';
     elements.communityPrepareStatus.textContent =
-      'Connect Heritage Community from Admin Settings on the Load page, or use This computer.';
+      'Connect Heritage Community once in Admin Settings. The same editor and downloaded library stay available offline.';
   } else if (state.community.plannerError) {
     elements.communityPrepareStatus.dataset.kind = 'error';
     elements.communityPrepareStatus.textContent = state.community.plannerError;
@@ -2778,8 +2875,10 @@ function renderCommunityPrepare() {
       'Opening the planner supplied by Heritage Community…';
   } else if (state.community.plannerOpen) {
     elements.communityPrepareStatus.dataset.kind = 'success';
-    elements.communityPrepareStatus.textContent =
-      'Connected. Loading the shared planner…';
+    elements.communityPrepareStatus.textContent = state.community.plannerConflicts?.length
+      ? 'Both versions changed. Local edits are saved; review Community before syncing.'
+      : state.community.plannerPending ? 'Saved on this computer. Waiting to sync.'
+      : state.community.plannerOffline ? 'Working offline with the same editor.' : 'Connected. Loading the shared planner…';
   } else {
     elements.communityPrepareStatus.textContent =
       'Loading the shared planner…';
@@ -2788,11 +2887,12 @@ function renderCommunityPrepare() {
 }
 
 function communityPlannerShouldBeVisible() {
-  return state.workflowStage === 'prepare'
-    && state.prepareMode === 'community'
+  return ((state.workflowStage === 'show' && showAdjustOpen)
+    || (state.workflowStage === 'prepare' && state.prepareMode === 'community'))
     && communityIsConnected()
+    && !document.getElementById('plannerConflictDialog').open
     && state.community.plannerOpen
-    && !elements.communityPrepareShell.hidden;
+    && (showAdjustOpen || !elements.communityPrepareShell.hidden);
 }
 
 async function syncCommunityPlannerLayout() {
@@ -2801,7 +2901,7 @@ async function syncCommunityPlannerLayout() {
     await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
     return;
   }
-  const rect = elements.communityPlannerViewport.getBoundingClientRect();
+  const rect = (showAdjustOpen ? elements.showAdjustViewport : elements.communityPlannerViewport).getBoundingClientRect();
   if (rect.width < 640 || rect.height < 420) {
     await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
     return;
@@ -2834,7 +2934,7 @@ function scheduleCommunityPlannerLayout() {
 }
 
 async function activatePrepareMode(mode, options = {}) {
-  const selected = mode === 'local' ? 'local' : 'community';
+  const selected = 'community';
   state.prepareMode = selected;
   const local = selected === 'local';
   elements.communityPrepareShell.hidden = local;
@@ -2865,6 +2965,16 @@ async function activatePrepareMode(mode, options = {}) {
 
 function handleCommunityPlannerStateChanged(payload = {}) {
   const wasOpen = state.community.plannerOpen;
+  state.community.plannerOffline = payload.offline === true;
+  state.community.plannerPending = payload.pending || 0;
+  state.community.plannerConflicts = payload.conflicts || [];
+  state.community.plannerShowDraft = payload.showDraft === true;
+  if (showAdjustOpen) renderShowAdjustStatus();
+  const hasConflicts = state.community.plannerConflicts.length > 0;
+  document.getElementById('plannerSyncStrip').hidden = !hasConflicts && !payload.offline && !payload.pending;
+  document.getElementById('plannerSyncStatus').textContent = hasConflicts ? 'Both versions changed. Your local edits are preserved.' : payload.pending ? 'Saved on this computer. Waiting to sync.' : 'Working offline with your downloaded library.';
+  document.getElementById('btnReviewPlannerConflict').hidden = !hasConflicts;
+  document.getElementById('btnReviewAdjustConflict').hidden = !hasConflicts;
   state.community.plannerOpen = payload?.open === true;
   state.community.plannerBusy = false;
   state.community.plannerError = typeof payload?.error?.message === 'string'

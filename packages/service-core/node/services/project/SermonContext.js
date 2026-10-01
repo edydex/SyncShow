@@ -32,7 +32,7 @@ function joinRows(rows) {
  */
 function resolveSermonContext(project) {
   const entries = {}; let state = fresh();
-  function fresh() { return {titles:{}, titleSpans:{}, outlines:{}, headings:{}, rawOutlines:{}}; }
+  function fresh() { return {titles:{}, titleSpans:{}, outlines:{}, headings:{}, rawOutlines:{},showNextSlideHints:true}; }
   function visit(id) {
     const item = project.items[id];
     if (item.kind === 'group') {
@@ -43,6 +43,7 @@ function resolveSermonContext(project) {
     if (item.kind === 'song' || item.presetId === 'wotbc-reading-title' || (item.kind === 'bible' && !['wotbc-sermon-scripture','wotbc-sermon-verse'].includes(item.presetId))) state=fresh();
     if (isTitle(item)) {
       state=fresh();
+      state.showNextSlideHints=item.sermonPresentation?.showNextSlideHints ?? true;
       for (const channel of project.channelIds) {
         state.titles[channel]=item.titlesByChannel?.[channel] || (!item.sermonTemplate ? item.textByChannel?.[channel]?.split('\n')[0] : '') || '';
         state.titleSpans[channel]=item.titleSpansByChannel?.[channel] || [];
@@ -82,7 +83,7 @@ function resolveSermonContext(project) {
       } else if (item.sermonTemplate==='quote') complete[channel]=Boolean(item.textByChannel?.[channel]?.trim());
     }
     for (const field of ['titlesByChannel','titleSpansByChannel']) if (!Object.keys(resolved[field]).length) delete resolved[field];
-    entries[id]={item:resolved, inheritance, complete, headings:{...state.headings}};
+    entries[id]={item:resolved, inheritance, complete, headings:{...state.headings}, showNextSlideHints:state.showNextSlideHints};
   }
   project.rootItemIds.forEach(visit);
   return entries;

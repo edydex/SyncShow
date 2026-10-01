@@ -178,6 +178,7 @@ test('publishes an immutable equal-length package, returns the exact presentatio
       'showPackageId',
       'slideCount',
       'sourceType',
+      'stageHints',
       'success',
       'translationCues'
     ]);

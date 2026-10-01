@@ -54,11 +54,13 @@ function normalizeSermonOptions(raw, channelIds, fail, normalizeSpans) {
   if (raw.sermonPresentation !== undefined) {
     const value = raw.sermonPresentation;
     if (raw.kind !== 'sermon' || !value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).some(key => !['showText','darkenBackground'].includes(key))
-      || typeof value.showText !== 'boolean' || typeof value.darkenBackground !== 'boolean') {
+      || Object.keys(value).some(key => !['showText','darkenBackground','showNextSlideHints'].includes(key))
+      || typeof value.showText !== 'boolean' || typeof value.darkenBackground !== 'boolean'
+      || (value.showNextSlideHints !== undefined && typeof value.showNextSlideHints !== 'boolean')) {
       fail('INVALID_SERMON_PRESENTATION', 'Sermon image options must specify text visibility and background darkening.');
     }
-    result.sermonPresentation = {showText:value.showText, darkenBackground:value.darkenBackground};
+    result.sermonPresentation = {showText:value.showText, darkenBackground:value.darkenBackground,
+      ...(value.showNextSlideHints !== undefined ? {showNextSlideHints:value.showNextSlideHints} : {})};
   }
   if (raw.objectsByChannel !== undefined || raw.sermonTemplate === 'other') {
     if (raw.sermonTemplate !== 'other' || !raw.objectsByChannel || typeof raw.objectsByChannel !== 'object' || Array.isArray(raw.objectsByChannel)) fail('INVALID_CANVAS', 'Choose an Other slide for movable objects.');
