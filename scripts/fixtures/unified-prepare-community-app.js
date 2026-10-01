@@ -61,7 +61,7 @@ async function run() {
   const project = { schemaVersion: 1, kind: 'syncshow-service-project', id: fixtureServiceId, title: 'Desktop offline rehearsal', serviceDate: '2026-10-04',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), revision: 1, preferredProfileId: 'main-sanctuary',
     channelIds: ['english', 'russian', 'media'], channels: { english: { id: 'english', label: 'English', language: 'en' }, russian: { id: 'russian', label: 'Russian', language: 'ru' }, media: { id: 'media', label: 'Media', language: 'und' } },
-    rootItemIds: ['point'], items: { point: { id: 'point', kind: 'notice', title: 'Point', textByChannel: { english: 'Original slide', russian: 'Original slide', media: 'Original slide' }, presetId: 'notice-text', operatorNotes: '' } }, resources: {}, assets: {}, presetPack: { id: 'main-sanctuary', version: 1, sha256: null } };
+    rootItemIds: ['point', 'following'], items: { following: {id:'following',kind:'notice',title:'Following',textByChannel:{english:'Following slide',russian:'Следующий слайд',media:'Следующий слайд'},presetId:'notice-text',operatorNotes:''}, point: { id: 'point', kind: 'notice', title: 'Point', textByChannel: { english: 'Original slide', russian: 'Original slide', media: 'Original slide' }, presetId: 'notice-text', operatorNotes: '' } }, resources: {}, assets: {}, presetPack: { id: 'main-sanctuary', version: 1, sha256: null } };
   const validated = core.validateHeritageServiceDocumentSource(core.serializeHeritageServiceDocument(core.createHeritageServiceDocument(project)));
   saved = { ...validated, syncId: project.id, syncVersion: 1, status: 'planning', changedAt: new Date().toISOString() };
   const api = `${device.baseUrl}/api/community/service-documents`;
@@ -86,7 +86,9 @@ async function run() {
   const planner = await waitFor(() => electron.webContents.getAllWebContents().find(contents => contents.getURL() === `${baseUrl}admin/plan-service` && !contents.isLoading()), 'same planner');
   const open = await renderer(`window.api.openPlannerService(${JSON.stringify(project.id)})`);
   assert.equal(open.success,true,JSON.stringify(open));
-  await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]'))`), 'actual notice open');
+  await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('.heritage-workspace-toolbar__views button:nth-child(2):not([disabled])'))`), 'actual document open');
+  await planner.executeJavaScript(`document.querySelector('.heritage-workspace-toolbar__views button:nth-child(2)').click();true`);
+  await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]'))`), 'actual notice edit');
   const tabs = await renderer(`getComputedStyle(document.querySelector('.prepare-mode-tabs')).display`);
   assert.equal(tabs, 'none');
   const handoff = await renderer(`window.api.prepareCommunityPlannerForLoad()`);
@@ -102,6 +104,7 @@ async function run() {
   const launch = roles.map((id, index) => ({ id: `fixture-${id}`, name: id, kind: id === 'singer' ? 'singer' : 'normal', expectedRole: id, displayId: index + 2 }));
   const started = await renderer(`window.api.startPresentation({outputs:${JSON.stringify(launch)},settings:{}})`);
   assert.equal(started.success, true);
+  await renderer(`state.activeLaunchPlan=${JSON.stringify(started.plan)};renderOutputPreviews(state.activeLaunchPlan);window.api.requestOutputPreviews();true`);
   await renderer(`(async()=>{handleShowStateChanged((await window.api.getAppState()).showState);setWorkflowStage('show');await loadAppState();})()`);
   const before = await renderer(`window.api.getAppState()`);
   assert.equal(await renderer(`state.workflowStage`), 'show');
@@ -119,15 +122,36 @@ async function run() {
     if (await win.webContents.executeJavaScript('displayState.language') === 'fixture-english') display = win;
   }
   assert.ok(display, 'English output exists');
+  const languageOutputs = new Map();
+  for (const win of BrowserWindow.getAllWindows().filter(win => win.webContents.getURL().includes('display.html'))) languageOutputs.set(await win.webContents.executeJavaScript('displayState.language'),win);
+  assert.ok(languageOutputs.has('fixture-russian')); assert.ok(languageOutputs.has('fixture-media'));
   assert.equal(await display.webContents.executeJavaScript("document.body.textContent.includes('Original slide')"), true);
-  await renderer(`applyShowAdjust()`);
-  assert.match(await renderer(`elements.showAdjustStatus.textContent`), /^Applied to Show/, 'Apply must succeed from the actual button handler');
+  assert.equal(await renderer(`Boolean(document.getElementById('btnApplyShowAdjust'))`), false, 'No extra Apply step');
+  await renderer(`document.querySelector('#outputPreviewList button:not([hidden])').click();true`);
+  await waitFor(async () => (await renderer(`window.api.getAppState()`)).serviceHandoff.project.revisionId !== before.serviceHandoff.project.revisionId, 'visible Live preview retake');
   const after = await renderer(`window.api.getAppState()`);
   assert.notEqual(after.serviceHandoff.project.revisionId, before.serviceHandoff.project.revisionId);
   assert.equal(after.currentSlide, before.currentSlide);
-  await waitFor(() => display.webContents.executeJavaScript(`document.body.textContent.includes('Backstage offline edit')`), 'actual display applied');
+  await waitFor(() => display.webContents.executeJavaScript(`document.body.textContent.includes('Backstage offline edit')`), 'actual display retaken');
   assert.equal(await renderer(`state.workflowStage`), 'show', JSON.stringify(await renderer('window.fixtureStages')));
   await delay(300);
+  // Shared Adjust thumbnail takes are enabled only in Show mode.
+  await planner.executeJavaScript(`document.querySelector('.heritage-workspace-toolbar__views button:first-child').click();true`);
+  await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('[data-show-mode="true"]'))`), 'scoped Show thumbnail mode');
+  await planner.executeJavaScript(`window.fixtureTakes=[];window.addEventListener('message',event=>{if(event.data?.type==='heritage-editor:taken')window.fixtureTakes.push(event.data)});document.querySelector('[data-preview-tile]').click();true`);
+  const tileTake = await waitFor(() => planner.executeJavaScript(`window.fixtureTakes.at(-1)`), 'trusted shared thumbnail take');
+  assert.equal(tileTake.ok,true,JSON.stringify(tileTake));
+  await delay(300);
+  assert.equal((await renderer(`window.api.getAppState()`)).currentSlide, 0);
+  // Edit remains backstage until normal visible Next, with no Apply step.
+  await planner.executeJavaScript(`document.querySelector('.heritage-workspace-toolbar__views button:nth-child(2)').click();true`);
+  await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]'))`), 'second edit view');
+  await planner.executeJavaScript(`{const field=document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]');field.focus();field.textContent='Second backstage edit';field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));}true`);
+  assert.equal(await display.webContents.executeJavaScript(`document.body.textContent.includes('Backstage offline edit')`), true);
+  await renderer(`document.getElementById('btnNextSlide').click();true`);
+  await waitFor(async () => (await renderer(`window.api.getAppState()`)).currentSlide === 1, 'visible Next publishes latest draft');
+  await waitFor(() => display.webContents.executeJavaScript(`document.body.textContent.includes('Following slide')`), 'actual next output');
+  for (const id of ['fixture-russian','fixture-media']) await waitFor(() => languageOutputs.get(id).webContents.executeJavaScript(`document.body.textContent.includes('Следующий слайд')`), `${id} native bilingual output`);
   const screenshot = path.join(root, 'adjust.png');
   await fs.writeFile(screenshot, (await control.capturePage()).toPNG());
   await fs.writeFile(path.join(root, 'actual-editor.png'), (await planner.capturePage()).toPNG());
@@ -138,13 +162,13 @@ async function run() {
   await waitFor(() => !planner.isLoading() && planner.executeJavaScript(`document.body.textContent.includes('Desktop offline rehearsal')`), 'offline editor reopen');
   await renderer(`window.api.openPlannerService(${JSON.stringify(project.id)})`);
   await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]'))`), 'offline saved document reopen');
-  assert.equal(await planner.executeJavaScript(`document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]').textContent`), 'Backstage offline edit');
+  assert.equal(await planner.executeJavaScript(`document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]').textContent`), 'Second backstage edit');
   offline = false;
   await delay(16000);
   saved = (await (await fetch(`${api}/${project.id}`,{headers:authHeaders})).json()).serviceDocument;
-  assert.equal(core.validateHeritageServiceDocumentSource(saved.documentSource).project.items.point.textByChannel.english, 'Backstage offline edit');
-  await fs.writeFile(resultPath, JSON.stringify({ ok: true, sameEditorOffline: true, showStableBeforeApply: true,
-    actualOutputAfterApply: true, currentCuePreserved: true, reconnectSynced: true, screenshot }, null, 2));
+  assert.equal(core.validateHeritageServiceDocumentSource(saved.documentSource).project.items.point.textByChannel.english, 'Second backstage edit');
+  await fs.writeFile(resultPath, JSON.stringify({ ok: true, sameEditorOffline: true, showStableWhileEditing: true,
+    actualOutputAfterRetake: true, sharedThumbnailTake: true, actualNextPublishesDraft: true, nativeRussianAndStageVerified: true, currentCuePreserved: true, reconnectSynced: true, proxyPort:server.address().port, screenshot }, null, 2));
 }
 run().then(() => { server.close(); app.exit(0); }).catch(async error => {
   const pages = [];

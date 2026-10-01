@@ -73,6 +73,19 @@ async function run() {
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), revision: 1, preferredProfileId: 'main-sanctuary',
     channelIds: ['english', 'russian', 'media'], channels: { english: { id: 'english', label: 'English', language: 'en' }, russian: { id: 'russian', label: 'Russian', language: 'ru' }, media: { id: 'media', label: 'Media', language: 'und' } },
     rootItemIds: ['point'], items: { point: { id: 'point', kind: 'notice', title: 'Point', textByChannel: { english: 'Original slide', russian: 'Original slide', media: 'Original slide' }, presetId: 'notice-text', operatorNotes: '' } }, resources: {}, assets: {}, presetPack: { id: 'main-sanctuary', version: 1, sha256: null } };
+  if (process.env.SYNCSHOW_GRID_REHEARSAL === '1') {
+    project.rootItemIds = [];
+    for (const [index, title] of ['Opening', 'Worship', 'Sermon', 'Closing'].entries()) {
+      const id = `section-${index}`, childIds = [];
+      for (let slide = 0; slide < 7; slide++) {
+        const itemId = index === 0 && slide === 0 ? 'point' : `${id}-${slide}`;
+        childIds.push(itemId);
+        if (itemId !== 'point') project.items[itemId] = {id:itemId,kind:'notice',title:`${title} ${slide + 1}`,textByChannel:{english:`${title}\nSlide ${slide + 1}`,russian:`${title}\nСлайд ${slide + 1}`,media:`${title}\nСлайд ${slide + 1}`},presetId:'notice-text',operatorNotes:''};
+      }
+      project.items[id] = {id,kind:'group',groupKind:'section',title,childIds,operatorNotes:''};
+      project.rootItemIds.push(id);
+    }
+  }
   const validated = core.validateHeritageServiceDocumentSource(core.serializeHeritageServiceDocument(core.createHeritageServiceDocument(project)));
   saved = { ...validated, syncId: project.id, syncVersion: 1, status: 'planning', changedAt: new Date().toISOString() };
   const storageRoot = path.join(root, 'community');
@@ -103,9 +116,12 @@ async function run() {
   const launch = roles.map((id, index) => ({ id: `fixture-${id}`, name: id, kind: id === 'singer' ? 'singer' : 'normal', expectedRole: id, displayId: index + 2 }));
   const started = await renderer(`window.api.startPresentation({outputs:${JSON.stringify(launch)},settings:{}})`);
   assert.equal(started.success, true);
+  await renderer(`state.activeLaunchPlan=${JSON.stringify(started.plan)};renderOutputPreviews(state.activeLaunchPlan);window.api.requestOutputPreviews();true`);
   await renderer(`(async()=>{handleShowStateChanged((await window.api.getAppState()).showState);setWorkflowStage('show');await loadAppState();})()`);
   const before = await renderer(`window.api.getAppState()`);
   assert.equal(await renderer(`state.workflowStage`), 'show');
+  await delay(300);
+  await fs.writeFile(path.join(root, 'show.png'), (await control.capturePage()).toPNG());
   planner.on('console-message', event => console.error('[planner]', event.message));
   await renderer(`document.getElementById('btnShowAdjust').click();`);
   await waitFor(() => renderer(`document.getElementById('showAdjustPanel').hidden === false`), 'Adjust');
@@ -117,17 +133,19 @@ async function run() {
   assert.equal(unchanged.serviceHandoff.project.revisionId, before.serviceHandoff.project.revisionId);
   const display = BrowserWindow.getAllWindows().find(win => win.webContents.getURL().includes('display.html'));
   assert.equal(await display.webContents.executeJavaScript("document.body.textContent.includes('Original slide')"), true);
-  await renderer(`applyShowAdjust()`);
-  assert.match(await renderer(`elements.showAdjustStatus.textContent`), /^Applied to Show/, 'Apply must succeed from the actual button handler');
+  assert.equal(await renderer(`Boolean(document.getElementById('btnApplyShowAdjust'))`), false, 'No extra Apply step');
+  await renderer(`goToSlide(state.currentSlide)`);
   const after = await renderer(`window.api.getAppState()`);
   assert.notEqual(after.serviceHandoff.project.revisionId, before.serviceHandoff.project.revisionId);
   assert.equal(after.currentSlide, before.currentSlide);
-  await waitFor(() => display.webContents.executeJavaScript(`document.body.textContent.includes('Backstage offline edit')`), 'actual display applied');
+  await waitFor(() => display.webContents.executeJavaScript(`document.body.textContent.includes('Backstage offline edit')`), 'actual display retaken');
   assert.equal(await renderer(`state.workflowStage`), 'show', JSON.stringify(await renderer('window.fixtureStages')));
   await delay(300);
   const screenshot = path.join(root, 'adjust.png');
   await fs.writeFile(screenshot, (await control.capturePage()).toPNG());
   await renderer(`closeShowAdjust()`);
+  await delay(300);
+  await fs.writeFile(path.join(root, 'show-retaken.png'), (await control.capturePage()).toPNG());
   assert.equal(await renderer(`showAdjustOpen`), false, 'Close must save backstage while a Show is active');
   // A fresh page load while disconnected uses the saved original editor assets.
   await planner.reload();
@@ -136,8 +154,8 @@ async function run() {
   offline = false;
   await delay(16000);
   assert.equal(saved.project.items.point.textByChannel.english, 'Backstage offline edit');
-  await fs.writeFile(resultPath, JSON.stringify({ ok: true, sameEditorOffline: true, showStableBeforeApply: true,
-    actualOutputAfterApply: true, currentCuePreserved: true, reconnectSynced: true, screenshot }, null, 2));
+  await fs.writeFile(resultPath, JSON.stringify({ ok: true, sameEditorOffline: true, showStableWhileEditing: true,
+    actualOutputAfterRetake: true, currentCuePreserved: true, reconnectSynced: true, screenshot }, null, 2));
 }
 run().then(() => { server.close(); app.exit(0); }).catch(async error => {
   await fs.writeFile(resultPath, JSON.stringify({ ok: false, error: error.stack }, null, 2)); server.close(); app.exit(1);

@@ -25,17 +25,32 @@ change stops replay. The operator compares both copies and explicitly chooses
 one; the reviewed remote revision is rechecked, and both complete sources are
 archived before resolution. A later remote change cannot be silently replaced.
 
-Adjust saves backstage. Apply compiles and verifies a complete new ShowPackage,
-rechecks the output session, current package, output health and volunteer
-authorization, then replaces the graph. Current cue identity and output routing
-are preserved where possible. Even the same cue index is explicitly refreshed
-through the all-output frame acknowledgement barrier. Clear remains black.
-Close flushes the editor without applying. Saves, synchronization and conflict
-resolution do not change the projected package.
+Adjust saves backstage. Typing, synchronization and conflict resolution keep the
+projected package pinned. Clicking a slide again or advancing flushes the editor,
+compiles and verifies the latest complete ShowPackage, then rechecks the output
+session, current graph, Clear/Bible operation epoch, output health and operator
+authorization. Every output acknowledges the intended stable cue before the
+operator sees a committed take. A clicked tile maps by cue ID, while Advance
+uses the live cue's identity and then the latest draft ordering. A removed live
+cue blocks Advance; a valid explicit tile can take its replacement. No old
+ordinal is used as a fallback. Clear or Stop during saving/compilation preempts
+the take. A locked volunteer continues the already verified graph until an
+operator unlocks publishing.
+
+The Show layout keeps service sections on the left, a thumbnail grid in the
+center, and one selected LIVE output with Next/Clear controls on the right.
+Adjust keeps that LIVE panel visible. Its shared editor enables scoped Show tile
+clicks only for the current service, through a narrow sandboxed preload. The
+native LIVE preview can also re-take the current slide. Ordinary Prepare clicks
+remain previews. Double-click opens editing; subsequent edits stay backstage.
+Close flushes and disables the take bridge. Device account language is retained
+in cached service metadata and reused offline.
 
 ## Validation
 
-- Full suite: 2,341 tests, 2,339 pass and two skips at the functional checkpoint.
+- Full suite: 2,356 tests, 2,354 pass and two skips.
+- Production-function tests verify stable targets, removed cues, Clear during
+  flush/compilation, pointer activation rollback, and locked volunteer behavior.
 - Focused offline tests cover restart, oldest remote base, offline creation,
   conflict preservation and both resolution choices, manual checkpoint replay,
   continued editing after coalesced reconnect, cached song details, late reads,
@@ -46,10 +61,16 @@ resolution do not change the projected package.
   Community editor and disposable approved device against an isolated database,
   through a loopback proxy that can simulate disconnection. It verifies real
   caption editing, saved text after an offline page reload, stable projection
-  before Apply, changed English output after Apply, preserved cue position,
+  while editing, changed English output after normal re-take, scoped shared
+  thumbnail take, normal Next, Russian and Stage-Facing native output, preserved cue position,
   Close while Show is active, and canonical server text after reconnect.
 
-Both fixtures use synthetic display inventory and real Electron output windows;
+`scripts/fixtures/unified-prepare-offline-restart-app.js` then starts a second
+process with the same marked profile and every upstream request disconnected.
+The original editor and prepared service reopen; focused Ctrl+S writes a manual
+checkpoint and a durable pending edit to the private journal.
+
+The display fixtures use synthetic display inventory and real Electron output windows;
 these checks do not establish physical church display/venue acceptance. The
 real Community fixture requires `SYNCSHOW_REAL_COMMUNITY_FIXTURE` pointing to a
 private disposable device fixture, never production credentials. No app was

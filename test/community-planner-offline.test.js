@@ -204,3 +204,22 @@ test('a delayed read cannot replace an acknowledged newer local save', async t =
   assert.equal(read.serviceDocument.project.title,'A newer acknowledged save');
   assert.equal(fixture.cache.envelope(saved.syncId).project.title,'A newer acknowledged save');
 });
+
+
+test('approved device locale survives restart and applies before offline editor mounts', async t => {
+  const { rootPath } = await setup(t);
+  let online = true;
+  const cache = new CommunityPlannerCache({ rootPath, origin, fetch: async request => {
+    if (!online) throw new Error('offline');
+    if (new URL(request.url).pathname === '/admin/plan-service') return new Response('<!doctype html><html lang="en"><body>Editor</body></html>', {headers:{'Content-Type':'text/html'}});
+    return response({items:[],workspaceLanguage:'ru',workspaceLanguageSource:'device'});
+  }});
+  const page = new Request(`${origin}/admin/plan-service`,{headers:{Accept:'text/html'}});
+  await cache.request(page);
+  assert.equal((await (await cache.request(new Request(endpoint))).json()).workspaceLanguage, 'ru');
+  online = false;
+  const reopened = new CommunityPlannerCache({rootPath,origin,fetch:cache.fetch});
+  const html = await (await reopened.request(page)).text();
+  assert.match(html, /<html lang="ru">/);
+  assert.equal((await (await reopened.request(new Request(endpoint))).json()).workspaceLanguageSource, 'device');
+});

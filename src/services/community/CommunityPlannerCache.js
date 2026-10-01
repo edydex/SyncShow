@@ -43,7 +43,7 @@ class CommunityPlannerCache {
     await fs.mkdir(this.rootPath, { recursive: true, mode: 0o700 });
     try {
       const saved = JSON.parse(await fs.readFile(path.join(this.rootPath, 'journal.json'), 'utf8'));
-      if (saved.schemaVersion === 1) this.state = { ...saved, remoteBases: saved.remoteBases || {}, assets: saved.assets || {}, history: saved.history || {} };
+      if (saved.schemaVersion === 1) this.state = { ...saved, workspaceLanguage: ['en', 'ru'].includes(saved.workspaceLanguage) ? saved.workspaceLanguage : null, remoteBases: saved.remoteBases || {}, assets: saved.assets || {}, history: saved.history || {} };
       for (const [id, raw] of Object.entries(this.state.documents)) this.state.documents[id] = serviceEnvelope(raw);
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
@@ -65,7 +65,7 @@ class CommunityPlannerCache {
 
   summary() {
     return { offline: this.offline, pending: Object.keys(this.state.pending).length,
-      conflicts: Object.keys(this.state.conflicts), availableOffline: Boolean(this.state.editorReady) };
+      conflicts: Object.keys(this.state.conflicts), availableOffline: Boolean(this.state.editorReady), workspaceLanguage: this.state.workspaceLanguage || null };
   }
 
   cachePath(request) {
@@ -95,7 +95,13 @@ class CommunityPlannerCache {
     const target = this.cachePath(request);
     try {
       const metadata = JSON.parse(await fs.readFile(`${target}.json`, 'utf8'));
-      return new Response(await fs.readFile(target), metadata);
+      let bytes = await fs.readFile(target);
+      if (new URL(request.url).pathname === '/admin/plan-service'
+        && new Headers(metadata.headers).get('content-type')?.includes('text/html')
+        && ['en', 'ru'].includes(this.state.workspaceLanguage)) {
+        bytes = Buffer.from(bytes.toString('utf8').replace(/(<html\b[^>]*?)\slang="[^"]*"/, `$1 lang="${this.state.workspaceLanguage}"`));
+      }
+      return new Response(bytes, metadata);
     } catch (error) { if (error.code !== 'ENOENT') throw error; return null; }
   }
 
@@ -240,7 +246,13 @@ class CommunityPlannerCache {
       conflict: Boolean(this.state.conflicts[id]) } };
   }
 
-  listResponse(payload) {
+  async listResponse(payload) {
+    if (payload.workspaceLanguageSource === 'device' && ['en', 'ru'].includes(payload.workspaceLanguage)
+      && this.state.workspaceLanguage !== payload.workspaceLanguage) {
+      this.state.workspaceLanguage = payload.workspaceLanguage;
+      await this.persist();
+    }
+    const locale = this.state.workspaceLanguage ? { workspaceLanguage: this.state.workspaceLanguage, workspaceLanguageSource: 'device' } : {};
     const items = new Map((payload.items || []).map(item => [item.syncId, item]));
     for (const [id, saved] of Object.entries(this.state.documents)) {
       const project = saved.project || saved.document?.project;
@@ -249,7 +261,7 @@ class CommunityPlannerCache {
         title: project.title, serviceDate: project.serviceDate, status: saved.status, changedAt: saved.changedAt,
         desktop: { pending: Boolean(this.state.pending[id]), conflict: Boolean(this.state.conflicts[id]) } });
     }
-    return json({ ...payload, items: [...items.values()].sort((a, b) => b.serviceDate.localeCompare(a.serviceDate)) });
+    return json({ ...payload, ...locale, items: [...items.values()].sort((a, b) => b.serviceDate.localeCompare(a.serviceDate)) });
   }
 
   async save(request, id) {

@@ -360,6 +360,7 @@ let communityPlannerHandoff = null;
 let communityPlannerCache = null;
 let communityPlannerRetryTimer = null;
 let showAdjustInProgress = false;
+let communityPlannerShowMode = false;
 let controlSettingsDraftState = { dirty: false, saving: false };
 let outputWindows = new Map();
 let testOutputBackground = null;
@@ -2454,7 +2455,9 @@ function readShowRuntimeState() {
 
 function publishShowState(reason) {
   teachingSurface.sync();
-  return showGateway ? showGateway.publish(reason) : null;
+  const state = showGateway ? showGateway.publish(reason) : null;
+  if (typeof communityPlannerShowMode !== 'undefined' && communityPlannerShowMode) notifyPlannerShowMode();
+  return state;
 }
 
 function readTeachingContext() {
@@ -7701,6 +7704,7 @@ async function openCommunityPlannerWindow() {
       contextIsolation: true,
       sandbox: true,
       backgroundThrottling: false,
+      preload: path.join(__dirname, 'src', 'community-planner-preload.js'),
       partition: `persist:syncshow-community-planner-${connection.id}`
     }
   });
@@ -7728,11 +7732,15 @@ async function openCommunityPlannerWindow() {
       const forwarded = new Request(request, { headers });
       return plannerSession.fetch(forwarded, { bypassCustomProtocolHandlers: true });
     },
-    onState: () => notifyCommunityPlannerState(),
+    onState: state => {
+      notifyCommunityPlannerState();
+      if (['en', 'ru'].includes(state.workspaceLanguage)) plannerSession.cookies.set({ url: plannerOrigin, name: 'payload-lng', value: state.workspaceLanguage, path: '/', sameSite: 'lax' }).catch(() => {});
+    },
     localRequest: request => resolveOfflinePlannerRequest(request, cache)
   });
   communityPlannerCache = cache;
   await cache.loaded;
+  if (['en', 'ru'].includes(cache.state.workspaceLanguage)) await plannerSession.cookies.set({ url: plannerOrigin, name: 'payload-lng', value: cache.state.workspaceLanguage, path: '/', sameSite: 'lax' });
   plannerSession.protocol.handle(plannerUrl.protocol.replace(':', ''), request => cache.request(request));
   communityPlannerRetryTimer = setInterval(() => {
     cache.flush().catch(error => console.warn('[CommunityPlanner] Retry failed:', error.code || error.name));
@@ -7789,13 +7797,16 @@ async function openCommunityPlannerWindow() {
     }
   );
   planner.webContents.on('did-finish-load', () => {
-    if (!planner.webContents.isDestroyed()) notifyCommunityPlannerState();
+    if (!planner.webContents.isDestroyed()) {
+      notifyPlannerShowMode();
+      notifyCommunityPlannerState();
+    }
   });
   planner.webContents.on('destroyed', () => {
     clearInterval(communityPlannerRetryTimer);
     communityPlannerRetryTimer = null;
     plannerSession.protocol.unhandle(plannerUrl.protocol.replace(':', ''));
-    if (communityPlannerCache === cache) communityPlannerCache = null;
+    if (communityPlannerCache === cache) { communityPlannerCache = null; communityPlannerShowMode = false; }
     plannerSession.webRequest.onBeforeRequest(null);
     plannerSession.webRequest.onCompleted(null);
     plannerSession.webRequest.onErrorOccurred(null);
@@ -9297,7 +9308,7 @@ function markLiveCueTransitionFailure(outputs, sessionId, cueIndex) {
   }
 }
 
-async function goToSlideConfirmed(slideIndex, { forceRefresh = false } = {}) {
+async function goToSlideConfirmed(slideIndex, { forceRefresh = false, skipBackstage = false } = {}) {
   const launchPlan = appState.activeLaunchPlan;
   if (!launchPlan) {
     return { accepted: false, code: 'NO_ACTIVE_SHOW', message: 'There is no active Show.' };
@@ -9332,6 +9343,11 @@ async function goToSlideConfirmed(slideIndex, { forceRefresh = false } = {}) {
       code: 'LIVE_CUE_TRANSITION_BUSY',
       message: 'Wait for the current cue to reach every output before advancing again.'
     };
+  }
+
+  if (!skipBackstage && typeof communityPlannerCache !== 'undefined' && communityPlannerCache) {
+    const draftTake = await takeBackstageServiceCue({ targetIndex: slideIndex });
+    if (draftTake) return draftTake;
   }
 
   const leavingBible = Boolean(activeBibleOverlay);
@@ -9471,6 +9487,10 @@ async function navigateSlideConfirmed(delta) {
   if (!appState.activeLaunchPlan) {
     return { accepted: false, code: 'NO_ACTIVE_SHOW', message: 'There is no active Show.' };
   }
+  if (typeof communityPlannerCache !== 'undefined' && communityPlannerCache) {
+    const draftTake = await takeBackstageServiceCue({ advance: delta });
+    if (draftTake) return draftTake;
+  }
   const newSlide = appState.currentSlide + delta;
   if (newSlide < 0 || newSlide >= appState.totalSlides) {
     if (activeBibleOverlay) return goToSlideConfirmed(appState.currentSlide);
@@ -9482,7 +9502,7 @@ async function navigateSlideConfirmed(delta) {
         : 'The Show is already at the last cue.'
     };
   }
-  return goToSlideConfirmed(newSlide);
+  return goToSlideConfirmed(newSlide, { skipBackstage: true });
 }
 
 function liveCueNavigationWasPreempted(result) {
@@ -18389,75 +18409,134 @@ ipcMain.handle('community:planner:resolveConflict', async (event, request = {}) 
   });
 });
 
-ipcMain.handle('show:adjust:apply', async event => {
-  requireControlSender(event);
-  return communityIpcResult(async () => {
-    if (showAdjustInProgress) throw new Error('Wait for Apply to finish.');
-    authorizeLocalShowCommand('session.end');
-    if (!appState.activeLaunchPlan || pendingBibleLookup || activeBibleOverlay || pendingBibleOverlay || activeLiveCueNavigation || outputRecovery) {
-      throw new Error('Return to a healthy service slide before applying changes.');
+// Saving changes only the private draft. A normal slide take is the sole
+// boundary that replaces the immutable Show package and publishes its cue.
+async function takeBackstageServiceCue({ targetIndex = appState.currentSlide, advance = 0, cueId } = {}) {
+  if (!communityPlannerCache || !currentPreparedServicePointer || !appState.activeLaunchPlan
+    || activeBibleOverlay || pendingBibleOverlay || pendingBibleLookup) return null;
+  if (showAdjustInProgress) return { accepted: false, code: 'BACKSTAGE_TAKE_BUSY', message: 'Wait for the saved slide to reach every output.' };
+  showAdjustInProgress = true;
+  try {
+    const sessionId = outputSessionId, oldPlan = appState.activeLaunchPlan, oldRevision = presentationRevision;
+    const oldCurrentIndex = appState.currentSlide, oldBibleEpoch = bibleOperationEpoch;
+    const oldCleared = appState.isCleared, oldPhase = outputLifecyclePhase;
+    const previousCueIds = appState.presentations[oldPlan.timelineRoleId]?.metadata?.slides?.map(slide => slide.cueId);
+    if (!previousCueIds?.length) return null;
+    const flushed = communityPlannerView && !communityPlannerView.webContents.isDestroyed() ? await flushEmbeddedPlanner() : { ok: true };
+    if (!flushed.ok) throw new Error(flushed.error || 'The backstage editor could not save. The current screen is unchanged.');
+    if (sessionId !== outputSessionId || oldPlan !== appState.activeLaunchPlan || oldRevision !== presentationRevision
+      || oldCurrentIndex !== appState.currentSlide || oldBibleEpoch !== bibleOperationEpoch
+      || oldCleared !== appState.isCleared || oldPhase !== outputLifecyclePhase) {
+      return { accepted: false, code: 'LIVE_CUE_TRANSITION_CANCELLED', message: 'The Show changed while the editor was saving. Your backstage draft is safe.' };
     }
-    showAdjustInProgress = true;
-    try {
-      const sessionId = outputSessionId, oldPlan = appState.activeLaunchPlan, oldRevision = presentationRevision;
-      const flush = await flushEmbeddedPlanner();
-      if (!flush.ok || !flush.serviceDocument?.syncId) throw new Error(flush.error || 'Open and save the service before Apply.');
-      const syncId = flush.serviceDocument.syncId;
-      if (syncId !== currentPreparedServicePointer?.projectId) throw new Error('Adjust must edit the service currently being shown. Close Adjust and reopen it.');
-      const remote = communityPlannerCache.envelope(syncId);
-      if (!remote) throw new Error('The saved service is not available on this computer.');
-      const context = await communityServiceDocumentContext({ refreshCapabilities: false });
-      const local = await readLocalServiceDocument(context.projectStore, syncId);
-      const selected = await installCommunityServiceDocument(context, remote, local);
-      const services = getPrepareServices();
-      const published = await services.showPackagePublisher.publish({ projectId: selected.project.id,
-        revisionId: selected.revisionId, roleMapping: nativeProjectRoleMapping(selected.project),
-        width: CONFIG.displayWidth, height: CONFIG.displayHeight, thumbnailWidth: CONFIG.thumbnailWidth });
-      // Compilation may take time. Until this final check, every live output
-      // retains the previous immutable package and can continue navigating it.
-      if (sessionId !== outputSessionId || oldPlan !== appState.activeLaunchPlan || oldRevision !== presentationRevision
-        || activeLiveCueNavigation || outputRecovery || activeBibleOverlay || pendingBibleOverlay || pendingBibleLookup) {
-        throw new Error('The Show changed while Apply was preparing. Your backstage save is safe; apply again.');
-      }
-      const previousPresentation = appState.presentations[oldPlan.timelineRoleId];
-      const currentCueId = previousPresentation?.metadata?.slides?.[appState.currentSlide]?.cueId;
-      const matchingIndex = published.manifest.cueIds.indexOf(currentCueId);
-      const currentIndex = matchingIndex >= 0 ? matchingIndex : Math.min(appState.currentSlide, published.manifest.cueCount - 1);
-      const outputs = oldPlan.outputs.map(output => ({ id: output.id, name: output.name, displayId: output.displayId,
-        expectedRole: output.sourceRoleId, kind: output.nativeVariant === 'singer-current-next' ? 'singer' : 'normal', operatorPreview: output.operatorPreview }));
-      const decisions = Object.fromEntries(oldPlan.outputs.map(output => [output.id,
-        output.nativeVariant === 'singer-current-next' ? { mode: 'derive-next-text', sourceRole: output.sourceRoleId } : { mode: 'direct' }]));
-      const nextPlan = resolveLaunchPlan({ presentations: published.presentations, outputs, decisions, preferredTimelineRoleId: oldPlan.timelineRoleId });
-      if (nextPlan.outputs.some(output => !outputWindows.get(output.id)?.win || output.renderer !== 'native-cue') || currentLiveCueTransitionOutputs().accepted !== true) throw new Error('Every output must be healthy before Apply.');
-      const activation = await activateCurrentPreparedService(services, published);
-      if (sessionId !== outputSessionId || oldPlan !== appState.activeLaunchPlan || oldRevision !== presentationRevision
-        || activeLiveCueNavigation || outputRecovery || activeBibleOverlay || pendingBibleOverlay || pendingBibleLookup
-        || currentLiveCueTransitionOutputs().accepted !== true) {
-        await rollbackCurrentPreparedServiceActivation(services, activation);
-        throw new Error('The Show changed during Apply. Your backstage save is safe; apply again.');
-      }
-      try { authorizeLocalShowCommand('session.end'); }
-      catch (error) { await rollbackCurrentPreparedServiceActivation(services, activation); throw error; }
-      // The user explicitly clicked Apply. Replace the complete verified graph
-      // in one synchronous boundary, preserve routing and current cue identity.
-      appState.presentations = published.presentations;
-      presentationRevision += 1;
-      appState.activeLaunchPlan = nextPlan;
-      appState.totalSlides = nextPlan.totalSlides;
-      activeVolunteerShowBinding = createActiveVolunteerShowBinding(nextPlan, showGateway.getState().outputSessionId);
-      relockVolunteerShowControls({ deferPublish: true });
-      currentPreparedServicePointer = activation.pointer;
-      setCurrentPreparedServiceRestore('restored', activation.pointer);
-      for (const output of nextPlan.outputs) outputWindows.get(output.id).output = output;
-      const wasCleared = appState.isCleared;
-      appState.currentSlide = currentIndex;
-      if (!wasCleared && outputsShouldBeVisible) {
-        const navigation = await goToSlideConfirmed(currentIndex, { forceRefresh: true });
-        if (navigation.accepted !== true) throw new Error(navigation.message || 'The saved package was applied, but outputs need Restore before continuing.');
-      }
-      publishShowState('backstage-adjust-applied');
-      return { applied: true, cueCount: nextPlan.totalSlides, currentSlide: currentIndex };
-    } finally { showAdjustInProgress = false; }
+    const syncId = currentPreparedServicePointer.projectId;
+    if (cueId && flushed.serviceDocument?.syncId !== syncId) return { accepted: false, code: 'PLANNER_WRONG_SERVICE', message: 'Adjust must edit the service currently being shown.' };
+    const remote = communityPlannerCache.envelope(syncId);
+    if (!remote) return null;
+    const draftRevision = crypto.createHash('sha256').update(require('./src/services/project/ServiceProject').serializeServiceProject(remote.project)).digest('hex');
+    if (draftRevision === currentPreparedServicePointer.projectRevisionId) {
+      if (!cueId) return null;
+      const index = previousCueIds.indexOf(cueId);
+      if (index < 0) return { accepted: false, code: 'INVALID_CUE_ID', message: 'That slide is not in the loaded service.' };
+      return goToSlideConfirmed(index, { skipBackstage: true, forceRefresh: true });
+    }
+    // A locked volunteer continues the already verified graph. Publishing a
+    // different graph requires an unlocked operator, even on a normal Next.
+    if (!localShowCommandAllowed('session.end')) return null;
+    authorizeLocalShowCommand('session.end');
+    if (!outputsShouldBeVisible || !['live', 'cleared'].includes(outputLifecyclePhase)
+      || activeLiveCueNavigation || outputRecovery || currentLiveCueTransitionOutputs().accepted !== true) {
+      throw new Error('Return to a healthy service slide before taking the saved changes.');
+    }
+    const context = await communityServiceDocumentContext({ refreshCapabilities: false });
+    const local = await readLocalServiceDocument(context.projectStore, syncId);
+    const selected = await installCommunityServiceDocument(context, remote, local);
+    const services = getPrepareServices();
+    const published = await services.showPackagePublisher.publish({ projectId: selected.project.id,
+      revisionId: selected.revisionId, roleMapping: nativeProjectRoleMapping(selected.project),
+      width: CONFIG.displayWidth, height: CONFIG.displayHeight, thumbnailWidth: CONFIG.thumbnailWidth });
+    const target = require('./src/services/show/BackstageCueTarget').resolveBackstageCueTarget({
+      previousCueIds, nextCueIds: published.manifest.cueIds, currentIndex: oldCurrentIndex, targetIndex, advance, cueId
+    });
+    if (!target.accepted) return target;
+    const stillCurrent = () => sessionId === outputSessionId && oldPlan === appState.activeLaunchPlan
+      && oldRevision === presentationRevision && oldCurrentIndex === appState.currentSlide
+      && oldBibleEpoch === bibleOperationEpoch && oldCleared === appState.isCleared && oldPhase === outputLifecyclePhase
+      && !activeLiveCueNavigation && !outputRecovery && !activeBibleOverlay && !pendingBibleOverlay && !pendingBibleLookup
+      && outputsShouldBeVisible && ['live', 'cleared'].includes(outputLifecyclePhase)
+      && currentLiveCueTransitionOutputs().accepted === true;
+    // Compilation can take time. Clear, Stop, Bible, or another session must
+    // preempt this take without reviving a stale screen or selecting an ordinal.
+    if (!stillCurrent()) throw new Error('The Show changed while the saved slide was preparing. Your draft is safe; click the slide again.');
+    const outputs = oldPlan.outputs.map(output => ({ id: output.id, name: output.name, displayId: output.displayId,
+      expectedRole: output.sourceRoleId, kind: output.nativeVariant === 'singer-current-next' ? 'singer' : 'normal', operatorPreview: output.operatorPreview }));
+    const decisions = Object.fromEntries(oldPlan.outputs.map(output => [output.id,
+      output.nativeVariant === 'singer-current-next' ? { mode: 'derive-next-text', sourceRole: output.sourceRoleId } : { mode: 'direct' }]));
+    const nextPlan = resolveLaunchPlan({ presentations: published.presentations, outputs, decisions, preferredTimelineRoleId: oldPlan.timelineRoleId });
+    if (nextPlan.outputs.some(output => !outputWindows.get(output.id)?.win || output.renderer !== 'native-cue')) throw new Error('Every output must be healthy before taking the saved slide.');
+    const activation = await activateCurrentPreparedService(services, published);
+    if (!stillCurrent()) {
+      await rollbackCurrentPreparedServiceActivation(services, activation);
+      throw new Error('The Show changed while the saved slide was preparing. Your draft is safe; click the slide again.');
+    }
+    try { authorizeLocalShowCommand('session.end'); }
+    catch (error) { await rollbackCurrentPreparedServiceActivation(services, activation); throw error; }
+    appState.presentations = published.presentations;
+    presentationRevision += 1;
+    appState.activeLaunchPlan = nextPlan;
+    appState.totalSlides = nextPlan.totalSlides;
+    activeVolunteerShowBinding = createActiveVolunteerShowBinding(nextPlan, showGateway.getState().outputSessionId);
+    relockVolunteerShowControls({ deferPublish: true });
+    currentPreparedServicePointer = activation.pointer;
+    setCurrentPreparedServiceRestore('restored', activation.pointer);
+    for (const output of nextPlan.outputs) outputWindows.get(output.id).output = output;
+    appState.currentSlide = target.currentIndex;
+    const navigation = await goToSlideConfirmed(target.targetIndex, { forceRefresh: true, skipBackstage: true });
+    publishShowState(navigation.accepted === true ? 'backstage-draft-taken' : 'backstage-draft-recovery');
+    notifyCommunityPlannerState();
+    return { ...navigation, preparedChanged: true };
+  } catch (error) {
+    return { accepted: false, code: error.code || 'BACKSTAGE_TAKE_FAILED', message: error.message || 'The saved draft could not be taken. The current screen is unchanged.' };
+  } finally { showAdjustInProgress = false; }
+}
+
+function plannerShowModePayload() {
+  const enabled = communityPlannerShowMode && Boolean(appState.activeLaunchPlan);
+  const live = enabled && outputsShouldBeVisible && outputLifecyclePhase === 'live' && !appState.isCleared
+    && !activeLiveCueNavigation && !activeBibleOverlay && !pendingBibleOverlay && !pendingBibleLookup && !outputRecovery
+    && currentLiveCueTransitionOutputs().accepted === true;
+  return { enabled, syncId: currentPreparedServicePointer?.projectId,
+    currentCueId: live ? appState.presentations[appState.activeLaunchPlan.timelineRoleId]?.metadata?.slides?.[appState.currentSlide]?.cueId || null : null };
+}
+function notifyPlannerShowMode() {
+  if (communityPlannerView && !communityPlannerView.webContents.isDestroyed()) communityPlannerView.webContents.send('community:planner:showMode', plannerShowModePayload());
+}
+
+ipcMain.handle('community:planner:showMode', (event, enabled) => {
+  requireControlSender(event);
+  if (typeof enabled !== 'boolean') failMainOperation('INVALID_SHOW_MODE', 'Choose Prepare or Show interaction.');
+  if (enabled) {
+    authorizeLocalShowCommand('session.end');
+    if (!appState.activeLaunchPlan || !currentPreparedServicePointer || !communityPlannerView) failMainOperation('NO_ACTIVE_SHOW', 'Open Adjust during a prepared Show.');
+  }
+  communityPlannerShowMode = enabled;
+  notifyPlannerShowMode();
+  return { success: true };
+});
+ipcMain.handle('community:planner:take', async (event, request = {}) => {
+  return communityIpcResult(async () => {
+    if (!communityPlannerShowMode || !communityPlannerView || event.sender !== communityPlannerView.webContents
+      || event.senderFrame !== event.sender.mainFrame || event.sender.isDestroyed()) failMainOperation('PLANNER_TAKE_NOT_ALLOWED', 'Slide takes are available only in the active Adjust view.');
+    const url = new URL(event.sender.getURL());
+    if (url.origin !== communityPlannerOrigin || url.pathname !== '/admin/plan-service') failMainOperation('PLANNER_TAKE_NOT_ALLOWED', 'This editor cannot take a live slide.');
+    authorizeLocalShowCommand('cue.jump');
+    authorizeLocalShowCommand('session.end');
+    communityRequestKeys(request, ['syncId', 'cueId'], 'Slide take');
+    if (request.syncId !== currentPreparedServicePointer?.projectId) failMainOperation('PLANNER_WRONG_SERVICE', 'Adjust must edit the service currently being shown.');
+    const cueId = prepareId(request.cueId, 'Slide cue');
+    const taken = await takeBackstageServiceCue({ cueId });
+    if (!taken?.accepted) failMainOperation(taken?.code || 'SLIDE_TAKE_FAILED', taken?.message || 'The slide could not reach every output.');
+    return { taken: true, preparedChanged: taken.preparedChanged === true };
   });
 });
 
@@ -27049,6 +27128,7 @@ ipcMain.handle('show:navigateTo', async (event, slideIndex) => {
   return {
     success: true,
     applied: result.applied !== false,
+    preparedChanged: result.preparedChanged === true,
     showState: showGateway.getState()
   };
 });
@@ -27087,6 +27167,7 @@ ipcMain.handle('show:navigateBy', async (event, delta, options = {}) => {
   return {
     success: true,
     applied: result.applied !== false,
+    preparedChanged: result.preparedChanged === true,
     showState: showGateway.getState()
   };
 });
