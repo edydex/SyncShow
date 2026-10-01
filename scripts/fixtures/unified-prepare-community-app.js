@@ -144,6 +144,13 @@ async function run() {
   assert.equal(tileTake.ok,true,JSON.stringify(tileTake));
   await delay(300);
   assert.equal((await renderer(`window.api.getAppState()`)).currentSlide, 0);
+  const embeddedView = control.contentView.children.find(view => view.webContents === planner);
+  assert.ok(embeddedView, 'actual editor is attached to the control window');
+  const editorView = { visible: embeddedView.getVisible(), bounds: embeddedView.getBounds(),
+    screenshot: path.join(root, 'editor-on-screen.png') };
+  assert.equal(editorView.visible, true);
+  assert.ok(editorView.bounds.width > 100 && editorView.bounds.height > 100);
+  await fs.writeFile(editorView.screenshot, (await planner.capturePage()).toPNG());
   await planner.executeJavaScript(`window.postMessage({type:'heritage-editor:take',syncId:${JSON.stringify(project.id)},cueId:'cue-missing-for-rehearsal'},window.location.origin);true`);
   const rejectedTake = await waitFor(() => planner.executeJavaScript(`window.fixtureTakes.at(-1)?.ok === false && window.fixtureTakes.at(-1)`), 'rejected tile take reply');
   await waitFor(() => planner.executeJavaScript(`document.body.innerText.includes(${JSON.stringify(rejectedTake.error)})`), 'visible shared take failure');
@@ -176,7 +183,7 @@ async function run() {
   saved = (await (await fetch(`${api}/${project.id}`,{headers:authHeaders})).json()).serviceDocument;
   assert.equal(core.validateHeritageServiceDocumentSource(saved.documentSource).project.items.point.textByChannel.english, 'Second backstage edit');
   await fs.writeFile(resultPath, JSON.stringify({ ok: true, sameEditorOffline: true, showStableWhileEditing: true,
-    actualOutputAfterRetake: true, sharedThumbnailTake: true, liveMarkerAndVisibleTakeFailure: true, actualNextPublishesDraft: true, nativeRussianAndStageVerified: true, currentCuePreserved: true, reconnectSynced: true, proxyPort:server.address().port, screenshot }, null, 2));
+    actualOutputAfterRetake: true, sharedThumbnailTake: true, liveMarkerAndVisibleTakeFailure: true, actualNextPublishesDraft: true, nativeRussianAndStageVerified: true, currentCuePreserved: true, reconnectSynced: true, proxyPort:server.address().port, screenshot, editorView }, null, 2));
 }
 run().then(() => { server.close(); app.exit(0); }).catch(async error => {
   const pages = [];
