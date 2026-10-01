@@ -197,7 +197,10 @@ class CommunityPlannerCache {
     entry.syncVersion = entry.id;
     const folder = path.join(this.rootPath, 'history');
     await fs.mkdir(folder, { recursive: true, mode: 0o700 });
-    await fs.writeFile(path.join(folder, `${entry.id}.json`), JSON.stringify(this.state.documents[id]), { mode: 0o600 });
+    const file = await fs.open(path.join(folder, `${entry.id}.json`), 'wx', 0o600);
+    try { await file.writeFile(JSON.stringify(this.state.documents[id])); await file.sync(); }
+    finally { await file.close(); }
+    await fsyncDirectory(folder);
     (this.state.history[id] ||= []).push(entry);
     return entry;
   }
