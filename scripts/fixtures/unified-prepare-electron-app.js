@@ -39,7 +39,7 @@ const endpoint='/api/community/service-documents';
 async function open(id){service=(await (await fetch(endpoint+'/'+id,{headers:{Accept:'application/json'}})).json()).serviceDocument;document.getElementById('text').value=service.project.items.point.textByChannel.english;document.getElementById('preview').textContent=service.project.title;dirty=false;}
 document.getElementById('text').oninput=()=>dirty=true;
 async function save(){if(dirty){const project=structuredClone(service.project);for(const channel of project.channelIds)project.items.point.textByChannel[channel]=document.getElementById('text').value;project.revision++;project.updatedAt=new Date().toISOString();const doc={...service.document,project};function stable(v){if(Array.isArray(v))return v.map(stable);if(v&&typeof v==='object')return Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])]));return v};const source=JSON.stringify(stable(doc))+'\\n';const response=await fetch(endpoint+'/'+service.syncId,{method:'PUT',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({schemaVersion:1,requestId:crypto.randomUUID(),syncId:service.syncId,baseRevision:service.revision,baseSyncVersion:service.syncVersion,documentSource:source,status:'planning',saveKind:'manual'})});if(!response.ok)throw new Error('Save failed '+response.status);service=(await response.json()).serviceDocument;dirty=false;}document.getElementById('status').textContent=service.desktop?.pending?'Saved locally':'Saved';return service;}
-document.getElementById('save').onclick=()=>save().catch(error=>document.getElementById('status').textContent=error.message);window.addEventListener('message',async event=>{if(event.source!==window||event.origin!==location.origin)return;const value=event.data;if(value.type==='heritage-editor:open')await open(value.syncId);if(value.type==='heritage-editor:flush'){try{const serviceDocument=await save();window.postMessage({type:'heritage-editor:flushed',requestId:value.requestId,ok:true,serviceDocument},location.origin)}catch(error){window.postMessage({type:'heritage-editor:flushed',requestId:value.requestId,ok:false,error:error.message},location.origin)}}});open('service-fixture');
+document.getElementById('save').onclick=()=>save().catch(error=>document.getElementById('status').textContent=error.message);window.addEventListener('message',async event=>{if(event.source!==window||event.origin!==location.origin)return;const value=event.data;if(value.type==='heritage-editor:open')await open(value.syncId);if(value.type==='heritage-editor:flush'){try{if(window.fixtureFlushMode==='ignore')return;if(window.fixtureFlushMode==='fail')throw new Error('Fixture save failed');const serviceDocument=await save();window.postMessage({type:'heritage-editor:flushed',requestId:value.requestId,ok:true,serviceDocument},location.origin)}catch(error){window.postMessage({type:'heritage-editor:flushed',requestId:value.requestId,ok:false,error:error.message},location.origin)}}});open('service-fixture');
 </script></body></html>`;
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://127.0.0.1:${server.address().port}`);
@@ -103,6 +103,34 @@ async function run() {
   await waitFor(() => planner.executeJavaScript('Boolean(service?.project)'), 'service open');
   const tabs = await renderer(`getComputedStyle(document.querySelector('.prepare-mode-tabs')).display`);
   assert.equal(tabs, 'none');
+  if (process.env.SYNCSHOW_LOAD_NAVIGATION_FIXTURE === '1') {
+    await planner.executeJavaScript("window.fixtureFlushMode='ignore';true");
+    const started = Date.now();
+    await renderer("void navigateWorkflowStage('load');true");
+    assert.equal(await renderer('state.workflowStage'), 'load');
+    assert.equal(await renderer('elements.btnStageLoad.disabled'), false);
+    await waitFor(() => renderer("elements.loadPrepareWarning.textContent.includes('not confirmed saving')"), 'bounded save warning');
+    assert(Date.now() - started < 6000, 'Legacy editor must not hold Load for thirty seconds');
+    const screenshot = path.join(root, 'load-save-warning.png');
+    await fs.writeFile(screenshot, (await control.webContents.capturePage()).toPNG());
+    await renderer("navigateWorkflowStage('prepare')");
+    await planner.executeJavaScript("window.fixtureFlushMode='fail';true");
+    await renderer("navigateWorkflowStage('load')");
+    assert.equal(await renderer('state.workflowStage'), 'load');
+    assert.match(await renderer('elements.loadPrepareWarning.textContent'), /Fixture save failed/);
+    await renderer("navigateWorkflowStage('prepare')");
+    await planner.executeJavaScript("window.fixtureFlushMode='ignore';true");
+    await renderer("void navigateWorkflowStage('load');true");
+    await renderer("navigateWorkflowStage('prepare')");
+    await delay(3500);
+    assert.equal(await renderer('state.workflowStage'), 'prepare');
+    await planner.executeJavaScript("window.fixtureFlushMode='normal';true");
+    await renderer("navigateWorkflowStage('load')");
+    assert.equal(await renderer('elements.loadPrepareWarning.hidden'), true);
+    assert.equal(await renderer('state.serviceHandoff.project.id'), project.id);
+    await fs.writeFile(resultPath, JSON.stringify({ok:true,immediateLoad:true,legacySaveWarning:true,failedSaveWarning:true,returnToPrepare:true,confirmedServiceLoaded:true,screenshot},null,2));
+    return;
+  }
   const handoff = await renderer(`window.api.prepareCommunityPlannerForLoad()`);
   assert.equal(handoff.data.serviceId, project.id);
   const opened = await renderer(`window.api.openCommunityServiceDocument({syncId:'service-fixture'})`);

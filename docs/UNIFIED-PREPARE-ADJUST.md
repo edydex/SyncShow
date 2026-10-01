@@ -74,5 +74,8 @@ checkpoint and a durable pending edit to the private journal.
 The display fixtures use synthetic display inventory and real Electron output windows;
 these checks do not establish physical church display/venue acceptance. The
 real Community fixture requires `SYNCSHOW_REAL_COMMUNITY_FIXTURE` pointing to a
-private disposable device fixture, never production credentials. No app was
-installed, production server changed, or release published during this work.
+private disposable device fixture, never production credentials. The local Preview 37 app was installed for review; Preview 38 adds the Load navigation fix. Public release publication remains separate from these local checks.
+
+## Load while a Prepare save is pending
+
+Load opens immediately. The editor gets up to three seconds to confirm its saved service; a failed or unanswered save leaves a visible warning and the saved-service picker usable. Returning to Prepare, choosing another service, or starting Show cancels the pending handoff so a late response cannot replace the operator’s selection. Six focused tests and the real isolated Electron fixture cover failure, legacy editors, navigation cancellation, and successful loading. The full Preview 38 suite passed 2,360 tests with two skips (2,362 total).

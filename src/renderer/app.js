@@ -175,6 +175,7 @@ function setSelectValuePreservingCustomOption(select, value, formatLabel) {
 
 // DOM Elements
 const elements = {
+  loadPrepareWarning: document.getElementById('loadPrepareWarning'),
   appSubtitle: document.getElementById('appSubtitle'),
   btnStagePrepare: document.getElementById('btnStagePrepare'),
   btnStageLoad: document.getElementById('btnStageLoad'),
@@ -615,6 +616,10 @@ function setupEventListeners() {
   elements.btnStagePrepare.addEventListener('click', () => navigateWorkflowStage('prepare'));
   elements.btnStageLoad.addEventListener('click', () => navigateWorkflowStage('load'));
   elements.btnStageShow.addEventListener('click', () => navigateWorkflowStage('show'));
+  document.addEventListener('pointerdown', cancelPendingPrepareLoad, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') cancelPendingPrepareLoad();
+  }, true);
   elements.btnPrepareModeCommunity.addEventListener('click', () => activatePrepareMode('community'));
   elements.btnPrepareModeLocal.addEventListener('click', () => activatePrepareMode('local'));
   elements.btnOpenCommunityServiceFromLoad.addEventListener('click', async () => {
@@ -1641,15 +1646,27 @@ function setWorkflowStage(stage) {
   return activation;
 }
 
+function setPrepareLoadWarning(message) {
+  elements.loadPrepareWarning.textContent = message;
+  elements.loadPrepareWarning.hidden = !message;
+}
+
+function cancelPendingPrepareLoad() {
+  if (state.workflowStage !== 'load' || !state.community.handoffBusy) return;
+  state.community.handoffGeneration++;
+  state.community.handoffBusy = false;
+  setPrepareLoadWarning('Prepare’s latest edits have not been loaded. Choose a saved service, or return to Prepare to save.');
+}
+
 async function navigateWorkflowStage(stage) {
-  if (state.community.handoffBusy) return;
   if (stage === state.workflowStage) {
     if (stage === 'prepare' && state.prepareMode === 'community') {
       await openCommunityPrepare();
     }
     return;
   }
-  if (state.workflowStage === 'prepare' && prepareController?.isBusy?.()) {
+  if (state.workflowStage === 'prepare' && prepareController?.isBusy?.()
+    && !(stage === 'load' && state.prepareMode === 'community')) {
     setStatus('Wait for the current Prepare change to finish before leaving this screen');
     return;
   }
@@ -1669,17 +1686,38 @@ async function navigateWorkflowStage(stage) {
   }
 
   if (stage === 'load' && state.workflowStage === 'prepare' && state.prepareMode === 'community') {
+    const generation = state.community.handoffGeneration = (state.community.handoffGeneration || 0) + 1;
+    const loadedService = state.serviceHandoff;
+    const current = () => state.community.handoffGeneration === generation
+      && state.workflowStage === 'load' && state.loadMode === 'syncshow'
+      && state.serviceHandoff === loadedService && !state.activeLaunchPlan && !state.isStarting;
     state.community.handoffBusy = true;
-    elements.btnStageLoad.disabled = true;
+    setPrepareLoadWarning('Load is open. Checking Prepare’s save; the previously loaded slides remain unchanged until saving is confirmed.');
+    await setWorkflowStage('load');
+    if (!current()) {
+      if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
+      return;
+    }
+    let timeout;
     try {
-      setStatus('Waiting for Prepare, then loading the saved service…');
-      const handoff = communityCheckedResult(await window.api.prepareCommunityPlannerForLoad());
-      await setWorkflowStage('load');
+      const handoff = communityCheckedResult(await Promise.race([
+        window.api.prepareCommunityPlannerForLoad(),
+        new Promise((resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error('Prepare has not confirmed saving yet. Its latest edits have not been loaded. Return to Prepare to save, or choose a saved service below.')), 3000);
+        })
+      ]));
+      if (!current()) return;
+      setPrepareLoadWarning('');
       if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId);
     } catch (error) {
-      setStatus(operatorErrorMessage(error, 'Prepare could not hand this service to Load.'));
+      if (current()) {
+        const warning = `Load is available, but Prepare’s latest edits have not been loaded. ${operatorErrorMessage(error, 'Save in Prepare before loading that service.')}`;
+        setPrepareLoadWarning(warning);
+        setStatus(warning);
+      }
     } finally {
-      state.community.handoffBusy = false;
+      clearTimeout(timeout);
+      if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
       updateWorkflowNavigationAvailability();
     }
     return;
