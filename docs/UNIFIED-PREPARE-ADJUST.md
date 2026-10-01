@@ -62,7 +62,8 @@ in cached service metadata and reused offline.
   through a loopback proxy that can simulate disconnection. It verifies real
   caption editing, saved text after an offline page reload, stable projection
   while editing, changed English output after normal re-take, scoped shared
-  thumbnail take, normal Next, Russian and Stage-Facing native output, preserved cue position,
+  thumbnail take, truthful LIVE tile marker, visible rejected-take error with
+  unchanged output, normal Next, Russian and Stage-Facing native output, preserved cue position,
   Close while Show is active, and canonical server text after reconnect.
 
 `scripts/fixtures/unified-prepare-offline-restart-app.js` then starts a second

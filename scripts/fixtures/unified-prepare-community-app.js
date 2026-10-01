@@ -139,10 +139,16 @@ async function run() {
   await planner.executeJavaScript(`document.querySelector('.heritage-workspace-toolbar__views button:first-child').click();true`);
   await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('[data-show-mode="true"]'))`), 'scoped Show thumbnail mode');
   await planner.executeJavaScript(`window.fixtureTakes=[];window.addEventListener('message',event=>{if(event.data?.type==='heritage-editor:taken')window.fixtureTakes.push(event.data)});document.querySelector('[data-preview-tile]').click();true`);
+  await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('[data-preview-tile][data-live="true"]'))`), 'acknowledged Live tile marker');
   const tileTake = await waitFor(() => planner.executeJavaScript(`window.fixtureTakes.at(-1)`), 'trusted shared thumbnail take');
   assert.equal(tileTake.ok,true,JSON.stringify(tileTake));
   await delay(300);
   assert.equal((await renderer(`window.api.getAppState()`)).currentSlide, 0);
+  await planner.executeJavaScript(`window.postMessage({type:'heritage-editor:take',syncId:${JSON.stringify(project.id)},cueId:'cue-missing-for-rehearsal'},window.location.origin);true`);
+  const rejectedTake = await waitFor(() => planner.executeJavaScript(`window.fixtureTakes.at(-1)?.ok === false && window.fixtureTakes.at(-1)`), 'rejected tile take reply');
+  await waitFor(() => planner.executeJavaScript(`document.body.innerText.includes(${JSON.stringify(rejectedTake.error)})`), 'visible shared take failure');
+  assert.equal((await renderer(`window.api.getAppState()`)).currentSlide,0,'rejected tile must keep old output');
+  assert.equal(await display.webContents.executeJavaScript(`document.body.textContent.includes('Backstage offline edit')`),true);
   // Edit remains backstage until normal visible Next, with no Apply step.
   await planner.executeJavaScript(`document.querySelector('.heritage-workspace-toolbar__views button:nth-child(2)').click();true`);
   await waitFor(() => planner.executeJavaScript(`Boolean(document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]'))`), 'second edit view');
@@ -151,6 +157,8 @@ async function run() {
   await renderer(`document.getElementById('btnNextSlide').click();true`);
   await waitFor(async () => (await renderer(`window.api.getAppState()`)).currentSlide === 1, 'visible Next publishes latest draft');
   await waitFor(() => display.webContents.executeJavaScript(`document.body.textContent.includes('Following slide')`), 'actual next output');
+  await planner.executeJavaScript(`document.querySelector('.heritage-workspace-toolbar__views button:first-child').click();true`);
+  await waitFor(() => planner.executeJavaScript(`document.querySelector('[data-preview-tile][data-live="true"] .heritage-service-preview__tile-caption')?.textContent.includes('Following')`), 'Live marker follows native Next');
   for (const id of ['fixture-russian','fixture-media']) await waitFor(() => languageOutputs.get(id).webContents.executeJavaScript(`document.body.textContent.includes('Следующий слайд')`), `${id} native bilingual output`);
   const screenshot = path.join(root, 'adjust.png');
   await fs.writeFile(screenshot, (await control.capturePage()).toPNG());
@@ -168,7 +176,7 @@ async function run() {
   saved = (await (await fetch(`${api}/${project.id}`,{headers:authHeaders})).json()).serviceDocument;
   assert.equal(core.validateHeritageServiceDocumentSource(saved.documentSource).project.items.point.textByChannel.english, 'Second backstage edit');
   await fs.writeFile(resultPath, JSON.stringify({ ok: true, sameEditorOffline: true, showStableWhileEditing: true,
-    actualOutputAfterRetake: true, sharedThumbnailTake: true, actualNextPublishesDraft: true, nativeRussianAndStageVerified: true, currentCuePreserved: true, reconnectSynced: true, proxyPort:server.address().port, screenshot }, null, 2));
+    actualOutputAfterRetake: true, sharedThumbnailTake: true, liveMarkerAndVisibleTakeFailure: true, actualNextPublishesDraft: true, nativeRussianAndStageVerified: true, currentCuePreserved: true, reconnectSynced: true, proxyPort:server.address().port, screenshot }, null, 2));
 }
 run().then(() => { server.close(); app.exit(0); }).catch(async error => {
   const pages = [];
