@@ -51,10 +51,21 @@ class CommunityPlannerCache {
   constructor({ rootPath, origin, fetch, onState = () => {}, localRequest = async () => null, inspectImage, backgroundSync = false }) {
     this.rootPath = rootPath;
     this.origin = new URL(origin).origin;
-    this.fetch = request => fetch(new Request(request, {
-      signal: AbortSignal.any([request.signal,
-        AbortSignal.timeout(new URL(request.url).pathname.includes('/assets/') ? 60000 : 8000)])
-    }));
+    this.responseGenerations = new Map();
+    this.responseCommitted = new Map();
+    this.responseOrigins = new WeakMap();
+    this.fetch = async request => {
+      // Allocate before the fetch, including detached song/sermon prefetches.
+      // A newer successful read wins even if an older request returns last.
+      const target = request.method === 'GET' && new URL(request.url).origin === this.origin ? this.cachePath(request) : null;
+      const generation = target ? this.nextResponseGeneration(target) : null;
+      const response = await fetch(new Request(request, {
+        signal: AbortSignal.any([request.signal,
+          AbortSignal.timeout(new URL(request.url).pathname.includes('/assets/') ? 60000 : 8000)])
+      }));
+      if (target) this.responseOrigins.set(response, { target, generation });
+      return response;
+    };
     this.onState = onState;
     this.localRequest = localRequest;
     this.inspectImage = inspectImage;
@@ -103,22 +114,39 @@ class CommunityPlannerCache {
     return path.join(this.rootPath, 'responses', crypto.createHash('sha256').update(key).digest('hex'));
   }
 
+  nextResponseGeneration(target) {
+    const generation = (this.responseGenerations.get(target) || 0) + 1;
+    this.responseGenerations.set(target, generation);
+    return generation;
+  }
+
   async cacheResponse(request, response) {
     if (!response.ok || request.method !== 'GET') return;
+    const target = this.cachePath(request), observed = this.responseOrigins.get(response);
+    const generation = observed?.target === target ? observed.generation : this.nextResponseGeneration(target);
     const bytes = await responseBytes(response);
     if (!bytes) return;
-    const target = this.cachePath(request);
+    if (response.headers.get('content-type')?.includes('application/json') && ![204, 205].includes(response.status)) {
+      try { JSON.parse(bytes.toString('utf8')); } catch { return; }
+    }
+    if ((this.responseCommitted.get(target) || 0) > generation) return;
     const headers = [...response.headers].filter(([key]) => !['set-cookie', 'content-encoding', 'content-length'].includes(key));
     const metadata = Buffer.from(JSON.stringify({ schemaVersion: 1, status: response.status, headers,
       bodySize: bytes.length, bodySha256: crypto.createHash('sha256').update(bytes).digest('hex') }));
     if (metadata.length > MAX_RESPONSE_METADATA_BYTES) return;
     const length = Buffer.alloc(4); length.writeUInt32BE(metadata.length);
     const snapshot = Buffer.concat([RESPONSE_MAGIC, length, metadata, bytes]);
-    const operation = (this.responseWrites.get(target) || Promise.resolve()).catch(() => {}).then(() =>
-      atomicWriteFile(`${target}.response`, snapshot, { rootPath: this.rootPath, maximumBytes: MAX_RESPONSE_BYTES }));
+    const operation = (this.responseWrites.get(target) || Promise.resolve()).catch(() => {}).then(async () => {
+      if ((this.responseCommitted.get(target) || 0) > generation) return false;
+      await atomicWriteFile(`${target}.response`, snapshot, { rootPath: this.rootPath, maximumBytes: MAX_RESPONSE_BYTES });
+      this.responseCommitted.set(target, generation);
+      return true;
+    });
     this.responseWrites.set(target, operation);
-    try { await operation; }
+    let published;
+    try { published = await operation; }
     finally { if (this.responseWrites.get(target) === operation) this.responseWrites.delete(target); }
+    if (!published) return;
     if (new URL(request.url).pathname === '/admin/plan-service' && response.headers.get('content-type')?.includes('text/html')) {
       this.state.editorReady = true;
       await this.persist();

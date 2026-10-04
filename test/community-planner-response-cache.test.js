@@ -94,3 +94,52 @@ test('bodyless successful responses retain their status without creating an inva
   const cache=await fixture(t);await cache.cacheResponse(request,new Response(null,{status:204}));
   assert.equal((await cache.cachedResponse(request)).status,204);
 });
+
+test('a slow earlier response body cannot replace a later committed refresh',async t=>{
+  const cache=await fixture(t);let controller;
+  const slow=new Response(new ReadableStream({start(value){controller=value;}}),{headers:{'Content-Type':'application/json','X-Version':'1'}});
+  const earlier=cache.cacheResponse(request,slow);
+  await cache.cacheResponse(request,response(2));
+  controller.enqueue(Buffer.from(JSON.stringify({version:1,text:'lyrics 1'})));controller.close();await earlier;
+  assert.equal((await(await cache.cachedResponse(request)).json()).version,2);
+});
+
+for(const kind of ['songs','sermons'])test(`a late ${kind} prefetch cannot replace the newer explicit library read`,async t=>{
+  let finish,announce,count=0;const started=new Promise(resolve=>{announce=resolve;});
+  const cache=await fixture(t,async()=>++count===1?new Promise(resolve=>{finish=resolve;announce();}):response(2));
+  cache.activeServiceId='active';
+  const detail=kind==='songs'?request:new Request(`${origin}/api/community/sermon-presentations/known`,{headers:{Accept:'application/json'}});
+  const prefetch=kind==='songs'?cache.prefetchSongs([{syncId:'known'}]):cache.prefetchSermons([{syncId:'known'}]);
+  await started;assert.equal((await(await cache.request(detail)).json()).version,2);
+  finish(response(1));await prefetch;
+  assert.equal((await(await cache.cachedResponse(detail)).json()).version,2);
+});
+
+test('a failed later fetch does not prevent the earlier valid prefetch becoming the offline copy',async t=>{
+  let finish,announce,count=0;const started=new Promise(resolve=>{announce=resolve;});
+  const cache=await fixture(t,async()=>++count===1?new Promise(resolve=>{finish=resolve;announce();}):Promise.reject(new Error('offline')));
+  cache.activeServiceId='active';await cache.cacheResponse(request,response(0));
+  const prefetch=cache.prefetchSongs([{syncId:'known'}]);await started;
+  assert.equal((await(await cache.request(request)).json()).version,0);
+  finish(response(1));await prefetch;
+  assert.equal((await(await cache.cachedResponse(request)).json()).version,1);
+});
+
+test('malformed or empty upstream JSON cannot replace the last usable cache snapshot',async t=>{
+  const cache=await fixture(t);await cache.cacheResponse(request,response(1));
+  for(const body of ['','{"version":','this is not JSON']){
+    await cache.cacheResponse(request,new Response(body,{headers:{'Content-Type':'application/json'}}));
+    assert.equal((await(await cache.cachedResponse(request)).json()).version,1);
+  }
+});
+
+test('a failed later publication leaves an earlier valid response eligible to update the cache',async t=>{
+  const cache=await fixture(t);await cache.cacheResponse(request,response(0));let controller;
+  const slow=new Response(new ReadableStream({start(value){controller=value;}}),{headers:{'Content-Type':'application/json'}});
+  const earlier=cache.cacheResponse(request,slow),rename=fs.rename;
+  fs.rename=async()=>{throw Object.assign(new Error('fixture publication failed'),{code:'EACCES'});};
+  try{await assert.rejects(cache.cacheResponse(request,response(2)),/publication failed/);}
+  finally{fs.rename=rename;}
+  controller.enqueue(Buffer.from('{"version":1}'));controller.close();await earlier;
+  assert.equal((await(await cache.cachedResponse(request)).json()).version,1);
+});
