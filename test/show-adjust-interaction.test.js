@@ -8,10 +8,10 @@ const source = fs.readFileSync(require.resolve('../src/renderer/app.js'), 'utf8'
 const adjust = source.slice(source.indexOf('async function toggleShowAdjust('), source.indexOf('let backstageRefreshPromise'));
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
 function fixture({ opening, saving } = {}) {
-  const calls = [], state = {workflowStage:'show',serviceHandoff:{project:{id:'service'}},community:{plannerOpen:true}};
+  const calls = [], state = {workflowStage:'show',currentSlide:1,serviceHandoff:{project:{id:'service'},cueIds:['first','current']},community:{plannerOpen:true}};
   const elements = {showAdjustPanel:{hidden:true},btnShowAdjust:{setAttribute(){},focus(){}},showAdjustStatus:{}};
   const context = vm.createContext({state,elements,
-    window:{api:{async setPlannerShowMode(enabled){calls.push(['mode',enabled]);},async openPlannerService(id){calls.push(['open',id]);return {};},
+    window:{api:{async setPlannerShowMode(enabled){calls.push(['mode',enabled]);},async openPlannerService(id,cueId){calls.push(['open',id,cueId]);return {};},
       async layoutCommunityPlanner(request){calls.push(['layout',request.visible]);},async flushCommunityPlanner(){calls.push(['flush']);return saving ? saving.promise : {};}}},
     async openCommunityPrepare(){if(opening)await opening.promise;state.community.plannerOpen=true;},
     renderShowAdjustStatus(){},renderVolunteerShowControls(){},communityCheckedResult:value=>value,
@@ -25,7 +25,7 @@ test('Adjust uses ordinary selection and editing without allowing live slide tak
   const f=fixture();await f.context.toggleShowAdjust();
   assert.equal(f.context.isOpen(),true);
   assert.deepEqual(f.calls.filter(call=>call[0]==='mode'),[['mode',false]]);
-  assert.deepEqual(f.calls.find(call=>call[0]==='open'),['open','service']);
+  assert.deepEqual(f.calls.find(call=>call[0]==='open'),['open','service','current']);
 });
 
 test('closing Adjust removes its native input surface before a pending save finishes', async () => {

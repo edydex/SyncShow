@@ -7553,19 +7553,15 @@ async function resolveOfflinePlannerRequest(request) {
   return null;
 }
 
+let communityPlannerFlushPromise = null;
 async function flushEmbeddedPlanner() {
   if (!communityPlannerView || communityPlannerView.webContents.isDestroyed()) return { ok: false, error: 'Open Prepare before saving.' };
-  const requestId = crypto.randomUUID();
-  return communityPlannerView.webContents.executeJavaScript(`new Promise(resolve => {
-    const requestId = ${JSON.stringify(requestId)};
-    const timeout = setTimeout(() => { window.removeEventListener('message', receive); resolve({ok:false,error:'Prepare did not confirm its save. Update Community and try again.'}); }, 30000);
-    function receive(event) {
-      if (event.source !== window || event.data?.type !== 'heritage-editor:flushed' || event.data.requestId !== requestId) return;
-      clearTimeout(timeout); window.removeEventListener('message', receive); resolve(event.data);
-    }
-    window.addEventListener('message', receive);
-    window.postMessage({type:'heritage-editor:flush',requestId}, window.location.origin);
-  })`);
+  if (communityPlannerFlushPromise) return communityPlannerFlushPromise;
+  const { flushPlannerEditor } = require('./src/services/community/FlushPlannerEditor');
+  const task = communityPlannerView.webContents.executeJavaScript(`(${flushPlannerEditor.toString()})(${JSON.stringify(crypto.randomUUID())})`);
+  communityPlannerFlushPromise = task;
+  try { return await task; }
+  finally { if (communityPlannerFlushPromise === task) communityPlannerFlushPromise = null; }
 }
 
 function communityPlannerStatePayload({ error = null } = {}) {
@@ -7723,6 +7719,7 @@ async function openCommunityPlannerWindow() {
   const plannerSession = planner.webContents.session;
   const { CommunityPlannerCache } = require('./src/services/community/CommunityPlannerCache');
   const cache = new CommunityPlannerCache({
+    backgroundSync: true,
     rootPath: path.join(app.getPath('userData'), 'community', 'planner', connection.id),
     origin: plannerOrigin,
     inspectImage: bytes => require('sharp')(bytes).metadata(),
@@ -18358,6 +18355,7 @@ ipcMain.handle('community:planner:openService', async (event, request = {}) => {
   requireControlSender(event);
   return communityIpcResult(async () => {
     const syncId = prepareId(request.syncId, 'Service project');
+    const cueId = request.cueId ? prepareId(request.cueId, 'Slide cue') : null;
     await openCommunityPlannerWindow();
     if (!communityPlannerCache.envelope(syncId)) {
       const context = await communityServiceDocumentContext({ refreshCapabilities: false });
@@ -18377,7 +18375,19 @@ ipcMain.handle('community:planner:openService', async (event, request = {}) => {
         await communityPlannerCache.persist();
       }
     }
-    await communityPlannerView.webContents.executeJavaScript(`window.postMessage({type:'heritage-editor:open',syncId:${JSON.stringify(syncId)}},window.location.origin)`);
+    if (cueId) {
+      const project = communityPlannerCache.envelope(syncId)?.project;
+      const timeline = project && require('./src/services/project/ServiceProject').compileServiceProject(project);
+      const number = timeline?.cueIds.indexOf(cueId) + 1;
+      if (!number) throw new Error('The current slide was removed from the draft. Select another slide in Adjust.');
+      const parents = new Map();
+      for (const item of Object.values(project.items)) if (item.kind === 'group') for (const childId of item.childIds) parents.set(childId, item.id);
+      const sectionIds = [];
+      let parent = parents.get(timeline.cues[cueId].itemId);
+      while (parent) { sectionIds.unshift(parent); parent = parents.get(parent); }
+      const { focusPlannerCue } = require('./src/services/community/PlannerCueFocus');
+      await communityPlannerView.webContents.executeJavaScript(`(${focusPlannerCue.toString()})(${JSON.stringify({ syncId, cueId, number, sectionIds })})`);
+    } else await communityPlannerView.webContents.executeJavaScript(`window.postMessage({type:'heritage-editor:open',syncId:${JSON.stringify(syncId)}},window.location.origin)`);
     return { opened: true, syncId };
   });
 });

@@ -88,6 +88,22 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+// Keep disk work bounded, and settle all workers before staging cleanup on a
+// failure. Each file still receives its normal durability and checksum checks.
+async function mapBounded(values, operation, concurrency = 8) {
+  const results = new Array(values.length);
+  let cursor = 0, failure;
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (!failure && cursor < values.length) {
+      const index = cursor++;
+      try { results[index] = await operation(values[index], index); }
+      catch (error) { failure ||= error; }
+    }
+  }));
+  if (failure) throw failure;
+  return results;
+}
+
 function visualCue(cue) {
   if (!cue) return null;
   const { id, itemId, sourceLeafKey, sourceReference, groupPath, operatorNotes, ...visual } = cue;
@@ -176,28 +192,59 @@ class ShowPackagePublisher {
   }
 
   async _seedThumbnailCache(packageId, expectedManifestSha256, fontSha256, renderOptions) {
-    if (!packageId || !SHOW_PACKAGE_PATTERN.test(packageId) || !/^[a-f0-9]{64}$/.test(expectedManifestSha256)) return;
+    const reusable = new Map();
+    if (!packageId || !SHOW_PACKAGE_PATTERN.test(packageId) || !/^[a-f0-9]{64}$/.test(expectedManifestSha256)) return reusable;
     const previousPath = path.join(this.rootPath, packageId);
     let previous;
-    try { const opened = await this.open(packageId); if (opened.manifestSha256 !== expectedManifestSha256) return; previous = opened.manifest; }
-    catch (error) { if (error instanceof ShowPackageError || error.code === 'ENOENT') return; throw error; }
+    try { const opened = await this.open(packageId); if (opened.manifestSha256 !== expectedManifestSha256) return reusable; previous = opened.manifest; }
+    catch (error) { if (error instanceof ShowPackageError || error.code === 'ENOENT') return reusable; throw error; }
+    for (const artifact of previous.artifacts) {
+      if (/\/(?:scene_\d+\.json|slide_\d+_thumb\.jpg)$/.test(artifact.path)) {
+        reusable.set(`${artifact.sha256}:${artifact.size}`, path.join(previousPath, artifact.path));
+      }
+    }
     if (previous.rendererVersion !== NATIVE_RENDERER_VERSION || previous.font.sha256 !== fontSha256
-      || canonicalJson(previous.renderOptions) !== canonicalJson(renderOptions)) return;
+      || canonicalJson(previous.renderOptions) !== canonicalJson(renderOptions)) return reusable;
     const { buffer } = await readFileNoFollow(path.join(previousPath, 'timeline.json'), MAX_MANIFEST_BYTES);
-    if (sha256(buffer) !== previous.timelineSha256) return;
+    if (sha256(buffer) !== previous.timelineSha256) return reusable;
     const timeline = normalizeCueTimeline(JSON.parse(buffer.toString('utf8')));
     for (const channel of previous.channels) {
-      for (const [index, cueId] of timeline.cueIds.entries()) {
+      await mapBounded(timeline.cueIds, async (cueId, index) => {
         const cue = timeline.cues[cueId], nextCue = timeline.cues[timeline.cueIds[index + 1]] || null;
         const key = this._thumbnailKey(cue, channel.channelId, nextCue, fontSha256, renderOptions);
-        if (await this._cachedThumbnail(key)) continue;
+        if (await this._cachedThumbnail(key)) return;
         const relative = `${channel.directory}/slide_${String(index + 1).padStart(3, '0')}_thumb.jpg`;
         const expected = previous.artifacts.find(artifact => artifact.path === relative);
         const { buffer: thumbnail } = await readFileNoFollow(path.join(previousPath, relative), MAX_RASTER_ARTIFACT_BYTES);
         // Recheck after opening; a previous package is only a cache source, never
         // permission to use bytes that changed since manifest verification.
         if (expected && thumbnail.length === expected.size && sha256(thumbnail) === expected.sha256) await this._cacheThumbnail(key, thumbnail);
-      }
+      });
+    }
+    return reusable;
+  }
+
+  async _reuseArtifact(target, bytes, reusable, stagingPath) {
+    const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+    const expected = sha256(buffer);
+    const source = reusable.get(`${expected}:${buffer.length}`);
+    if (!source) return false;
+    await ensureConfinedDirectory(this.rootPath, path.dirname(source));
+    await ensureConfinedDirectory(stagingPath, path.dirname(target));
+    let linked = false, verified = false;
+    try {
+      // Reuse already durable bytes, then verify the actual linked file. A
+      // replaced source or symlink can never become a trusted artifact.
+      await fs.link(source, target);
+      linked = true;
+      verified = await hashFileNoFollow(target, buffer.length) === expected;
+      return verified;
+    } catch (error) {
+      if (!['ENOENT', 'EXDEV', 'EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)
+        && !error.code?.startsWith('STORAGE_')) throw error;
+      return false;
+    } finally {
+      if (linked && !verified) await fs.unlink(target).catch(() => {});
     }
   }
 
@@ -217,9 +264,18 @@ class ShowPackagePublisher {
   }
 
   async _cacheThumbnail(key, buffer) {
-    const cache = await ensureConfinedDirectory(this.rootPath, path.join(this.rootPath, '.render-cache'));
-    await atomicWriteFile(path.join(cache, `${key}.jpg`), buffer, { rootPath: this.rootPath, maximumBytes: MAX_RASTER_ARTIFACT_BYTES, mode: 0o600 });
-    await atomicWriteFile(path.join(cache, `${key}.json`), canonicalJson({ sha256: sha256(buffer), size: buffer.length }), { rootPath: this.rootPath, maximumBytes: 2048, mode: 0o600 });
+    // Repeated lyrics can share a visual key while bounded workers are
+    // running. Publish that cache entry once so atomic flushes cannot race.
+    this.thumbnailWrites ||= new Map();
+    if (this.thumbnailWrites.has(key)) return this.thumbnailWrites.get(key);
+    const task = (async () => {
+      const cache = await ensureConfinedDirectory(this.rootPath, path.join(this.rootPath, '.render-cache'));
+      await atomicWriteFile(path.join(cache, `${key}.jpg`), buffer, { rootPath: this.rootPath, maximumBytes: MAX_RASTER_ARTIFACT_BYTES, mode: 0o600 });
+      await atomicWriteFile(path.join(cache, `${key}.json`), canonicalJson({ sha256: sha256(buffer), size: buffer.length }), { rootPath: this.rootPath, maximumBytes: 2048, mode: 0o600 });
+    })();
+    this.thumbnailWrites.set(key, task);
+    try { await task; }
+    finally { if (this.thumbnailWrites.get(key) === task) this.thumbnailWrites.delete(key); }
   }
 
   _normalizeRoleMapping(project, rawMapping) {
@@ -535,7 +591,7 @@ class ShowPackagePublisher {
 
     const seenArtifacts = new Set();
     const artifactByPath = new Map();
-    for (const artifact of manifest.artifacts) {
+    await mapBounded(manifest.artifacts, async artifact => {
       if (!artifact
         || typeof artifact.path !== 'string'
         || path.isAbsolute(artifact.path)
@@ -567,7 +623,7 @@ class ShowPackagePublisher {
         fail('SHOW_PACKAGE_CORRUPT', `Show package artifact ${artifact.path} failed its checksum.`);
       }
       artifactByPath.set(artifact.path, artifact);
-    }
+    });
     for (const asset of packageAssets.values()) {
       const artifact = artifactByPath.get(asset.path);
       if (!artifact || artifact.size !== asset.size || artifact.sha256 !== asset.sha256) {
@@ -936,7 +992,7 @@ class ShowPackagePublisher {
         }
       }
 
-      await this._seedThumbnailCache(options.reusePackageId, options.reusePackageManifestSha256, fontSha256, renderOptions);
+      const reusable = await this._seedThumbnailCache(options.reusePackageId, options.reusePackageManifestSha256, fontSha256, renderOptions);
       const stagingPath = path.join(this.rootPath, `.staging-${packageId}-${this.randomUUID()}`);
       await ensureConfinedDirectory(this.rootPath, stagingPath);
       let published = false;
@@ -968,8 +1024,7 @@ class ShowPackagePublisher {
           const directory = roleDirectoryName(roleId);
           const channelPath = path.join(stagingPath, directory);
           await ensureConfinedDirectory(stagingPath, channelPath);
-          const slides = [];
-          for (const [cueIndex, cueId] of timeline.cueIds.entries()) {
+          const slides = await mapBounded(timeline.cueIds, async (cueId, cueIndex) => {
             const number = String(cueIndex + 1).padStart(3, '0');
             const sceneName = `scene_${number}.json`;
             const thumbName = `slide_${number}_thumb.jpg`;
@@ -985,7 +1040,7 @@ class ShowPackagePublisher {
               nextCue
             });
             const serializedScene = serializeNativeCueScene(scene);
-            await atomicWriteFile(scenePath, serializedScene, {
+            if (!await this._reuseArtifact(scenePath, serializedScene, reusable, stagingPath)) await atomicWriteFile(scenePath, serializedScene, {
               maximumBytes: MAX_NATIVE_SCENE_BYTES,
               mode: 0o600,
               rootPath: stagingPath
@@ -1009,7 +1064,7 @@ class ShowPackagePublisher {
             }
             // Use Node's long-path support instead of passing a potentially
             // >260-character staging path to the native image library.
-            await atomicWriteFile(thumbPath, thumbnail, {
+            if (!await this._reuseArtifact(thumbPath, thumbnail, reusable, stagingPath)) await atomicWriteFile(thumbPath, thumbnail, {
               maximumBytes: MAX_RASTER_ARTIFACT_BYTES,
               mode: 0o600,
               rootPath: stagingPath
@@ -1026,10 +1081,10 @@ class ShowPackagePublisher {
                 )
               });
             }
-            slides.push(condensed ? singerCueMetadata(cue, channel.sourceChannelId, nextCue) : cueMetadataForChannel(cue, channelId));
             completed += 1;
             options.onProgress?.({ completed, total, roleId, channelId, cueIndex, cueId, reused });
-          }
+            return condensed ? singerCueMetadata(cue, channel.sourceChannelId, nextCue) : cueMetadataForChannel(cue, channelId);
+          });
           const metadata = {
             schemaVersion: 1,
             sourceType: 'service-project',

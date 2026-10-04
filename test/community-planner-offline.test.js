@@ -223,3 +223,44 @@ test('approved device locale survives restart and applies before offline editor 
   assert.match(html, /<html lang="ru">/);
   assert.equal((await (await reopened.request(new Request(endpoint))).json()).workspaceLanguageSource, 'device');
 });
+
+function gate() { let resolve; const promise=new Promise(done=>resolve=done);return {promise,resolve}; }
+test('durable local saves and manual checkpoints continue while an older server upload is stalled', async t => {
+  const f=await setup(t);let saved=await create(f.cache);f.cache.backgroundSync=true;
+  const started=gate(),release=gate();let first=true;
+  f.cache.fetch=async request=>{if(request.method==='PUT'&&first){first=false;started.resolve();await release.promise;}return f.fetch(request);};
+  const start=performance.now();saved=await edit(f.cache,saved,'First edit','automatic');
+  await started.promise;
+  saved=await edit(f.cache,saved,'Manual while syncing','manual');
+  saved=await edit(f.cache,saved,'Latest edit','automatic');
+  assert(performance.now()-start<1500,'local save must not wait for the held upload');
+  assert.equal(f.cache.envelope(saved.syncId).project.title,'Latest edit');
+  const persisted=JSON.parse(await fs.readFile(path.join(f.rootPath,'journal.json'),'utf8'));
+  assert.equal(persisted.documents[saved.syncId].project.title,'Latest edit');
+  assert.equal(persisted.pending[saved.syncId].attempt.body.saveKind,'automatic');
+  release.resolve();await f.cache.flush();
+  assert.equal(f.saved().project.title,'Latest edit');
+  assert.equal(f.cache.summary().pending,0);
+  assert.equal(f.cache.summary().conflicts.length,0);
+  assert(f.writes.some(write=>write.saveKind==='manual'&&JSON.parse(write.documentSource).project.title==='Manual while syncing'));
+});
+test('a lost server acknowledgement is replayed before newer background edits, including after restart', async t => {
+  const f=await setup(t);let saved=await create(f.cache);f.cache.backgroundSync=true;
+  let lose=true;const replies=new Map();
+  const fetch=async request=>{
+    const raw=await request.clone().json();
+    if(replies.has(raw.requestId))return replies.get(raw.requestId).clone();
+    const result=await f.fetch(request);replies.set(raw.requestId,result.clone());
+    if(lose){lose=false;throw new Error('Committed, but response lost');}return result;
+  };
+  f.cache.fetch=fetch;
+  saved=await edit(f.cache,saved,'Committed first','automatic');await f.cache.syncQueue;
+  f.cache.offline=true;
+  saved=await edit(f.cache,saved,'Newer local edit','automatic');
+  const restored=new CommunityPlannerCache({rootPath:f.rootPath,origin,fetch,backgroundSync:true});
+  await restored.loaded;await restored.flush();
+  assert.equal(f.saved().project.title,'Newer local edit');
+  assert.equal(restored.envelope(saved.syncId).project.title,'Newer local edit');
+  assert.equal(restored.summary().pending,0);
+  assert.deepEqual(restored.summary().conflicts,[]);
+});

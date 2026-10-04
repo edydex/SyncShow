@@ -430,7 +430,7 @@ contextBridge.exposeInMainWorld('api', {
   teachingFramePainted: frameId => ipcRenderer.send('teaching:painted', frameId),
   getCommunityStatus: () => ipcRenderer.invoke('community:status'),
   openCommunityPlanner: () => ipcRenderer.invoke('community:planner:open'),
-  openPlannerService: (syncId) => ipcRenderer.invoke('community:planner:openService', { syncId }),
+  openPlannerService: (syncId, cueId) => ipcRenderer.invoke('community:planner:openService', { syncId, ...(cueId ? { cueId } : {}) }),
   flushCommunityPlanner: () => ipcRenderer.invoke('community:planner:flush'),
   setPlannerShowMode: enabled => ipcRenderer.invoke('community:planner:showMode', enabled === true),
   reviewPlannerConflict: () => ipcRenderer.invoke('community:planner:reviewConflict'),

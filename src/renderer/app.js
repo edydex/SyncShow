@@ -2960,7 +2960,8 @@ async function toggleShowAdjust() {
     // Adjust is an editor. Selecting a slide must never take it to the audience.
     await window.api.setPlannerShowMode(false);
     if (!current()) return;
-    communityCheckedResult(await window.api.openPlannerService(state.serviceHandoff.project.id));
+    const cueId = state.serviceHandoff.cueIds?.[state.currentSlide];
+    communityCheckedResult(await window.api.openPlannerService(state.serviceHandoff.project.id, cueId));
     if (!current()) return;
     scheduleCommunityPlannerLayout();
   } catch (error) { if (current()) elements.showAdjustStatus.textContent = error.message; }

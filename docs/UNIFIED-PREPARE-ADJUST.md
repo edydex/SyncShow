@@ -102,3 +102,36 @@ Load uses authenticated conditional GET against the saved canonical revision. An
 A changed document is validated as a complete canonical snapshot. Missing media is fetched by SHA-256; an app-private, verified content cache reuses identical bytes across services. Scene thumbnails are cached by renderer inputs, font hash, output settings, and renderer version. Singer inputs include the next cue, so changes to hints invalidate the preceding thumbnail. Cue metadata and package manifests are regenerated for each exact revision and retain their verification guarantees.
 
 Adjust opens the content editor on the live cue, using an editable audience output rather than retaining a condensed stage-facing preview. Edits save backstage and reach outputs only through a normal take or advance. Double-clicking a tile to edit cancels the delayed single-click take.
+
+## Current-slide focus and fast backstage edits (Preview 44)
+
+Adjust follows the stable current cue, expands its containing sections, selects
+only that slide, scrolls it into view, and opens Edit. The same open service keeps
+its draft. Selection inside Adjust remains editing-only.
+
+Embedded editor saves acknowledge the durable local journal before network
+upload. Background sync retains manual checkpoints and persists the exact
+in-flight request for retry after a lost response or restart. Hidden editor
+flushes have a bounded animation-frame fallback, including after Adjust closes.
+
+Publishing uses bounded artifact work and checksum-verified links for identical
+scene and thumbnail bytes. Changed visuals still render; repeated visual keys
+share one atomic cache write. Packages remain immutable and fully verified.
+
+Validation used the actual shared React editor with a synthetic 96-slide service
+and three real Electron output windows in an isolated profile. Adjust selected
+and revealed slide 71; saving during a stalled server upload took 1.31 seconds,
+closing Adjust took 65 ms, and retaking the text edit reached the English output
+in 1.13 seconds. All three outputs acknowledged the cue; projection stayed
+unchanged while editing, and background upload eventually synchronized. These
+measurements establish local rehearsal behavior, not physical venue acceptance.
+The full suite passed 2,414 tests with two skips. Packaged service-core, Sharp,
+and PDF runtime checks passed. Preview 44 (140044) was installed and relaunched;
+the existing prepared-service pointer remained byte-for-byte identical.
+
+`scripts/verify-adjust-editing-electron.js` expects
+`SYNCSHOW_ADJUST_EDITING_FIXTURE` to point to the built Community
+`community-server/tests/browser/native-adjust.html` fixture. The fixture mounts
+the real editor and uses this script's local mock service; it needs no production
+credentials or database. `scripts/bench-backstage-edit.js` separately measures
+96-slide package reuse in a disposable local directory.

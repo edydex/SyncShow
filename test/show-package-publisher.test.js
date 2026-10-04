@@ -749,7 +749,11 @@ test('new revisions render only changed visuals and reuse identical slides acros
   assert.equal(first.filter(x=>x.reused).length,0);
   const next=structuredClone(f.saved.project);next.revision++;next.updatedAt='2026-07-22T18:35:00.000Z';next.items.welcome.operatorNotes='Operator-only edit';
   const saved=await f.store.save(next,{expectedRevisionId:f.saved.revisionId});const reuse=[];
-  await f.publisher.publish({...f.publishOptions,revisionId:saved.revisionId,reusePackageId:previous.manifest.id,reusePackageManifestSha256:previous.manifestSha256,onProgress:x=>reuse.push(x)});
+  const operatorEdit=await f.publisher.publish({...f.publishOptions,revisionId:saved.revisionId,reusePackageId:previous.manifest.id,reusePackageManifestSha256:previous.manifestSha256,onProgress:x=>reuse.push(x)});
+  if(process.platform !== 'win32') for(const artifact of previous.manifest.artifacts.filter(x=>/\/(scene_.*\.json|slide_.*_thumb\.jpg)$/.test(x.path))) {
+    const before=await fs.stat(path.join(previous.packagePath,artifact.path)),after=await fs.stat(path.join(operatorEdit.packagePath,artifact.path));
+    assert.equal(after.ino,before.ino,'unchanged durable scene/thumbnail should be linked, not rewritten');
+  }
   assert.equal(reuse.length,2);assert.ok(reuse.every(x=>x.reused));
   const edited=structuredClone(saved.project);edited.revision++;edited.updatedAt='2026-07-22T18:36:00.000Z';edited.items.welcome.textByChannel.primary='Changed greeting';
   const changed=await f.store.save(edited,{expectedRevisionId:saved.revisionId});const edits=[];
@@ -774,4 +778,17 @@ test('new revisions render only changed visuals and reuse identical slides acros
   const repairedPackage=await f.publisher.publish({...f.publishOptions,projectId:third.id,revisionId:installed.revisionId,onProgress:x=>repaired.push(x)});
   assert.ok(repaired.some(x=>!x.reused),'invalid cached bytes must render again');
   await f.publisher.open(repairedPackage.manifest.id);
+});
+
+
+test('artifact reuse rejects bytes changed after prior-package verification', async t => {
+  const f=await preparedProject(t);const previous=await f.publisher.publish(f.publishOptions);
+  const reusable=await f.publisher._seedThumbnailCache(previous.manifest.id,previous.manifestSha256,previous.manifest.font.sha256,previous.manifest.renderOptions);
+  const artifact=previous.manifest.artifacts.find(x=>x.path.endsWith('_thumb.jpg'));
+  const source=path.join(previous.packagePath,artifact.path),bytes=await fs.readFile(source);
+  const staging=path.join(f.publisher.rootPath,'.test-staging');await fs.mkdir(staging,{mode:0o700});
+  await fs.writeFile(source,Buffer.alloc(bytes.length,0));
+  const target=path.join(staging,'channel','thumb.jpg');
+  assert.equal(await f.publisher._reuseArtifact(target,bytes,reusable,staging),false);
+  await assert.rejects(fs.lstat(target),{code:'ENOENT'});
 });

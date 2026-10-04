@@ -23,7 +23,7 @@ const json = (value, status = 200) => new Response(JSON.stringify(value), {
  * Pending writes retain their first remote base; reconnect cannot silently
  * replace a newer server revision. No presentation state is changed here. */
 class CommunityPlannerCache {
-  constructor({ rootPath, origin, fetch, onState = () => {}, localRequest = async () => null, inspectImage }) {
+  constructor({ rootPath, origin, fetch, onState = () => {}, localRequest = async () => null, inspectImage, backgroundSync = false }) {
     this.rootPath = rootPath;
     this.origin = new URL(origin).origin;
     this.fetch = request => fetch(new Request(request, {
@@ -32,6 +32,8 @@ class CommunityPlannerCache {
     this.onState = onState;
     this.localRequest = localRequest;
     this.inspectImage = inspectImage;
+    this.backgroundSync = backgroundSync;
+    this.syncQueue = Promise.resolve();
     this.state = { schemaVersion: 1, documents: {}, remoteBases: {}, pending: {}, conflicts: {}, assets: {}, history: {} };
     this.offline = false;
     this.queue = Promise.resolve();
@@ -299,14 +301,18 @@ class CommunityPlannerCache {
       baseSyncVersion: pending?.baseSyncVersion || remoteBase?.syncVersion || null,
       baseRevision: pending?.baseRevision || remoteBase?.revision || null,
       requestId: raw.requestId || crypto.randomUUID(), saveKind: raw.saveKind || 'automatic',
-      documentSource: validated.documentSource, status: raw.status || 'planning', checkpoints: pending?.checkpoints || [] };
+      documentSource: validated.documentSource, status: raw.status || 'planning', checkpoints: pending?.checkpoints || [],
+      ...(pending?.attempt ? { attempt: pending.attempt } : {}) };
     this.state.documents[id] = { schemaVersion: 1, syncId: id, syncVersion: (previous?.syncVersion || 0) + 1,
       revision: validated.revision, documentSource: validated.documentSource, document: validated.document,
       project: validated.project, status: raw.status || 'planning', changedAt: new Date().toISOString() };
     const checkpoint = await this.appendHistory(id, raw.saveKind || 'automatic');
     if (['manual', 'restore'].includes(raw.saveKind)) this.state.pending[id].checkpoints.push(checkpoint.id);
     await this.persist(); // Durable before reporting success, including a network failure or crash.
-    if (!this.offline) await this.flushOne(id);
+    if (!this.offline) {
+      if (this.backgroundSync) void this.flush().catch(() => {});
+      else await this.flushOne(id);
+    }
     return json({ schemaVersion: 1, serviceDocument: this.envelope(id) }, request.method === 'POST' ? 201 : 200);
   }
 
@@ -349,7 +355,10 @@ class CommunityPlannerCache {
     await fs.writeFile(this.assetPath(id), bytes, { mode: 0o600 });
     this.state.assets[id] = { metadata, pending: true };
     await this.persist();
-    if (!this.offline) await this.flushAssets();
+    if (!this.offline) {
+      if (this.backgroundSync) void this.flush().catch(() => {});
+      else await this.flushAssets();
+    }
     return json({ schemaVersion: 1, asset: metadata }, 201);
   }
 
@@ -369,30 +378,47 @@ class CommunityPlannerCache {
   }
 
   async flushOne(id) {
-    const pending = this.state.pending[id];
+    // A response can disappear after Community commits. Retry that exact
+    // persisted request before rebasing any newer local changes.
+    const attempt = this.backgroundSync && this.state.pending[id]?.attempt;
+    if (attempt && !this.state.conflicts[id]) {
+      try {
+        const response = await this.fetch(new Request(attempt.url, {
+          method: attempt.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(attempt.body)
+        }));
+        if (!response.ok) return this.failedSync(id, response);
+        const remote = serviceEnvelope((await response.json()).serviceDocument);
+        this.offline = false;
+        await this.acknowledgeRemote(id, remote, attempt.checkpointId);
+      } catch { this.offline = true; this.onState(this.summary()); return; }
+    }
+    // Network work uses an immutable snapshot. Further local saves must remain
+    // durable and editable while this older snapshot is uploading.
+    const pending = this.backgroundSync && this.state.pending[id]
+      ? structuredClone(this.state.pending[id]) : this.state.pending[id];
     if (!pending || this.state.conflicts[id]) return;
     if (!await this.flushAssets()) return;
     let response;
     try {
       if (pending.mode === 'create') {
-        response = await this.fetch(new Request(`${this.origin}${ENDPOINT}`, { method: 'POST',
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.create) }));
+        response = await this.syncRequest(id, `${this.origin}${ENDPOINT}`, 'POST', pending.create);
         if (!response.ok) return this.failedSync(id, response);
         const created = serviceEnvelope((await response.json()).serviceDocument);
         this.state.remoteBases[id] = { revision: created.revision, syncVersion: created.syncVersion };
         pending.mode = 'update'; pending.baseRevision = created.revision; pending.baseSyncVersion = created.syncVersion;
+        if (this.backgroundSync) await this.acknowledgeRemote(id, created);
         await this.persist();
-        if (created.revision === this.state.documents[id].revision) {
+        if (!this.state.pending[id]) return;
+        if (!this.backgroundSync && created.revision === this.state.documents[id].revision) {
           delete this.state.pending[id]; await this.persist(); return;
         }
       }
       for (const checkpointId of [...(pending.checkpoints || [])]) {
         const checkpoint = JSON.parse(await fs.readFile(path.join(this.rootPath, 'history', `${checkpointId}.json`), 'utf8'));
-        response = await this.fetch(new Request(`${this.origin}${ENDPOINT}/${id}`, { method: 'PUT',
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schemaVersion: 1,
+        response = await this.syncRequest(id, `${this.origin}${ENDPOINT}/${id}`, 'PUT', { schemaVersion: 1,
             requestId: checkpointId, syncId: id, baseRevision: pending.baseRevision, baseSyncVersion: pending.baseSyncVersion,
             documentSource: checkpoint.documentSource, status: checkpoint.status,
-            saveKind: (this.state.history[id] || []).find(entry => entry.id === checkpointId)?.saveKind || 'manual' }) }));
+            saveKind: (this.state.history[id] || []).find(entry => entry.id === checkpointId)?.saveKind || 'manual' }, checkpointId);
         if (!response.ok) return this.failedSync(id, response);
         const remote = serviceEnvelope((await response.json()).serviceDocument);
         this.state.remoteBases[id] = { revision: remote.revision, syncVersion: remote.syncVersion };
@@ -401,18 +427,18 @@ class CommunityPlannerCache {
         this.offline = false;
         pending.baseRevision = remote.revision; pending.baseSyncVersion = remote.syncVersion;
         pending.checkpoints.shift();
+        if (this.backgroundSync) await this.acknowledgeRemote(id, remote, checkpointId);
         await this.persist();
-        if (!pending.checkpoints.length && pending.documentSource === remote.documentSource && pending.status === remote.status) {
+        if (!this.state.pending[id]) return;
+        if (!this.backgroundSync && !pending.checkpoints.length && pending.documentSource === remote.documentSource && pending.status === remote.status) {
           delete this.state.pending[id]; await this.persist(); return;
         }
       }
-      response = await this.fetch(new Request(`${this.origin}${ENDPOINT}/${id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      response = await this.syncRequest(id, `${this.origin}${ENDPOINT}/${id}`, 'PUT', {
           schemaVersion: 1, requestId: pending.requestId, syncId: id,
           baseRevision: pending.baseRevision, baseSyncVersion: pending.baseSyncVersion,
           documentSource: pending.documentSource, status: pending.status, saveKind: pending.saveKind
-        })
-      }));
+        });
       if (!response.ok) return this.failedSync(id, response);
       this.offline = false;
       const remote = serviceEnvelope((await response.json()).serviceDocument);
@@ -422,9 +448,33 @@ class CommunityPlannerCache {
       this.state.remoteBases[id] = { revision: remote.revision, syncVersion: remote.syncVersion };
       const latest = (this.state.history[id] || []).at(-1);
       if (latest?.revision === remote.revision) latest.remoteSyncVersion = remote.syncVersion;
-      delete this.state.pending[id];
+      if (this.backgroundSync) await this.acknowledgeRemote(id, remote);
+      else delete this.state.pending[id];
       await this.persist();
     } catch { this.offline = true; this.onState(this.summary()); }
+  }
+
+  async syncRequest(id, url, method, body, checkpointId) {
+    if (this.backgroundSync) await this.withDocumentLock(async () => {
+      this.state.pending[id].attempt = { url, method, body, ...(checkpointId ? { checkpointId } : {}) };
+      await this.persist();
+    });
+    return this.fetch(new Request(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+  }
+
+  async acknowledgeRemote(id, remote, checkpointId) {
+    return this.withDocumentLock(async () => {
+      this.state.remoteBases[id] = { revision: remote.revision, syncVersion: remote.syncVersion };
+      const latest = this.state.pending[id];
+      if (!latest) return;
+      latest.mode = 'update';
+      latest.baseRevision = remote.revision;
+      latest.baseSyncVersion = remote.syncVersion;
+      delete latest.attempt;
+      if (checkpointId) latest.checkpoints = (latest.checkpoints || []).filter(value => value !== checkpointId);
+      if (!latest.checkpoints?.length && latest.documentSource === remote.documentSource && latest.status === remote.status) delete this.state.pending[id];
+      await this.persist();
+    });
   }
 
   async failedSync(id, response) {
@@ -448,11 +498,13 @@ class CommunityPlannerCache {
 
   async flush() {
     await this.loaded;
-    const operation = this.queue.then(async () => {
+    const operation = (this.backgroundSync ? this.syncQueue : this.queue).then(async () => {
+      if (this.backgroundSync) await this.queue;
       for (const id of Object.keys(this.state.pending)) await this.flushOne(id);
       return this.summary();
     });
-    this.queue = operation.catch(() => {});
+    if (this.backgroundSync) this.syncQueue = operation.catch(() => {});
+    else this.queue = operation.catch(() => {});
     return operation;
   }
 
@@ -488,9 +540,11 @@ class CommunityPlannerCache {
       if (!pending) throw new Error('There is no local change to synchronize.');
       Object.assign(pending, { mode: 'update', baseRevision: review.remote.revision,
         baseSyncVersion: review.remote.syncVersion, requestId: crypto.randomUUID(), saveKind: 'manual' });
+      delete pending.attempt;
       delete this.state.conflicts[id];
       await this.persist();
-      await this.flushOne(id);
+      if (this.backgroundSync) void this.flush().catch(() => {});
+      else await this.flushOne(id);
     } else throw new Error('Choose the version to keep.');
     await this.persist();
     return this.envelope(id);

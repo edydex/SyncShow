@@ -10,10 +10,12 @@ const { CommunityConnectionStore } = require('../../src/services/community/Commu
 const { AppLocalCredentialStorage } = require('../../src/services/community/AppLocalCredentialStorage');
 const root = process.env.SYNCSHOW_TEST_USER_DATA_DIR;
 const resultPath = process.env.SYNCSHOW_UNIFIED_RESULT;
-let offline = false, saved, holdChecks = false;
+let offline = false, saved, holdChecks = false, holdWrites = false;
+const heldWrites = [];
+const editingFixture = process.env.SYNCSHOW_ADJUST_EDITING_FIXTURE;
 const heldChecks = [];
 const loadQueueFixture = process.env.SYNCSHOW_LOAD_QUEUE_FIXTURE === '1';
-if (loadQueueFixture) {
+if (loadQueueFixture || editingFixture) {
   // Test renderers stay hidden: no rehearsal can cover the operator's screen.
   BrowserWindow.prototype.show = function () {};
   BrowserWindow.prototype.showInactive = function () {};
@@ -53,6 +55,8 @@ document.getElementById('save').onclick=()=>save().catch(error=>document.getElem
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://127.0.0.1:${server.address().port}`);
   if (offline) return json(response, { error: 'offline' }, 503);
+  if (editingFixture && url.pathname.startsWith('/assets/')) { const file=path.join(editingFixture,url.pathname);response.writeHead(200,{'Content-Type':file.endsWith('.css')?'text/css':'application/javascript'});response.end(await fs.readFile(file));return; }
+  if (editingFixture && url.pathname === '/admin/plan-service') { response.writeHead(200,{'Content-Type':'text/html'});response.end(await fs.readFile(path.join(editingFixture,'community-server/tests/browser/native-adjust.html')));return; }
   if (url.pathname === '/admin/plan-service') { response.writeHead(200, { 'Content-Type': 'text/html' }); response.end(plannerHtml); return; }
   if (url.pathname === '/.well-known/heritage-community.json') return json(response, {
     schemaVersion: 1, server: { id: 'fixture-community', name: 'Fixture Community' }, integrations: { syncShow: {
@@ -64,6 +68,7 @@ const server = http.createServer(async (request, response) => {
   if (url.pathname.endsWith('/service-documents/service-fixture')) {
     if (holdChecks && request.method === 'GET') { heldChecks.push(response); return; }
     if (request.method === 'PUT') {
+      if(holdWrites) await new Promise(resolve=>heldWrites.push(resolve));
       const raw = await body(request);
       if (raw.baseRevision !== saved.revision) return json(response, { error: 'conflict' }, 412);
       const validated = core.validateHeritageServiceDocumentSource(raw.documentSource);
@@ -87,7 +92,7 @@ async function run() {
     project.rootItemIds = [];
     for (const [index, title] of ['Opening', 'Worship', 'Sermon', 'Closing'].entries()) {
       const id = `section-${index}`, childIds = [];
-      for (let slide = 0; slide < 7; slide++) {
+      for (let slide = 0; slide < (editingFixture ? 24 : 7); slide++) {
         const itemId = index === 0 && slide === 0 ? 'point' : `${id}-${slide}`;
         childIds.push(itemId);
         if (itemId !== 'point') project.items[itemId] = {id:itemId,kind:'notice',title:`${title} ${slide + 1}`,textByChannel:{english:`${title}\nSlide ${slide + 1}`,russian:`${title}\nСлайд ${slide + 1}`,media:`${title}\nСлайд ${slide + 1}`},presetId:'notice-text',operatorNotes:''};
@@ -115,7 +120,8 @@ async function run() {
   await renderer(`refreshCommunityStatus();`);
   await renderer(`document.getElementById('btnStagePrepare').click();`);
   const planner = await waitFor(() => electron.webContents.getAllWebContents().find(contents => contents.getURL() === `${baseUrl}admin/plan-service` && !contents.isLoading()), 'same planner');
-  await waitFor(() => planner.executeJavaScript('Boolean(service?.project)'), 'service open');
+  if(editingFixture) await renderer("window.api.openPlannerService('service-fixture')");
+  await waitFor(() => planner.executeJavaScript(editingFixture ? 'Boolean(document.querySelector(".heritage-service-planner__rows"))' : 'Boolean(service?.project)'), 'service open');
   const tabs = await renderer(`getComputedStyle(document.querySelector('.prepare-mode-tabs')).display`);
   assert.equal(tabs, 'none');
   if (process.env.SYNCSHOW_LOAD_NAVIGATION_FIXTURE === '1') {
@@ -198,6 +204,39 @@ async function run() {
   await renderer(`(async()=>{handleShowStateChanged((await window.api.getAppState()).showState);setWorkflowStage('show');await loadAppState();})()`);
   const before = await renderer(`window.api.getAppState()`);
   assert.equal(await renderer(`state.workflowStage`), 'show');
+
+  if (editingFixture) {
+    await renderer('goToSlide(70)');
+    const liveState=await renderer('window.api.getAppState()');
+    const cueId=liveState.serviceHandoff.cueIds[70];
+    await renderer('toggleShowAdjust()');
+    await waitFor(()=>planner.executeJavaScript(`document.querySelector('[data-slide-id="${cueId}"]')?.dataset.active === 'true'`),'Adjust selects live cue');
+    assert.equal(await planner.executeJavaScript("document.querySelectorAll('.heritage-service-planner__row[data-selected=true]').length"),1,'Adjust selects only the current slide');
+    const focus=await planner.executeJavaScript(`(()=>{const row=document.querySelector('[data-slide-id="${cueId}"]'),r=row.getBoundingClientRect(),sidebar=row.closest('aside').getBoundingClientRect();return {top:r.top,bottom:r.bottom,sidebarTop:sidebar.top,sidebarBottom:sidebar.bottom,viewport:innerHeight,edit:!!document.querySelector('.heritage-service-planner__stage [contenteditable]')};})()`);
+    assert(focus.top>=Math.max(0,focus.sidebarTop)&&focus.bottom<=Math.min(focus.viewport,focus.sidebarBottom),JSON.stringify(focus));assert.equal(focus.edit,true);
+    const outputs=BrowserWindow.getAllWindows().filter(win=>win.webContents.getURL().includes('display.html'));
+    let english;
+    for(const win of outputs) if(await win.webContents.executeJavaScript('displayState.language')==='fixture-english') english=win;
+    assert(english);
+    holdWrites=true;
+    const saveStart=performance.now();
+    await planner.executeJavaScript(`{const field=document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]');field.focus();field.textContent+=' test';field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));field.blur();document.querySelector('button[aria-label="Save service"]').click();}true`);
+    await waitFor(()=>planner.executeJavaScript("document.body.innerText.includes('Saved on this computer')"),'durable local save without waiting for server');
+    const localSaveMs=performance.now()-saveStart;
+    assert(localSaveMs<1500,`local save took ${localSaveMs}ms`);
+    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Audience unchanged while editing');
+    const closeStart=performance.now();await renderer('closeShowAdjust()');const closeMs=performance.now()-closeStart;assert(closeMs<1500,`close waited ${closeMs}ms`);
+    const takeStart=performance.now();await renderer('goToSlide(70)');
+    await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),'edited text on actual native output');
+    const takeMs=performance.now()-takeStart;assert(takeMs<2000,`text edit take took ${takeMs}ms`);
+    for(const output of outputs)assert.equal(await output.webContents.executeJavaScript('displayState.currentSlide'),70);
+    holdWrites=false;heldWrites.splice(0).forEach(resolve=>resolve());
+    await waitFor(()=>saved.project.items['section-2-22'].textByChannel.english.endsWith(' test'),'background upload eventually syncs');
+    await renderer('toggleShowAdjust()');await waitFor(()=>planner.executeJavaScript(`document.querySelector('[data-slide-id="${cueId}"]')?.dataset.active === 'true'`),'Reopening Adjust follows the displayed cue');
+    assert.equal(await planner.executeJavaScript("document.querySelector('.heritage-service-planner__stage [data-role=caption][contenteditable]').textContent.endsWith(' test')"),true);
+    await renderer('closeShowAdjust()');
+    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
+  }
   if (loadQueueFixture) {
     const clickSlide = async index => {
       const box = await renderer(`(()=>{const button=document.querySelector('.thumbnail-item[data-index="${index}"]');button.scrollIntoView({block:'center'});const r=button.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),disabled:button.disabled};})()`);
@@ -261,5 +300,6 @@ async function run() {
     actualOutputAfterRetake: true, currentCuePreserved: true, reconnectSynced: true, screenshot }, null, 2));
 }
 run().then(() => { server.close(); app.exit(0); }).catch(async error => {
-  await fs.writeFile(resultPath, JSON.stringify({ ok: false, error: error.stack }, null, 2)); server.close(); app.exit(1);
+  const pages=[];for(const contents of electron.webContents.getAllWebContents()){try{if(contents.getURL().startsWith('http://127.0.0.1:'))pages.push({url:contents.getURL(),text:await contents.executeJavaScript('document.body.innerText.slice(0,4000)')});}catch{}}
+  await fs.writeFile(resultPath, JSON.stringify({ ok: false, error: error.stack,pages }, null, 2)); server.close(); app.exit(1);
 });
