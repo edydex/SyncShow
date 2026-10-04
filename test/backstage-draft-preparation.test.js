@@ -7,9 +7,11 @@ test('a take reuses the exact background build and does not repeat compilation',
   const cache=new BackstageDraftPreparation(),build=deferred();let count=0;
   const operation=()=>{count++;return build.promise;};
   const warming=cache.prepare('revision-a',operation);
+  assert.equal(cache.ready('revision-a'),null,'A running build must not expose unfinished previews');
   const take=cache.prepare('revision-a',operation,{required:true});
   assert.equal(take,warming);build.resolve({revision:'a'});
   assert.deepEqual(await take,{revision:'a'});
+  assert.deepEqual(cache.ready('revision-a'),{revision:'a'});
   assert.deepEqual(await cache.prepare('revision-a',operation,{required:true}),{revision:'a'});
   assert.equal(count,1);
 });

@@ -197,3 +197,33 @@ instant-refresh assertion passed in the focused 11-test run. Packaged service
 core, Sharp and PDF runtime checks passed. Preview 46 (140046) was installed and
 verified in About; the existing 96-cue prepared-service pointer remained
 byte-for-byte unchanged. Preview 45 is retained as a rollback bundle.
+
+## Show previews follow saved edits (Preview 47)
+
+The Show slide grid now refreshes as soon as the exact saved backstage package
+is ready, without a live take. This includes autosaved edits. A compact status
+distinguishes updating previews from saved edits ready to show. Grid refreshes
+preserve scroll position and focused cue. The LIVE OUTPUT capture continues to
+mirror the audience; preparing or previewing a draft cannot activate its package.
+
+Draft tile clicks take stable cue IDs in the active output session and service.
+Adding or removing slides therefore cannot redirect a click through an old live
+ordinal. The current-slide highlight follows the live cue's identity in the
+draft, and a removed cue cannot highlight a replacement at its former position.
+Selecting with Adjust open remains editing-only. Late responses are rejected
+after a newer draft, service revision or closed Show. Preview file reads are
+bounded and asynchronous, and verify the exact published thumbnail checksums.
+
+Runtime state now includes the validated active output plan, fixing the old
+backstage refresh that dropped its renderer copy after a take and prevented
+subsequent preview updates. The native rehearsal covers successive saved text
+edits, changed thumbnail pixels before a take, unchanged audience and LIVE
+OUTPUT, an inserted slide, and taking the shifted tile by stable identity.
+
+The native rehearsal passed with three acknowledged outputs; prepared takes
+measured 55 ms and 117 ms. The full suite passed 2,425 tests with two skips.
+Packaged service-core, Sharp and PDF runtime checks passed. Preview 47 (140047)
+was installed and verified in About. Both existing durable Show draft sources
+remained unchanged after restart; normal Load freshness picked up Community
+revision 127 from the previously loaded revision 126. Preview 46 is retained
+as a rollback bundle. Physical venue acceptance remains separate.

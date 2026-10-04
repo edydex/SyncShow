@@ -7574,7 +7574,7 @@ function communityPlannerStatePayload({ error = null } = {}) {
     communityPlannerView
     && !communityPlannerView.webContents.isDestroyed()
   );
-  const document = communityPlannerCache?.envelope(currentPreparedServicePointer?.projectId);
+  const document = activeBackstageCache()?.envelope(currentPreparedServicePointer?.projectId);
   const showDraft = Boolean(appState.activeLaunchPlan && document
     && crypto.createHash('sha256').update(require('./src/services/project/ServiceProject').serializeServiceProject(document.project)).digest('hex')
       !== currentPreparedServicePointer.projectRevisionId);
@@ -7587,6 +7587,7 @@ function communityPlannerStatePayload({ error = null } = {}) {
     showDraft,
     showDraftReady,
     showDraftPreparing,
+    showDraftPreviewKey: showDraftReady ? backstagePreviewIdentity(document) : null,
     visible: open && communityPlannerView.getVisible(),
     origin: open ? communityPlannerOrigin : null,
     error: error && typeof error === 'object'
@@ -18540,6 +18541,50 @@ function backstageDraftRevision(remote) {
   return crypto.createHash('sha256').update(require('./src/services/project/ServiceProject').serializeServiceProject(remote.project)).digest('hex');
 }
 
+function activeBackstageCache() {
+  return communityActiveAdjust?.sessionId===outputSessionId && communityActiveAdjust.projectId===currentPreparedServicePointer?.projectId
+    ? communityActiveAdjust.cache : communityPlannerCache;
+}
+
+function backstagePreviewIdentity(remote) {
+  return crypto.createHash('sha256').update(backstagePreparationIdentity(remote).key).digest('hex');
+}
+
+function currentBackstagePreview() {
+  if(!appState.activeLaunchPlan || !currentPreparedServicePointer)return null;
+  const remote=activeBackstageCache()?.envelope(currentPreparedServicePointer.projectId);
+  if(!remote || backstageDraftRevision(remote)===currentPreparedServicePointer.projectRevisionId)return null;
+  const published=backstageDraftPreparation.ready(backstagePreparationIdentity(remote).key);
+  return published ? {key:backstagePreviewIdentity(remote),published,sessionId:outputSessionId,projectId:remote.syncId} : null;
+}
+
+async function readBackstagePreview(key) {
+  const preview=currentBackstagePreview();
+  if(!preview || key!==preview.key)return null;
+  const slidesByRole={};
+  const artifacts=new Map(preview.published.manifest.artifacts.map(artifact=>[artifact.path,artifact]));
+  for(const [roleId,presentation] of Object.entries(preview.published.presentations)) {
+    const handoff=normalizedPresentationHandoff(presentation);
+    const slides=[];
+    for(let start=0;start<presentation.metadata.slides.length;start+=8) {
+      slides.push(...await Promise.all(presentation.metadata.slides.slice(start,start+8).map(async(slide,offset)=>{
+        const index=start+offset;
+        const thumbnailPath=path.join(presentation.cacheDir,`slide_${String(index+1).padStart(3,'0')}_thumb.jpg`);
+        const {buffer:thumbnail}=await readFileNoFollow(thumbnailPath,20*1024*1024);
+        const expected=artifacts.get(path.relative(preview.published.packagePath,thumbnailPath).split(path.sep).join('/'));
+        if(!expected || thumbnail.length!==expected.size || crypto.createHash('sha256').update(thumbnail).digest('hex')!==expected.sha256)
+          failMainOperation('BACKSTAGE_PREVIEW_CHANGED','The saved slide preview changed. Save the slide again to prepare a new preview.');
+        return {index,thumbnailBase64:`data:image/jpeg;base64,${thumbnail.toString('base64')}`,
+          text:rendererSafeText(slide.text || '',12000,{multiline:true}),...rendererSlideSemantics(presentation,index,handoff)};
+      })));
+    }
+    slidesByRole[roleId]=slides;
+  }
+  if(currentBackstagePreview()?.key!==key)return null;
+  return {key:preview.key,sessionId:preview.sessionId,projectId:preview.projectId,
+    cueIds:preview.published.manifest.cueIds,slidesByRole};
+}
+
 function backstagePreparationIdentity(remote) {
   const sessionId=outputSessionId,pointer=currentPreparedServicePointer;
   const roleMapping=nativeProjectRoleMapping(remote.project);
@@ -18592,7 +18637,7 @@ async function takeBackstageServiceCue({ targetIndex = appState.currentSlide, ad
       return { accepted: false, code: 'LIVE_CUE_TRANSITION_CANCELLED', message: 'The Show changed while the editor was saving. Your backstage draft is safe.' };
     }
     const syncId = currentPreparedServicePointer.projectId;
-    if (cueId && flushed.serviceDocument?.syncId !== syncId) return { accepted: false, code: 'PLANNER_WRONG_SERVICE', message: 'Adjust must edit the service currently being shown.' };
+    if (cueId && flushed.serviceDocument && flushed.serviceDocument.syncId !== syncId) return { accepted: false, code: 'PLANNER_WRONG_SERVICE', message: 'Adjust must edit the service currently being shown.' };
     const remote = backstageCache.envelope(syncId);
     if (!remote) return null;
     const draftRevision = backstageDraftRevision(remote);
@@ -18708,6 +18753,28 @@ ipcMain.handle('community:planner:open', async (event) => {
 ipcMain.handle('community:planner:state', async (event) => {
   requireControlSender(event);
   return communityIpcResult(async () => communityPlannerStatePayload());
+});
+
+ipcMain.handle('community:planner:preview', async (event,request={}) => {
+  requireControlSender(event);
+  return communityIpcResult(()=>{
+    communityRequestKeys(request,['key'],'Backstage preview');
+    return readBackstagePreview(request.key);
+  });
+});
+
+ipcMain.handle('show:takeBackstagePreview', async (event,request={}) => {
+  requireControlSender(event);
+  authorizeLocalShowCommand('cue.jump');
+  authorizeLocalShowCommand('session.end');
+  communityRequestKeys(request,['sessionId','projectId','cueId'],'Backstage slide take');
+  if(request.sessionId!==outputSessionId || request.projectId!==currentPreparedServicePointer?.projectId || !appState.activeLaunchPlan)
+    failMainOperation('BACKSTAGE_PREVIEW_STALE','The Show changed. Choose a slide from the current service.');
+  if(communityPlannerView?.getVisible() && communityPlannerMode?.startsWith('adjust-'))
+    failMainOperation('PLANNER_TAKE_NOT_ALLOWED','Close Adjust before taking a slide live.');
+  const taken=await takeBackstageServiceCue({cueId:prepareId(request.cueId,'Slide cue')});
+  if(!taken?.accepted)failMainOperation(taken?.code || 'SLIDE_TAKE_FAILED',taken?.message || 'The slide could not reach every output.');
+  return {...taken,showState:publishShowState('backstage-preview-taken')};
 });
 
 ipcMain.handle('community:planner:prepareLoad', async event => {
@@ -27544,6 +27611,7 @@ ipcMain.handle('app:getState', async (event) => {
   return {
     currentSlide: appState.currentSlide,
     totalSlides: appState.totalSlides,
+    activeLaunchPlan: appState.activeLaunchPlan,
     showState: showGateway.getState(),
     displays: appState.displays,
     serviceHandoff: installedServiceHandoff(),

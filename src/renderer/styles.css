@@ -11154,6 +11154,8 @@ body { background:var(--bg); }
 .show-service-browse-hint { font-size:10px; color:var(--text-muted); padding:12px; border-top:1px solid var(--border); }
 .thumbnails-header { min-height:43px; padding:6px 10px; gap:10px; background:#27282b; }
 .thumbnails-header h2 { font-size:12px; font-weight:600; }
+#backstagePreviewStatus { display:block; margin-top:3px; font-size:11px; color:var(--text-secondary); }
+#backstagePreviewStatus[hidden] { display:none; }
 .thumbnails-header-controls { gap:7px; }
 .thumbnails-header .btn { padding:4px 11px; min-height:28px; font-size:11px; }
 .lang-selector, .zoom-control { background:#222326; padding:1px; }

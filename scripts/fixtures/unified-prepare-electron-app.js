@@ -226,8 +226,10 @@ async function run() {
     let english;
     for(const win of outputs) if(await win.webContents.executeJavaScript('displayState.language')==='fixture-english') english=win;
     assert(english);
-    await renderer("elements.outputPreviewSelect.value='fixture-english';selectOutputPreview();true");
+    await renderer("elements.outputPreviewSelect.value='fixture-english';selectOutputPreview();state.thumbnailSelection='english';renderThumbnails();true");
     const originalPreview=await waitFor(()=>renderer("outputPreviewElements.get('fixture-english')?.image.getAttribute('src')"),'actual operator preview before edit');
+    const originalThumbnail=await renderer(`document.querySelector('.thumbnail-item[data-index="70"] img').src`);
+    const originalShowRevision=liveState.serviceHandoff.project.revisionId;
     offline=false;
     holdWrites=true;
     const saveStart=performance.now();
@@ -239,9 +241,16 @@ async function run() {
     const journal=JSON.parse(await fs.readFile(path.join(adjustJournals,(await fs.readdir(adjustJournals))[0],'journal.json'),'utf8'));
     assert(journal.documents['service-fixture'].project.items['section-2-22'].textByChannel.english.endsWith(' test'),'Saved text must be durable before taking it');
     assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Audience unchanged while editing');
+    await waitFor(()=>renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"] .thumb-text')?.textContent.includes(' test')`),'saved text appears in Show grid before any live take');
+    assert.notEqual(await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"] img').src`),originalThumbnail,'Saved text must update the actual grid image');
+    assert.equal((await renderer('window.api.getAppState()')).serviceHandoff.project.revisionId,originalShowRevision,'Draft preview cannot activate the saved package');
+    assert.equal(await renderer("outputPreviewElements.get('fixture-english')?.image.getAttribute('src')"),originalPreview,'LIVE OUTPUT still mirrors the unchanged audience');
+    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Background preview refresh cannot project edits');
+    await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"]').click();true`);
+    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Selecting a draft thumbnail while Adjust is open must not take it live');
     const closeStart=performance.now();await renderer('closeShowAdjust()');const closeMs=performance.now()-closeStart;assert(closeMs<1500,`close waited ${closeMs}ms`);
     const takeStart=performance.now();
-    await renderer('goToSlide(70)');
+    await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"]').click();true`);
     await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),'edited text on actual native output');
     const takeMs=performance.now()-takeStart;assert(takeMs<2000,`text edit take took ${takeMs}ms`);
     const previewStart=performance.now();
@@ -251,17 +260,33 @@ async function run() {
     for(const output of outputs)assert.equal(await output.webContents.executeJavaScript('displayState.currentSlide'),70);
     holdWrites=false;heldWrites.splice(0).forEach(resolve=>resolve());
     await waitFor(()=>saved.project.items['section-2-22'].textByChannel.english.endsWith(' test'),'background upload eventually syncs');
+    await waitFor(()=>renderer('state.activeLaunchPlan?.outputs.length===3 && !state.cueNavigationBusy'),'active route remains available after a saved take');
     await renderer('toggleShowAdjust()');await waitFor(()=>planner.executeJavaScript(`document.querySelector('[data-slide-id="${cueId}"]')?.dataset.active === 'true'`),'Reopening Adjust follows the displayed cue');
     assert.equal(await planner.executeJavaScript("document.querySelector('.heritage-service-planner__stage [data-role=caption][contenteditable]').textContent.endsWith(' test')"),true);
     await planner.executeJavaScript(`{const field=document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]');field.textContent+=' warm';field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));document.querySelector('button[aria-label="Save service"]').click();}true`);
     await waitFor(async()=> (await renderer('window.api.getCommunityPlannerState()')).data?.showDraftReady,'background package ready while Adjust remains open');
+    await waitFor(()=>renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"] .thumb-text')?.textContent.includes(' warm')`),'further saved edits update previews without switching slides');
     assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),false,'A ready backstage package must not change the audience');
     await renderer('closeShowAdjust()');
     const readyTakeStart=performance.now();await renderer('goToSlide(70)');
     await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),'prepared edit on actual output');
     const readyTakeMs=performance.now()-readyTakeStart;assert(readyTakeMs<500,`ready edit take took ${readyTakeMs}ms`);
-    assert.equal(serverRequests.slice(requestCount).some(request=>request.method==='GET'),false,'Edits and live takes must not fetch services from Heritage');
-    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
+    await renderer('toggleShowAdjust()');
+    const previousCueId=liveState.serviceHandoff.cueIds[69];
+    await planner.executeJavaScript(`document.querySelector('[data-slide-id="${previousCueId}"]').click();document.querySelector('.heritage-add-slide').click();true`);
+    await waitFor(()=>planner.executeJavaScript("!document.querySelector('.heritage-add-workspace').hidden"),'add slide palette');
+    await planner.executeJavaScript("document.querySelector('.heritage-add-utilities button').click();true");
+    await planner.executeJavaScript("document.querySelector('button[aria-label=\"Save service\"]').click();true");
+    await waitFor(()=>renderer(`backstagePreview?.cueIds.length===97 && document.querySelector('.thumbnail-item.active')?.dataset.cueId==='${cueId}'`),'draft preview follows the stable live cue after insertion');
+    assert.equal(await renderer(`document.querySelector('.thumbnail-item.active').dataset.index`),'71','The draft position changes while the live cue identity stays highlighted');
+    assert.equal((await renderer('window.api.getAppState()')).currentSlide,70,'Browsing the inserted draft cannot move the audience');
+    await renderer('closeShowAdjust()');
+    await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"]').click();true`);
+    await waitFor(()=>renderer(`!state.cueNavigationBusy && state.showState?.currentCue?.id==='${cueId}' && state.showState.currentCue.index===71 && state.totalSlides===97`),'draft thumbnail takes by stable cue identity after insertion');
+    for(const output of outputs)assert.equal(await output.webContents.executeJavaScript('displayState.currentSlide'),71);
+    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),true,'Taking the shifted draft tile must retain the intended content');
+    assert.equal(serverRequests.slice(requestCount).some(request=>request.method==='GET' && request.path.startsWith('/api/community/service-documents') && !request.path.includes('/library/')),false,'Edits and live takes must not fetch service documents from Heritage; explicitly opened libraries may load resources');
+    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
   }
   if (loadQueueFixture) {
     const clickSlide = async index => {
@@ -326,6 +351,6 @@ async function run() {
     actualOutputAfterRetake: true, currentCuePreserved: true, reconnectSynced: true, screenshot }, null, 2));
 }
 run().then(() => { server.close(); app.exit(0); }).catch(async error => {
-  const pages=[];for(const contents of electron.webContents.getAllWebContents()){try{if(contents.getURL().startsWith('http://127.0.0.1:'))pages.push({url:contents.getURL(),text:await contents.executeJavaScript('document.body.innerText.slice(0,4000)')});}catch{}}
+  const pages=[];for(const contents of electron.webContents.getAllWebContents()){try{if(contents.getURL().startsWith('http://127.0.0.1:'))pages.push({url:contents.getURL(),text:await contents.executeJavaScript('document.body.innerText.slice(0,4000)')});else if(contents.getURL().endsWith('/src/renderer/index.html'))pages.push({url:contents.getURL(),state:await contents.executeJavaScript(`({community:{showDraft:state.community.plannerShowDraft,ready:state.community.plannerShowDraftReady,key:state.community.plannerShowDraftPreviewKey},stage:state.workflowStage,project:state.serviceHandoff?.project,preview:backstagePreview && {key:backstagePreview.key,projectId:backstagePreview.projectId,count:backstagePreview.cueIds.length},previewKey:backstagePreviewKey,status:elements.statusMessage.textContent,livePhase:state.showState?.phase,rows:[...document.querySelectorAll('.thumbnail-item')].slice(69,72).map(item=>({index:item.dataset.index,cueId:item.dataset.cueId,text:item.querySelector('.thumb-text')?.textContent}))})`)});}catch{}}
   await fs.writeFile(resultPath, JSON.stringify({ ok: false, error: error.stack,pages }, null, 2)); server.close(); app.exit(1);
 });

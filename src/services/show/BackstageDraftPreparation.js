@@ -11,6 +11,7 @@ class BackstageDraftPreparation {
   }
 
   hasReady(key) { return this.jobs.get(key)?.status==='ready'; }
+  ready(key) { return this.hasReady(key) ? this.jobs.get(key).result : null; }
   isPreparing(key) { return ['queued','running'].includes(this.jobs.get(key)?.status); }
 
   prepare(key,operation,{required=false}={}) {
@@ -23,6 +24,7 @@ class BackstageDraftPreparation {
       job.status='running';
       try {
         const result=await operation();
+        job.result=result;
         job.status='ready';
         if(!result)this.jobs.delete(key);
         // Keep a small set of completed revisions. Pending jobs retain their

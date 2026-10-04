@@ -437,6 +437,10 @@ contextBridge.exposeInMainWorld('api', {
   reviewPlannerConflict: () => ipcRenderer.invoke('community:planner:reviewConflict'),
   resolvePlannerConflict: request => ipcRenderer.invoke('community:planner:resolveConflict', {syncId:request?.syncId,resolution:request?.resolution,remoteRevision:request?.remoteRevision}),
   getCommunityPlannerState: () => ipcRenderer.invoke('community:planner:state'),
+  getBackstagePreview: (key) => ipcRenderer.invoke('community:planner:preview', {key}),
+  takeBackstagePreview: (request = {}) => ipcRenderer.invoke('show:takeBackstagePreview', {
+    sessionId: request?.sessionId, projectId: request?.projectId, cueId: request?.cueId
+  }),
   prepareCommunityPlannerForLoad: () => ipcRenderer.invoke('community:planner:prepareLoad'),
   layoutCommunityPlanner: (request = {}) => ipcRenderer.invoke('community:planner:layout', {
     visible: request?.visible === true,

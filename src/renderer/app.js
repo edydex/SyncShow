@@ -1763,6 +1763,7 @@ async function loadAppState() {
     const appState = await window.api.getAppState();
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
+    state.activeLaunchPlan = appState.activeLaunchPlan;
     state.displays = appState.displays;
     applyServiceHandoff(appState.serviceHandoff);
     state.preparedServiceRestore = appState.preparedServiceRestore || {
@@ -2990,6 +2991,69 @@ async function closeShowAdjust() {
 }
 
 let backstageRefreshPromise = null;
+let backstagePreview = null;
+let backstagePreviewKey = null;
+let backstagePreviewGeneration = 0;
+
+function showBackstagePreview() {
+  return state.workflowStage==='show' && state.activeLaunchPlan
+    && backstagePreview?.projectId===state.serviceHandoff?.project?.id ? backstagePreview : null;
+}
+
+function thumbnailCurrentIndex() {
+  const preview=showBackstagePreview();
+  return preview ? preview.cueIds.indexOf(state.showState?.currentCue?.id || cueAt(state.currentSlide)?.id) : state.currentSlide;
+}
+
+function clearBackstagePreview() {
+  ++backstagePreviewGeneration;
+  backstagePreviewKey=null;
+  const changed=Boolean(backstagePreview);
+  backstagePreview=null;
+  if(changed)renderThumbnails();
+}
+
+async function refreshBackstagePreview(key) {
+  if(state.workflowStage!=='show' || !state.activeLaunchPlan || key===backstagePreviewKey)return;
+  backstagePreviewKey=key;
+  const generation=++backstagePreviewGeneration,revisionId=state.serviceHandoff?.project?.revisionId;
+  try {
+    const preview=communityCheckedResult(await window.api.getBackstagePreview(key));
+    if(generation!==backstagePreviewGeneration || state.workflowStage!=='show')return;
+    if(revisionId!==state.serviceHandoff?.project?.revisionId) {backstagePreviewKey=null;return;}
+    if(!preview || preview.key!==key || preview.projectId!==state.serviceHandoff?.project?.id) {backstagePreviewKey=null;return;}
+    backstagePreview=preview;
+    const scrollTop=elements.thumbnailsGrid.scrollTop;
+    const focusedCue=document.activeElement?.dataset?.cueId;
+    renderThumbnails();
+    elements.thumbnailsGrid.scrollTop=scrollTop;
+    if(focusedCue)[...elements.thumbnailsGrid.querySelectorAll('.thumbnail-item')].find(item=>item.dataset.cueId===focusedCue)?.focus({preventScroll:true});
+  } catch(error) {
+    if(generation===backstagePreviewGeneration) {backstagePreviewKey=null;setStatus(`Could not refresh saved slide previews. ${error.message}`);}
+  }
+}
+
+async function takeBackstagePreviewSlide(cueId,preview) {
+  if(showAdjustOpen || showEndSessionBlocksAction() || state.cueNavigationBusy)return;
+  state.cueNavigationBusy=true;
+  const action=beginShowOutputAction();
+  elements.btnPrevSlide.setAttribute('aria-busy','true');
+  elements.btnNextSlide.setAttribute('aria-busy','true');
+  updateBibleLiveIndicator();
+  try {
+    const result=await window.api.takeBackstagePreview({cueId,sessionId:preview.sessionId,projectId:preview.projectId});
+    applyShowOutputActionResult(action,result);
+    if(result?.preparedChanged)await refreshTakenBackstageDraft();
+  } catch(error) {
+    if(action.id===state.showActionRequest)showOutputActionError('Could not show the saved slide',error);
+  } finally {
+    state.cueNavigationBusy=false;
+    elements.btnPrevSlide.removeAttribute('aria-busy');
+    elements.btnNextSlide.removeAttribute('aria-busy');
+    updateBibleLiveIndicator();
+  }
+}
+
 async function refreshTakenBackstageDraft() {
   if (backstageRefreshPromise) return backstageRefreshPromise;
   backstageRefreshPromise = (async () => {
@@ -3000,6 +3064,7 @@ async function refreshTakenBackstageDraft() {
     applyRuntimePresentationState(current.presentations, { replaceSource: true });
     if (current.showState) handleShowStateChanged(current.showState);
     await loadSlidesIfNeeded(); renderThumbnails();
+    if(state.community.plannerShowDraftPreviewKey)void refreshBackstagePreview(state.community.plannerShowDraftPreviewKey);
     renderShowAdjustStatus();
     setStatus(current.showState?.phase === 'live'
       ? 'Saved draft shown. Further edits stay backstage until you click a slide or Next.'
@@ -3126,6 +3191,10 @@ function handleCommunityPlannerStateChanged(payload = {}) {
   state.community.plannerShowDraft = payload.showDraft === true;
   state.community.plannerShowDraftReady = payload.showDraftReady === true;
   state.community.plannerDraftPreparing = payload.showDraftPreparing === true;
+  state.community.plannerShowDraftPreviewKey = payload.showDraftPreviewKey || null;
+  if(!payload.showDraft)clearBackstagePreview();
+  else if(payload.showDraftPreviewKey)void refreshBackstagePreview(payload.showDraftPreviewKey);
+  renderBackstagePreviewStatus();
   if (showAdjustOpen) renderShowAdjustStatus();
   const hasConflicts = state.community.plannerConflicts.length > 0;
   document.getElementById('plannerSyncStrip').hidden = !hasConflicts && !payload.offline && !payload.pending;
@@ -8574,6 +8643,7 @@ function handleShowStateChanged(payload = {}) {
   if (state.showState && next.revision < state.showState.revision) return false;
 
   state.showState = next;
+  if(['idle','hidden','interrupted'].includes(next.phase))clearBackstagePreview();
   if (['backstage-draft-taken', 'backstage-draft-recovery'].includes(payload?.reason)) refreshTakenBackstageDraft().catch(error => setStatus(error.message));
   if (next.currentCue && Number.isInteger(next.currentCue.index)) {
     state.currentSlide = next.currentCue.index;
@@ -8793,7 +8863,7 @@ function updateThumbnailHighlight() {
     const index = Number.parseInt(item.dataset.index, 10);
     window.SyncShowShowAccessibility.setThumbnailCurrentState(
       item,
-      index === state.currentSlide
+      index === thumbnailCurrentIndex()
     );
   });
   
@@ -8916,10 +8986,11 @@ function createThumbnailImage(language, thumbnail, slideNumber, imgHeight) {
 }
 
 function getThumbnailSelection() {
+  const preview=showBackstagePreview();
   const roleOrder = getDeckRoles().map(role => role.id);
   const slidesByRole = Object.fromEntries(roleOrder.map(role => [
     role,
-    state.presentations[role]?.slides || []
+    preview?.slidesByRole[role] || state.presentations[role]?.slides || []
   ]));
   const routedRoles = state.activeLaunchPlan
     ? new Set(state.activeLaunchPlan.outputs.map(output => output.sourceRoleId))
@@ -8981,6 +9052,8 @@ function renderThumbnailRoleSelector(availableRoles) {
 // Thumbnail Rendering - Using Base64 images
 function renderThumbnails() {
   const grid = elements.thumbnailsGrid;
+  const preview=showBackstagePreview();
+  renderBackstagePreviewStatus();
   const { slidesByRole, selectedRoles } = getThumbnailSelection();
   const roleMarks = Object.fromEntries(selectedRoles.map(role => [
     role,
@@ -9018,12 +9091,13 @@ function renderThumbnails() {
     }
     const slides = selectedRoles.map(role => ({ role, slide: slidesByRole[role][i] }));
     const text = (slides.find(({ slide }) => slide?.text)?.slide.text || '').substring(0, 80) || '—';
-    const isCurrent = i === state.currentSlide;
+    const isCurrent = i === thumbnailCurrentIndex();
 
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'thumbnail-item';
     item.dataset.index = String(i);
+    if(preview)item.dataset.cueId=preview.cueIds[i];
     item.dataset.showTransport = 'true';
     item.disabled = (
       state.showState?.operator?.controls
@@ -9086,7 +9160,8 @@ function renderThumbnails() {
 
     item.append(header, images, label);
     item.addEventListener('click', () => {
-      goToSlide(i);
+      if(preview)void takeBackstagePreviewSlide(preview.cueIds[i],preview);
+      else goToSlide(i);
     });
     fragment.appendChild(item);
   }
@@ -9095,9 +9170,11 @@ function renderThumbnails() {
 }
 
 function showServiceSections(count = state.totalSlides) {
+  const preview=showBackstagePreview();
+  const previewSlides=preview?.slidesByRole[state.activeLaunchPlan?.timelineRoleId];
   const sections = [];
   for (let index = 0; index < count; index++) {
-    const cue = cueAt(index);
+    const cue = preview ? previewSlides?.[index] : cueAt(index);
     const title = cue?.groupPath?.[0] || cue?.title || 'Slides';
     const key = cue?.itemPathIds?.[0] || cue?.groupPath?.[0] || cue?.itemId || 'slides';
     const previous = sections.at(-1);
@@ -9126,13 +9203,22 @@ function renderShowServiceSections(sections) {
 }
 
 function updateShowSectionHighlight() {
+  const currentIndex=thumbnailCurrentIndex();
   const buttons = [...document.getElementById('showServiceSections').children];
   buttons.forEach((button, index) => {
-    const active = state.currentSlide >= Number(button.dataset.sectionStart)
-      && (index === buttons.length - 1 || state.currentSlide < Number(buttons[index + 1].dataset.sectionStart));
+    const active = currentIndex >= Number(button.dataset.sectionStart)
+      && (index === buttons.length - 1 || currentIndex < Number(buttons[index + 1].dataset.sectionStart));
     button.classList.toggle('is-live', active);
     if (active) button.setAttribute('aria-current', 'location'); else button.removeAttribute('aria-current');
   });
+}
+
+function renderBackstagePreviewStatus() {
+  const node=document.getElementById('backstagePreviewStatus');
+  if(!node)return;
+  node.hidden=!state.community.plannerShowDraft || state.workflowStage!=='show';
+  node.textContent=state.community.plannerDraftPreparing ? 'Updating previews…'
+    : showBackstagePreview() ? 'Saved edits · click a slide to show them' : 'Saved edits stay backstage';
 }
 
 // Keyboard Handling
