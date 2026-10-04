@@ -13,6 +13,7 @@ const resultPath = process.env.SYNCSHOW_UNIFIED_RESULT;
 let offline = false, saved, holdChecks = false, holdWrites = false;
 const heldWrites = [];
 const editingFixture = process.env.SYNCSHOW_ADJUST_EDITING_FIXTURE;
+const serverRequests=[];
 const heldChecks = [];
 const loadQueueFixture = process.env.SYNCSHOW_LOAD_QUEUE_FIXTURE === '1';
 if (loadQueueFixture || editingFixture) {
@@ -54,6 +55,7 @@ document.getElementById('save').onclick=()=>save().catch(error=>document.getElem
 </script></body></html>`;
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://127.0.0.1:${server.address().port}`);
+  serverRequests.push({method:request.method,path:url.pathname});
   if (offline) return json(response, { error: 'offline' }, 503);
   if (editingFixture && url.pathname.startsWith('/assets/')) { const file=path.join(editingFixture,url.pathname);response.writeHead(200,{'Content-Type':file.endsWith('.css')?'text/css':'application/javascript'});response.end(await fs.readFile(file));return; }
   if (editingFixture && url.pathname === '/admin/plan-service') { response.writeHead(200,{'Content-Type':'text/html'});response.end(await fs.readFile(path.join(editingFixture,'community-server/tests/browser/native-adjust.html')));return; }
@@ -110,7 +112,7 @@ async function run() {
     accessToken: 'fixture-token-12345678901234567890', refreshToken: null, expiresAt: '2027-01-01T00:00:00.000Z' });
   const control = await waitFor(() => BrowserWindow.getAllWindows().find(win => win.webContents.getURL().endsWith('/src/renderer/index.html') && !win.webContents.isLoading()), 'control');
   if (loadQueueFixture) control.webContents.setBackgroundThrottling(false);
-  control.webContents.on('console-message', (_event, level, message) => { if (level >= 2) console.error('[renderer]', message); });
+  control.webContents.on('console-message', event => { if (event.level >= 2) console.error('[renderer]', event.message); });
   const renderer = source => control.webContents.executeJavaScript(source);
   const settledScreenshot = async name => {
     await renderer('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
@@ -119,7 +121,7 @@ async function run() {
   await renderer(`window.fixtureStages=[];const original=setWorkflowStage;setWorkflowStage=function(...args){window.fixtureStages.push({stage:args[0],stack:new Error().stack});return original(...args)};true`);
   await renderer(`refreshCommunityStatus();`);
   await renderer(`document.getElementById('btnStagePrepare').click();`);
-  const planner = await waitFor(() => electron.webContents.getAllWebContents().find(contents => contents.getURL() === `${baseUrl}admin/plan-service` && !contents.isLoading()), 'same planner');
+  let planner = await waitFor(() => electron.webContents.getAllWebContents().find(contents => contents.getURL() === `${baseUrl}admin/plan-service` && !contents.isLoading()), 'same planner');
   if(editingFixture) await renderer("window.api.openPlannerService('service-fixture')");
   await waitFor(() => planner.executeJavaScript(editingFixture ? 'Boolean(document.querySelector(".heritage-service-planner__rows"))' : 'Boolean(service?.project)'), 'service open');
   const tabs = await renderer(`getComputedStyle(document.querySelector('.prepare-mode-tabs')).display`);
@@ -206,11 +208,17 @@ async function run() {
   assert.equal(await renderer(`state.workflowStage`), 'show');
 
   if (editingFixture) {
+    planner.close();
+    offline=true;
+    const requestCount=serverRequests.length;
     await renderer('goToSlide(70)');
     const liveState=await renderer('window.api.getAppState()');
     const cueId=liveState.serviceHandoff.cueIds[70];
     await renderer('toggleShowAdjust()');
+    planner=await waitFor(()=>electron.webContents.getAllWebContents().find(contents=>contents.getURL().includes('/syncshow-local/adjust/index.html')&&!contents.isLoading()),'bundled local Adjust');
     await waitFor(()=>planner.executeJavaScript(`document.querySelector('[data-slide-id="${cueId}"]')?.dataset.active === 'true'`),'Adjust selects live cue');
+    assert.equal(serverRequests.length,requestCount,`Opening Adjust must not ask Heritage: ${JSON.stringify(serverRequests.slice(requestCount))}`);
+    assert.equal(await planner.executeJavaScript("!!document.querySelector('.heritage-service-planner__service-picker')"),false,'No service selector in Adjust');
     assert.equal(await planner.executeJavaScript("document.querySelectorAll('.heritage-service-planner__row[data-selected=true]').length"),1,'Adjust selects only the current slide');
     const focus=await planner.executeJavaScript(`(()=>{const row=document.querySelector('[data-slide-id="${cueId}"]'),r=row.getBoundingClientRect(),sidebar=row.closest('aside').getBoundingClientRect();return {top:r.top,bottom:r.bottom,sidebarTop:sidebar.top,sidebarBottom:sidebar.bottom,viewport:innerHeight,edit:!!document.querySelector('.heritage-service-planner__stage [contenteditable]')};})()`);
     assert(focus.top>=Math.max(0,focus.sidebarTop)&&focus.bottom<=Math.min(focus.viewport,focus.sidebarBottom),JSON.stringify(focus));assert.equal(focus.edit,true);
@@ -218,15 +226,20 @@ async function run() {
     let english;
     for(const win of outputs) if(await win.webContents.executeJavaScript('displayState.language')==='fixture-english') english=win;
     assert(english);
+    offline=false;
     holdWrites=true;
     const saveStart=performance.now();
     await planner.executeJavaScript(`{const field=document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]');field.focus();field.textContent+=' test';field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));field.blur();document.querySelector('button[aria-label="Save service"]').click();}true`);
     await waitFor(()=>planner.executeJavaScript("document.body.innerText.includes('Saved on this computer')"),'durable local save without waiting for server');
     const localSaveMs=performance.now()-saveStart;
     assert(localSaveMs<1500,`local save took ${localSaveMs}ms`);
+    const adjustJournals=path.join(root,'community','planner-adjust','fixture-connection');
+    const journal=JSON.parse(await fs.readFile(path.join(adjustJournals,(await fs.readdir(adjustJournals))[0],'journal.json'),'utf8'));
+    assert(journal.documents['service-fixture'].project.items['section-2-22'].textByChannel.english.endsWith(' test'),'Saved text must be durable before taking it');
     assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Audience unchanged while editing');
     const closeStart=performance.now();await renderer('closeShowAdjust()');const closeMs=performance.now()-closeStart;assert(closeMs<1500,`close waited ${closeMs}ms`);
-    const takeStart=performance.now();await renderer('goToSlide(70)');
+    const takeStart=performance.now();
+    await renderer('goToSlide(70)');
     await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),'edited text on actual native output');
     const takeMs=performance.now()-takeStart;assert(takeMs<2000,`text edit take took ${takeMs}ms`);
     for(const output of outputs)assert.equal(await output.webContents.executeJavaScript('displayState.currentSlide'),70);
@@ -235,7 +248,8 @@ async function run() {
     await renderer('toggleShowAdjust()');await waitFor(()=>planner.executeJavaScript(`document.querySelector('[data-slide-id="${cueId}"]')?.dataset.active === 'true'`),'Reopening Adjust follows the displayed cue');
     assert.equal(await planner.executeJavaScript("document.querySelector('.heritage-service-planner__stage [data-role=caption][contenteditable]').textContent.endsWith(' test')"),true);
     await renderer('closeShowAdjust()');
-    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
+    assert.equal(serverRequests.slice(requestCount).some(request=>request.method==='GET'),false,'Edits and live takes must not fetch services from Heritage');
+    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
   }
   if (loadQueueFixture) {
     const clickSlide = async index => {

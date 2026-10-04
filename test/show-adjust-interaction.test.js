@@ -11,7 +11,7 @@ function fixture({ opening, saving } = {}) {
   const calls = [], state = {workflowStage:'show',currentSlide:1,serviceHandoff:{project:{id:'service'},cueIds:['first','current']},community:{plannerOpen:true}};
   const elements = {showAdjustPanel:{hidden:true},btnShowAdjust:{setAttribute(){},focus(){}},showAdjustStatus:{}};
   const context = vm.createContext({state,elements,
-    window:{api:{async setPlannerShowMode(enabled){calls.push(['mode',enabled]);},async openPlannerService(id,cueId){calls.push(['open',id,cueId]);return {};},
+    window:{api:{async setPlannerShowMode(enabled){calls.push(['mode',enabled]);},async openActiveShowAdjust(){if(opening)await opening.promise;calls.push(['active-local']);return {opened:true};},
       async layoutCommunityPlanner(request){calls.push(['layout',request.visible]);},async flushCommunityPlanner(){calls.push(['flush']);return saving ? saving.promise : {};}}},
     async openCommunityPrepare(){if(opening)await opening.promise;state.community.plannerOpen=true;},
     renderShowAdjustStatus(){},renderVolunteerShowControls(){},communityCheckedResult:value=>value,
@@ -24,8 +24,8 @@ function fixture({ opening, saving } = {}) {
 test('Adjust uses ordinary selection and editing without allowing live slide takes', async () => {
   const f=fixture();await f.context.toggleShowAdjust();
   assert.equal(f.context.isOpen(),true);
-  assert.deepEqual(f.calls.filter(call=>call[0]==='mode'),[['mode',false]]);
-  assert.deepEqual(f.calls.find(call=>call[0]==='open'),['open','service','current']);
+  assert.deepEqual(f.calls.find(call=>call[0]==='active-local'),['active-local']);
+  assert.deepEqual(f.calls.filter(call=>call[0]==='mode'),[]);
 });
 
 test('closing Adjust removes its native input surface before a pending save finishes', async () => {
@@ -43,5 +43,5 @@ test('a late Adjust open cannot resurface over thumbnails after it was closed', 
   const before=f.calls.length;opening.resolve();await pending;
   assert.equal(f.context.isOpen(),false);
   assert.equal(f.elements.showAdjustPanel.hidden,true);
-  assert.equal(f.calls.length,before,'No late mode change, service open, or layout');
+  assert.equal(f.calls.filter(call=>call[0]==='schedule').length,1,'No late layout can resurface the editor');
 });

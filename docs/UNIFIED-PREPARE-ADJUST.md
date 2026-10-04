@@ -135,3 +135,31 @@ the existing prepared-service pointer remained byte-for-byte identical.
 the real editor and uses this script's local mock service; it needs no production
 credentials or database. `scripts/bench-backstage-edit.js` separately measures
 96-slide package reuse in a disposable local directory.
+
+## Adjust the active local Show (Preview 45)
+
+Adjust now opens the bundled shared editor on the exact immutable project
+revision used by the active Show. Its service picker and workspace navigation
+are absent. The editor shell, JavaScript, styles, font, service document and
+existing media come from this computer. Libraries load when Add slide opens;
+cached resources are reused and installed Bible text is resolved locally first.
+
+Show drafts use a separate durable journal from Prepare. Saving and retaking
+edits do not require a Community connection or a server document read. Pending
+uploads retry independently, including recovered Show journals after restart;
+concurrent server edits still require conflict review and never block local
+presentation. Selecting inside Adjust remains editing-only. Closing Adjust and
+retaking or advancing shows the changed draft.
+
+The real shared editor rehearsal opened cold with Heritage offline on slide 71
+of a 96-slide Show, with no service selector and zero server reads. A held upload
+did not block the local save (125 ms), closing Adjust (65 ms), or the edited take (1.03 s).
+All three native outputs acknowledged the cue, and the edit eventually synced.
+Focused tests also cover local history, restart recovery, explicit resource
+requests, sandbox isolation, and confined bundled paths. Physical venue display
+acceptance remains separate from this isolated rehearsal.
+
+Build the shared native editor with
+`SYNCSHOW_COMMUNITY_SOURCE=/path/to/heritage_study_bible npm run build:planner-editor`
+before packaging changes to its source. The generated bundle includes its
+source component fingerprint and third-party notices.

@@ -1,6 +1,6 @@
 {
   "name": "sync-show",
-  "version": "1.4.0-preview.44",
+  "version": "1.4.0-preview.45",
   "description": "Synchronized configurable presentation outputs for church services",
   "main": "main.js",
   "scripts": {
@@ -31,7 +31,8 @@
     "build:verify-app-launch": "node scripts/verify-packaged-app-launch.js",
     "build:verify-remote-lan": "node scripts/verify-packaged-remote-lan.js",
     "build:verify-release-legal": "node scripts/verify-release-legal.js",
-    "generate-icon": "node scripts/generate-icon.js"
+    "generate-icon": "node scripts/generate-icon.js",
+    "build:planner-editor": "node scripts/build-planner-editor.js"
   },
   "keywords": [
     "presentation",
@@ -76,7 +77,7 @@
   "build": {
     "appId": "com.church.syncshow",
     "productName": "SyncShow",
-    "buildVersion": "140044",
+    "buildVersion": "140045",
     "beforePack": "scripts/beforePack.js",
     "afterPack": "scripts/afterPack.js",
     "copyright": "Copyright © 2026 Church Media Team",

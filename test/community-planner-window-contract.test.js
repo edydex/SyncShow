@@ -30,7 +30,7 @@ test('embedded Community planner keeps Electron privileges and navigation locked
   assert.match(main, /nodeIntegration: false/u);
   assert.match(main, /contextIsolation: true/u);
   assert.match(main, /sandbox: true/u);
-  assert.match(main, /partition: `persist:syncshow-community-planner-\$\{connection\.id\}`/u);
+  assert.match(main, /partition: `persist:syncshow-community-planner-\$\{connection\.id\}\$\{adjust \? '-adjust' : ''\}`/u);
   assert.match(main, /CommunityPlannerCache/u);
   assert.match(main, /setPermissionRequestHandler\([\s\S]*callback\(false\)/u);
   assert.match(main, /setPermissionCheckHandler\(\(\) => false\)/u);

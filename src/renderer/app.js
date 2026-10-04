@@ -2954,15 +2954,12 @@ async function toggleShowAdjust() {
   elements.btnShowAdjust.setAttribute('aria-pressed', 'true');
   renderShowAdjustStatus();
   try {
-    await openCommunityPrepare();
+    elements.showAdjustStatus.textContent='Opening the active slide…';
+    // Main selects the active local Show and its current cue. No service picker,
+    // server page, or remote document read participates in this path.
+    const result=communityCheckedResult(await window.api.openActiveShowAdjust());
     if (!current()) return;
-    if (!state.community.plannerOpen) throw new Error('Prepare could not open.');
-    // Adjust is an editor. Selecting a slide must never take it to the audience.
-    await window.api.setPlannerShowMode(false);
-    if (!current()) return;
-    const cueId = state.serviceHandoff.cueIds?.[state.currentSlide];
-    communityCheckedResult(await window.api.openPlannerService(state.serviceHandoff.project.id, cueId));
-    if (!current()) return;
+    state.community.plannerOpen=result.opened===true;
     scheduleCommunityPlannerLayout();
   } catch (error) { if (current()) elements.showAdjustStatus.textContent = error.message; }
 }
@@ -3045,7 +3042,7 @@ function renderCommunityPrepare() {
 function communityPlannerShouldBeVisible() {
   return ((state.workflowStage === 'show' && showAdjustOpen)
     || (state.workflowStage === 'prepare' && state.prepareMode === 'community'))
-    && communityIsConnected()
+    && (showAdjustOpen || communityIsConnected())
     && !document.getElementById('plannerConflictDialog').open
     && state.community.plannerOpen
     && (showAdjustOpen || !elements.communityPrepareShell.hidden);

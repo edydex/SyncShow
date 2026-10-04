@@ -10,13 +10,14 @@ async function focusPlannerCue({ syncId, cueId, number, sectionIds = [] }) {
   const editing = document.activeElement;
   if (editing?.closest('input,textarea,[contenteditable]')) { editing.blur(); await frame(); }
   const picker = () => document.querySelector('.heritage-service-planner__service-picker select');
-  if (picker()?.value !== syncId) window.postMessage({ type: 'heritage-editor:open', syncId }, window.location.origin);
+  const activeService = () => document.querySelector('[data-active-service]')?.dataset.activeService;
+  if (!document.querySelector('[data-active-service]') && picker()?.value !== syncId) window.postMessage({ type: 'heritage-editor:open', syncId }, window.location.origin);
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    if (picker()?.value === syncId && !picker().disabled) break;
+    if (activeService() === syncId || (picker()?.value === syncId && !picker().disabled)) break;
     await new Promise(resolve => setTimeout(resolve, 25));
   }
-  if (picker()?.value !== syncId || picker().disabled) return { focused: false };
+  if (activeService() !== syncId && (picker()?.value !== syncId || picker().disabled)) return { focused: false };
   document.querySelector('.heritage-workspace-toolbar__views button:nth-child(2)')?.click();
   await frame();
   const visited = new Set();

@@ -111,6 +111,28 @@ class CommunityPlannerCache {
     await this.loaded;
     const url = new URL(request.url);
     if (url.origin !== this.origin) return this.fetch(request);
+    if (url.pathname.startsWith('/syncshow-local/adjust/') || (this.activeServiceId && url.pathname==='/fonts/NotoSans-Variable.ttf')) return this.localRequest(request);
+    if (this.activeServiceId) {
+      if (request.method === 'GET' && url.pathname === ENDPOINT) return this.listResponse({schemaVersion:1,items:[]});
+      if (request.method === 'GET' && url.pathname === `${ENDPOINT}/${this.activeServiceId}`) return json({schemaVersion:1,serviceDocument:this.envelope(this.activeServiceId)});
+      if (request.method === 'GET' && url.pathname.includes('/assets/')) {
+        const local=await this.localAssetLoader?.(request);
+        if(local)return local;
+      }
+      if (request.method === 'POST' && url.pathname === `${ENDPOINT}/library/bible-passage`) {
+        const local=await this.localRequest(request.clone());
+        if(local?.ok)return local;
+      }
+      if(request.method==='GET' && (url.pathname.startsWith(`${ENDPOINT}/library/`) || url.pathname.startsWith('/api/community/sermon-presentations'))) {
+        const cached=await this.cachedResponse(request) || await this.resourceCache?.cachedResponse(request);
+        if(cached)return cached;
+      }
+      // Resource reads are explicit Add-slide actions. The service itself is
+      // always the pinned local show; it never follows a remote GET.
+      if (url.pathname === ENDPOINT && request.method === 'POST') return json({error:'Adjust edits the active service.'},400);
+      const service=/^\/api\/community\/service-documents\/([^/]+)$/.exec(url.pathname);
+      if(service && idPattern.test(service[1]) && service[1] !== this.activeServiceId)return json({error:'Adjust edits the active service.'},409);
+    }
     const historyMatch = new RegExp(`^${ENDPOINT}/([^/]+)/history(?:/(local-[a-f0-9-]+)(?:/assets/(.+))?)?$`).exec(url.pathname);
     if (request.method === 'GET' && historyMatch) return this.historyResponse(request, historyMatch);
     const assetMatch = new RegExp(`^${ENDPOINT}/(?:[^/]+/)?assets/(sha256(?::|%3A)[a-f0-9]{64})$`, 'i').exec(url.pathname);
@@ -221,6 +243,7 @@ class CommunityPlannerCache {
     }
     let payload = { schemaVersion: 1, groups: [], hasNextPage: false };
     try {
+      if (this.activeServiceId) throw new Error('Use local Show history.');
       const response = await this.fetch(request.clone());
       if (!response.ok) throw new Error('offline');
       await this.cacheResponse(request, response);
@@ -249,6 +272,19 @@ class CommunityPlannerCache {
     if (!saved) return null;
     return { ...saved, savedLocally: true, pending: Boolean(this.state.pending[id]), conflict: Boolean(this.state.conflicts[id]), desktop: { savedLocally: true, pending: Boolean(this.state.pending[id]),
       conflict: Boolean(this.state.conflicts[id]) } };
+  }
+
+  async pinActiveShow(envelope, remoteBase, assetLoader) {
+    await this.loaded;
+    this.activeServiceId=envelope.syncId;
+    this.localAssetLoader=assetLoader;
+    // Each exact Show starts with its own journal, separate from Prepare.
+    // Reopening Adjust retains any later local edits in that same journal.
+    if (!this.state.documents[envelope.syncId]) {
+      this.state.documents[envelope.syncId]=serviceEnvelope(envelope);
+      if(remoteBase)this.state.remoteBases[envelope.syncId]=remoteBase;
+      await this.persist();
+    }
   }
 
   async listResponse(payload) {

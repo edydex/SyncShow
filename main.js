@@ -359,6 +359,10 @@ let communityPlannerOrigin = null;
 let communityPlannerHandoff = null;
 let communityPlannerCache = null;
 let communityPlannerRetryTimer = null;
+let communityPlannerMode = null;
+let communityAdjustSession = null;
+let communityActiveAdjust = null;
+const communityPlannerBackgroundCaches = new Map();
 let showAdjustInProgress = false;
 let communityPlannerShowMode = false;
 let controlSettingsDraftState = { dirty: false, saving: false };
@@ -7649,38 +7653,39 @@ function communityPlannerRequestHeaders(details, plannerOrigin, accessToken) {
   return requestHeaders;
 }
 
-async function openCommunityPlannerWindow() {
-  const connection = await currentCommunityConnectionSummary({
+async function openCommunityPlannerWindow({ adjust = null } = {}) {
+  const approved = await currentCommunityConnectionSummary({
     refreshCapabilities: false
   });
-  if (!connection || communityConnectionExpired(connection)) {
+  const connection = approved || (adjust && {id:'local-show',baseUrl:'https://syncshow.local/',serverName:'This computer'});
+  if (!adjust && (!connection || communityConnectionExpired(connection))) {
     failMainOperation(
       'COMMUNITY_RECONNECT_REQUIRED',
       'Connect Heritage Community in Admin Settings before opening Prepare.'
     );
   }
-  if (communityReconnectRequired) {
+  if (!adjust && communityReconnectRequired) {
     failMainOperation(
       'COMMUNITY_RECONNECT_REQUIRED',
       communityReconnectRequired.message
     );
   }
-  if (connection.canReadServiceDocuments !== true
-    || connection.canWriteServiceDocuments !== true) {
+  if (!adjust && (connection.canReadServiceDocuments !== true
+    || connection.canWriteServiceDocuments !== true)) {
     failMainOperation(
       'COMMUNITY_PLANNER_PERMISSION_REQUIRED',
       'Reconnect Heritage Community with service planning permission before opening Prepare.'
     );
   }
   const { connectionStore } = await getCommunityServices();
-  const authenticatedConnection = await connectionStore.getConnection(connection.id);
+  const authenticatedConnection = approved ? await connectionStore.getConnection(connection.id) : null;
 
   const plannerUrl = safeCommunityPlannerUrl(connection.baseUrl);
   const plannerOrigin = plannerUrl.origin;
+  const mode=adjust ? `adjust-${adjust.sessionId}` : 'prepare';
   if (communityPlannerView && !communityPlannerView.webContents.isDestroyed()) {
-    if (communityPlannerOrigin === plannerOrigin) {
-      communityPlannerView.setVisible(true);
-      communityPlannerView.webContents.focus();
+    if (communityPlannerOrigin === plannerOrigin && communityPlannerMode === mode) {
+      if(!adjust){communityPlannerView.setVisible(true);communityPlannerView.webContents.focus();}
       return {
         opened: true,
         alreadyOpen: true,
@@ -7688,10 +7693,10 @@ async function openCommunityPlannerWindow() {
         serverName: connection.serverName || null
       };
     }
-    failMainOperation(
-      'COMMUNITY_PLANNER_ALREADY_OPEN',
-      'Close the existing Community Prepare view before opening a different Community server.'
-    );
+    const flushed=await flushEmbeddedPlanner();
+    if(!flushed.ok)throw new Error(flushed.error || 'Save the open draft before opening Adjust.');
+    const previous=communityPlannerView.webContents;
+    await new Promise(resolve=>{previous.once('destroyed',resolve);previous.close();});
   }
 
   if (!controlWindow || controlWindow.isDestroyed()) {
@@ -7707,7 +7712,7 @@ async function openCommunityPlannerWindow() {
       sandbox: true,
       backgroundThrottling: false,
       preload: path.join(__dirname, 'src', 'community-planner-preload.js'),
-      partition: `persist:syncshow-community-planner-${connection.id}`
+      partition: `persist:syncshow-community-planner-${connection.id}${adjust ? '-adjust' : ''}`
     }
   });
   planner.setBackgroundColor('#0b1220');
@@ -7716,14 +7721,22 @@ async function openCommunityPlannerWindow() {
   controlWindow.contentView.addChildView(planner);
   communityPlannerView = planner;
   communityPlannerOrigin = plannerOrigin;
+  communityPlannerMode = mode;
   const plannerSession = planner.webContents.session;
   const { CommunityPlannerCache } = require('./src/services/community/CommunityPlannerCache');
-  const cache = new CommunityPlannerCache({
+  const cacheRoot=adjust
+    ? path.join(app.getPath('userData'),'community','planner-adjust',connection.id,adjust.workspaceId)
+    : path.join(app.getPath('userData'), 'community', 'planner', connection.id);
+  const cacheOptions={
     backgroundSync: true,
-    rootPath: path.join(app.getPath('userData'), 'community', 'planner', connection.id),
+    rootPath: cacheRoot,
     origin: plannerOrigin,
     inspectImage: bytes => require('sharp')(bytes).metadata(),
     fetch: request => {
+      if (!authenticatedConnection || (adjust && (communityConnectionExpired(connection)
+        || (['PUT','POST','DELETE'].includes(request.method) ? connection.canWriteServiceDocuments : connection.canReadServiceDocuments)!==true))) {
+        return Promise.resolve(new Response(JSON.stringify({error:'Saved locally. Reconnect Heritage to sync or fetch resources.'}),{status:503,headers:{'Content-Type':'application/json'}}));
+      }
       const headers = new Headers(request.headers);
       const url = new URL(request.url);
       if (url.origin === plannerOrigin && (url.pathname === '/api/community/service-documents'
@@ -7739,14 +7752,41 @@ async function openCommunityPlannerWindow() {
       notifyCommunityPlannerState();
       if (['en', 'ru'].includes(state.workspaceLanguage)) plannerSession.cookies.set({ url: plannerOrigin, name: 'payload-lng', value: state.workspaceLanguage, path: '/', sameSite: 'lax' }).catch(() => {});
     },
-    localRequest: request => resolveOfflinePlannerRequest(request, cache)
-  });
+    localRequest: async request => {
+      const {bundledPlannerResponse}=require('./src/services/community/BundledPlannerEditor');
+      return await bundledPlannerResponse(request,{rootPath:path.join(__dirname,'assets','planner-editor'),fontsRoot:path.join(__dirname,'assets','fonts'),language:cache.state.workspaceLanguage})
+        || resolveOfflinePlannerRequest(request,cache);
+    }
+  };
+  const cache = communityPlannerBackgroundCaches.get(cacheRoot) || new CommunityPlannerCache(cacheOptions);
   communityPlannerCache = cache;
   await cache.loaded;
+  if(adjust){
+    await cache.pinActiveShow(adjust.envelope,adjust.remoteBase,adjust.assetLoader);
+    communityActiveAdjust={cache,sessionId:adjust.sessionId,projectId:adjust.envelope.syncId};
+    const resourcesRoot=path.join(app.getPath('userData'),'community','planner',connection.id);
+    cache.resourceCache=communityPlannerBackgroundCaches.get(resourcesRoot) || new CommunityPlannerCache({...cacheOptions,rootPath:resourcesRoot});
+    await cache.resourceCache.loaded;
+    cache.state.workspaceLanguage ||= cache.resourceCache.state.workspaceLanguage;
+  }
   if (['en', 'ru'].includes(cache.state.workspaceLanguage)) await plannerSession.cookies.set({ url: plannerOrigin, name: 'payload-lng', value: cache.state.workspaceLanguage, path: '/', sameSite: 'lax' });
   plannerSession.protocol.handle(plannerUrl.protocol.replace(':', ''), request => cache.request(request));
-  communityPlannerRetryTimer = setInterval(() => {
-    cache.flush().catch(error => console.warn('[CommunityPlanner] Retry failed:', error.code || error.name));
+  communityPlannerBackgroundCaches.set(cache.rootPath,cache);
+  if(adjust)void (async()=>{
+    // Recover older unsent Show journals after app restart without putting
+    // their network retries on the active editor's opening path.
+    const folder=path.dirname(cacheRoot);
+    for(const entry of await fs.promises.readdir(folder,{withFileTypes:true})) {
+      if(!entry.isDirectory() || !/^show-[a-f0-9]{64}$/.test(entry.name))continue;
+      const rootPath=path.join(folder,entry.name);
+      if(communityPlannerBackgroundCaches.has(rootPath))continue;
+      const recovered=new CommunityPlannerCache({...cacheOptions,rootPath});
+      await recovered.loaded;
+      communityPlannerBackgroundCaches.set(rootPath,recovered);
+    }
+  })().catch(error=>console.warn('[CommunityPlanner] Saved Show sync recovery:',error.code || error.name));
+  if(!communityPlannerRetryTimer)communityPlannerRetryTimer = setInterval(() => {
+    for(const pendingCache of communityPlannerBackgroundCaches.values())pendingCache.flush().catch(error => console.warn('[CommunityPlanner] Retry failed:', error.code || error.name));
   }, 15000);
 
   const { CommunityPlannerHandoff } = require('./src/services/community/CommunityPlannerHandoff');
@@ -7769,7 +7809,7 @@ async function openCommunityPlannerWindow() {
       requestHeaders: communityPlannerRequestHeaders(
         details,
         plannerOrigin,
-        authenticatedConnection.accessToken
+        authenticatedConnection?.accessToken || ''
       )
     })
   );
@@ -7806,8 +7846,6 @@ async function openCommunityPlannerWindow() {
     }
   });
   planner.webContents.on('destroyed', () => {
-    clearInterval(communityPlannerRetryTimer);
-    communityPlannerRetryTimer = null;
     plannerSession.protocol.unhandle(plannerUrl.protocol.replace(':', ''));
     if (communityPlannerCache === cache) { communityPlannerCache = null; communityPlannerShowMode = false; }
     plannerSession.webRequest.onBeforeRequest(null);
@@ -7823,6 +7861,7 @@ async function openCommunityPlannerWindow() {
   });
 
   try {
+    if(adjust){plannerUrl.pathname='/syncshow-local/adjust/index.html';plannerUrl.searchParams.set('service',adjust.envelope.syncId);}
     await planner.webContents.loadURL(plannerUrl.href);
   } catch (_error) {
     if (!planner.webContents.isDestroyed()) planner.webContents.close();
@@ -7835,8 +7874,9 @@ async function openCommunityPlannerWindow() {
       'Community Prepare could not load. Check the connection and try again.'
     );
   }
-  planner.setVisible(true);
-  planner.webContents.focus();
+  // Adjust visibility belongs to the current renderer panel. A late native
+  // load must not reappear over thumbnails after the operator closed it.
+  if(!adjust){planner.setVisible(true);planner.webContents.focus();}
   notifyCommunityPlannerState();
   return {
     opened: true,
@@ -9348,7 +9388,8 @@ async function goToSlideConfirmed(slideIndex, { forceRefresh = false, skipBackst
     };
   }
 
-  if (!skipBackstage && typeof communityPlannerCache !== 'undefined' && communityPlannerCache) {
+  if (!skipBackstage && ((typeof communityActiveAdjust !== 'undefined' && communityActiveAdjust)
+    || (typeof communityPlannerCache !== 'undefined' && communityPlannerCache))) {
     const draftTake = await takeBackstageServiceCue({ targetIndex: slideIndex });
     if (draftTake) return draftTake;
   }
@@ -9490,7 +9531,8 @@ async function navigateSlideConfirmed(delta) {
   if (!appState.activeLaunchPlan) {
     return { accepted: false, code: 'NO_ACTIVE_SHOW', message: 'There is no active Show.' };
   }
-  if (typeof communityPlannerCache !== 'undefined' && communityPlannerCache) {
+  if ((typeof communityActiveAdjust !== 'undefined' && communityActiveAdjust)
+    || (typeof communityPlannerCache !== 'undefined' && communityPlannerCache)) {
     const draftTake = await takeBackstageServiceCue({ advance: delta });
     if (draftTake) return draftTake;
   }
@@ -18351,6 +18393,48 @@ ipcMain.handle('community:status', async (event) => {
   }));
 });
 
+ipcMain.handle('community:planner:openActiveAdjust', async event => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    const handoff=installedServiceHandoff(),pointer=currentPreparedServicePointer;
+    if(!appState.activeLaunchPlan || !handoff?.project || !pointer)throw new Error('Start a native service before opening Adjust.');
+    const sessionId=outputSessionId;
+    const {project}=await getPrepareServices().serviceProjectStore.read(handoff.project.id,{revisionId:pointer.projectRevisionId});
+    if(!communityAdjustSession || communityAdjustSession.sessionId!==sessionId || communityAdjustSession.projectId!==project.id) {
+      communityAdjustSession={sessionId,projectId:project.id,workspaceId:pointer.packageId};
+    }
+    const source=serviceDocumentSourceForProject(project);
+    const {validateHeritageServiceDocumentSource}=require('./src/services/community/HeritageServiceDocument');
+    const validated=validateHeritageServiceDocumentSource(source);
+    const {serviceDocumentBindingStore}=await getCommunityServices();
+    const binding=await serviceDocumentBindingStore.get(project.id);
+    const envelope={...validated,schemaVersion:1,syncId:project.id,syncVersion:binding?.syncVersion || 1,status:binding?.status || 'planning',changedAt:project.updatedAt};
+    const remoteBase=binding ? {revision:validated.revision,syncVersion:binding.syncVersion} : null;
+    const assetLoader=async request=>{
+      const match=/\/assets\/(sha256(?::|%3A)[a-f0-9]{64})$/i.exec(new URL(request.url).pathname);
+      if(!match)return null;
+      const assetId=decodeURIComponent(match[1]),asset=project.assets[assetId];
+      if(!asset)return null;
+      const resolved=await getPrepareServices().serviceProjectStore.resolveAssetPath(project.id,pointer.projectRevisionId,assetId);
+      const {buffer}=await readFileNoFollow(resolved.assetPath,asset.kind==='video'?250*1024*1024:75*1024*1024);
+      return new Response(buffer,{headers:{'Content-Type':asset.mediaType}});
+    };
+    await openCommunityPlannerWindow({adjust:{...communityAdjustSession,envelope,remoteBase,assetLoader}});
+    if(sessionId!==outputSessionId || project.id!==currentPreparedServicePointer?.projectId)throw new Error('The show changed while Adjust was opening. Open Adjust again.');
+    communityPlannerShowMode=false;notifyPlannerShowMode();
+    const draft=communityPlannerCache.envelope(project.id).project,timeline=compileServiceProject(draft);
+    const cueId=handoff.cueIds[appState.currentSlide],number=timeline.cueIds.indexOf(cueId)+1;
+    const parents=new Map();
+    for(const item of Object.values(draft.items))if(item.kind==='group')for(const child of item.childIds)parents.set(child,item.id);
+    const sectionIds=[];let parent=parents.get(timeline.cues[cueId]?.itemId);
+    while(parent){sectionIds.unshift(parent);parent=parents.get(parent);}
+    const {focusPlannerCue}=require('./src/services/community/PlannerCueFocus');
+    const focused=await communityPlannerView.webContents.executeJavaScript(`(${focusPlannerCue.toString()})(${JSON.stringify({syncId:project.id,cueId,number,sectionIds})})`);
+    if(!focused.focused)throw new Error('The current slide could not be selected. Your local service is safe.');
+    return {opened:true,syncId:project.id,local:true};
+  });
+});
+
 ipcMain.handle('community:planner:openService', async (event, request = {}) => {
   requireControlSender(event);
   return communityIpcResult(async () => {
@@ -18427,8 +18511,19 @@ ipcMain.handle('community:planner:resolveConflict', async (event, request = {}) 
 
 // Saving changes only the private draft. A normal slide take is the sole
 // boundary that replaces the immutable Show package and publishes its cue.
+async function installBackstageServiceDocument(remote, cache = communityPlannerCache) {
+  const store=getPrepareServices().serviceProjectStore;
+  const local=await readLocalServiceDocument(store,remote.syncId);
+  const assetBuffers=new Map();
+  for(const id of Object.keys(remote.project.assets))assetBuffers.set(id,await cache.asset(remote.syncId,id));
+  const installed=await store.installSharedSnapshot(remote.project,{expectedRevisionId:local?.revisionId ?? null,reason:'backstage-local-edit',assetBuffers});
+  return projectResult(installed);
+}
+
 async function takeBackstageServiceCue({ targetIndex = appState.currentSlide, advance = 0, cueId } = {}) {
-  if (!communityPlannerCache || !currentPreparedServicePointer || !appState.activeLaunchPlan
+  const backstageCache=communityActiveAdjust?.sessionId===outputSessionId && communityActiveAdjust.projectId===currentPreparedServicePointer?.projectId
+    ? communityActiveAdjust.cache : communityPlannerCache;
+  if (!backstageCache || !currentPreparedServicePointer || !appState.activeLaunchPlan
     || activeBibleOverlay || pendingBibleOverlay || pendingBibleLookup) return null;
   if (showAdjustInProgress) return { accepted: false, code: 'BACKSTAGE_TAKE_BUSY', message: 'Wait for the saved slide to reach every output.' };
   showAdjustInProgress = true;
@@ -18438,7 +18533,7 @@ async function takeBackstageServiceCue({ targetIndex = appState.currentSlide, ad
     const oldCleared = appState.isCleared, oldPhase = outputLifecyclePhase;
     const previousCueIds = appState.presentations[oldPlan.timelineRoleId]?.metadata?.slides?.map(slide => slide.cueId);
     if (!previousCueIds?.length) return null;
-    const flushed = communityPlannerView && !communityPlannerView.webContents.isDestroyed() ? await flushEmbeddedPlanner() : { ok: true };
+    const flushed = communityPlannerCache===backstageCache && communityPlannerView && !communityPlannerView.webContents.isDestroyed() ? await flushEmbeddedPlanner() : { ok: true };
     if (!flushed.ok) throw new Error(flushed.error || 'The backstage editor could not save. The current screen is unchanged.');
     if (sessionId !== outputSessionId || oldPlan !== appState.activeLaunchPlan || oldRevision !== presentationRevision
       || oldCurrentIndex !== appState.currentSlide || oldBibleEpoch !== bibleOperationEpoch
@@ -18447,7 +18542,7 @@ async function takeBackstageServiceCue({ targetIndex = appState.currentSlide, ad
     }
     const syncId = currentPreparedServicePointer.projectId;
     if (cueId && flushed.serviceDocument?.syncId !== syncId) return { accepted: false, code: 'PLANNER_WRONG_SERVICE', message: 'Adjust must edit the service currently being shown.' };
-    const remote = communityPlannerCache.envelope(syncId);
+    const remote = backstageCache.envelope(syncId);
     if (!remote) return null;
     const draftRevision = crypto.createHash('sha256').update(require('./src/services/project/ServiceProject').serializeServiceProject(remote.project)).digest('hex');
     if (draftRevision === currentPreparedServicePointer.projectRevisionId) {
@@ -18464,9 +18559,7 @@ async function takeBackstageServiceCue({ targetIndex = appState.currentSlide, ad
       || activeLiveCueNavigation || outputRecovery || currentLiveCueTransitionOutputs().accepted !== true) {
       throw new Error('Return to a healthy service slide before taking the saved changes.');
     }
-    const context = await communityServiceDocumentContext({ refreshCapabilities: false });
-    const local = await readLocalServiceDocument(context.projectStore, syncId);
-    const selected = await installCommunityServiceDocument(context, remote, local);
+    const selected = await installBackstageServiceDocument(remote,backstageCache);
     const services = getPrepareServices();
     const published = await services.showPackagePublisher.publish({ reusePackageId: currentPreparedServicePointer?.packageId, reusePackageManifestSha256: currentPreparedServicePointer?.packageManifestSha256, projectId: selected.project.id,
       revisionId: selected.revisionId, roleMapping: nativeProjectRoleMapping(selected.project),

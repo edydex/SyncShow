@@ -17,6 +17,7 @@ function harness({ flush = async () => ({ok:true,serviceDocument:{syncId:'servic
   const services = {showPackagePublisher:{publish:async () => {events.push('compile');return publish ? publish(published) : published;}}};
   const context = vm.createContext({
     crypto,
+    communityActiveAdjust:null,
     require: name => name.endsWith('/ServiceProject') ? {serializeServiceProject:JSON.stringify} : require('../src/services/show/BackstageCueTarget'),
     communityPlannerCache:{envelope:()=>({project:{id:'service',title:'New draft'}})},
     currentPreparedServicePointer:{projectId:'service',projectRevisionId:'previous'},
@@ -31,7 +32,7 @@ function harness({ flush = async () => ({ok:true,serviceDocument:{syncId:'servic
     authorizeLocalShowCommand:()=>events.push('authorize'),
     currentLiveCueTransitionOutputs:()=>({accepted:true}),
     communityServiceDocumentContext:async()=>({projectStore:{}}),
-    readLocalServiceDocument:async()=>({}),installCommunityServiceDocument:async()=>({project:{id:'service'},revisionId:'new'}),
+    readLocalServiceDocument:async()=>({}),installBackstageServiceDocument:async()=>({project:{id:'service'},revisionId:'new'}),
     getPrepareServices:()=>services,nativeProjectRoleMapping:()=>({english:'english'}),
     CONFIG:{displayWidth:1920,displayHeight:1080,thumbnailWidth:320},
     outputWindows:new Map([['front',{win:{}}]]),
@@ -56,6 +57,14 @@ test('normal advance compiles latest draft and takes inserted successor through 
   assert.equal(take[2].forceRefresh,true);
   assert.equal(take[2].skipBackstage,true);
   assert.ok(events.indexOf('activate')<events.indexOf(take));
+});
+test('the active Show draft remains authoritative when its view closes or Prepare opens another draft', async () => {
+  for (const otherCache of [null,{envelope(){throw new Error('Prepare must not replace the active Show draft');}}]) {
+    const h=harness({flush(){throw new Error('A different view must not be flushed for a live take');}});
+    h.context.communityActiveAdjust={sessionId:8,projectId:'service',cache:h.context.communityPlannerCache};
+    h.context.communityPlannerCache=otherCache;
+    assert.equal((await h.context.take({advance:1})).preparedChanged,true);
+  }
 });
 test('Clear during editor flush cancels even an unchanged or unavailable draft before any take', async () => {
   for (const remote of [null,{project:{id:'service',title:'Old draft'}}]) {
