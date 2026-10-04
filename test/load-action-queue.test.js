@@ -104,6 +104,19 @@ test('initial startup and a check already in flight can accept a Start click', a
   }
 });
 
+test('a click during explicit loading waits for the newly selected service instead of starting the old one', async () => {
+  const f = fixture({ immediate: { state: 'current' } });
+  f.state.nativeLoadBusy = true;
+  const opening = f.start(false);
+  assert.equal(f.checks.length, 0);
+  assert.equal(f.starts.length, 0);
+  f.state.serviceHandoff = { project: { id: 'today', revisionId: 'b'.repeat(64) } };
+  f.state.nativeLoadBusy = false;
+  f.changed();
+  await opening;
+  assert.equal(f.starts.length, 1);
+});
+
 test('Cancel prevents a late network result from opening outputs', async () => {
   const f = fixture();
   const opening = f.start(false);

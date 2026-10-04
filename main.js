@@ -78,6 +78,7 @@ const {
   resolveNativeCuePayload,
   showRehearsalReceiptMatches
 } = require('./src/services/show');
+const { assertSelectedShowSource } = require('./src/services/show/SelectedShowSource');
 const { BibleLibrary, translations: bundledBibleTranslations } = require('./src/services/bible');
 const { InstalledBibleLibrary } = require('./src/services/bible/InstalledBibleLibrary');
 const { MAX_BIBLE_IMPORT_BYTES, BibleImportError } = require('./packages/bible-import');
@@ -2962,6 +2963,13 @@ const CONFIG = {
   get cacheDir() { return getCacheDir(); }
 };
 
+const { BrowserSlideRenderer } = require('./src/services/project/BrowserSlideRenderer');
+const { LegacyServiceFallback } = require('./src/services/project/LegacyServiceFallback');
+
+function browserSlideRenderer(options) {
+  return new BrowserSlideRenderer({ ...options, BrowserWindow, fontPath: getBundledPresentationFontPath() });
+}
+
 function getBundledPresentationFontPath() {
   if (isPackaged) {
     return path.join(
@@ -3064,6 +3072,7 @@ function getPrepareServices() {
     showPackagePublisher = new ShowPackagePublisher({
       projectStore: serviceProjectStore,
       rootPath: path.join(userDataPath, 'show-packages'),
+      browserRendererFactory: browserSlideRenderer,
       fontPath: getBundledPresentationFontPath()
     });
   }
@@ -26545,6 +26554,45 @@ ipcMain.handle('prepare:projects:moveItem', async (event, request = {}) => {
   }));
 });
 
+async function offerLegacyServiceFallback(error, selected, roleMapping, isCurrent) {
+  if (!isCurrent()) throw error;
+  const answer = await dialog.showMessageBox(controlWindow, {
+    type: 'warning',
+    title: 'Use PowerPoint fallback?',
+    message: 'This service could not be prepared in SyncShow format.',
+    detail: `${selected.project.title} · ${selected.project.serviceDate}\n\n${error.message}\n\nConvert this exact service into PowerPoints and load those instead? Slide text and images are preserved; long text may be smaller. Video playback cannot be converted. The service stays editable in Prepare.`,
+    buttons: ['Convert and Load PowerPoints', 'Cancel'],
+    defaultId: 0, cancelId: 1, noLink: true
+  });
+  if (answer.response !== 0 || !isCurrent()) throw error;
+  const fallback = new LegacyServiceFallback({
+    rootPath: path.join(app.getPath('userData'), 'service-powerpoint-fallbacks'),
+    cacheRoot: CONFIG.cacheDir,
+    projectStore: getPrepareServices().serviceProjectStore,
+    rendererFactory: browserSlideRenderer
+  });
+  const built = await fallback.build({
+    projectId: selected.project.id, revisionId: selected.revisionId, roleMapping,
+    onProgress: progress => {
+      if (controlWindow && !controlWindow.isDestroyed()) controlWindow.webContents.send('prepare:publishProgress', progress);
+    }
+  });
+  if (!isCurrent() || appState.activeLaunchPlan) failMainOperation('LOAD_REFRESH_SUPERSEDED', 'Load changed during conversion. Choose the service again.');
+  const current = await getPrepareServices().serviceProjectStore.read(selected.project.id);
+  if (current.revisionId !== selected.revisionId) failMainOperation('PROJECT_CONFLICT', 'The service changed during conversion. Load it again.');
+  const release = beginPresentationMutation();
+  try {
+    await fallback.activate(built);
+    await deactivateCurrentPreparedService({ clearPresentations: true });
+    installPreparedPresentations(built.presentations, Object.keys(built.presentations));
+  } finally { release(); }
+  return { success: true, legacyFallback: {
+    projectId: selected.project.id, revisionId: selected.revisionId,
+    title: selected.project.title, cueCount: compileServiceProject(selected.project).cueIds.length,
+    roleIds: Object.keys(built.presentations)
+  } };
+}
+
 ipcMain.handle('prepare:projects:publish', async (event, request = {}) => {
   requireControlSender(event);
   requirePrepareRequest(request, 16 * 1024);
@@ -26606,7 +26654,9 @@ ipcMain.handle('prepare:projects:publish', async (event, request = {}) => {
   // Retina laptop's 3:2 aspect ratio and letterbox every venue projector.
   const targetWidth = CONFIG.displayWidth;
   const targetHeight = CONFIG.displayHeight;
-  const published = await services.showPackagePublisher.publish({
+  let published;
+  try {
+    published = await services.showPackagePublisher.publish({
     reusePackageId: currentPreparedServicePointer?.packageId,
     reusePackageManifestSha256: currentPreparedServicePointer?.packageManifestSha256,
     projectId,
@@ -26620,7 +26670,18 @@ ipcMain.handle('prepare:projects:publish', async (event, request = {}) => {
         controlWindow.webContents.send('prepare:publishProgress', progress);
       }
     }
-  });
+    });
+  } catch (error) {
+    if (['TEXT_OVERFLOW', 'TEXT_RENDER_FAILED', 'UNSUPPORTED_PRESET'].includes(error?.code)) {
+      return offerLegacyServiceFallback(error, selected, roleMapping, () =>
+        publishGeneration === preparePublishGeneration
+        && presentationRevision === presentationRevisionAtStart
+        && outputSessionId === outputSessionIdAtStart
+        && activeVenueProfile === venueProfileAtStart
+        && !isConverting && conversionQueue.length === 0 && !appState.activeLaunchPlan);
+    }
+    throw error;
+  }
   const currentBeforeInstall = await services.serviceProjectStore.read(projectId);
   if (currentBeforeInstall.revisionId !== revisionId) {
     failMainOperation(
@@ -26951,6 +27012,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     decisions,
     preferredTimelineRoleId
   });
+  assertSelectedShowSource(options, preparedService, launchPlan);
   const powerPointServiceCandidate =
     await capturePowerPointServiceSetCandidate(launchPlan);
   updateDisplayList();
@@ -27630,7 +27692,10 @@ ipcMain.handle('app:getState', async (event) => {
       .map(role => [
         role.id,
         appState.presentations[role.id]
-          ? { loaded: true, slideCount: appState.presentations[role.id].slideCount }
+          ? { loaded: true, slideCount: appState.presentations[role.id].slideCount,
+            ...(appState.presentations[role.id].metadata?.nativeFallback ? {
+              nativeFallback: appState.presentations[role.id].metadata.nativeFallback
+            } : {}) }
           : null
       ]))
   };

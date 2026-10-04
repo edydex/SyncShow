@@ -98,10 +98,28 @@ async function preparedProject(t) {
   return { packagesPath, publishOptions, publisher, saved, store, workspace };
 }
 
+test('a text-fit failure identifies the exact slide and channel and leaves no active package', async t => {
+  const fixture = await preparedProject(t);
+  const realSharp = fixture.publisher.sharp;
+  fixture.publisher.sharp = (...args) => args[0]?.text
+    ? { png: () => ({ toBuffer: async () => ({ data: Buffer.alloc(0), info: { width: 100, height: 10000 } }) }) }
+    : realSharp(...args);
+  await assert.rejects(fixture.publisher.publish(fixture.publishOptions), error => {
+    assert.equal(error.code, 'TEXT_OVERFLOW');
+    assert.match(error.message, /^Slide 1 \(Welcome\) on primary:/);
+    assert.equal(error.details.slideNumber, 1);
+    assert.equal(error.details.channelId, 'primary');
+    assert.equal(error.details.measuredHeight, 10000);
+    return true;
+  });
+  const entries = await fs.readdir(fixture.packagesPath);
+  assert.equal(entries.some(name => name.startsWith('show-') || name.startsWith('.staging-')), false);
+});
+
 test('old renderer packages still open offline while fresh preparation uses a new identity', async t => {
   const fixture = await preparedProject(t);
   const current = await fixture.publisher.publish(fixture.publishOptions);
-  assert.equal(current.manifest.rendererVersion, 18);
+  assert.equal(current.manifest.rendererVersion, 19);
   const legacy = structuredClone(current.manifest);
   legacy.rendererVersion = 11;
   const identity = {};
@@ -120,6 +138,27 @@ test('old renderer packages still open offline while fresh preparation uses a ne
   const prepared = await fixture.publisher.publish(fixture.publishOptions);
   assert.equal(prepared.manifest.id, current.manifest.id);
   assert.notEqual(prepared.manifest.id, legacy.id);
+});
+
+test('preview overflow uses the projection renderer and releases it after publication', async t => {
+  const f = await preparedProject(t), sharp = require('sharp');
+  const image = await sharp({ create: { width: 1920, height: 1080, channels: 3, background: '#346789' } }).jpeg().toBuffer();
+  let disposed = 0;
+  const scenes = [];
+  f.publisher.sharp = options => {
+    if (options?.text) return { png: () => ({ toBuffer: async () => ({ data: image, info: { width: 100, height: 10000 } }) }) };
+    return sharp(options);
+  };
+  f.publisher.browserRendererFactory = () => ({
+    renderScene: async scene => { scenes.push(scene); return { info: { data: image } }; },
+    dispose: async () => { disposed += 1; }
+  });
+  const result = await f.publisher.publish(f.publishOptions);
+  assert.equal(result.manifest.cueCount, 1);
+  assert.equal(scenes.length, 2);
+  assert.equal(scenes[0].body, 'Welcome <everyone> & friends');
+  assert.equal(disposed, 1);
+  assert.equal((await f.publisher.open(result.manifest.id)).manifest.id, result.manifest.id);
 });
 
 test('publishes an immutable equal-length package, returns the exact presentation contract, and reuses it', async t => {

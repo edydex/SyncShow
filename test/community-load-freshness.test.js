@@ -65,7 +65,7 @@ function controllerFixture(result={state:'current'}, options={}) {
   const nodes=new Map(); const get=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',dataset:{},hidden:false,open:false,disabled:false,
     listeners:{}, addEventListener(name,fn){this.listeners[name]=fn;},setAttribute(){},replaceChildren(){},appendChild(){},
     showModal(){this.open=true; this.opens=(this.opens||0)+1;},close(){this.open=false;}});return nodes.get(id);};
-  let active=true; const calls=[], published=[], loaded=[], progress=[];
+  let active=true; const calls=[], published=[], loaded=[], progress=[], started=[], failed=[];
   const api={getCommunityStatus:async()=>({connected:true,connection:{canReadServiceDocuments:true}}),
     listCommunityServiceDocuments:async()=>({items:[]}), getCommunityServiceDocumentState:async()=>({shared:options.unshared?null:{syncId:id}}),
     openCommunityServiceDocument:async request=>{calls.push(request); if(options.wait) await options.wait;
@@ -74,8 +74,9 @@ function controllerFixture(result={state:'current'}, options={}) {
       if(options.buildError)throw new Error('Missing media');return{};}};
   const window={api}; const sandbox=vm.createContext({window,document:{getElementById:get,createElement:()=>({})}});
   vm.runInContext(controllerSource,sandbox);
-  const controller=window.SyncShowSharedServices.createController({api,prepareController:{},onLoaded:async()=>loaded.push(id)}).initialize();
-  return {nodes,calls,published,loaded,progress, deactivate(){active=false;},
+  const controller=window.SyncShowSharedServices.createController({api,prepareController:{},onLoaded:async()=>loaded.push(id),
+    onLoadStarted: id=>started.push(id),onLoadFailed:message=>failed.push(message)}).initialize();
+  return {nodes,calls,published,loaded,progress,started,failed, deactivate(){active=false;},
     refresh:()=>controller.refreshLoaded(id,revision,{isCurrent:()=>active,progress:value=>progress.push(value)}),
     open:()=>controller.openById(id)};
 }
@@ -88,6 +89,20 @@ test('automatic latest check quietly builds a newer exact service without openin
 test('a current package and an unshared local service do not rebuild',async()=>{
   const current=controllerFixture(); assert.equal((await current.refresh()).state,'current'); assert.equal(current.published.length,0);
   const local=controllerFixture({}, {unshared:true}); assert.equal((await local.refresh()).state,'unshared'); assert.equal(local.calls.length,0);
+});
+test('explicit Load installs the exact package even when the cached document is already current',async()=>{
+  const f=controllerFixture({state:'current',project:{id,title:'Sunday'},revisionId:revision});
+  assert.equal(await f.open(),true);
+  assert.deepEqual(f.started,[id]);
+  assert.equal(f.published.length,1);
+  assert.equal(f.loaded.length,1);
+});
+test('failed explicit loading reports failure instead of making an older service ready',async()=>{
+  const f=controllerFixture({state:'opened',project:{id},revisionId:revision},{buildError:true});
+  assert.equal(await f.open(),false);
+  assert.deepEqual(f.failed,['Missing media']);
+  assert.equal(f.loaded.length,0);
+  assert.equal(f.nodes.get('sharedServicesDialog').open,false);
 });
 test('offline and failed builds leave the previously loaded package intact',async()=>{
   for(const options of [{error:true},{buildError:true}]) {

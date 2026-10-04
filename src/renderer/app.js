@@ -50,6 +50,9 @@ const state = {
   queuedStart: null,
   loadActionNotice: null,
   serviceHandoff: null,
+  nativeLoadBusy: false,
+  nativeLoadError: null,
+  nativeRequestedServiceId: null,
   loadFreshness: { busy: false, message: '', kind: '' },
   preparedServiceRestore: { status: 'none' },
   preparedServiceDateConfirmations: new Set(),
@@ -564,7 +567,12 @@ async function init() {
       prepareController,
       onStatus: setStatus,
       onLoaded: refreshPublishedProject,
-      onBusyChanged: () => checkReadyState()
+      onLoadStarted: beginNativeServiceLoad,
+      onLoadFailed: failNativeServiceLoad,
+      onBusyChanged: busy => {
+        if (!busy) state.nativeLoadBusy = false;
+        checkReadyState();
+      }
     }).initialize();
   }
   setupEventListeners();
@@ -686,8 +694,17 @@ function setupEventListeners() {
     if (!service) return;
     if (service.source === 'local') return loadLocalService(service, elements.btnLoadSuggested);
     elements.btnLoadSuggested.disabled = true;
-    try { await sharedServiceController?.openById?.(service.id); }
-    finally { elements.btnLoadSuggested.disabled = false; }
+    beginNativeServiceLoad(service.id);
+    try {
+      const loaded = await sharedServiceController?.openById?.(service.id);
+      if (!loaded && !state.nativeLoadError) failNativeServiceLoad('The selected service could not be loaded. Check the Community connection and try again.');
+    } catch (error) {
+      failNativeServiceLoad(operatorErrorMessage(error, 'The selected service could not be loaded.'));
+    } finally {
+      state.nativeLoadBusy = false;
+      elements.btnLoadSuggested.disabled = false;
+      checkReadyState();
+    }
   });
   elements.outputPreviewSelect.addEventListener('change', selectOutputPreview);
   elements.btnTestOutput.addEventListener('click', () => startPresentation(true));
@@ -1465,27 +1482,44 @@ async function openLocalServiceInPrepare(projectId) {
   if (state.community.plannerOpen) communityCheckedResult(await window.api.openPlannerService(projectId));
 }
 
+function beginNativeServiceLoad(projectId) {
+  state.nativeRequestedServiceId = projectId;
+  state.nativeLoadError = null;
+  state.nativeLoadBusy = true;
+  state.loadActionNotice = null;
+  checkReadyState();
+}
+
+function failNativeServiceLoad(message) {
+  state.nativeLoadError = message;
+  state.loadActionNotice = { message, kind: 'warning' };
+  setStatus(message);
+}
+
 async function loadLocalService(project, button) {
   if (!project?.id || !project?.revisionId || button.disabled) return;
   button.disabled = true;
   const previousLabel = button.textContent;
   button.textContent = 'Loading…';
+  beginNativeServiceLoad(project.id);
   setStatus(`Preparing ${project.title || 'saved service'} for offline Show…`);
   try {
     const result = await window.api.publishServiceProject({
       projectId: project.id,
       revisionId: project.revisionId
     });
-    await refreshPublishedProject(result, { project });
+    await refreshPublishedProject(result, { project, revisionId: project.revisionId });
   } catch (error) {
     console.error('[Load] Saved SyncShow service could not be loaded:', error);
-    setStatus(`Could not load ${project.title || 'that service'}: ${operatorErrorMessage(
+    failNativeServiceLoad(`Could not load ${project.title || 'that service'}: ${operatorErrorMessage(
       error,
       'Review it in Prepare and try again.'
     )}`);
   } finally {
+    state.nativeLoadBusy = false;
     button.disabled = false;
     button.textContent = previousLabel;
+    checkReadyState();
   }
 }
 
@@ -2270,15 +2304,51 @@ function renderShowFinishAction() {
   );
 }
 
-async function refreshPublishedProject(_publishResult, context = {}) {
+async function refreshPublishedProject(publishResult, context = {}) {
   try {
     resetServiceOutputChoices();
     state.presentationConversionRecovery = {};
     const appState = await window.api.getAppState();
+    const expectedProjectId = context.project?.id || publishResult?.showPackage?.projectId;
+    const expectedRevisionId = context.revisionId || publishResult?.showPackage?.revisionId;
+    if (publishResult?.legacyFallback) {
+      const fallback = publishResult.legacyFallback;
+      const presentations = (fallback.roleIds || []).map(roleId => appState.presentations?.[roleId]);
+      if (!presentations.length || (expectedProjectId && fallback.projectId !== expectedProjectId)
+        || (expectedRevisionId && fallback.revisionId !== expectedRevisionId)
+        || presentations.some(presentation => !presentation?.loaded
+          || presentation.nativeFallback?.projectId !== fallback.projectId
+          || presentation.nativeFallback?.revisionId !== fallback.revisionId
+          || presentation.slideCount !== fallback.cueCount)) {
+        throw new Error('Load could not verify the converted service. Load it again.');
+      }
+      applyServiceHandoff(null);
+      state.nativeLoadError = null;
+      state.nativeLoadBusy = false;
+      activateLoadMode('pptx');
+      if (state.queuedStart) { state.queuedStart.mode = 'pptx'; state.queuedStart.serviceId = null; }
+      applyRuntimePresentationState(appState.presentations, { displayName: fallback.title, replaceSource: true });
+      state.currentSlide = appState.currentSlide;
+      state.totalSlides = appState.totalSlides;
+      await loadSlidesIfNeeded();
+      renderThumbnails();
+      state.loadActionNotice = { kind: 'warning', message: `${fallback.title} is loaded as PowerPoints. These are the selected service’s converted slides.` };
+      renderInputCards();
+      checkReadyState();
+      setStatus(state.loadActionNotice.message);
+      return;
+    }
+    if (!appState.serviceHandoff || (expectedProjectId && appState.serviceHandoff.project?.id !== expectedProjectId)
+      || (expectedRevisionId && appState.serviceHandoff.project?.revisionId !== expectedRevisionId)) {
+      throw new Error('Load could not verify the selected service revision. Try loading the service again.');
+    }
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
     state.displays = appState.displays;
     applyServiceHandoff(appState.serviceHandoff);
+    state.nativeRequestedServiceId = appState.serviceHandoff.project.id;
+    state.nativeLoadError = null;
+    state.loadActionNotice = null;
     state.preparedServiceRestore = appState.preparedServiceRestore || {
       status: 'none'
     };
@@ -2298,7 +2368,8 @@ async function refreshPublishedProject(_publishResult, context = {}) {
     setStatus(`${context.project?.title || 'Prepared service'} is ready in Load`);
   } catch (error) {
     console.error('[Prepare] Published service could not be refreshed in Load:', error);
-    setStatus(`The service was prepared, but Load could not refresh: ${error.message}`);
+    failNativeServiceLoad(`The service was prepared, but Load could not refresh: ${error.message}`);
+    throw error;
   } finally {
     setWorkflowStage('load');
   }
@@ -5929,6 +6000,8 @@ async function restoreCachedPresentations() {
 // Restore previous presentation from cache
 async function restorePreviousPresentation(caches, restoreContract) {
   try {
+    // This action explicitly restores PowerPoints, not a native service.
+    activateLoadMode('pptx');
     resetServiceOutputChoices({ refresh: true });
     applyServiceHandoff(null);
     setStatus('Restoring previous presentation...');
@@ -6482,6 +6555,13 @@ function getReadinessState(testOutput = false) {
     .filter(route => route.decision === null)
     .map(route => route.output);
   const issues = [];
+  const nativeSourceIssue = state.loadMode === 'syncshow'
+    ? state.nativeLoadError || (state.nativeLoadBusy ? 'Loading the selected SyncShow service…'
+      : !state.serviceHandoff?.project ? 'No SyncShow service is loaded. Click Load service before starting.'
+        : state.nativeRequestedServiceId && state.nativeRequestedServiceId !== state.serviceHandoff.project.id
+          ? 'The selected service has not been loaded. Try loading it again.' : '')
+    : '';
+  if (nativeSourceIssue) issues.push(nativeSourceIssue);
   const demoTarget = state.displays.find(display => String(display.id) === state.testOutput.displayId && !display.isControl);
   const demoReady = !testOutput || (state.testOutput.enabled && !!demoTarget && !state.testOutputSaving);
   if (!demoReady) issues.push('Choose a connected external demo screen in Admin Settings → Screen Setup');
@@ -6519,6 +6599,7 @@ function getReadinessState(testOutput = false) {
   if (state.startAttempt && !state.isStarting) issues.push('Finish or cancel the current Start Show choices');
 
   const isReady = demoReady && activeOutputs.length > 0
+    && !nativeSourceIssue
     && !conversionPending
     && !state.loadFreshness?.busy
     && !state.isStarting
@@ -6544,7 +6625,8 @@ function getReadinessState(testOutput = false) {
     unsupportedProfileRoutes,
     hasDisplayConflict,
     slideCountsMatch,
-    conversionPending
+    conversionPending,
+    nativeSourceIssue
   };
 }
 
@@ -6580,7 +6662,7 @@ function renderReadiness(readiness) {
   }
 
   if (state.friendlyMode) {
-    if (state.initializingLoad || state.loadFreshness.busy || state.community.handoffBusy) {
+    if (state.initializingLoad || state.loadFreshness.busy || state.community.handoffBusy || state.nativeLoadBusy) {
       elements.readinessIcon.textContent = '…';
       elements.readinessTitle.textContent = 'Preparing the service';
       elements.readinessSummary.textContent = 'Click Start Show or Test Output. It will continue when the service is ready.';
@@ -6590,6 +6672,9 @@ function renderReadiness(readiness) {
     if (conversionPending) {
       elements.readinessTitle.textContent = 'Loading slideshows';
       elements.readinessSummary.textContent = 'Click Start Show or Test Output. It will continue when loading finishes.';
+    } else if (readiness.nativeSourceIssue) {
+      elements.readinessTitle.textContent = state.nativeLoadError ? 'The service did not load' : 'Load a SyncShow service';
+      elements.readinessSummary.textContent = readiness.nativeSourceIssue;
     } else if (!slideCountsMatch) {
       elements.readinessTitle.textContent = 'Slideshows do not match';
       elements.readinessSummary.textContent = issues.find(issue => issue.startsWith('Slideshows assigned')) || 'Choose matching files before starting.';
@@ -6637,11 +6722,12 @@ function renderLoadActionStatus() {
   const action = state.queuedStart;
   const launching = state.isStarting;
   const label = action?.testOutput || state.startAttempt?.snapshot?.testOutput ? 'Test Output' : 'Start Show';
-  const busy = Boolean(action || launching || state.loadFreshness.busy);
+  const busy = Boolean(action || launching || state.loadFreshness.busy || state.nativeLoadBusy);
   const message = action
     ? `${action.message || 'Preparing the service…'} ${label} will continue automatically.`
     : launching ? `Opening ${label === 'Test Output' ? 'the test output' : 'the show'}…`
-      : state.loadActionNotice?.message || (state.loadFreshness.busy ? 'Checking for updates… You can start while this finishes.' : offlineLaunchNotice());
+      : state.loadActionNotice?.message || (state.nativeLoadBusy ? 'Loading the selected service… You can start while this finishes.'
+        : state.loadFreshness.busy ? 'Checking for updates… You can start while this finishes.' : offlineLaunchNotice());
   elements.loadActionMessage.textContent = message;
   elements.loadActionStatus.hidden = !message;
   elements.loadActionStatus.dataset.kind = busy ? '' : state.loadActionNotice?.kind || (offlineLaunchNotice() ? 'warning' : '');
@@ -6670,7 +6756,7 @@ function queuedStartIsCurrent(action) {
 }
 
 function hasPendingLoadWork() {
-  return state.initializingLoad || state.community.handoffBusy || state.loadFreshness.busy
+  return state.initializingLoad || state.nativeLoadBusy || state.community.handoffBusy || state.loadFreshness.busy
     || state.serviceFolder.loading || sharedServiceController?.isBusy?.()
     || Object.values(state.presentations).some(presentation => presentation.pending);
 }
@@ -6688,7 +6774,7 @@ function startPresentation(testOutput = false) {
   if (state.queuedStart) return state.queuedStart.promise;
   if (state.isPresenting || state.isStarting || state.startAttempt || state.workflowStage !== 'load') return;
   const action = { testOutput: testOutput === true, mode: state.loadMode,
-    serviceId: state.community.handoffBusy || state.initializingLoad ? null : state.serviceHandoff?.project?.id,
+    serviceId: state.community.handoffBusy || state.initializingLoad || state.nativeLoadBusy ? null : state.serviceHandoff?.project?.id,
     message: 'Preparing the service…' };
   state.queuedStart = action;
   state.loadActionNotice = null;
@@ -6752,7 +6838,9 @@ function checkReadyState() {
   // status message with Load-screen guidance.
   if (state.isPresenting || state.queuedStart) return;
 
-  if (isReady) {
+  if (readiness.nativeSourceIssue) {
+    setStatus(readiness.nativeSourceIssue);
+  } else if (isReady) {
     setStatus(needsChoices.length > 0
       ? 'Ready — Start Show will help choose what each missing output should display'
       : 'Ready to start the show');
@@ -7236,6 +7324,11 @@ async function launchStartAttempt() {
       }
     ]));
     const launchRequest = {
+      sourceMode: state.loadMode,
+      ...(state.loadMode === 'syncshow' ? {
+        expectedProjectId: state.serviceHandoff?.project?.id,
+        expectedRevisionId: state.serviceHandoff?.project?.revisionId
+      } : {}),
       testOutput: attempt.snapshot.testOutput === true,
       outputs: attempt.snapshot.outputs,
       decisions,

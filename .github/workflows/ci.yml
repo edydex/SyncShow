@@ -37,3 +37,11 @@ jobs:
 
       - name: Run syntax and regression checks
         run: npm run ci
+
+      - name: Rehearse native projection and PowerPoint fallback
+        if: runner.os != 'Linux'
+        run: node scripts/verify-native-raster.js
+
+      - name: Rehearse native projection and PowerPoint fallback (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/verify-native-raster.js

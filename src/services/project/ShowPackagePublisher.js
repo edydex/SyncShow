@@ -152,6 +152,7 @@ class ShowPackagePublisher {
       ? path.resolve(options.fontConfigCachePath)
       : null;
     this.sharp = options.sharp || require('sharp');
+    this.browserRendererFactory = options.browserRendererFactory || null;
     this.clock = options.clock || (() => new Date());
     this.randomUUID = options.randomUUID || crypto.randomUUID;
   }
@@ -456,7 +457,7 @@ class ShowPackagePublisher {
       || manifest.compilerVersion !== 3
       // Retain previously supported offline packages, including the last Mac
       // test build, while new preparation receives a fresh renderer identity.
-      || ![11, 15, 16, 17, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
+      || ![11, 15, 16, 17, 18, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
       || !Number.isSafeInteger(manifest.cueCount)
       || manifest.cueCount < 1
       || manifest.cueCount > MAX_PACKAGE_CUES
@@ -1005,6 +1006,7 @@ class ShowPackagePublisher {
       const stagingPath = path.join(this.rootPath, `.staging-${packageId}-${this.randomUUID()}`);
       await ensureConfinedDirectory(this.rootPath, stagingPath);
       let published = false;
+      let browserRenderer = null;
       try {
         // Recheck immediately before native rendering to narrow the window in
         // which a same-user process could replace managed cache state.
@@ -1063,9 +1065,31 @@ class ShowPackagePublisher {
             let thumbnail = reusable.thumbnails.get(renderKey) || await this._cachedThumbnail(renderKey);
             const reused = Boolean(thumbnail);
             if (!thumbnail) {
-              const rendered = condensed
-                ? await renderer.renderSingerPreview(cue, channel.sourceChannelId, nextCue)
-                : await renderer.renderCue(cue, channelId);
+              let rendered;
+              try {
+                rendered = condensed
+                  ? await renderer.renderSingerPreview(cue, channel.sourceChannelId, nextCue)
+                  : await renderer.renderCue(cue, channelId);
+              } catch (error) {
+                if (['TEXT_OVERFLOW', 'TEXT_RENDER_FAILED'].includes(error?.code)) {
+                  // A preview renderer's platform-specific font metrics must
+                  // not reject content that fits on the actual output screen.
+                  if (this.browserRendererFactory) {
+                    browserRenderer ||= this.browserRendererFactory({
+                      width: renderOptions.width, height: renderOptions.height,
+                      fontPath: this.fontPath, sharp: this.sharp,
+                      resolveAsset: assetId => this.projectStore.resolveAssetPath(projectRead.project.id, projectRead.revisionId, assetId)
+                    });
+                    try { rendered = await browserRenderer.renderScene(scene); }
+                    catch (browserError) { error = browserError; }
+                  }
+                  if (!rendered) throw new ShowPackageError(error.code,
+                    `Slide ${cueIndex + 1} (${cue.title || 'Untitled'}) on ${channelId}: ${error.message}`,
+                    { ...error.details, slideNumber: cueIndex + 1, cueId, channelId });
+                } else {
+                  throw error;
+                }
+              }
               thumbnail = await this.sharp(rendered.info.data)
                 .resize(renderOptions.thumbnailWidth, null, { fit: 'inside', withoutEnlargement: true })
                 .jpeg({ quality: 85 }).toBuffer();
@@ -1211,6 +1235,7 @@ class ShowPackagePublisher {
         const verified = await this._verifyManifest(packagePath, packageId);
         return this._resultFromManifest(packagePath, verified);
       } finally {
+        await browserRenderer?.dispose();
         if (!published) await fs.rm(stagingPath, { recursive: true, force: true }).catch(() => {});
       }
     });
