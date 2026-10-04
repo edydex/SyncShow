@@ -355,3 +355,24 @@ test('uploads and downloads exact private videos without image-only headers', as
   assert.equal(put.options.headers['X-Heritage-Asset-Width'], undefined);
   assert.equal(put.options.headers['X-Heritage-Asset-Orientation'], undefined);
 });
+
+test('unchanged revisions use authenticated conditional GET without downloading a document', async () => {
+  const known=revision(source());const requests=[];
+  const client=new CommunityClient({baseUrl:BASE_URL,fetchImpl:async(input,options)=>{
+    if(new URL(input).pathname===DISCOVERY_PATH)return json(discovery());
+    requests.push(options);return new Response(null,{status:304,headers:{ETag:`"${known}"`}});
+  }});
+  const result=await client.getServiceDocument({syncId:'service-2026-07-26',accessToken:ACCESS_TOKEN,knownRevision:known});
+  assert.deepEqual(result,{notModified:true,syncId:'service-2026-07-26',revision:known});
+  assert.equal(requests.length,1);assert.equal(requests[0].headers['If-None-Match'],`"${known}"`);
+  assert.equal(requests[0].headers.Authorization,`SyncShow ${ACCESS_TOKEN}`);
+});
+test('changed conditional reads validate the complete canonical document and reject mismatched confirmations', async () => {
+  const before=revision(source()), changed=source('Updated service');let wrong=false;
+  const client=new CommunityClient({baseUrl:BASE_URL,fetchImpl:async input=>{
+    if(new URL(input).pathname===DISCOVERY_PATH)return json(discovery());
+    return wrong ? new Response(null,{status:304,headers:{ETag:'"wrong"'}}) : json({serviceDocument:envelope(changed)});
+  }});
+  assert.equal((await client.getServiceDocument({syncId:'service-2026-07-26',accessToken:ACCESS_TOKEN,knownRevision:before})).documentSource,changed);
+  wrong=true;await assert.rejects(client.getServiceDocument({syncId:'service-2026-07-26',accessToken:ACCESS_TOKEN,knownRevision:before}),error=>error.code==='INVALID_RESPONSE');
+});

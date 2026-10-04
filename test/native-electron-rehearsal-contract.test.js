@@ -88,7 +88,7 @@ test('derived Singer rehearsal stays route-distinct and locks both resolution to
     'text',
     'text',
     'text',
-    'blank',
+    'text',
     'text',
     'text',
     'text',

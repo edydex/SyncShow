@@ -320,6 +320,7 @@
           setNotice('Nothing was overwritten. Review both versions and choose one.', 'warning');
           return false;
         }
+        if (result.state === 'current') return true;
         return await showOpenedService(syncId, result, options);
       } catch (error) {
         setNotice(error.message, 'error');

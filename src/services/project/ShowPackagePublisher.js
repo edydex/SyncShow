@@ -88,6 +88,12 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+function visualCue(cue) {
+  if (!cue) return null;
+  const { id, itemId, sourceLeafKey, sourceReference, groupPath, operatorNotes, ...visual } = cue;
+  return visual;
+}
+
 function roleDirectoryName(roleId) {
   return `channel-${sha256(roleId).slice(0, 24)}`;
 }
@@ -160,6 +166,60 @@ class ShowPackagePublisher {
     if (privateFontConfigDirectory !== fontConfigDirectory) {
       throw new Error('ShowPackagePublisher fontconfig cache escaped its storage root');
     }
+  }
+
+  _thumbnailKey(cue, channelId, nextCue, fontSha256, renderOptions) {
+    const condensed = cue.channels?.[channelId]?.mode === 'condensed' && cue.channels[channelId].sourceChannelId;
+    return sha256(canonicalJson({ rendererVersion: NATIVE_RENDERER_VERSION,
+      fontSha256, renderOptions, channelId, cue: visualCue(cue),
+      nextCue: condensed ? visualCue(nextCue) : null }));
+  }
+
+  async _seedThumbnailCache(packageId, expectedManifestSha256, fontSha256, renderOptions) {
+    if (!packageId || !SHOW_PACKAGE_PATTERN.test(packageId) || !/^[a-f0-9]{64}$/.test(expectedManifestSha256)) return;
+    const previousPath = path.join(this.rootPath, packageId);
+    let previous;
+    try { const opened = await this.open(packageId); if (opened.manifestSha256 !== expectedManifestSha256) return; previous = opened.manifest; }
+    catch (error) { if (error instanceof ShowPackageError || error.code === 'ENOENT') return; throw error; }
+    if (previous.rendererVersion !== NATIVE_RENDERER_VERSION || previous.font.sha256 !== fontSha256
+      || canonicalJson(previous.renderOptions) !== canonicalJson(renderOptions)) return;
+    const { buffer } = await readFileNoFollow(path.join(previousPath, 'timeline.json'), MAX_MANIFEST_BYTES);
+    if (sha256(buffer) !== previous.timelineSha256) return;
+    const timeline = normalizeCueTimeline(JSON.parse(buffer.toString('utf8')));
+    for (const channel of previous.channels) {
+      for (const [index, cueId] of timeline.cueIds.entries()) {
+        const cue = timeline.cues[cueId], nextCue = timeline.cues[timeline.cueIds[index + 1]] || null;
+        const key = this._thumbnailKey(cue, channel.channelId, nextCue, fontSha256, renderOptions);
+        if (await this._cachedThumbnail(key)) continue;
+        const relative = `${channel.directory}/slide_${String(index + 1).padStart(3, '0')}_thumb.jpg`;
+        const expected = previous.artifacts.find(artifact => artifact.path === relative);
+        const { buffer: thumbnail } = await readFileNoFollow(path.join(previousPath, relative), MAX_RASTER_ARTIFACT_BYTES);
+        // Recheck after opening; a previous package is only a cache source, never
+        // permission to use bytes that changed since manifest verification.
+        if (expected && thumbnail.length === expected.size && sha256(thumbnail) === expected.sha256) await this._cacheThumbnail(key, thumbnail);
+      }
+    }
+  }
+
+  async _cachedThumbnail(key) {
+    const cache = await ensureConfinedDirectory(this.rootPath, path.join(this.rootPath, '.render-cache'));
+    const entry = path.join(cache, `${key}.json`);
+    try {
+      const { buffer: source } = await readFileNoFollow(entry, 2048);
+      const metadata = JSON.parse(source.toString('utf8'));
+      if (!metadata || typeof metadata !== 'object' || !/^[a-f0-9]{64}$/.test(metadata.sha256) || !Number.isSafeInteger(metadata.size)) return null;
+      const { buffer } = await readFileNoFollow(path.join(cache, `${key}.jpg`), MAX_RASTER_ARTIFACT_BYTES);
+      return buffer.length === metadata.size && sha256(buffer) === metadata.sha256 ? buffer : null;
+    } catch (error) {
+      if (error.code === 'ENOENT' || error instanceof SyntaxError || error.code?.startsWith('STORAGE_')) return null;
+      throw error;
+    }
+  }
+
+  async _cacheThumbnail(key, buffer) {
+    const cache = await ensureConfinedDirectory(this.rootPath, path.join(this.rootPath, '.render-cache'));
+    await atomicWriteFile(path.join(cache, `${key}.jpg`), buffer, { rootPath: this.rootPath, maximumBytes: MAX_RASTER_ARTIFACT_BYTES, mode: 0o600 });
+    await atomicWriteFile(path.join(cache, `${key}.json`), canonicalJson({ sha256: sha256(buffer), size: buffer.length }), { rootPath: this.rootPath, maximumBytes: 2048, mode: 0o600 });
   }
 
   _normalizeRoleMapping(project, rawMapping) {
@@ -876,6 +936,7 @@ class ShowPackagePublisher {
         }
       }
 
+      await this._seedThumbnailCache(options.reusePackageId, options.reusePackageManifestSha256, fontSha256, renderOptions);
       const stagingPath = path.join(this.rootPath, `.staging-${packageId}-${this.randomUUID()}`);
       await ensureConfinedDirectory(this.rootPath, stagingPath);
       let published = false;
@@ -930,17 +991,22 @@ class ShowPackagePublisher {
               rootPath: stagingPath
             });
             for (const assetId of sceneAssetIds(scene)) referencedAssetIds.add(assetId);
-            const rendered = channel?.mode === 'condensed' && channel.sourceChannelId
-              ? await renderer.renderSingerPreview(
-                  cue,
-                  channel.sourceChannelId,
-                  nextCue
-                )
-              : await renderer.renderCue(cue, channelId);
-            const thumbnail = await this.sharp(rendered.info.data)
-              .resize(renderOptions.thumbnailWidth, null, { fit: 'inside', withoutEnlargement: true })
-              .jpeg({ quality: 85 })
-              .toBuffer();
+            const condensed = channel?.mode === 'condensed' && channel.sourceChannelId;
+            // Every visual input, font, viewport and renderer version is pinned.
+            // Singer previews also include the next cue, so editing it invalidates
+            // the previous cue's hint. Audit identities never change the pixels.
+            const renderKey = this._thumbnailKey(cue, channelId, nextCue, fontSha256, renderOptions);
+            let thumbnail = await this._cachedThumbnail(renderKey);
+            const reused = Boolean(thumbnail);
+            if (!thumbnail) {
+              const rendered = condensed
+                ? await renderer.renderSingerPreview(cue, channel.sourceChannelId, nextCue)
+                : await renderer.renderCue(cue, channelId);
+              thumbnail = await this.sharp(rendered.info.data)
+                .resize(renderOptions.thumbnailWidth, null, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 85 }).toBuffer();
+              await this._cacheThumbnail(renderKey, thumbnail);
+            }
             // Use Node's long-path support instead of passing a potentially
             // >260-character staging path to the native image library.
             await atomicWriteFile(thumbPath, thumbnail, {
@@ -960,9 +1026,9 @@ class ShowPackagePublisher {
                 )
               });
             }
-            slides.push(rendered.metadata);
+            slides.push(condensed ? singerCueMetadata(cue, channel.sourceChannelId, nextCue) : cueMetadataForChannel(cue, channelId));
             completed += 1;
-            options.onProgress?.({ completed, total, roleId, channelId, cueIndex, cueId });
+            options.onProgress?.({ completed, total, roleId, channelId, cueIndex, cueId, reused });
           }
           const metadata = {
             schemaVersion: 1,

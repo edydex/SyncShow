@@ -13,8 +13,8 @@ function mainFixture(options = {}) {
   const remote = {syncId:id, revision:options.remoteRevision || 'new-remote', documentSource:options.remoteSource || 'remote-source', project:{id, title:'Sunday', assets:{}}, syncVersion:20};
   const local = {project:{id, title:'Sunday'}, revisionId:options.localRevisionId || revision, documentSource:options.localSource || 'old-source', documentRevision: options.localRevision || 'old-base'};
   const binding = {serverId:'church', syncId:id, documentRevision:options.baseRevision || 'old-base', localRevisionId:revision};
-  const fetches=[], installs=[], bindings=[];
-  const context = {connection:{serverId:'church', accessToken:'fixture-only'}, client:{async getServiceDocument() {fetches.push(id); if(options.wait) await options.wait; return remote;}}, projectStore:{}, bindingStore:{async get(){return binding;}}, outbox:{async get(){return null;}}};
+  const fetches=[], installs=[], bindings=[], requests=[];
+  const context = {connection:{serverId:'church', accessToken:'fixture-only'}, client:{async getServiceDocument(request) {requests.push(request);fetches.push(id); if(options.wait) await options.wait; return remote;}}, projectStore:{}, bindingStore:{async get(){return binding;}}, outbox:{async get(){return options.nativePending || null;}}};
   const sandbox = vm.createContext({appState:{activeLaunchPlan:options.live ? {} : null}, installedServiceHandoff:()=>handoff,
     communityRequestKeys(){}, prepareId:value=>value, prepareRevision:value=>value,
     failMainOperation(code,message){throw Object.assign(new Error(message), {code});},
@@ -26,7 +26,7 @@ function mainFixture(options = {}) {
   });
   const start=main.indexOf('async function openSharedServiceDocument('), end=main.indexOf("\nipcMain.handle('community:serviceDocuments:open'",start);
   vm.runInContext(main.slice(start,end),sandbox);
-  return {fetches, installs, bindings, remote, local, setLoaded(value){handoff=value;},
+  return {fetches, installs, bindings, requests, remote, local, setLoaded(value){handoff=value;},
     open:request=>sandbox.openSharedServiceDocument({syncId:id, fresh:true, expectedLoadedRevisionId:revision, ...request})};
 }
 test('Load fetches the selected service directly instead of the old Prepare cache',async()=>{
@@ -149,4 +149,18 @@ test('a successful latest check makes an earlier Prepare save warning accurate',
   const opening=f.refresh();f.wait.resolve({state:'current'});await opening;
   assert.match(f.warning.textContent,/latest saved version is loaded.*pending edits/);
   assert.doesNotMatch(f.warning.textContent,/latest edits have not been loaded/);
+});
+
+test('the loaded bound revision uses a conditional check and skips all installation on 304',async()=>{
+ const f=mainFixture();f.remote.notModified=true;
+ assert.equal((await f.open()).state,'current');assert.equal(f.requests[0].knownRevision,'old-base');assert.equal(f.installs.length,0);
+});
+test('Prepare-to-Load reuses the already loaded exact cached snapshot',async()=>{
+ const f=mainFixture({cached:{documentSource:'old-source',project:{id}}});
+ assert.equal((await f.open({fresh:false})).state,'current');assert.equal(f.fetches.length,0);assert.equal(f.installs.length,0);
+});
+
+test('queued native edits are retained before a conditional server read',async()=>{
+ const f=mainFixture({cached:null,nativePending:{revision:'local-outbox'}});
+ assert.equal((await f.open()).state,'queued');assert.equal(f.fetches.length,0);assert.equal(f.installs.length,0);
 });

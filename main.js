@@ -3785,14 +3785,20 @@ function serviceDocumentConflict({ kind, local, remote, binding }) {
 
 async function installCommunityServiceDocument(context, remote, local, { usePlannerCache = true } = {}) {
   const assetBuffers = new Map();
+  const mediaCache = new (require('./src/services/community/CommunityMediaCache').CommunityMediaCache)(path.join(app.getPath('userData'), 'community-media'));
   for (const assetId of Object.keys(remote.project.assets).sort()) {
     const asset = remote.project.assets[assetId];
-    assetBuffers.set(assetId, usePlannerCache && communityPlannerCache?.envelope(remote.syncId)
-      ? await communityPlannerCache.asset(remote.syncId, assetId)
-      : await context.client.getServiceDocumentAsset({
-      syncId: remote.syncId,
-      asset,
-      accessToken: context.connection.accessToken
+    assetBuffers.set(assetId, await mediaCache.get(asset, async () => {
+      // Seed the shared fingerprint cache from an already verified local copy.
+      if (local?.project?.assets?.[assetId]?.sha256 === asset.sha256) {
+        try {
+          const resolved = await context.projectStore.resolveAssetPath(local.project.id, local.revisionId, assetId);
+          return (await readFileNoFollow(resolved.assetPath, asset.kind === 'video' ? 250 * 1024 * 1024 : 75 * 1024 * 1024)).buffer;
+        } catch (error) { if (!['ENOENT', 'PROJECT_ASSET_MISSING', 'ASSET_NOT_FOUND'].includes(error.code)) throw error; }
+      }
+      return usePlannerCache && communityPlannerCache?.envelope(remote.syncId)
+        ? communityPlannerCache.asset(remote.syncId, assetId)
+        : context.client.getServiceDocumentAsset({ syncId: remote.syncId, asset, accessToken: context.connection.accessToken });
     }));
   }
   const installed = await context.projectStore.installSharedSnapshot(
@@ -18452,7 +18458,7 @@ async function takeBackstageServiceCue({ targetIndex = appState.currentSlide, ad
     const local = await readLocalServiceDocument(context.projectStore, syncId);
     const selected = await installCommunityServiceDocument(context, remote, local);
     const services = getPrepareServices();
-    const published = await services.showPackagePublisher.publish({ projectId: selected.project.id,
+    const published = await services.showPackagePublisher.publish({ reusePackageId: currentPreparedServicePointer?.packageId, reusePackageManifestSha256: currentPreparedServicePointer?.packageManifestSha256, projectId: selected.project.id,
       revisionId: selected.revisionId, roleMapping: nativeProjectRoleMapping(selected.project),
       width: CONFIG.displayWidth, height: CONFIG.displayHeight, thumbnailWidth: CONFIG.thumbnailWidth });
     const target = require('./src/services/show/BackstageCueTarget').resolveBackstageCueTarget({
@@ -18556,8 +18562,13 @@ ipcMain.handle('community:planner:prepareLoad', async event => {
     if (appState.activeLaunchPlan) throw new Error('Stop the Show before loading Prepare changes.');
     const flushed = await flushEmbeddedPlanner();
     if (!flushed.ok) throw new Error(flushed.error || 'Save the service before going to Load.');
-    const handoff = communityPlannerHandoff ? await communityPlannerHandoff.ready() : { serviceId: null };
-    return { ...handoff, serviceId: flushed.serviceDocument?.syncId || handoff.serviceId };
+    // The editor's acknowledgement is authoritative: a recovered local save
+    // may succeed without another PUT, so an old network error cannot veto it.
+    const confirmedId = flushed.serviceDocument?.syncId || null;
+    if (confirmedId) communityPlannerHandoff?.confirmSaved(confirmedId);
+    const handoff = confirmedId ? { serviceId: confirmedId }
+      : communityPlannerHandoff ? await communityPlannerHandoff.ready() : { serviceId: null };
+    return handoff;
   });
 });
 
@@ -18649,16 +18660,27 @@ async function openSharedServiceDocument(request) {
   if (fresh && (cached?.pending || cached?.conflict)) {
     return { state: 'prepare-pending', conflict: cached.conflict === true };
   }
+  const local = await readLocalServiceDocument(context.projectStore, syncId);
+  const binding = await context.bindingStore.get(syncId);
+  const pending = binding ? await context.outbox.get(context.connection.serverId, syncId) : null;
+  if (fresh && pending && local) return { state: 'queued', ...projectResult(local), shared: publicServiceDocumentBinding(binding, pending) };
+  const canCheckRevision = fresh && !resolution && local && expectedLoadedRevisionId === local.revisionId
+    && binding?.serverId === context.connection.serverId && binding?.syncId === syncId
+    && binding.localRevisionId === local.revisionId;
   const remote = (!fresh && cached) || await context.client.getServiceDocument({
-    syncId, accessToken: context.connection.accessToken
+    syncId, accessToken: context.connection.accessToken,
+    knownRevision: canCheckRevision ? binding.documentRevision : null
   });
   if (fresh && !stillLoaded()) return { state: 'superseded' };
-  const local = await readLocalServiceDocument(context.projectStore, syncId);
+  if (remote.notModified) return { state: 'current', ...projectResult(local), shared: publicServiceDocumentBinding(binding) };
   const install = () => installCommunityServiceDocument(context, remote, local, { usePlannerCache: !fresh });
+  if (!fresh && cached && local?.documentSource === cached.documentSource
+    && installedServiceHandoff()?.project?.id === syncId
+    && installedServiceHandoff()?.project?.revisionId === local.revisionId) {
+    return { state: 'current', ...projectResult(local), shared: publicServiceDocumentBinding(binding) };
+  }
   if (!fresh && cached) return install();
   if (!local) return install();
-
-  const binding = await context.bindingStore.get(syncId);
   if (resolution === 'use-community') {
     return install();
   }
@@ -18710,10 +18732,6 @@ async function openSharedServiceDocument(request) {
   if (!localChanged && (remoteChanged || fresh)) {
     return install();
   }
-  const pending = await context.outbox.get(
-    context.connection.serverId,
-    remote.syncId
-  );
   if (localChanged && !remoteChanged) {
     return {
       state: pending ? 'queued' : 'local-newer',
@@ -26358,6 +26376,8 @@ ipcMain.handle('prepare:projects:publish', async (event, request = {}) => {
   const targetWidth = CONFIG.displayWidth;
   const targetHeight = CONFIG.displayHeight;
   const published = await services.showPackagePublisher.publish({
+    reusePackageId: currentPreparedServicePointer?.packageId,
+    reusePackageManifestSha256: currentPreparedServicePointer?.packageManifestSha256,
     projectId,
     revisionId,
     roleMapping,

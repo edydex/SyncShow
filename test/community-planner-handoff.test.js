@@ -48,3 +48,12 @@ test('cancelled and cached reads allow Load to retry, but cannot conceal a faile
   h.begin(request(4)); h.finish({ id: 4, statusCode: 200 });
   await assert.rejects(h.ready(), /did not save/);
 });
+
+test('an explicit editor save acknowledgement clears an older failed PUT without inventing another save', async () => {
+  const h = new CommunityPlannerHandoff({ origin, webContentsId: 12 });
+  h.begin(request(1, 'PUT')); h.finish({id:1,statusCode:412});
+  await assert.rejects(h.ready(), /did not save/);
+  h.confirmSaved('sept20');
+  assert.deepEqual(await h.ready(), {serviceId:'sept20'});
+  assert.throws(()=>h.confirmSaved('../other'));
+});

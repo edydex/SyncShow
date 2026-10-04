@@ -29,6 +29,10 @@ class CommunityPlannerHandoff {
       this.failure = 'The service did not save. Return to Prepare and resolve the save error before loading it.';
     }
   }
+  confirmSaved(serviceId) {
+    if (typeof serviceId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(serviceId)) throw new TypeError('A confirmed service identity is required');
+    this.serviceId = serviceId; this.failure = null;
+  }
   async ready() {
     const deadline = Date.now() + this.timeoutMs;
     while (this.pending.size) {

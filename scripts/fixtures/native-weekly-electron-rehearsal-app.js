@@ -71,10 +71,10 @@ const DERIVED_SINGER_NEXT = Object.freeze([
     state: 'text',
     text: 'Добро пожаловать'
   }),
-  Object.freeze({ state: 'blank', text: '' }),
+  Object.freeze({ state: 'text', text: 'Blue welcome background' }),
   Object.freeze({
     state: 'text',
-    text: BSB_READING_BODY
+    text: 'Ephesians 3:10–12'
   }),
   Object.freeze({
     state: 'text',
@@ -516,8 +516,9 @@ async function inspectRenderedDerivedSingerFrame(entry, cueIndex, scene) {
     const next = outer?.querySelector(':scope > .native-singer-next');
     const currentHost = currentRegion?.querySelector(':scope > .native-scene-host');
     const currentSurface =
-      currentHost?.querySelector(':scope > .native-scene-surface');
-    const currentTitle = currentSurface?.querySelector('.native-scene-title');
+      currentHost?.querySelector(':scope > .native-scene-surface')
+      || currentRegion?.querySelector(':scope > .stage-current-text');
+    const currentTitle = currentSurface?.querySelector('.native-scene-title, .stage-current-heading');
     const currentBody = currentSurface?.querySelector('.native-scene-body');
     const rectangle = element => {
       const bounds = element?.getBoundingClientRect();
@@ -571,7 +572,7 @@ async function inspectRenderedDerivedSingerFrame(entry, cueIndex, scene) {
   assert.match(metrics.outerClass, /\bnative-scene-singer-current-next\b/);
   assert.match(
     metrics.currentClass,
-    new RegExp(`\\bnative-scene-${current.layout}\\b`)
+    current.layout === 'text' ? /\bstage-current-text\b/ : new RegExp(`\\bnative-scene-${current.layout}\\b`)
   );
   assert.equal(metrics.nextState, expectedNext.state);
   assert.equal(
@@ -602,7 +603,7 @@ async function inspectRenderedDerivedSingerFrame(entry, cueIndex, scene) {
   assert.ok(metrics.currentRegion.bottom <= metrics.next.top + 2);
 
   if (current.layout === 'text') {
-    assert.equal(metrics.currentTitle, current.title);
+    assert.equal(metrics.currentTitle, current.style.showTitle ? current.title : '');
     assert.equal(metrics.currentBody, current.body);
     assert.ok(
       metrics.currentTitleScrollWidth <= metrics.currentTitleClientWidth + 2

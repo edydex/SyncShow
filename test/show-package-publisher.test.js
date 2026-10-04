@@ -741,3 +741,37 @@ test('coordinated metadata and manifest checksum tampering cannot forge operator
     'Welcome <everyone> & friends'
   );
 });
+
+test('new revisions render only changed visuals and reuse identical slides across services', async t => {
+  const f=await preparedProject(t);const first=[];
+  const previous=await f.publisher.publish({...f.publishOptions,onProgress:x=>first.push(x)});
+  await fs.rm(path.join(f.packagesPath,'.render-cache'),{recursive:true,force:true});
+  assert.equal(first.filter(x=>x.reused).length,0);
+  const next=structuredClone(f.saved.project);next.revision++;next.updatedAt='2026-07-22T18:35:00.000Z';next.items.welcome.operatorNotes='Operator-only edit';
+  const saved=await f.store.save(next,{expectedRevisionId:f.saved.revisionId});const reuse=[];
+  await f.publisher.publish({...f.publishOptions,revisionId:saved.revisionId,reusePackageId:previous.manifest.id,reusePackageManifestSha256:previous.manifestSha256,onProgress:x=>reuse.push(x)});
+  assert.equal(reuse.length,2);assert.ok(reuse.every(x=>x.reused));
+  const edited=structuredClone(saved.project);edited.revision++;edited.updatedAt='2026-07-22T18:36:00.000Z';edited.items.welcome.textByChannel.primary='Changed greeting';
+  const changed=await f.store.save(edited,{expectedRevisionId:saved.revisionId});const edits=[];
+  await f.publisher.publish({...f.publishOptions,revisionId:changed.revisionId,onProgress:x=>edits.push(x)});
+  assert.ok(edits.some(x=>!x.reused));
+  const another=structuredClone(changed.project);another.id='project-next-sunday';another.serviceDate='2026-08-02';
+  const imported=await f.store.installSharedSnapshot(another,{expectedRevisionId:null,assetBuffers:new Map()});const cross=[];
+  const crossPackage=await f.publisher.publish({...f.publishOptions,projectId:another.id,revisionId:imported.revisionId,onProgress:x=>cross.push(x)});
+  assert.equal(cross.length,2);assert.ok(cross.every(x=>x.reused));
+  const expectedThumbnail=crossPackage.manifest.artifacts.find(x=>x.path.startsWith(crossPackage.manifest.channels.find(x=>x.channelId==='primary').directory+'/')&&x.path.endsWith('_thumb.jpg'));
+  const files=await fs.readdir(path.join(f.packagesPath,'.render-cache'));
+  let thumbnail;
+  for(const file of files.filter(x=>x.endsWith('.json'))) {
+    const metadata=JSON.parse(await fs.readFile(path.join(f.packagesPath,'.render-cache',file),'utf8'));
+    if(metadata.sha256===expectedThumbnail.sha256) { thumbnail=file.replace(/\.json$/,'.jpg');break; }
+  }
+  assert.ok(thumbnail,'corrupt a thumbnail used by the current package');
+  await fs.writeFile(path.join(f.packagesPath,'.render-cache',thumbnail),'corrupt');
+  const third=structuredClone(another);third.id='project-third-sunday';
+  const installed=await f.store.installSharedSnapshot(third,{expectedRevisionId:null,assetBuffers:new Map()});
+  const repaired=[];
+  const repairedPackage=await f.publisher.publish({...f.publishOptions,projectId:third.id,revisionId:installed.revisionId,onProgress:x=>repaired.push(x)});
+  assert.ok(repaired.some(x=>!x.reused),'invalid cached bytes must render again');
+  await f.publisher.open(repairedPackage.manifest.id);
+});

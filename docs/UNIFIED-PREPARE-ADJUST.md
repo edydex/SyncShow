@@ -94,3 +94,11 @@ rebuild. A newer revision is built with inline progress; the chooser opens only
 for an explicit browse action or an actual conflict. Pending Prepare journals,
 concurrent local edits, and an active Show cannot be overwritten by this check.
 Offline errors preserve the last package and state that freshness is unverified.
+
+## Incremental Load and Adjust (Preview 42)
+
+Load uses authenticated conditional GET against the saved canonical revision. An unchanged server revision returns 304 and reuses the verified package, with no document/media download or publishing. Prepare's successful editor flush is authoritative even after a previously failed PUT. A matching cached snapshot also skips publishing on Prepare-to-Load navigation.
+
+A changed document is validated as a complete canonical snapshot. Missing media is fetched by SHA-256; an app-private, verified content cache reuses identical bytes across services. Scene thumbnails are cached by renderer inputs, font hash, output settings, and renderer version. Singer inputs include the next cue, so changes to hints invalidate the preceding thumbnail. Cue metadata and package manifests are regenerated for each exact revision and retain their verification guarantees.
+
+Adjust opens the content editor on the live cue, using an editable audience output rather than retaining a condensed stage-facing preview. Edits save backstage and reach outputs only through a normal take or advance. Double-clicking a tile to edit cancels the delayed single-click take.
