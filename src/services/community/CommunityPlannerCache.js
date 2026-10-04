@@ -4,10 +4,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const core = require('./HeritageServiceDocument');
-const { atomicWriteFile, ensurePrivateDirectory } = require('../project/StorageSafety');
+const { atomicWriteFile, ensurePrivateDirectory, readFileNoFollow } = require('../project/StorageSafety');
 
 const ENDPOINT = '/api/community/service-documents';
 const MAX_BYTES = 32 * 1024 * 1024;
+const MAX_RESPONSE_METADATA_BYTES = 64 * 1024;
+const RESPONSE_MAGIC = Buffer.from('SyncShow response 1\n');
+const MAX_RESPONSE_BYTES = RESPONSE_MAGIC.length + 4 + MAX_RESPONSE_METADATA_BYTES + MAX_BYTES;
 const RESOURCE_REVALIDATION_TIMEOUT_MS = 1200;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 function serviceEnvelope(raw) {
@@ -18,6 +21,27 @@ function serviceEnvelope(raw) {
 const json = (value, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
 });
+
+async function responseBytes(response) {
+  if (Number(response.headers.get('content-length')) > MAX_BYTES) return null;
+  const reader = response.clone().body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  const chunks = []; let length = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return Buffer.concat(chunks, length);
+      length += value.byteLength;
+      if (length > MAX_BYTES) {
+        // A cloned stream's cancellation may await the caller's original
+        // branch. Do not hold the request while abandoning this cache copy.
+        void reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally { reader.releaseLock(); }
+}
 
 /** The same Community editor runs online and offline. Its assets and private
  * document journal belong to one approved connection, never another account.
@@ -40,6 +64,7 @@ class CommunityPlannerCache {
     this.offline = false;
     this.queue = Promise.resolve();
     this.persistQueue = Promise.resolve();
+    this.responseWrites = new Map();
     this.loaded = this.load();
   }
 
@@ -80,13 +105,20 @@ class CommunityPlannerCache {
 
   async cacheResponse(request, response) {
     if (!response.ok || request.method !== 'GET') return;
-    const bytes = Buffer.from(await response.clone().arrayBuffer());
-    if (bytes.length > MAX_BYTES) return;
+    const bytes = await responseBytes(response);
+    if (!bytes) return;
     const target = this.cachePath(request);
-    await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
     const headers = [...response.headers].filter(([key]) => !['set-cookie', 'content-encoding', 'content-length'].includes(key));
-    await fs.writeFile(`${target}.json`, JSON.stringify({ status: response.status, headers }), { mode: 0o600 });
-    await fs.writeFile(target, bytes, { mode: 0o600 });
+    const metadata = Buffer.from(JSON.stringify({ schemaVersion: 1, status: response.status, headers,
+      bodySize: bytes.length, bodySha256: crypto.createHash('sha256').update(bytes).digest('hex') }));
+    if (metadata.length > MAX_RESPONSE_METADATA_BYTES) return;
+    const length = Buffer.alloc(4); length.writeUInt32BE(metadata.length);
+    const snapshot = Buffer.concat([RESPONSE_MAGIC, length, metadata, bytes]);
+    const operation = (this.responseWrites.get(target) || Promise.resolve()).catch(() => {}).then(() =>
+      atomicWriteFile(`${target}.response`, snapshot, { rootPath: this.rootPath, maximumBytes: MAX_RESPONSE_BYTES }));
+    this.responseWrites.set(target, operation);
+    try { await operation; }
+    finally { if (this.responseWrites.get(target) === operation) this.responseWrites.delete(target); }
     if (new URL(request.url).pathname === '/admin/plan-service' && response.headers.get('content-type')?.includes('text/html')) {
       this.state.editorReady = true;
       await this.persist();
@@ -96,15 +128,35 @@ class CommunityPlannerCache {
   async cachedResponse(request) {
     const target = this.cachePath(request);
     try {
-      const metadata = JSON.parse(await fs.readFile(`${target}.json`, 'utf8'));
-      let bytes = await fs.readFile(target);
+      let metadata, bytes;
+      try {
+        const { buffer: stored } = await readFileNoFollow(`${target}.response`, MAX_RESPONSE_BYTES);
+        if (stored.length < RESPONSE_MAGIC.length + 4 || !stored.subarray(0, RESPONSE_MAGIC.length).equals(RESPONSE_MAGIC)) return null;
+        const length = stored.readUInt32BE(RESPONSE_MAGIC.length), offset = RESPONSE_MAGIC.length + 4;
+        if (length > MAX_RESPONSE_METADATA_BYTES || offset + length > stored.length) return null;
+        metadata = JSON.parse(stored.subarray(offset, offset + length).toString('utf8'));
+        bytes = stored.subarray(offset + length);
+        if (metadata.schemaVersion !== 1 || metadata.bodySize !== bytes.length
+          || bytes.length > MAX_BYTES || metadata.bodySha256 !== crypto.createHash('sha256').update(bytes).digest('hex')) return null;
+      } catch (error) {
+        if (error.code !== 'ENOENT') return null;
+        // Old installations stored metadata and body separately. Keep valid
+        // entries readable; partial files from an interrupted write are misses.
+        metadata = JSON.parse((await readFileNoFollow(`${target}.json`, MAX_RESPONSE_METADATA_BYTES)).buffer.toString('utf8'));
+        ({ buffer: bytes } = await readFileNoFollow(target, MAX_BYTES));
+      }
+      if (!Number.isInteger(metadata.status) || metadata.status < 200 || metadata.status > 299 || !Array.isArray(metadata.headers)) return null;
+      const responseHeaders = new Headers(metadata.headers);
+      if (responseHeaders.get('content-type')?.includes('application/json') && bytes.length) JSON.parse(bytes.toString('utf8'));
       if (new URL(request.url).pathname === '/admin/plan-service'
-        && new Headers(metadata.headers).get('content-type')?.includes('text/html')
+        && responseHeaders.get('content-type')?.includes('text/html')
         && ['en', 'ru'].includes(this.state.workspaceLanguage)) {
         bytes = Buffer.from(bytes.toString('utf8').replace(/(<html\b[^>]*?)\slang="[^"]*"/, `$1 lang="${this.state.workspaceLanguage}"`));
       }
-      return new Response(bytes, metadata);
-    } catch (error) { if (error.code !== 'ENOENT') throw error; return null; }
+      const noBody = [204, 205].includes(metadata.status);
+      if (noBody && bytes.length || !noBody && responseHeaders.get('content-type')?.includes('application/json') && !bytes.length) return null;
+      return new Response(noBody ? null : bytes, { status: metadata.status, headers: responseHeaders });
+    } catch { return null; }
   }
 
   async request(request) {

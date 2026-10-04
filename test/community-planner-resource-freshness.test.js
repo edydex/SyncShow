@@ -45,7 +45,7 @@ test('a stalled explicit resource refresh cancels and uses its local copy prompt
   const f=await fixture(t),catalog=read(`${endpoint}/library/songs`);
   await f.cache.cacheResponse(catalog,json({items:[{title:'Cached song'}]}));
   let aborted=false;
-  f.fetch(request=>new Promise((resolve,reject)=>{const abort=()=>{aborted=true;reject(request.signal.reason);};if(request.signal.aborted)abort();else request.signal.addEventListener('abort',abort,{once:true});}));
+  f.fetch(request=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Fixture abort did not fire')),3000);const abort=()=>{clearTimeout(timer);aborted=true;reject(request.signal.reason);};if(request.signal.aborted)abort();else request.signal.addEventListener('abort',abort,{once:true});}));
   const start=performance.now(),result=await(await f.cache.request(catalog)).json();
   assert.equal(result.items[0].title,'Cached song');assert.equal(aborted,true);
   assert(performance.now()-start<2000,'A cached library refresh must not wait for the ordinary 8-second request timeout');
