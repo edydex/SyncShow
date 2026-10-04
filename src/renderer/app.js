@@ -47,6 +47,7 @@ const state = {
   restoreGroupId: null,
   startAttempt: null,
   serviceHandoff: null,
+  loadFreshness: { busy: false, message: '', kind: '' },
   preparedServiceRestore: { status: 'none' },
   preparedServiceDateConfirmations: new Set(),
   postShowOutcome: null,
@@ -491,6 +492,7 @@ let communityPollTimer = null;
 let communityStatusUnsubscribe = null;
 let communityPlannerStateUnsubscribe = null;
 let communityPlannerLayoutFrame = null;
+let loadFreshnessPromise = null;
 let showAdjustOpen = false;
 let showAdjustBusy = false;
 let plannerConflictReview = null;
@@ -606,6 +608,7 @@ async function init() {
   await refreshCommunityStatus();
   await refreshCommunityPlannerState();
   await loadAppState();
+  await refreshLoadedService();
   await refreshRemoteControl({ refreshBindings: true });
   await initializeServiceFolder();
 }
@@ -1286,7 +1289,10 @@ function activateLoadMode(mode, { focusTab = false } = {}) {
     panel.hidden = panel.dataset.loadPanel !== state.loadMode;
   });
   placeServiceInputCards();
-  if (state.loadMode === 'syncshow') refreshLoadLocalServices();
+  if (state.loadMode === 'syncshow') {
+    refreshLoadLocalServices();
+    if (!state.community.handoffBusy) refreshLoadedService();
+  }
   if (focusTab) activeTab.focus();
 }
 
@@ -1662,6 +1668,8 @@ async function navigateWorkflowStage(stage) {
   if (stage === state.workflowStage) {
     if (stage === 'prepare' && state.prepareMode === 'community') {
       await openCommunityPrepare();
+    } else if (stage === 'load') {
+      await refreshLoadedService();
     }
     return;
   }
@@ -1708,7 +1716,7 @@ async function navigateWorkflowStage(stage) {
       ]));
       if (!current()) return;
       setPrepareLoadWarning('');
-      if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId);
+      if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId, { isCurrent: current, fresh: false });
     } catch (error) {
       if (current()) {
         const warning = `Load is available, but Prepare’s latest edits have not been loaded. ${operatorErrorMessage(error, 'Save in Prepare before loading that service.')}`;
@@ -1720,6 +1728,7 @@ async function navigateWorkflowStage(stage) {
       if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
       updateWorkflowNavigationAvailability();
     }
+    if (state.community.handoffGeneration === generation && state.workflowStage === 'load') await refreshLoadedService();
     return;
   }
   setWorkflowStage(stage);
@@ -1831,9 +1840,67 @@ function applyServiceHandoff(rawHandoff) {
   const nextKey = state.serviceHandoff
     ? `${state.serviceHandoff.project.id}:${state.serviceHandoff.project.revisionId}`
     : null;
-  if (previousKey !== nextKey) state.postShowOutcome = null;
+  if (previousKey !== nextKey) {
+    state.postShowOutcome = null;
+    state.loadFreshness.message = '';
+    renderLoadFreshness();
+  }
   renderLoadServiceHandoff();
   renderShowCueContext();
+}
+
+function renderLoadFreshness() {
+  const node = document.getElementById('loadServiceFreshness');
+  if (!node) return;
+  node.textContent = state.loadFreshness.message;
+  node.hidden = !state.loadFreshness.message;
+  node.dataset.kind = state.loadFreshness.kind;
+}
+
+async function refreshLoadedService() {
+  if (loadFreshnessPromise) return loadFreshnessPromise;
+  const loaded = state.serviceHandoff;
+  if (!loaded || !sharedServiceController?.refreshLoaded || state.workflowStage !== 'load'
+    || state.loadMode !== 'syncshow' || state.community.handoffBusy
+    || state.isPresenting || state.activeLaunchPlan || state.isStarting || state.startAttempt) return;
+  const current = () => state.serviceHandoff === loaded && state.workflowStage === 'load'
+    && state.loadMode === 'syncshow' && !state.isPresenting && !state.activeLaunchPlan
+    && !state.isStarting && !state.startAttempt;
+  const progress = message => {
+    if (!current()) return;
+    state.loadFreshness.message = message;
+    state.loadFreshness.kind = '';
+    renderLoadFreshness();
+  };
+  state.loadFreshness.busy = true;
+  progress('Checking for the latest saved version…');
+  checkReadyState();
+  loadFreshnessPromise = (async () => {
+    const result = await sharedServiceController.refreshLoaded(loaded.project.id, loaded.project.revisionId, { isCurrent: current, progress });
+    if (result?.state === 'superseded') return;
+    if (!current() && !(result?.state === 'updated' && state.serviceHandoff?.project?.id === loaded.project.id
+      && state.workflowStage === 'load' && !state.activeLaunchPlan)) return;
+    const messages = {
+      current: 'Latest Community version checked. Ready to show.',
+      updated: 'Updated to the latest Community version. Ready to show.',
+      unavailable: 'Could not check Community. The saved package is available offline; its latest version has not been verified.',
+      'prepare-pending': 'Prepare has local edits waiting to sync or be reviewed. The loaded package has been kept. Open in Prepare to continue.',
+      conflict: 'Community and this computer both changed. Review both versions; the loaded package has been kept.',
+      queued: 'Loaded local edits. They are waiting to sync with Community.',
+      'local-newer': 'Loaded this computer’s newer edits. They still need to sync with Community.',
+      busy: 'A service is already being opened. Check the latest version again when it finishes.',
+      unshared: ''
+    };
+    state.loadFreshness.message = messages[result?.state] || '';
+    state.loadFreshness.kind = ['current', 'updated'].includes(result?.state) ? 'success' : 'warning';
+    renderLoadFreshness();
+    return result;
+  })().finally(() => {
+    state.loadFreshness.busy = false;
+    loadFreshnessPromise = null;
+    checkReadyState();
+  });
+  return loadFreshnessPromise;
 }
 
 function planningStatusLabel(status) {
@@ -6282,11 +6349,13 @@ function getReadinessState(testOutput = false) {
       `Finish reloading ${state.serviceFolder.staleRoleIds.map(roleId => getRoleLabel(roleId)).join(', ')} so files from different services are not mixed`
     );
   }
+  if (state.loadFreshness?.busy) issues.push('Checking the latest saved service');
   if (state.isStarting) issues.push('Output windows are starting');
   if (state.startAttempt && !state.isStarting) issues.push('Finish or cancel the current Start Show choices');
 
   const isReady = demoReady && activeOutputs.length > 0
     && !conversionPending
+    && !state.loadFreshness?.busy
     && !state.isStarting
     && !state.startAttempt
     && slideCountsMatch
@@ -6447,6 +6516,10 @@ function confirmPreparedServiceDate() {
 
 async function startPresentation(testOutput = false) {
   testOutput = testOutput === true;
+  const beforeCheck = state.serviceHandoff;
+  let latest = await refreshLoadedService();
+  if (state.serviceHandoff !== beforeCheck && latest?.state !== 'updated') latest = await refreshLoadedService();
+  if (['conflict', 'prepare-pending', 'busy'].includes(latest?.state)) return;
   recheckLoadedPresentationDates();
   if (state.loadMode === 'pptx') renderServiceFolder();
   const readiness = getReadinessState(testOutput);

@@ -3783,11 +3783,11 @@ function serviceDocumentConflict({ kind, local, remote, binding }) {
   };
 }
 
-async function installCommunityServiceDocument(context, remote, local) {
+async function installCommunityServiceDocument(context, remote, local, { usePlannerCache = true } = {}) {
   const assetBuffers = new Map();
   for (const assetId of Object.keys(remote.project.assets).sort()) {
     const asset = remote.project.assets[assetId];
-    assetBuffers.set(assetId, communityPlannerCache?.envelope(remote.syncId)
+    assetBuffers.set(assetId, usePlannerCache && communityPlannerCache?.envelope(remote.syncId)
       ? await communityPlannerCache.asset(remote.syncId, assetId)
       : await context.client.getServiceDocumentAsset({
       syncId: remote.syncId,
@@ -3806,7 +3806,7 @@ async function installCommunityServiceDocument(context, remote, local) {
   const binding = await saveServiceDocumentBinding({
     ...context,
     localRevisionId: installed.revisionId,
-    remote: { ...remote, ...(communityPlannerCache?.state.remoteBases[remote.syncId] || {}) }
+    remote: { ...remote, ...(usePlannerCache ? communityPlannerCache?.state.remoteBases[remote.syncId] || {} : {}) }
   });
   return {
     state: 'opened',
@@ -18619,93 +18619,120 @@ ipcMain.handle('community:serviceDocuments:state', async (event, request = {}) =
   }));
 });
 
-ipcMain.handle('community:serviceDocuments:open', async (event, request = {}) => {
-  requireControlSender(event);
-  return communityIpcResult(() => serializeCommunityOperation(async () => {
-    communityRequestKeys(
-      request,
-      ['syncId', 'resolution'],
-      'Open shared-service request'
+async function openSharedServiceDocument(request) {
+  communityRequestKeys(
+    request,
+    ['syncId', 'resolution', 'fresh', 'expectedLoadedRevisionId'],
+    'Open shared-service request'
+  );
+  const syncId = prepareId(request.syncId, 'Shared service');
+  const resolution = request.resolution ?? null;
+  if (![null, 'use-community', 'keep-local'].includes(resolution)) {
+    failMainOperation(
+      'INVALID_SERVICE_DOCUMENT_RESOLUTION',
+      'Choose whether to keep the local service or use Community.'
     );
-    const syncId = prepareId(request.syncId, 'Shared service');
-    const resolution = request.resolution ?? null;
-    if (![null, 'use-community', 'keep-local'].includes(resolution)) {
-      failMainOperation(
-        'INVALID_SERVICE_DOCUMENT_RESOLUTION',
-        'Choose whether to keep the local service or use Community.'
-      );
-    }
-    const context = await communityServiceDocumentContext({
-      requireWrite: resolution === 'keep-local', refreshCapabilities: false
-    });
-    const cached = communityPlannerCache?.envelope(syncId);
-    const remote = cached || await context.client.getServiceDocument({
-      syncId, accessToken: context.connection.accessToken
-    });
-    const local = await readLocalServiceDocument(context.projectStore, syncId);
-    if (cached) return installCommunityServiceDocument(context, remote, local);
-    if (!local) return installCommunityServiceDocument(context, remote, null);
+  }
+  const fresh = request.fresh === true;
+  const expectedLoadedRevisionId = request.expectedLoadedRevisionId
+    ? prepareRevision(request.expectedLoadedRevisionId, 'Loaded service revision') : null;
+  const stillLoaded = () => !appState.activeLaunchPlan && (!expectedLoadedRevisionId
+    || (installedServiceHandoff()?.project?.id === syncId
+      && installedServiceHandoff()?.project?.revisionId === expectedLoadedRevisionId));
+  if (fresh && !stillLoaded()) return { state: 'superseded' };
+  const context = await communityServiceDocumentContext({
+    requireWrite: resolution === 'keep-local', refreshCapabilities: false
+  });
+  const cached = communityPlannerCache?.envelope(syncId);
+  // The Prepare journal owns pending edits. An automatic server refresh must
+  // not replace them, even if this computer's native project is older.
+  if (fresh && (cached?.pending || cached?.conflict)) {
+    return { state: 'prepare-pending', conflict: cached.conflict === true };
+  }
+  const remote = (!fresh && cached) || await context.client.getServiceDocument({
+    syncId, accessToken: context.connection.accessToken
+  });
+  if (fresh && !stillLoaded()) return { state: 'superseded' };
+  const local = await readLocalServiceDocument(context.projectStore, syncId);
+  const install = () => installCommunityServiceDocument(context, remote, local, { usePlannerCache: !fresh });
+  if (!fresh && cached) return install();
+  if (!local) return install();
 
-    const binding = await context.bindingStore.get(syncId);
-    if (resolution === 'use-community') {
-      return installCommunityServiceDocument(context, remote, local);
-    }
-    if (resolution === 'keep-local') {
-      const synchronized = await synchronizeLocalServiceDocument(
-        context,
-        local,
-        {
-          status: remote.status === 'ready' ? 'planning' : remote.status,
-          base: {
-            syncVersion: remote.syncVersion,
-            revision: remote.revision,
-            changedAt: remote.changedAt
-          }
+  const binding = await context.bindingStore.get(syncId);
+  if (resolution === 'use-community') {
+    return install();
+  }
+  if (resolution === 'keep-local') {
+    const synchronized = await synchronizeLocalServiceDocument(
+      context,
+      local,
+      {
+        status: remote.status === 'ready' ? 'planning' : remote.status,
+        base: {
+          syncVersion: remote.syncVersion,
+          revision: remote.revision,
+          changedAt: remote.changedAt
         }
-      );
-      return {
-        ...synchronized,
-        ...projectResult(local)
-      };
-    }
-
-    if (local.documentSource === remote.documentSource) {
-      // Reinstall the exact content-addressed assets as well as refreshing the
-      // binding. Older builds could save matching JSON without the binaries.
-      return installCommunityServiceDocument(context, remote, local);
-    }
-    if (!binding
-      || binding.serverId !== context.connection.serverId
-      || binding.syncId !== remote.syncId) {
-      return serviceDocumentConflict({
-        kind: binding ? 'different-community' : 'unbound-local-service',
-        local,
-        remote,
-        binding
-      });
-    }
-    const localChanged = local.documentRevision !== binding.documentRevision;
-    const remoteChanged = remote.revision !== binding.documentRevision;
-    if (!localChanged && remoteChanged) {
-      return installCommunityServiceDocument(context, remote, local);
-    }
-    const pending = await context.outbox.get(
-      context.connection.serverId,
-      remote.syncId
+      }
     );
-    if (localChanged && !remoteChanged) {
-      return {
-        state: pending ? 'queued' : 'local-newer',
-        ...projectResult(local),
-        shared: publicServiceDocumentBinding(binding, pending)
-      };
+    return {
+      ...synchronized,
+      ...projectResult(local)
+    };
+  }
+
+  if (local.documentSource === remote.documentSource) {
+    if (fresh && expectedLoadedRevisionId === local.revisionId) {
+      const binding = await saveServiceDocumentBinding({ ...context, localRevisionId: local.revisionId, remote });
+      return { state: 'current', ...projectResult(local), shared: publicServiceDocumentBinding(binding) };
     }
+    // Reinstall the exact content-addressed assets as well as refreshing the
+    // binding. Older builds could save matching JSON without the binaries.
+    return install();
+  }
+  if (!binding
+    || binding.serverId !== context.connection.serverId
+    || binding.syncId !== remote.syncId) {
     return serviceDocumentConflict({
-      kind: 'concurrent-change',
+      kind: binding ? 'different-community' : 'unbound-local-service',
       local,
       remote,
       binding
     });
+  }
+  const localChanged = local.documentRevision !== binding.documentRevision;
+  const remoteChanged = remote.revision !== binding.documentRevision;
+  if (!localChanged && remoteChanged) {
+    return install();
+  }
+  const pending = await context.outbox.get(
+    context.connection.serverId,
+    remote.syncId
+  );
+  if (localChanged && !remoteChanged) {
+    return {
+      state: pending ? 'queued' : 'local-newer',
+      ...projectResult(local),
+      shared: publicServiceDocumentBinding(binding, pending)
+    };
+  }
+  return serviceDocumentConflict({
+    kind: 'concurrent-change',
+    local,
+    remote,
+    binding
+  });
+}
+
+ipcMain.handle('community:serviceDocuments:open', async (event, request = {}) => {
+  requireControlSender(event);
+  return communityIpcResult(() => serializeCommunityOperation(() => {
+    // Share the journal's save queue so a fresh read and install cannot race an
+    // offline Prepare save or conflict resolution.
+    if (request.fresh === true && communityPlannerCache) {
+      return communityPlannerCache.withDocumentLock(() => openSharedServiceDocument(request));
+    }
+    return openSharedServiceDocument(request);
   }));
 });
 
@@ -26272,6 +26299,13 @@ ipcMain.handle('prepare:projects:publish', async (event, request = {}) => {
   }
   if (isConverting || conversionQueue.length > 0) {
     failMainOperation('LOAD_BUSY', 'Wait for the current slideshow to finish loading before preparing another service.');
+  }
+  if (request.expectedLoadedRevisionId) {
+    const loaded = installedServiceHandoff()?.project;
+    if (loaded?.id !== prepareId(request.expectedLoadedProjectId, 'Loaded service')
+      || loaded?.revisionId !== prepareRevision(request.expectedLoadedRevisionId, 'Loaded service revision')) {
+      failMainOperation('LOAD_REFRESH_SUPERSEDED', 'Load changed during the latest-version check. The newly selected package was kept.');
+    }
   }
   const publishGeneration = ++preparePublishGeneration;
   const presentationRevisionAtStart = presentationRevision;

@@ -23,7 +23,7 @@ function fixture() {
     communityCheckedResult: result => { if (result.success === false) throw new Error(result.error.message); return result.data; },
     operatorErrorMessage: error => error.message,
     setTimeout: (callback, milliseconds) => { assert.equal(milliseconds, 3000); timeout = callback; return 1; },
-    clearTimeout: () => {}, openCommunityPrepare: async () => {}
+    clearTimeout: () => {}, openCommunityPrepare: async () => {}, refreshLoadedService: async () => {}
   });
   vm.runInContext(navigation, context);
   return { ...context, warning, loaded, notices, resolve, reject, expire: () => timeout() };

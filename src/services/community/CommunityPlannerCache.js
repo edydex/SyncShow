@@ -439,6 +439,13 @@ class CommunityPlannerCache {
     }
   }
 
+  async withDocumentLock(operation) {
+    await this.loaded;
+    const queued = this.queue.then(operation);
+    this.queue = queued.catch(() => {});
+    return queued;
+  }
+
   async flush() {
     await this.loaded;
     const operation = this.queue.then(async () => {

@@ -11198,3 +11198,7 @@ body { background:var(--bg); }
 button.mini-preview-img { display:block; width:100%; padding:0; border:1px solid var(--border); cursor:pointer; background:#08090a; }
 button.mini-preview-img:hover { border-color:#84a8d0; }
 button.mini-preview-img:focus-visible { outline:2px solid #84a8d0; outline-offset:2px; }
+
+.load-service-freshness { margin: 12px 0; color: #cbd5e1; line-height: 1.5; }
+.load-service-freshness[data-kind="success"] { color: #a7e5bd; }
+.load-service-freshness[data-kind="warning"] { color: #f5d68a; }

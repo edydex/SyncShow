@@ -173,7 +173,7 @@
           : '';
         detail.textContent = `${friendlyDate(item.serviceDate)} · ${item.status} · v${item.syncVersion}${pending}`;
         button.append(title, detail);
-        button.addEventListener('click', () => openService(item.syncId));
+        button.addEventListener('click', () => openService(item.syncId, null, { fresh: true }));
         elements.list.appendChild(button);
       }
       elements.loadMore.hidden = !state.nextCursor;
@@ -250,7 +250,8 @@
       }
     }
 
-    async function showOpenedService(syncId, result) {
+    async function showOpenedService(syncId, result, { isCurrent = () => true, progress = onStatus, expectedLoadedRevisionId = null } = {}) {
+      if (!isCurrent()) return false;
       let opened = result?.project?.id === syncId && result?.revisionId
         ? result
         : null;
@@ -266,17 +267,22 @@
           'The shared service was saved locally but could not be prepared for Load.'
         );
       }
+      progress(`Preparing ${opened.project.title || 'the shared service'} for offline Show…`);
       setNotice(`Building ${opened.project.title || 'the shared service'} for offline Show…`);
+      if (!isCurrent()) return false;
       const published = checked(await api.publishServiceProject({
         projectId: opened.project.id,
-        revisionId: opened.revisionId
+        revisionId: opened.revisionId,
+        expectedLoadedProjectId: expectedLoadedRevisionId ? syncId : null,
+        expectedLoadedRevisionId
       }));
+      if (!isCurrent()) return false;
       await onLoaded(published, {
         project: opened.project,
         revisionId: opened.revisionId
       });
       state.conflict = null;
-      elements.dialog.close();
+      if (elements.dialog.open) elements.dialog.close();
       if (result.state === 'queued') {
         state.autosaveMessage = 'Saved locally. Community is unavailable, so this service is waiting to sync.';
         setCard(state.autosaveMessage, 'warning');
@@ -288,9 +294,10 @@
         state.autosaveMessage = '';
         setCard('This service is linked to Heritage Community.', 'success');
       }
+      return true;
     }
 
-    async function openService(syncId, resolution = null) {
+    async function openService(syncId, resolution = null, options = {}) {
       if (state.busy) return false;
       setBusy(true);
       setNotice(
@@ -299,19 +306,55 @@
       try {
         const result = checked(await api.openCommunityServiceDocument({
           syncId,
-          resolution
+          resolution,
+          fresh: options.fresh === true || state.conflict?.fresh === true
         }));
+        if (result.state === 'prepare-pending') {
+          onStatus('Prepare has local edits waiting to sync or be reviewed. Open in Prepare to continue; the loaded package has been kept.');
+          return false;
+        }
         if (result.state === 'conflict') {
-          state.conflict = { syncId, ...result.conflict };
+          state.conflict = { syncId, fresh: options.fresh === true, ...result.conflict };
+          if (!elements.dialog.open) elements.dialog.showModal();
           renderConflict();
           setNotice('Nothing was overwritten. Review both versions and choose one.', 'warning');
           return false;
         }
-        await showOpenedService(syncId, result);
-        return true;
+        return await showOpenedService(syncId, result, options);
       } catch (error) {
         setNotice(error.message, 'error');
+        onStatus(error.message);
         return false;
+      } finally {
+        setBusy(false);
+        renderList();
+      }
+    }
+
+    async function refreshLoaded(syncId, revisionId, { isCurrent = () => true, progress = onStatus } = {}) {
+      if (state.busy) return { state: 'busy' };
+      setBusy(true);
+      try {
+        const binding = checked(await api.getCommunityServiceDocumentState({ projectId: syncId }));
+        if (!isCurrent()) return { state: 'superseded' };
+        if (!binding.shared) return { state: 'unshared' };
+        progress('Checking Community for the latest version…');
+        const result = checked(await api.openCommunityServiceDocument({
+          syncId, fresh: true, expectedLoadedRevisionId: revisionId
+        }));
+        if (!isCurrent()) return { state: 'superseded' };
+        if (result.state === 'conflict') {
+          state.conflict = { syncId, fresh: true, ...result.conflict };
+          renderConflict();
+          setNotice('Nothing was overwritten. Review both versions and choose one.', 'warning');
+          if (!elements.dialog.open) elements.dialog.showModal();
+          return result;
+        }
+        if (['current', 'prepare-pending', 'superseded'].includes(result.state)) return result;
+        const loaded = await showOpenedService(syncId, result, { isCurrent, progress, expectedLoadedRevisionId: revisionId });
+        return loaded ? { ...result, state: result.state === 'opened' ? 'updated' : result.state } : { state: 'superseded' };
+      } catch (error) {
+        return { state: 'unavailable', message: error.message };
       } finally {
         setBusy(false);
         renderList();
@@ -446,11 +489,11 @@
         return controller;
       },
       open: browseServices,
-      async openById(syncId) {
+      async openById(syncId, options = {}) {
         if (!await refreshCapability()) return false;
-        if (!elements.dialog.open) elements.dialog.showModal();
-        return openService(syncId);
+        return openService(syncId, null, { fresh: options.fresh !== false, ...options });
       },
+      refreshLoaded,
       projectChanged,
       refresh: refreshCapability
     });

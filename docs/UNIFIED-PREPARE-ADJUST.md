@@ -86,3 +86,11 @@ private disposable device fixture, never production credentials. The local Previ
 ## Load while a Prepare save is pending
 
 Load opens immediately. The editor gets up to three seconds to confirm its saved service; a failed or unanswered save leaves a visible warning and the saved-service picker usable. Returning to Prepare, choosing another service, or starting Show cancels the pending handoff so a late response cannot replace the operator’s selection. Six focused tests and the real isolated Electron fixture cover failure, legacy editors, navigation cancellation, and successful loading. The full Preview 38 suite passed 2,360 tests with two skips (2,362 total).
+
+Load checks the currently loaded Community service on startup, when entering Load,
+and before Start Show. It fetches the authoritative record rather than treating a
+Prepare cache as current. Unchanged content keeps the verified package without a
+rebuild. A newer revision is built with inline progress; the chooser opens only
+for an explicit browse action or an actual conflict. Pending Prepare journals,
+concurrent local edits, and an active Show cannot be overwritten by this check.
+Offline errors preserve the last package and state that freshness is unverified.

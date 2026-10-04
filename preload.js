@@ -472,7 +472,9 @@ contextBridge.exposeInMainWorld('api', {
   openCommunityServiceDocument: (request = {}) =>
     ipcRenderer.invoke('community:serviceDocuments:open', {
       syncId: request?.syncId,
-      resolution: request?.resolution ?? null
+      resolution: request?.resolution ?? null,
+      fresh: request?.fresh === true,
+      expectedLoadedRevisionId: request?.expectedLoadedRevisionId ?? null
     }),
   saveCommunityServiceDocument: (request = {}) =>
     ipcRenderer.invoke('community:serviceDocuments:save', {
@@ -1432,7 +1434,9 @@ contextBridge.exposeInMainWorld('api', {
   }),
   publishServiceProject: (request = {}) => ipcRenderer.invoke('prepare:projects:publish', {
     projectId: request?.projectId,
-    revisionId: request?.revisionId
+    revisionId: request?.revisionId,
+    expectedLoadedProjectId: request?.expectedLoadedProjectId ?? null,
+    expectedLoadedRevisionId: request?.expectedLoadedRevisionId ?? null
   }),
   
   // App state
