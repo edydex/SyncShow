@@ -5,6 +5,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const crypto = require('node:crypto');
+const JSZip = require('jszip');
 
 const asar = require('@electron/asar');
 const { Arch } = require('builder-util');
@@ -15,7 +17,7 @@ const {
   SHARP_LIBVIPS_NOTICE,
   LIBVIPS_SOURCE_NOTICES,
   WINDOWS_LIBVIPS_SOURCE_NOTICES,
-  buildLegalBundle
+  buildLegalBundle: buildBundle
 } = require('../scripts/package-legal-bundle');
 const {
   main: verifyReleaseLegal,
@@ -25,6 +27,13 @@ const {
   PACKAGE_TARGETS,
   packageTarget
 } = require('../scripts/lib/package-targets');
+const { readReleaseSourceMaterials } = require('../scripts/lib/release-source-materials');
+
+// These QA fixtures intentionally omit source assets, even when a release CI
+// job has its real source directory configured globally.
+const buildLegalBundle = context => buildBundle(context, {
+  sourceRoot: path.join(context.packager.projectDir, 'missing-qa-source-assets')
+});
 
 async function writeFile(root, relativePath, contents = relativePath) {
   const target = path.join(root, relativePath);
@@ -558,4 +567,82 @@ test('release workflow enforces blocked legal evidence before every artifact upl
     promotionWorkflow,
     /build workflow owns the\s+# release tag/u
   );
+});
+
+async function sourceFixture(fixture) {
+  const projectDir = fixture.context.packager.projectDir;
+  const root = path.join(fixture.root, 'release-sources');
+  const version = fixture.context.packager.appInfo.version;
+  const sourceBytes = Buffer.from('exact corresponding-source fixture');
+  const noticeBytes = Buffer.from('Fixture copyright and license terms\n');
+  const rebuildingBytes = Buffer.from('Modify, rebuild and replace the shared LGPL library.\n');
+  const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+  const spec = {
+    schemaVersion: 1, noticeCount: 1, noticeSha256: hash(noticeBytes),
+    inputs: [{ id: 'fixture', version: '1', url: 'https://example.org/fixture',
+      fileName: 'fixture.archive', bytes: sourceBytes.length, sha256: hash(sourceBytes) }]
+  };
+  const specBytes = Buffer.from(`${JSON.stringify(spec)}\n`);
+  await writeFile(projectDir, 'legal/release-sources/inputs.json', specBytes);
+  await writeFile(projectDir, 'legal/release-sources/REBUILDING.md', rebuildingBytes);
+  const zip = new JSZip();
+  zip.file('SOURCE-INDEX.json', JSON.stringify({
+    schemaVersion: 1, version, inputsManifestSha256: hash(specBytes),
+    inputs: spec.inputs, noticeSha256: spec.noticeSha256, noticeCount: 1
+  }));
+  zip.file('THIRD-PARTY-NOTICES.txt', noticeBytes);
+  zip.file('REBUILDING-AND-REPLACEMENT.md', rebuildingBytes);
+  zip.file('sources/fixture.archive', sourceBytes);
+  const zipBytes = await zip.generateAsync({ type: 'nodebuffer' });
+  const fileName = `SyncShow-${version}-corresponding-sources.zip`;
+  const receipt = {
+    schemaVersion: 1, version, inputsManifestSha256: hash(specBytes), archiveInputCount: 1,
+    noticeCount: 1, noticeSha256: spec.noticeSha256,
+    archive: { fileName, size: zipBytes.length, sha256: hash(zipBytes),
+      downloadUrl: `https://github.com/edydex/SyncShow/releases/download/v${version}/${fileName}` }
+  };
+  await writeFile(root, fileName, zipBytes);
+  await writeJson(root, 'release-source-receipt.json', receipt);
+  return { root, projectDir, version, receipt, fileName };
+}
+
+test('a complete checked source asset allows packaging and public verification', async t => {
+  const fixture = await legalFixture(t);
+  const sources = await sourceFixture(fixture);
+  const built = await buildBundle(fixture.context, { sourceRoot: sources.root });
+  assert.equal(built.manifest.releaseLegalStatus, 'materials-verified');
+  assert.deepEqual(built.manifest.releaseReadinessBlockers, []);
+  assert.equal(built.manifest.sourceMaterials.archive.sha256, sources.receipt.archive.sha256);
+  const verified = await verifyLegalBundle(fixture.manifestPath, {
+    sourceRoot: sources.root, sourceProjectDir: sources.projectDir
+  });
+  assert.equal(verified.releaseLegalStatus, 'materials-verified');
+  assert.equal(verified.evidenceVerification, 'passed');
+  await fs.unlink(path.join(sources.root, sources.fileName));
+  await assert.rejects(verifyLegalBundle(fixture.manifestPath, {
+    sourceRoot: sources.root, sourceProjectDir: sources.projectDir
+  }), error => error.code === 'ENOENT');
+});
+
+test('source asset and receipt tampering never grants public packaging clearance', async t => {
+  const fixture = await legalFixture(t);
+  const sources = await sourceFixture(fixture);
+  await fs.appendFile(path.join(sources.root, sources.fileName), 'changed');
+  await assert.rejects(buildBundle(fixture.context, { sourceRoot: sources.root }),
+    error => error.code === 'RELEASE_SOURCE_CHANGED');
+  sources.receipt.archive.downloadUrl = sources.receipt.archive.downloadUrl.replace('/v', '/wrong-v');
+  await writeJson(sources.root, 'release-source-receipt.json', sources.receipt);
+  await assert.rejects(readReleaseSourceMaterials({ ...sources, required: true }),
+    error => error.code === 'RELEASE_SOURCE_INVALID');
+});
+
+test('clearing old blocker IDs without corresponding sources is rejected', async t => {
+  const fixture = await legalFixture(t);
+  const built = await buildLegalBundle(fixture.context);
+  built.manifest.releaseLegalStatus = 'materials-verified';
+  built.manifest.inventoryScope = 'reviewed-runtime-and-corresponding-source';
+  built.manifest.releaseReadinessBlockers = [];
+  await writeJson(path.dirname(fixture.manifestPath), 'manifest.json', built.manifest);
+  await assert.rejects(verifyLegalBundle(fixture.manifestPath),
+    error => error.code === 'LEGAL_STATUS_INVALID');
 });

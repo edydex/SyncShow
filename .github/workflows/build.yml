@@ -90,8 +90,40 @@ jobs:
     if: needs.check-version.outputs.preview == 'true'
     uses: ./.github/workflows/package-smoke.yml
 
-  build-windows:
+  prepare-sources:
     needs: check-version
+    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Cache verified native source archives
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/syncshow-native-sources
+          key: native-sources-${{ hashFiles('legal/release-sources/inputs.json') }}
+      - name: Prepare exact dependency sources and notices
+        run: node scripts/prepare-release-sources.js --output dist --cache '${{ runner.temp }}/syncshow-native-sources'
+      - name: Upload corresponding-source release materials
+        uses: actions/upload-artifact@v4
+        with:
+          name: corresponding-sources
+          path: |
+            dist/*-corresponding-sources.zip
+            dist/release-source-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  build-windows:
+    needs: [check-version, prepare-sources]
+    env:
+      SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
     if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
     environment: release-build
     runs-on: windows-latest
@@ -111,40 +143,61 @@ jobs:
       - name: Run syntax and regression checks
         run: npm run ci
 
-      - name: Prepare Google Drive release configuration
-        run: node scripts/google-drive-build-config.js inject
-        env:
-          SYNCSHOW_GOOGLE_CLIENT_ID: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_ID }}
-          SYNCSHOW_GOOGLE_CLIENT_SECRET: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_SECRET }}
-          SYNCSHOW_GOOGLE_API_KEY: ${{ secrets.SYNCSHOW_GOOGLE_API_KEY }}
+      - name: Download exact dependency source materials
+        uses: actions/download-artifact@v4
+        with:
+          name: corresponding-sources
+          path: release-sources
 
       - name: Build Windows installer
         run: npm run build:win
         env:
-          SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG: '1'
+          SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
       - name: Verify packaged PDF engine
         run: npm run build:verify-pdf-engine
 
-      - name: Verify Google Drive release configuration was packaged
-        run: node scripts/google-drive-build-config.js verify
+      - name: Verify packaged Sharp runtime
+        run: npm run build:verify-sharp -- --root dist
+
+      - name: Verify packaged native service workflow
+        run: npm run build:verify-service-core -- --root dist
+
+      - name: Launch packaged application
+        run: npm run build:verify-app-launch -- --root dist
+
+      - name: Install and launch the Windows installer
+        run: pwsh -NoProfile -File scripts/verify-windows-installer.ps1 -DistributionRoot dist
+
+      - name: Record exact installer evidence
+        run: >-
+          npm run build:verify-package-smoke --
+          --root dist
+          --platform win32
+          --arch x64
+          --source-revision ${{ github.sha }}
+          --manifest dist/package-smoke-windows-x64.json
 
       - name: Enforce public-release legal materials
         run: npm run build:verify-release-legal
-
-      - name: Remove Google Drive release configuration
-        if: always()
-        run: node scripts/google-drive-build-config.js clean
+        env:
+          SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: dist/*.exe
+          path: |
+            dist/*.exe
+            dist/package-smoke-*.json
+            dist/packaged-launch-*.json
+          if-no-files-found: error
           retention-days: 30
 
   build-mac:
-    needs: check-version
+    needs: [check-version, prepare-sources]
+    env:
+      SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
     if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
     environment: release-build
     name: Build macOS (${{ matrix.arch }})
@@ -175,23 +228,19 @@ jobs:
       - name: Run syntax and regression checks
         run: npm run ci
 
-      - name: Prepare Google Drive release configuration
-        run: node scripts/google-drive-build-config.js inject
-        env:
-          SYNCSHOW_GOOGLE_CLIENT_ID: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_ID }}
-          SYNCSHOW_GOOGLE_CLIENT_SECRET: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_SECRET }}
-          SYNCSHOW_GOOGLE_API_KEY: ${{ secrets.SYNCSHOW_GOOGLE_API_KEY }}
+      - name: Download exact dependency source materials
+        uses: actions/download-artifact@v4
+        with:
+          name: corresponding-sources
+          path: release-sources
 
       - name: Build macOS installer
         run: npm run build:mac:adhoc -- --${{ matrix.arch }}
         env:
-          SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG: '1'
+          SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
       - name: Verify packaged PDF engine
         run: npm run build:verify-pdf-engine
-
-      - name: Verify Google Drive release configuration was packaged
-        run: node scripts/google-drive-build-config.js verify
 
       - name: Verify native architecture
         shell: bash
@@ -206,12 +255,28 @@ jobs:
           file "$SHARP_ADDON" | grep -q '${{ matrix.file_arch }}'
           file "$CANVAS_ADDON" | grep -q '${{ matrix.file_arch }}'
 
+      - name: Verify packaged Sharp runtime
+        run: npm run build:verify-sharp -- --root dist
+
+      - name: Verify packaged native service workflow
+        run: npm run build:verify-service-core -- --root dist
+
+      - name: Launch packaged application
+        run: npm run build:verify-app-launch -- --root dist
+
+      - name: Record exact installer evidence
+        run: >-
+          npm run build:verify-package-smoke --
+          --root dist
+          --platform darwin
+          --arch ${{ matrix.arch }}
+          --source-revision ${{ github.sha }}
+          --manifest dist/package-smoke-mac-${{ matrix.arch }}.json
+
       - name: Enforce public-release legal materials
         run: npm run build:verify-release-legal
-
-      - name: Remove Google Drive release configuration
-        if: always()
-        run: node scripts/google-drive-build-config.js clean
+        env:
+          SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -220,10 +285,15 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
+            dist/package-smoke-*.json
+            dist/packaged-launch-*.json
+          if-no-files-found: error
           retention-days: 30
 
   build-linux:
-    needs: check-version
+    needs: [check-version, prepare-sources]
+    env:
+      SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
     if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
     environment: release-build
     runs-on: ubuntu-latest
@@ -243,30 +313,47 @@ jobs:
       - name: Run syntax and regression checks
         run: npm run ci
 
-      - name: Prepare Google Drive release configuration
-        run: node scripts/google-drive-build-config.js inject
-        env:
-          SYNCSHOW_GOOGLE_CLIENT_ID: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_ID }}
-          SYNCSHOW_GOOGLE_CLIENT_SECRET: ${{ secrets.SYNCSHOW_GOOGLE_CLIENT_SECRET }}
-          SYNCSHOW_GOOGLE_API_KEY: ${{ secrets.SYNCSHOW_GOOGLE_API_KEY }}
+      - name: Download exact dependency source materials
+        uses: actions/download-artifact@v4
+        with:
+          name: corresponding-sources
+          path: release-sources
 
       - name: Build Linux packages
         run: npm run build:linux
         env:
-          SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG: '1'
+          SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
       - name: Verify packaged PDF engine
         run: npm run build:verify-pdf-engine
 
-      - name: Verify Google Drive release configuration was packaged
-        run: node scripts/google-drive-build-config.js verify
+      - name: Verify packaged Sharp runtime
+        run: npm run build:verify-sharp -- --root dist
+
+      - name: Verify packaged native service workflow
+        run: npm run build:verify-service-core -- --root dist
+
+      - name: Configure Linux sandbox helper for launch verification
+        run: |
+          sudo chown root:root dist/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 dist/linux-unpacked/chrome-sandbox
+
+      - name: Launch packaged application
+        run: xvfb-run -a npm run build:verify-app-launch -- --root dist
+
+      - name: Record exact installer evidence
+        run: >-
+          npm run build:verify-package-smoke --
+          --root dist
+          --platform linux
+          --arch x64
+          --source-revision ${{ github.sha }}
+          --manifest dist/package-smoke-linux-x64.json
 
       - name: Enforce public-release legal materials
         run: npm run build:verify-release-legal
-
-      - name: Remove Google Drive release configuration
-        if: always()
-        run: node scripts/google-drive-build-config.js clean
+        env:
+          SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
@@ -275,19 +362,30 @@ jobs:
           path: |
             dist/*.AppImage
             dist/*.deb
+            dist/package-smoke-*.json
+            dist/packaged-launch-*.json
+          if-no-files-found: error
           retention-days: 30
 
   create-release:
-    needs: [check-version, build-windows, build-mac, build-linux]
+    needs: [check-version, prepare-sources, build-windows, build-mac, build-linux]
     if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install artifact verification dependencies
+        run: npm ci
 
       - name: Generate release notes
         id: notes
@@ -313,13 +411,14 @@ jobs:
         with:
           path: artifacts
 
-      - name: Display downloaded files
-        run: ls -R artifacts
+      - name: Verify every installer and source asset before publication
+        run: node scripts/verify-release-artifacts.js --root artifacts --source-revision ${{ github.sha }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           name: SyncShow v${{ needs.check-version.outputs.version }}
           draft: false
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
@@ -329,6 +428,11 @@ jobs:
             artifacts/macos-installer-*/*.zip
             artifacts/linux-installer/*.AppImage
             artifacts/linux-installer/*.deb
+            artifacts/corresponding-sources/*-corresponding-sources.zip
+            artifacts/corresponding-sources/release-source-receipt.json
+            artifacts/*/package-smoke-*.json
+            artifacts/*/packaged-launch-*.json
+            artifacts/SHA256SUMS
           body: |
             ## SyncShow v${{ needs.check-version.outputs.version }}
 
@@ -341,8 +445,12 @@ jobs:
             - **macOS Intel**: `SyncShow-${{ needs.check-version.outputs.version }}-x64.dmg`
             - **Linux**: `SyncShow-${{ needs.check-version.outputs.version }}.AppImage` or `.deb`
 
-            ### Presentation converter requirements
-            - **Windows:** Microsoft PowerPoint is preferred; [LibreOffice](https://www.libreoffice.org/download/download/) is the fallback.
-            - **macOS/Linux:** LibreOffice must be installed.
+            ### Getting ready for church
+            - Native Heritage Community services work without Office or LibreOffice.
+            - For legacy slide-deck conversion, Windows prefers PowerPoint and falls back to LibreOffice; macOS/Linux use LibreOffice.
+            - Direct Google Drive integration is optional and is not configured in these installers. Community and local service files work independently.
+            - macOS installers are ad-hoc signed, not Developer ID signed or notarized. Windows installers are not Authenticode signed.
+            - All four native targets passed packaged launch, image/PDF, service-core, artifact-integrity, and dependency-source checks. Physical Windows venue rehearsal remains required.
+            - SHA256SUMS and exact corresponding-source materials are attached to this release.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

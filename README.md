@@ -42,14 +42,9 @@ A cross-platform desktop application for planning and running synchronized churc
 
 ### Download Pre-built Releases
 
-For the current Community, tablet-teaching and Bible-import features, use
-**[Preview 31 downloads and installation instructions](docs/COMMUNITY_PREVIEW.md#download-and-install)**.
-The installers are in a private testing repository; sign into GitHub with access
-to `edydex/heritage-preview-builds`. **[Download the Windows preview](https://github.com/edydex/heritage-preview-builds/releases/download/syncshow-v1.4.0-preview.31/SyncShow.Setup.1.4.0-preview.31.exe)**.
+Download the current public version from **[SyncShow releases](https://github.com/edydex/SyncShow/releases/latest)**. The release includes Windows, Mac (Apple Silicon and Intel), and Linux installers, SHA256SUMS, exact build receipts, and dependency source materials. GitHub sign-in is not required for these public downloads. Older private previews remain documented in [Community preview history](docs/COMMUNITY_PREVIEW.md).
 
-The [public Releases page](https://github.com/edydex/SyncShow/releases) contains older
-releases. A failed public-release workflow does not mean the separately verified
-private preview is unavailable. Installer formats are:
+Installer formats are:
 
 - **Windows**: `SyncShow Setup X.X.X.exe`
 - **macOS**: separate Intel and Apple Silicon `.dmg`/`.zip` downloads
@@ -57,7 +52,7 @@ private preview is unavailable. Installer formats are:
 
 ### macOS Installation
 
-1. **Download** the `.dmg` for your Mac from the [preview downloads](docs/COMMUNITY_PREVIEW.md#download-and-install)
+1. **Download** the `.dmg` for your Mac from the [latest public release](https://github.com/edydex/SyncShow/releases/latest)
 2. **Open** the DMG file
 3. **Drag** SyncShow to the Applications folder
 4. **First launch** - You may see "SyncShow can't be opened because Apple cannot check it for malicious software"

@@ -4,10 +4,18 @@
 
 set -eo pipefail
 
+# Stable releases carry reviewed operator-facing notes alongside their source.
+CURRENT_VERSION=$(node -p "require('./package.json').version")
+VERSION_NOTES="docs/releases/${CURRENT_VERSION}.md"
+if [ -f "$VERSION_NOTES" ]; then
+  cat "$VERSION_NOTES"
+  exit 0
+fi
+
 # Get the latest stable tag (skip prereleases), falling back to the root commit
 LAST_TAG=$(git describe --tags --abbrev=0 \
   --exclude='*-alpha*' --exclude='*-beta*' \
-  --exclude='*-rc*' --exclude='*-dev*' \
+  --exclude='*-rc*' --exclude='*-dev*' --exclude='*-preview*' \
   HEAD^ 2>/dev/null) || LAST_TAG=$(git rev-list --max-parents=0 HEAD)
 
 # Get commit messages between last tag (non-inclusive) and HEAD (inclusive)

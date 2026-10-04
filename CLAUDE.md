@@ -20,7 +20,7 @@ npm run build:all      # Build all platforms
 npm run check          # Syntax-check every JavaScript source
 npm test               # Node regression suite
 npm run build:verify-pdf-engine   # Smoke exact packaged runtime/native target
-npm run build:verify-release-legal # Fail closed while native legal blockers remain
+npm run build:verify-release-legal # Check exact packaged notices and same-release source asset
 ```
 
 Run the repository test/check scripts before packaging; see `package.json` for the current commands.
@@ -108,10 +108,15 @@ The app uses Electron IPC with context isolation. Key channels defined in `prelo
   outside ASAR for every platform; macOS plist edits remain macOS-only.
 - `scripts/verify-packaged-pdf-engine.js` rejects MuPDF, wrong native
   canvas/sharp targets, missing legal evidence, and packaged-runtime PDF drift.
-- `scripts/verify-release-legal.js` currently must fail with
-  `RELEASE_LEGAL_BLOCKED`. Do not bypass it or describe QA packages as
-  distributable releases; canvas/Skia, sharp/libvips, and Electron/FFmpeg still
-  need exact corresponding-source and practical relinking materials.
+- `scripts/prepare-release-sources.js` prepares the checksum-pinned native
+  source/notice asset. `SYNCSHOW_RELEASE_SOURCE_DIR` points native builders and
+  verifiers to that asset and its receipt outside the installers.
+- `scripts/verify-release-legal.js` requires the exact same-release source ZIP,
+  checked notice terms, original build inputs and replacement instructions.
+  Ordinary QA builds without those materials remain `RELEASE_LEGAL_BLOCKED`.
+  Never clear blockers or waive the gate without verified source evidence.
+  See `legal/release-sources/REBUILDING.md`; package evidence is separate from
+  physical venue acceptance or signing/notarization.
 
 ## Unverified Performance Targets
 

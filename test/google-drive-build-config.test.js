@@ -411,114 +411,19 @@ test('packaged app verification rejects a mismatched client secret without echoi
   );
 });
 
-test('release workflow scopes secrets to injection and always removes generated config', async () => {
-  const workflow = (await fs.readFile(
-    path.resolve(__dirname, '../.github/workflows/build.yml'),
-    'utf8'
-  )).replace(/\r\n/g, '\n');
-  const clientIdBindings = workflow.match(
-    /SYNCSHOW_GOOGLE_CLIENT_ID:\s*\$\{\{\s*secrets\.SYNCSHOW_GOOGLE_CLIENT_ID\s*\}\}/g
-  ) || [];
-  const clientSecretBindings = workflow.match(
-    /SYNCSHOW_GOOGLE_CLIENT_SECRET:\s*\$\{\{\s*secrets\.SYNCSHOW_GOOGLE_CLIENT_SECRET\s*\}\}/g
-  ) || [];
-  const apiKeyBindings = workflow.match(
-    /SYNCSHOW_GOOGLE_API_KEY:\s*\$\{\{\s*secrets\.SYNCSHOW_GOOGLE_API_KEY\s*\}\}/g
-  ) || [];
-
-  assert.equal(clientIdBindings.length, 3, 'one OAuth client ID binding per platform build');
-  assert.equal(clientSecretBindings.length, 3, 'one OAuth client secret binding per platform build');
-  assert.equal(apiKeyBindings.length, 3, 'one API key binding per platform build');
-  assert.equal(
-    (
-      workflow.match(/node scripts\/google-drive-build-config\.js inject/g) || []
-    ).length,
-    3,
-    'each platform must generate its config immediately before packaging'
-  );
-  assert.equal(
-    (
-      workflow.match(/node scripts\/google-drive-build-config\.js clean/g) || []
-    ).length,
-    3,
-    'each platform must remove its generated config'
-  );
-  assert.equal(
-    (workflow.match(/if:\s*always\(\)/g) || []).length,
-    3,
-    'cleanup must run even when packaging fails'
-  );
-  assert.equal(
-    (
-      workflow.match(/node scripts\/google-drive-build-config\.js verify/g) || []
-    ).length,
-    3,
-    'each platform must verify the generated config was packaged'
-  );
-  assert.match(workflow, /^permissions:\n\s+contents:\s+read$/m);
-  assert.doesNotMatch(workflow, /^\s+pull_request:/m);
-  assert.equal(
-    (workflow.match(/^\s+environment:\s+release-build$/gm) || []).length,
-    3,
-    'Drive credentials must come from the protected release environment'
-  );
-  assert.equal(
-    (
-      workflow.match(
-        /if: needs\.check-version\.outputs\.version_changed == 'true' && github\.ref == 'refs\/heads\/main'/g
-      ) || []
-    ).length,
-    4,
-    'platform builds and release publication must reject non-main dispatches'
-  );
-
-  const preparationSteps = workflow.match(
-    /- name: Prepare Google Drive release configuration[\s\S]*?(?=\n\s+- name:)/g
-  ) || [];
-  assert.equal(preparationSteps.length, 3);
-  for (const step of preparationSteps) {
-    assert.match(step, /secrets\.SYNCSHOW_GOOGLE_CLIENT_ID/);
-    assert.match(step, /secrets\.SYNCSHOW_GOOGLE_CLIENT_SECRET/);
-    assert.match(step, /secrets\.SYNCSHOW_GOOGLE_API_KEY/);
-  }
-
-  const packagingSteps = workflow.match(
-    /- name: Build (?:Windows|macOS|Linux)[\s\S]*?(?=\n\s+- name:)/g
-  ) || [];
-  assert.equal(packagingSteps.length, 3);
-  for (const step of packagingSteps) {
-    assert.doesNotMatch(step, /SYNCSHOW_GOOGLE_(?:CLIENT_ID|CLIENT_SECRET|API_KEY)/);
-    assert.doesNotMatch(step, /secrets\./);
-    assert.match(step, /SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG:\s*'1'/);
-  }
-  assert.equal(
-    (workflow.match(/SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG:\s*'1'/g) || []).length,
-    3,
-    'only the three protected packaging steps may include the generated config'
-  );
-
-  const buildJobs = workflow.match(
-    /^  build-(?:windows|mac|linux):[\s\S]*?(?=^  (?:build-|create-release:))/gm
-  ) || [];
-  assert.equal(buildJobs.length, 3);
-  for (const job of buildJobs) {
-    const prepare = job.indexOf('Prepare Google Drive release configuration');
-    const build = job.search(/Build (?:Windows|macOS|Linux) installer|Build Linux packages/);
-    const verify = job.indexOf('Verify Google Drive release configuration was packaged');
-    const cleanup = job.indexOf('Remove Google Drive release configuration');
-    const upload = job.search(/Upload (?:Windows|macOS|Linux) artifact/);
-    assert.ok(prepare >= 0 && prepare < build);
-    assert.ok(build < verify && verify < cleanup);
-    assert.ok(cleanup < upload);
-  }
-
-  const pullRequestWorkflow = await fs.readFile(
-    path.resolve(__dirname, '../.github/workflows/ci.yml'),
-    'utf8'
-  );
-  assert.match(pullRequestWorkflow, /^\s+pull_request:/m);
-  assert.doesNotMatch(pullRequestWorkflow, /secrets\.SYNCSHOW_GOOGLE_/);
-  assert.doesNotMatch(pullRequestWorkflow, /SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG/);
+test('public native-service release builds omit optional Drive credentials', async () => {
+  const workflow=await fs.readFile(path.resolve(__dirname,'../.github/workflows/build.yml'),'utf8');
+  assert.doesNotMatch(workflow,/secrets\.SYNCSHOW_GOOGLE_|SYNCSHOW_PACKAGE_GOOGLE_DRIVE_CONFIG/);
+  assert.doesNotMatch(workflow,/google-drive-build-config\.js (inject|verify|clean)/);
+  assert.match(workflow,/contents: read/);
+  assert.doesNotMatch(workflow,/^\s+pull_request:/m);
+  assert.equal((workflow.match(/if: needs\.check-version\.outputs\.version_changed == 'true' && github\.ref == 'refs\/heads\/main'/g)||[]).length,5);
+  assert.equal((workflow.match(/name: Download exact dependency source materials/g)||[]).length,3);
+  assert.equal((workflow.match(/name: Enforce public-release legal materials/g)||[]).length,3);
+  assert.match(workflow,/Direct Google Drive integration is optional/);
+  const qa=await fs.readFile(path.resolve(__dirname,'../.github/workflows/ci.yml'),'utf8');
+  assert.match(qa,/^\s+pull_request:/m);
+  assert.doesNotMatch(qa,/secrets\.SYNCSHOW_GOOGLE_/);
 });
 
 test('real build config remains ignored while the placeholder example remains source-controlled', async () => {

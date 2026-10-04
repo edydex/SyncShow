@@ -78,7 +78,7 @@ The macOS installer is produced in `dist/`. Check its version and architecture b
 
 The ordinary Package Smoke workflow creates temporary QA artifacts. Build and Release also calls it for preview version pushes and manual preview runs, so a successful preview run includes checked installers instead of skipped packaging. Each platform's job summary links its installer ZIP and verification files; sign into GitHub to download them within seven days. Permanent owner releases are published separately after their receipts and checksums are verified, at the private download location above.
 
-A successful preview build is not an official public release. Non-preview releases still require Google Drive release configuration and target-specific dependency-distribution materials in the protected release workflow.
+A successful preview build is not an official public release. Public releases require checked same-release native source/notice assets and replacement instructions in the protected release workflow. Direct Google Drive is optional; Community and local services do not require Drive release credentials. See [native source and replacement materials](../legal/release-sources/REBUILDING.md).
 
 Local checks include the packaged PDF and Sharp runtimes, shared service workflow, app launch, exact artifact/source inventory, and the macOS local-network/microphone declarations. Translation and tablet teaching have separate real Electron rehearsals. Synthetic media input verifies browser permission handling without accessing a physical microphone or contacting a translation provider.
 

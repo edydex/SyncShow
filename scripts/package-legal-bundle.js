@@ -9,6 +9,7 @@ const asar = require('./lib/asar');
 const { Arch } = require('builder-util');
 
 const { packageTarget } = require('./lib/package-targets');
+const { readReleaseSourceMaterials } = require('./lib/release-source-materials');
 
 const LEGAL_SCHEMA_VERSION = 1;
 const MAX_NOTICE_BYTES = 32 * 1024 * 1024;
@@ -338,7 +339,15 @@ async function libvipsSourceNoticeRecords(projectDir, target) {
   }));
 }
 
-function legalIndexHtml(appVersion, target) {
+function legalIndexHtml(appVersion, target, sources = null) {
+  if (sources) return Buffer.from(`<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>SyncShow ${appVersion} third-party materials</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:58rem;margin:3rem auto;padding:0 1rem}</style>
+<h1>SyncShow ${appVersion} third-party materials</h1>
+<p>Target: ${target.key}. Exact source inputs, native notices and replacement instructions were checked during packaging.</p>
+<p><a href="${sources.receipt.archive.downloadUrl}">Download the corresponding-source archive for this exact release</a>.</p>
+<p>See THIRD_PARTY_NOTICES.txt, SOURCE_AVAILABILITY.txt, RELINKING.md and manifest.json. Upstream terms control the individual components; this verification is not a legal opinion.</p>
+<p>Native provenance hashes are recorded before platform signing. The platform signature protects the final signed bytes.</p></html>\n`, 'utf8');
   const blockers = RELEASE_BLOCKERS
     .map(blocker => `<li><code>${blocker.id}</code>: ${blocker.summary}</li>`)
     .join('\n');
@@ -360,7 +369,8 @@ function legalIndexHtml(appVersion, target) {
 `, 'utf8');
 }
 
-function thirdPartyNoticeText(target) {
+function thirdPartyNoticeText(target, sources = null) {
+  if (sources) return Buffer.from(`SyncShow third-party software notices\nTarget: ${target.key}\n\nThe copied notices/ tree retains PDF.js, Electron/Chromium, fonts and native source copyright/license terms. The native-source collection is a conservative superset; source-tree tests and build tools may be included without being linked into the application.\n\nSyncShow uses FFmpeg under LGPL terms. Its exact corresponding source, build configuration and replacement instructions are supplied at:\n${sources.receipt.archive.downloadUrl}\n\nThe same asset provides LGPL/MPL libvips dependency sources, the original build recipes, canvas/Skia and Rust notices, and Sharp application source. Terms are not summarized away: read the retained license texts.\n\nNative hashes in manifest.json are pre-signing provenance; signing may rewrite the binaries afterward.\n`, 'utf8');
   return Buffer.from(`SyncShow third-party notice evidence
 Target: ${target.key}
 
@@ -401,7 +411,8 @@ manifest.json for hashed evidence and the blockers that prevent distribution.
 `, 'utf8');
 }
 
-function sourceAvailabilityText(target) {
+function sourceAvailabilityText(target, sources = null) {
+  if (sources) return Buffer.from(`SyncShow corresponding-source materials\nTarget: ${target.key}\n\nExact version download: ${sources.receipt.archive.downloadUrl}\nSource ZIP SHA-256: ${sources.receipt.archive.sha256}\nSource ZIP bytes: ${sources.receipt.archive.size}\n\nThe source index contains every checked upstream archive, original compile/link recipes, generated FFmpeg platform configurations and all retained notice terms. The receipt is in provenance/release-source-receipt.json.\n\nThe complete LGPL/MPL source archives are supplied beside this release's installers. This is a direct source distribution, not a written offer. Permissive component source and build/test dependencies are retained as a conservative supplement. See RELINKING.md for modification, rebuild and shared-library replacement.\n`, 'utf8');
   return Buffer.from(`SyncShow source availability status
 Target: ${target.key}
 
@@ -432,17 +443,17 @@ The release gate treats this missing procedure as a hard blocker.
 `, 'utf8');
 }
 
-function partialComponents(components, target) {
+function partialComponents(components, target, sources = null) {
   return Buffer.from(stableJson({
     schemaVersion: 1,
-    inventoryStatus: 'partial-audited-components-only',
-    warning: 'This is not a complete SPDX inventory and must not be used as public-release clearance.',
+    inventoryStatus: sources ? 'reviewed-runtime-and-upstream-source-notice-superset' : 'partial-audited-components-only',
+    warning: sources ? 'The source notice superset includes unused build/test code; this is not an assertion that every archived component is linked.' : 'This is not a complete SPDX inventory and must not be used as public-release clearance.',
     target: target.key,
     components
   }), 'utf8');
 }
 
-async function buildLegalBundle(context) {
+async function buildLegalBundle(context, { sourceRoot } = {}) {
   if (
     !context
     || typeof context.appOutDir !== 'string'
@@ -478,6 +489,7 @@ async function buildLegalBundle(context) {
   }
 
   const projectDir = path.resolve(context.packager.projectDir);
+  const releaseSources = await readReleaseSourceMaterials({ projectDir, version: appManifest.version, ...(sourceRoot ? { root: sourceRoot } : {}) });
   const packageLock = await readJsonFile(path.join(projectDir, 'package-lock.json'));
   const canvasRoot = path.join(unpackedRoot, 'node_modules', '@napi-rs', 'canvas');
   const canvasTargetRoot = path.join(
@@ -561,6 +573,10 @@ async function buildLegalBundle(context) {
 
   const notices = [];
   const provenance = [];
+  if (releaseSources) {
+    notices.push(await writeBundleFile(stagingRoot, 'notices/native-sources/THIRD_PARTY_NOTICES.txt', releaseSources.noticeBytes));
+    provenance.push(await writeBundleFile(stagingRoot, 'provenance/release-source-receipt.json', releaseSources.receiptBytes));
+  }
   notices.push(await copyBundleFile(
     stagingRoot,
     'notices/syncshow/LICENSE.txt',
@@ -745,33 +761,33 @@ async function buildLegalBundle(context) {
   documents.push(await writeBundleFile(
     stagingRoot,
     'INDEX.html',
-    legalIndexHtml(appManifest.version, target)
+    legalIndexHtml(appManifest.version, target, releaseSources)
   ));
   documents.push(await writeBundleFile(
     stagingRoot,
     'THIRD_PARTY_NOTICES.txt',
-    thirdPartyNoticeText(target)
+    thirdPartyNoticeText(target, releaseSources)
   ));
   documents.push(await writeBundleFile(
     stagingRoot,
     'SOURCE_AVAILABILITY.txt',
-    sourceAvailabilityText(target)
+    sourceAvailabilityText(target, releaseSources)
   ));
   documents.push(await writeBundleFile(
     stagingRoot,
     'RELINKING.md',
-    relinkingText(target)
+    releaseSources ? releaseSources.rebuildingBytes : relinkingText(target)
   ));
   documents.push(await writeBundleFile(
     stagingRoot,
-    'COMPONENTS.partial.json',
-    partialComponents(components, target)
+    releaseSources ? 'COMPONENTS.json' : 'COMPONENTS.partial.json',
+    partialComponents(components, target, releaseSources)
   ));
 
   const manifest = {
     schemaVersion: LEGAL_SCHEMA_VERSION,
-    releaseLegalStatus: 'blocked',
-    inventoryScope: 'partial-audited-components-only',
+    releaseLegalStatus: releaseSources ? 'materials-verified' : 'blocked',
+    inventoryScope: releaseSources ? 'reviewed-runtime-and-corresponding-source' : 'partial-audited-components-only',
     nativeArtifactHashScope: 'after-pack-before-platform-signing',
     target: {
       platform: target.platform,
@@ -783,7 +799,8 @@ async function buildLegalBundle(context) {
     notices: notices.sort((left, right) => left.path.localeCompare(right.path, 'en')),
     provenance: provenance.sort((left, right) => left.path.localeCompare(right.path, 'en')),
     nativeArtifacts,
-    releaseReadinessBlockers: RELEASE_BLOCKERS
+    releaseReadinessBlockers: releaseSources ? [] : RELEASE_BLOCKERS,
+    ...(releaseSources ? { sourceMaterials: releaseSources.receipt } : {})
   };
   await writeBundleFile(
     stagingRoot,
