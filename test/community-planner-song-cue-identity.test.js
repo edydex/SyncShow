@@ -33,23 +33,38 @@ function correctedSong(original) {
   next.revision++;
   return core.normalizeServiceProject(next);
 }
+function structurallyEditedSong(original) {
+  const next=structuredClone(original),song=next.items.song;
+  const first=structuredClone(song),title=structuredClone(song);
+  first.id='song-page';first.cueItemId='song';first.showTitle=false;
+  first.arrangement=[{...song.arrangement[0],cueSourceLeafKey:'first/chorus-slide-1'}];
+  title.id='song-title';title.cueItemId='song';title.showTitle=true;title.arrangement=[];
+  next.items.song={id:'song',kind:'group',groupKind:'section',title:song.title,childIds:[title.id,first.id]};
+  next.items[first.id]=first;next.items[title.id]=title;next.revision++;
+  return core.normalizeServiceProject(next);
+}
 function envelope(project,syncVersion=1) {
   return {...heritage.validateHeritageServiceDocumentSource(heritage.serializeHeritageServiceDocument(heritage.createHeritageServiceDocument(project))),
     schemaVersion:1,syncId:project.id,syncVersion,status:'planning',changedAt:new Date().toISOString()};
 }
 function cueIds(project){return core.compileServiceProject(project).cueIds;}
 
-for(const oldServer of [false,true])test(`stable repeated-song identity survives local history, restart and ${oldServer?'an older server rejecting the extension':'canonical background synchronization'}`,async t=>{
+for(const structural of [false,true])for(const oldServer of [false,true])test(`stable ${structural?'structural':'repeated'}-song identity survives local history, restart and ${oldServer?'an older server rejecting the extension':'canonical background synchronization'}`,async t=>{
   const rootPath=await fs.mkdtemp(path.join(os.tmpdir(),'song-cue-cache-'));
   t.after(()=>fs.rm(rootPath,{recursive:true,force:true}));
-  const original=originalSong(),corrected=correctedSong(original),ids=cueIds(original);
+  const original=originalSong(),correction=correctedSong(original),corrected=structural?structurallyEditedSong(correction):correction;
+  const ids=structural?cueIds(original).slice(0,2):cueIds(original);
   assert.deepEqual(cueIds(corrected),ids);
   let remote=envelope(original),lastWrite;
   const fetch=async request=>{
     lastWrite=await request.json();
     const validated=heritage.validateHeritageServiceDocumentSource(lastWrite.documentSource);
     if(oldServer) {
-      const stripped=structuredClone(validated.project);delete stripped.items.song.arrangement[0].cueSectionId;
+      const stripped=structuredClone(validated.project);
+      for(const item of Object.values(stripped.items))if(item.kind==='song'){
+        delete item.cueItemId;
+        for(const entry of item.arrangement){delete entry.cueSectionId;delete entry.cueSourceLeafKey;}
+      }
       assert.notEqual(envelope(stripped).documentSource,lastWrite.documentSource,'An older canonical-source endpoint rejects this extension instead of silently changing cues');
       return new Response(JSON.stringify({error:'The service content is not canonical.'}),{status:400});
     }
@@ -70,7 +85,12 @@ for(const oldServer of [false,true])test(`stable repeated-song identity survives
   await restarted.loaded;assert.deepEqual(cueIds(restarted.envelope(original.id).project),ids);
   await restarted.flush();
   assert.equal(lastWrite.documentSource,documentSource);
-  assert.equal(restarted.envelope(original.id).project.items.song.arrangement[0].cueSectionId,'chorus');
+  const firstItem=structural?'song-page':'song';
+  assert.equal(restarted.envelope(original.id).project.items[firstItem].arrangement[0].cueSectionId,'chorus');
+  if(structural){
+    assert.equal(restarted.envelope(original.id).project.items[firstItem].cueItemId,'song');
+    assert.equal(restarted.envelope(original.id).project.items[firstItem].arrangement[0].cueSourceLeafKey,'first/chorus-slide-1');
+  }
   assert.deepEqual(cueIds(restarted.envelope(original.id).project),ids);
   if(oldServer) {
     assert.equal(restarted.summary().pending,1);
@@ -78,9 +98,33 @@ for(const oldServer of [false,true])test(`stable repeated-song identity survives
     assert.deepEqual(remote.project,original,'Rejected synchronization never alters the server copy');
   } else {
     assert.equal(restarted.summary().pending,0);
-    assert.equal(remote.project.items.song.arrangement[0].cueSectionId,'chorus');
+    assert.equal(remote.project.items[firstItem].arrangement[0].cueSectionId,'chorus');
     assert.deepEqual(cueIds(remote.project),ids);
   }
   assert.equal(core.compileServiceProject(corrected).cues[ids[1]].channels.english.blocks[0].text,'Corrected words');
-  assert.equal(core.compileServiceProject(corrected).cues[ids[2]].channels.english.blocks[0].text,'Original words');
+  if(!structural)assert.equal(core.compileServiceProject(corrected).cues[ids[2]].channels.english.blocks[0].text,'Original words');
+});
+
+test('service-local cue identity is bounded to one emitted song slide and copies receive fresh identities',()=>{
+  const original=originalSong(),corrected=structurallyEditedSong(correctedSong(original)),ids=cueIds(corrected);
+  const copy=core.duplicateProjectItem(corrected,{itemId:'song-page',randomUUID:()=> 'unique-page-copy'});
+  assert.equal(copy.items[copy.rootItemIds.at(-1)].cueItemId,undefined);
+  const duplicated=cueIds(copy);
+  assert.deepEqual(duplicated.slice(0,ids.length),ids);
+  assert(!ids.includes(duplicated.at(-1)));
+  const invalid=structuredClone(original);invalid.items.song.cueItemId='song';
+  assert.throws(()=>core.normalizeServiceProject(invalid),error=>error.code==='INVALID_SONG_CUE_IDENTITY');
+  for(const key of ['title','../verse','first/page/extra','first/'+'x'.repeat(300)]){
+    const invalid=structuredClone(corrected);invalid.items['song-page'].arrangement[0].cueSourceLeafKey=key;
+    assert.throws(()=>core.normalizeServiceProject(invalid));
+  }
+  const invalidPages=structuredClone(corrected),pageItem=invalidPages.items['song-page'];
+  const document=structuredClone(invalidPages.resources[pageItem.variants.english.resourceId].document);
+  document.sections.find(section=>section.id===pageItem.arrangement[0].sectionId).slides.push({lines:['Another page']});
+  const repinned=core.addSongResource(invalidPages,document),multiPage=structuredClone(repinned.project);
+  multiPage.items['song-page'].variants.english.resourceId=repinned.resourceId;
+  assert.throws(()=>core.normalizeServiceProject(multiPage),error=>error.code==='INVALID_SONG_CUE_IDENTITY');
+  const collision=structuredClone(corrected),page=structuredClone(collision.items['song-page']);
+  page.id='colliding-page';collision.items[page.id]=page;collision.rootItemIds.push(page.id);
+  assert.throws(()=>core.compileServiceProject(collision),error=>error.code==='CUE_ID_COLLISION');
 });

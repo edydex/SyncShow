@@ -19,7 +19,7 @@ async function main(){
   const entry='community-server/src/components/PlanServiceClient.tsx',componentSha256=crypto.createHash('sha256').update(await fs.readFile(path.join(source,entry))).digest('hex');
   const sourceSha256={};
   await fs.mkdir(path.join(outDir,'source'),{recursive:true});
-  for(const file of [entry,'community-server/src/components/plannerSlides.ts','community-server/packages/service-core/node/services/project/ServiceProject.js']) {
+  for(const file of [entry,'community-server/src/components/plannerSlides.ts','community-server/src/components/plannerSelection.ts','community-server/packages/service-core/node/services/project/ServiceProject.js']) {
     const bytes=await fs.readFile(path.join(source,file));
     sourceSha256[file]=crypto.createHash('sha256').update(bytes).digest('hex');
     if(file.endsWith('.tsx') || file.endsWith('.ts'))await fs.writeFile(path.join(outDir,'source',path.basename(file)),bytes);

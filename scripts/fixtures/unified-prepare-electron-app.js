@@ -116,7 +116,7 @@ async function run() {
       project.rootItemIds.push(id);
     }
   }
-  let mixedLyricCueId,mixedRepeatCueId,mixedPictureCueId;
+  let mixedLyricCueId,mixedRepeatCueId,mixedVerseCueId,mixedPictureCueId;
   if(mixedAdjustFixture) {
     const {addSongResource,parseSongDocument,compileServiceProject}=require('../../src/services/project');
     const song=(id,title,language,lines)=>parseSongDocument(['---',`id: ${id}`,`title: ${title}`,`language: ${language}`,'authors: Isolated native rehearsal','---','^1',...lines,'^chorus',language==='en'?'Fixture chorus in English':'Испытательный припев'].join('\n'));
@@ -133,6 +133,7 @@ async function run() {
     const timeline=compileServiceProject(project);
     mixedLyricCueId=timeline.cueIds.find(id=>timeline.cues[id].itemId==='mixed-song' && timeline.cues[id].sourceLeafKey.startsWith('mixed-chorus/'));
     mixedRepeatCueId=timeline.cueIds.find(id=>timeline.cues[id].itemId==='mixed-song' && timeline.cues[id].sourceLeafKey.startsWith('mixed-repeat/'));
+    mixedVerseCueId=timeline.cueIds.find(id=>timeline.cues[id].itemId==='mixed-song' && timeline.cues[id].sourceLeafKey.startsWith('mixed-verse/'));
     mixedPictureCueId=timeline.cueIds.find(id=>timeline.cues[id].itemId==='mixed-picture');
     assert(mixedLyricCueId&&mixedPictureCueId,'Mixed fixture has stable song and media cues');
   }
@@ -353,7 +354,7 @@ async function run() {
     if(mixedAdjustFixture) {
       offline=true;
       const originalCueIds=await renderer('state.serviceHandoff.cueIds');
-      const songIndex=await renderer(`state.serviceHandoff.cueIds.indexOf(${JSON.stringify(mixedLyricCueId)})`);
+      let songIndex=await renderer(`state.serviceHandoff.cueIds.indexOf(${JSON.stringify(mixedLyricCueId)})`);
       await renderer(`goToSlide(${songIndex})`);
       const originalSongThumbnail=await renderer(`document.querySelector('.thumbnail-item[data-index="${songIndex}"] img').src`);
       await renderer('toggleShowAdjust()');await assertAdjustSlideVisible(mixedLyricCueId);
@@ -364,6 +365,32 @@ async function run() {
       await waitFor(()=>english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('changed backstage') && (document.querySelector('.native-cue-layer.active')?.textContent || '').includes('Испытательный припев')"),'both pinned languages remain on the edited native song');
       await waitFor(()=>renderer('!state.cueNavigationBusy'),'edited song take and preview acknowledgment complete');
       assert.deepEqual(await renderer('state.serviceHandoff.cueIds'),originalCueIds,'Native song correction preserves every original live cue ID');
+      // The UI's batch path materializes independent song slides. Deleting a
+      // different lyric must not replace the currently projected chorus cue.
+      await renderer('toggleShowAdjust()');await assertAdjustSlideVisible(mixedLyricCueId);
+      await planner.executeJavaScript(`{const row=document.querySelector('[data-slide-id="${mixedVerseCueId}"]');if(!row)throw new Error('The verse is available to delete');row.click();row.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true}));}true`);
+      await waitFor(()=>planner.executeJavaScript("Boolean(document.querySelector('dialog[open] button[type=submit]'))"),'song page delete confirmation');
+      await planner.executeJavaScript("document.querySelector('dialog[open] button[type=submit]').click();true");
+      await waitFor(()=>planner.executeJavaScript(`!document.querySelector('[data-slide-id="${mixedVerseCueId}"]') && Boolean(document.querySelector('[data-slide-id="${mixedLyricCueId}"]'))`),'deleted lyric leaves the committed editor outline');
+      await planner.executeJavaScript("document.querySelector('button[aria-label=\"Save service\"]').click();true");
+      await waitFor(()=>renderer(`backstagePreview?.cueIds.length===${originalCueIds.length-1} && !backstagePreview.cueIds.includes('${mixedVerseCueId}') && backstagePreview.cueIds.includes('${mixedLyricCueId}')`),'deleting a verse retains the original live chorus in the draft');
+      assert.equal(await english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('changed backstage')"),true,'Deleting another lyric keeps the audience unchanged');
+      await renderer('closeShowAdjust()');await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${mixedLyricCueId}"]').click();true`);
+      await waitFor(()=>renderer(`!state.cueNavigationBusy && state.showState.currentCue.id==='${mixedLyricCueId}' && state.totalSlides===${originalCueIds.length-1}`),'retaking the live chorus after deleting another lyric');
+      assert.deepEqual(await renderer('state.serviceHandoff.cueIds'),originalCueIds.filter(id=>id!==mixedVerseCueId),'Every surviving native cue retains its identity after a song page is deleted');
+      await renderer('toggleShowAdjust()');await assertAdjustSlideVisible(mixedLyricCueId);
+      await planner.executeJavaScript(`{const row=document.querySelector('[data-slide-id="${mixedRepeatCueId}"]');row.click();row.dispatchEvent(new KeyboardEvent('keydown',{key:'ContextMenu',bubbles:true}));}true`);
+      await waitFor(()=>planner.executeJavaScript("[...document.querySelectorAll('[role=menuitem]')].some(button=>button.textContent==='Move up' && !button.disabled)"),'repeated chorus move action');
+      await planner.executeJavaScript("[...document.querySelectorAll('[role=menuitem]')].find(button=>button.textContent==='Move up').click();true");
+      await waitFor(()=>planner.executeJavaScript(`{const ids=[...document.querySelectorAll('[data-slide-id]')].map(row=>row.dataset.slideId);ids.indexOf('${mixedRepeatCueId}')===ids.indexOf('${mixedLyricCueId}')-1}`),'moved lyric reaches its committed editor position');
+      await planner.executeJavaScript("document.querySelector('button[aria-label=\"Save service\"]').click();true");
+      await waitFor(()=>renderer(`backstagePreview?.cueIds.indexOf('${mixedRepeatCueId}')===backstagePreview?.cueIds.indexOf('${mixedLyricCueId}')-1`),'moving a repeated chorus retains the original live cue');
+      await renderer('closeShowAdjust()');await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${mixedLyricCueId}"]').click();true`);
+      await waitFor(()=>renderer(`!state.cueNavigationBusy && state.showState.currentCue.id==='${mixedLyricCueId}'`),'retaking the original chorus after a song page move');
+      assert.deepEqual(new Set(await renderer('state.serviceHandoff.cueIds')),new Set(originalCueIds.filter(id=>id!==mixedVerseCueId)),'Moving a lyric keeps every surviving cue identity');
+      await renderer('navigateSlide(1)');
+      await waitFor(()=>renderer(`!state.cueNavigationBusy && state.showState.currentCue.id==='${mixedPictureCueId}'`),'Next remains usable after structural song edits');
+      songIndex=await renderer(`state.serviceHandoff.cueIds.indexOf(${JSON.stringify(mixedLyricCueId)})`);
       const repeatIndex=await renderer(`state.serviceHandoff.cueIds.indexOf(${JSON.stringify(mixedRepeatCueId)})`);
       await renderer(`goToSlide(${repeatIndex})`);
       assert.equal((await renderer('window.api.getAppState()')).currentSlide,repeatIndex,'Retaking the unedited repetition selects its stable index');
@@ -381,7 +408,7 @@ async function run() {
       }
     }
     assert.equal(serverRequests.slice(requestCount).some(request=>request.method==='GET' && request.path.startsWith('/api/community/service-documents') && !request.path.includes('/library/')),false,'Edits and live takes must not fetch service documents from Heritage; explicitly opened libraries may load resources');
-    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:liveState.totalSlides,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,adjustScrollTransitions:[20,88,20],adjustRestoresEditableAudienceTab:true,mixedSongAndMediaOffline: mixedAdjustFixture,repeatedChorusRetakePreservesIdentity:mixedAdjustFixture,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
+    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:liveState.totalSlides,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,adjustScrollTransitions:[20,88,20],adjustRestoresEditableAudienceTab:true,mixedSongAndMediaOffline: mixedAdjustFixture,repeatedChorusRetakePreservesIdentity:mixedAdjustFixture,structuralSongMovesAndDeletesPreserveLiveCue:mixedAdjustFixture,nextAfterStructuralSongEdits:mixedAdjustFixture,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
   }
   if (loadQueueFixture) {
     const clickSlide = async index => {

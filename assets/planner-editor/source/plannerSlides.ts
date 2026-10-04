@@ -162,13 +162,23 @@ export function editableSong(project: RecordValue, itemId: string) {
   let next = copy(project)
   const item = next.items[itemId]
   const previousCues = plannerSlides(project).filter(row => row.itemId === itemId)
+  const lyricCues = previousCues.filter(row => !isSongTitleSlide(row))
   const primaryId = item.primaryChannelId || Object.keys(item.variants).find(id => item.variants[id].mode === 'content')
   const primary = project.resources[item.variants[primaryId].resourceId].document
   const occurrences = item.arrangement.flatMap((entry: RecordValue) => {
     const section = primary.sections.find((value: RecordValue) => value.id === entry.sectionId)
     return section.slides.map((slide: RecordValue, index: number) => ({ entry, section, slide, index }))
   })
-  const arrangement = occurrences.map((_: unknown, index: number) => ({ id: `slide-${index + 1}`, sectionId: `slide-${index + 1}` }))
+  const usedIds = new Set<string>(item.arrangement.map((entry: RecordValue) => entry.id))
+  let suffix = 0
+  const arrangement = occurrences.map((occurrence: any, index: number) => {
+    let id = occurrence.entry.id
+    if (occurrence.index > 0) {
+      do { id = `local-page-${++suffix}` } while (usedIds.has(id))
+      usedIds.add(id)
+    }
+    return { id, sectionId: `slide-${index + 1}`, cueSourceLeafKey: lyricCues[index].cue!.sourceLeafKey }
+  })
   const resourceByChannel: Record<string, string> = {}
   for (const channelId of Object.keys(item.variants)) {
     const variant = item.variants[channelId]
@@ -189,20 +199,8 @@ export function editableSong(project: RecordValue, itemId: string) {
   target.arrangement = arrangement
   delete target.sourceRangeReplacement
   for (const [channelId, resourceId] of Object.entries(resourceByChannel)) target.variants[channelId].resourceId = resourceId
-  delete target.songPresentation?.slidePrimaryChannelIds
-  delete target.translationCues
-  delete target.translationCueSettings
-  const updatedCues = plannerSlides(next).filter(row => row.itemId === itemId)
-  updatedCues.forEach((row, index) => {
-    const originalKey = previousCues[index]?.cue?.sourceLeafKey
-    const primary = originalKey && item.songPresentation?.slidePrimaryChannelIds?.[originalKey]
-    if (primary && row.cue?.sourceLeafKey) (target.songPresentation.slidePrimaryChannelIds ||= {})[row.cue.sourceLeafKey] = primary
-    const action = previousCues[index]?.cue?.translationAction
-    if (action && row.cue?.sourceLeafKey) {
-      (target.translationCues ||= {})[row.cue.sourceLeafKey] = action
-      if(action==='start' && previousCues[index]?.cue?.translationSettings) (target.translationCueSettings ||= {})[row.cue.sourceLeafKey] = previousCues[index].cue!.translationSettings
-    }
-  })
+  // Source keys stay fixed, so per-slide languages and translation controls
+  // remain attached to their exact pages without any ordinal remapping.
   return copy(serviceCore.normalizeServiceProject(next))
 }
 

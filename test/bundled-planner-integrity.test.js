@@ -77,6 +77,7 @@ test('source provenance binds both original editor helpers and the packaged shar
   const record = verified.files.find(file => file.path === CORE_ENTRY);
   assert.equal(record.sha256, verified.sourceSha256['community-server/packages/service-core/node/services/project/ServiceProject.js']);
   assert.ok(verified.files.some(file => file.path.endsWith('/source/plannerSlides.ts')));
+  assert.ok(verified.files.some(file => file.path.endsWith('/source/plannerSelection.ts')));
 });
 
 test('matching source and package inventories cannot hide stale helper or core provenance', async t => {
@@ -91,10 +92,12 @@ test('matching source and package inventories cannot hide stale helper or core p
 });
 
 test('new source provenance rejects missing digests, extra paths and a mismatched component digest', async t => {
-  for (const mutation of ['missing-helper', 'extra-path', 'component-mismatch', 'null-map']) {
+  for (const mutation of ['missing-helper', 'selection-snapshot-only', 'selection-map-only', 'extra-path', 'component-mismatch', 'null-map']) {
     await t.test(mutation, async child => {
-      const { archive, source } = await provenanceFixture(child, async ({ provenance, provenancePath }) => {
+      const { archive, source } = await provenanceFixture(child, async ({ source, provenance, provenancePath }) => {
         if (mutation === 'missing-helper') delete provenance.sourceSha256['community-server/src/components/plannerSlides.ts'];
+        if (mutation === 'selection-snapshot-only') delete provenance.sourceSha256['community-server/src/components/plannerSelection.ts'];
+        if (mutation === 'selection-map-only') await fs.unlink(path.join(source, EDITOR_SOURCE_ENTRIES['community-server/src/components/plannerSelection.ts']));
         if (mutation === 'extra-path') provenance.sourceSha256['../unreviewed'] = 'a'.repeat(64);
         if (mutation === 'component-mismatch') provenance.componentSha256 = 'b'.repeat(64);
         if (mutation === 'null-map') provenance.sourceSha256 = null;
@@ -103,6 +106,16 @@ test('new source provenance rejects missing digests, extra paths and a mismatche
       await assert.rejects(verifyBundledPlannerIntegrity(archive, source), { code: 'PACKAGE_PLANNER_INTEGRITY' });
     });
   }
+});
+
+test('previous three-source exports remain bound to their exact original contract', async t => {
+  const { archive, source } = await provenanceFixture(t, async ({ source, provenance, provenancePath }) => {
+    const original='community-server/src/components/plannerSelection.ts';
+    delete provenance.sourceSha256[original];
+    await fs.unlink(path.join(source, EDITOR_SOURCE_ENTRIES[original]));
+    await fs.writeFile(provenancePath, JSON.stringify(provenance));
+  });
+  assert.equal((await verifyBundledPlannerIntegrity(archive, source)).verification,'source-bytes-matched');
 });
 
 test('legacy exports without a source map retain their earlier verification contract', async t => {

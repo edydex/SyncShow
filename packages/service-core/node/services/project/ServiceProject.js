@@ -2460,10 +2460,18 @@ function normalizeProjectItem(raw, channelIds, now) {
       const arrangementId = id(entry.id, `Song arrangement entry ${index + 1} id`);
       if (arrangementIds.has(arrangementId)) fail('DUPLICATE_ARRANGEMENT_ID', `Song arrangement repeats id ${arrangementId}.`);
       arrangementIds.add(arrangementId);
+      let cueSourceLeafKey;
+      if (entry.cueSourceLeafKey !== undefined) {
+        cueSourceLeafKey = text(entry.cueSourceLeafKey, `Song arrangement entry ${index + 1} cueSourceLeafKey`, 300, { required: true });
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*\/[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(cueSourceLeafKey)) {
+          fail('INVALID_SONG_CUE_IDENTITY', 'A service-local song page must retain a valid original cue source key.');
+        }
+      }
       return { id: arrangementId, sectionId: id(entry.sectionId, `Song arrangement entry ${index + 1} sectionId`),
         ...(entry.cueSectionId !== undefined
           ? { cueSectionId: id(entry.cueSectionId, `Song arrangement entry ${index + 1} cueSectionId`) }
-          : {}) };
+          : {}),
+        ...(cueSourceLeafKey ? { cueSourceLeafKey } : {}) };
     });
     let primaryChannelId = null;
     if (raw.primaryChannelId !== undefined && raw.primaryChannelId !== null) {
@@ -2485,6 +2493,7 @@ function normalizeProjectItem(raw, channelIds, now) {
       ...common,
       variants,
       arrangement,
+      ...(raw.cueItemId !== undefined ? { cueItemId: id(raw.cueItemId, `Song item ${itemId} cueItemId`) } : {}),
       ...(raw.showTitle !== undefined ? { showTitle: raw.showTitle } : {}),
       ...(raw.songPresentation !== undefined
         ? { songPresentation: normalizeSongPresentation(raw.songPresentation, channelIds, variants) } : {}),
@@ -3415,15 +3424,23 @@ function normalizeEditableServiceProject(raw, options = {}) {
     } else if (item.kind === 'song') {
       const resolved = channelIds.map(channelId => resolveSongVariant(item, channelId, resources));
       const source = authoritativeSongSource(normalized, item).resource;
+      let songCueCount = item.showTitle === false ? 0 : 1;
       for (const entry of item.arrangement) {
         const baseSection = source.document.sections.find(section => section.id === entry.sectionId);
         if (!baseSection) fail('UNKNOWN_ARRANGEMENT_SECTION', `Song item ${item.id} uses missing section ${entry.sectionId}.`);
+        songCueCount += baseSection.slides.length;
+        if (entry.cueSourceLeafKey && baseSection.slides.length !== 1) {
+          fail('INVALID_SONG_CUE_IDENTITY', 'An original cue source key can identify only one service-local song page.');
+        }
         for (const variant of resolved.filter(candidate => candidate.resource)) {
           const translatedSection = variant.resource.document.sections.find(section => section.id === entry.sectionId);
           if (!translatedSection || translatedSection.slides.length !== baseSection.slides.length) {
             fail('TRANSLATION_MISMATCH', `Song item ${item.id} has an unaligned translation for ${entry.sectionId}.`);
           }
         }
+      }
+      if (item.cueItemId && songCueCount !== 1) {
+        fail('INVALID_SONG_CUE_IDENTITY', 'An original cue item can identify only one independent service-local song slide.');
       }
     } else if (item.kind === 'sermon'
       || (item.kind === 'group' && (item.sermonResourceId || item.sermonSectionId))) {
@@ -4211,7 +4228,7 @@ function compileServiceProject(rawProject, options = {}) {
     const action = item.translationCues?.[leafKey];
     if (action==='start') activeTranslationSettings = item.translationCueSettings?.[leafKey];
     if (action==='stop') activeTranslationSettings = undefined;
-    const cueId = deterministicCueId(project.id, item.id, leafKey);
+    const cueId = deterministicCueId(project.id, item.kind === 'song' && item.cueItemId || item.id, leafKey);
     if (cues[cueId]) fail('CUE_ID_COLLISION', `Compiled cue id collision at ${item.id}.`);
     const cue = normalizeCue({ ...rawCue, id: cueId, itemId: item.id, sourceLeafKey: leafKey,
       ...(sermonContext[item.id]?.showNextSlideHints === false ? {showNextSlideHints:false} : {}),
@@ -4346,7 +4363,7 @@ function compileServiceProject(rawProject, options = {}) {
           // A private correction to a repeated section changes its content
           // section, while the original page identity remains safe to retake.
           const sourceSlideId = entry.cueSectionId ? `${entry.cueSectionId}-slide-${slideIndex + 1}` : sourceSlide.id;
-          const sourceLeafKey = `${entry.id}/${sourceSlideId}`;
+          const sourceLeafKey = entry.cueSourceLeafKey || `${entry.id}/${sourceSlideId}`;
           const channels = {};
           for (const channelId of project.channelIds) {
             const resolved = resolvedByChannel[channelId];
@@ -5791,10 +5808,14 @@ function duplicateProjectItem(rawProject, options = {}) {
     }
     if (copied.kind === 'song') {
       delete copied.sourceRangeReplacement;
+      // A duplicate is a new cue, even when its source was a materialized page
+      // that retained the original song's live identity.
+      delete copied.cueItemId;
       copied.arrangement = original.arrangement.map(entry => ({
         id: duplicateId('arr', randomUUID, usedIds),
         sectionId: entry.sectionId,
-        ...(entry.cueSectionId !== undefined ? { cueSectionId: entry.cueSectionId } : {})
+        ...(entry.cueSectionId !== undefined ? { cueSectionId: entry.cueSectionId } : {}),
+        ...(entry.cueSourceLeafKey !== undefined ? { cueSourceLeafKey: entry.cueSourceLeafKey } : {})
       }));
     }
     if (copied.kind === 'bible' && copied.sermonReading) {

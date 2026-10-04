@@ -4,8 +4,9 @@
   "componentSha256": "8564925ce83852b12be51175267395716a7058dbedb73b32ae5229abe189dc47",
   "sourceSha256": {
     "community-server/src/components/PlanServiceClient.tsx": "8564925ce83852b12be51175267395716a7058dbedb73b32ae5229abe189dc47",
-    "community-server/src/components/plannerSlides.ts": "02c5d9270644bb3a32c2b0fc9cad367a5e251d6c82a91b9345907c7a346131bc",
-    "community-server/packages/service-core/node/services/project/ServiceProject.js": "ac30f6ffee44dfee293c2ddc9f7b741a3184ece54972a814b065c644791c7585"
+    "community-server/src/components/plannerSlides.ts": "dac4a2f5dfafe0ad28b7cb3933a4ca85ef5a92705b1c8c1d1f9d3f112147dec1",
+    "community-server/src/components/plannerSelection.ts": "4c34f9ae51d747e96d24437a4986a0aa365dd8d35bb3bf75d26dd360ccebd892",
+    "community-server/packages/service-core/node/services/project/ServiceProject.js": "91133de1751e15494cadf398a975b05802783bc812f19c6010749b6e4dbe09a9"
   },
   "activeService": true
 }

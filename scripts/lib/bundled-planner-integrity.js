@@ -12,6 +12,7 @@ const CORE_ENTRY = 'packages/service-core/node/services/project/ServiceProject.j
 const EDITOR_SOURCE_ENTRIES = Object.freeze({
   'community-server/src/components/PlanServiceClient.tsx': `${PLANNER_PREFIX}source/PlanServiceClient.tsx`,
   'community-server/src/components/plannerSlides.ts': `${PLANNER_PREFIX}source/plannerSlides.ts`,
+  'community-server/src/components/plannerSelection.ts': `${PLANNER_PREFIX}source/plannerSelection.ts`,
   'community-server/packages/service-core/node/services/project/ServiceProject.js': CORE_ENTRY
 });
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -76,13 +77,20 @@ async function verifyBundledPlannerIntegrity(archivePath, root = sourceRoot) {
   // snapshots bind editor helpers, and the packaged core binds both runtimes.
   if (Object.hasOwn(provenance, 'sourceSha256')) {
     const sources = provenance.sourceSha256;
+    // Earlier bound exports did not retain the batch-selection helper. Once
+    // either its snapshot or digest is present, require both and the full map.
+    const selectionSource = 'community-server/src/components/plannerSelection.ts';
+    const includesSelection = expectedEntries.includes(EDITOR_SOURCE_ENTRIES[selectionSource])
+      || sources && Object.hasOwn(sources, selectionSource);
+    const requiredSources = Object.fromEntries(Object.entries(EDITOR_SOURCE_ENTRIES)
+      .filter(([original]) => includesSelection || original !== selectionSource));
     if (!sources || typeof sources !== 'object' || Array.isArray(sources)
-      || JSON.stringify(Object.keys(sources).sort()) !== JSON.stringify(Object.keys(EDITOR_SOURCE_ENTRIES).sort())
+      || JSON.stringify(Object.keys(sources).sort()) !== JSON.stringify(Object.keys(requiredSources).sort())
       || Object.values(sources).some(value => typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value))
       || sources[provenance.entry] !== provenance.componentSha256) {
       invalid('The bundled planner source provenance is incomplete or inconsistent.');
     }
-    for (const [originalPath, entry] of Object.entries(EDITOR_SOURCE_ENTRIES)) {
+    for (const [originalPath, entry] of Object.entries(requiredSources)) {
       const packaged = bytesInArchive(archivePath, entry);
       let source;
       try { source = await fs.readFile(path.join(root, entry)); }
