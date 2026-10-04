@@ -142,9 +142,9 @@ test('public-release workflow builds and verifies every native target with seale
   const manifest = JSON.parse(await fs.readFile(path.resolve(__dirname, '../package.json')));
   assert.deepEqual(workflow.jobs['build-mac'].strategy.matrix.include.map(entry => [entry.arch, entry.runner]), [['arm64', 'macos-15'], ['x64', 'macos-15-intel']]);
   for (const [jobName, platform, buildRun] of [
-    ['build-windows', 'win32', 'npm run build:win'],
-    ['build-mac', 'darwin', 'npm run build:mac:adhoc -- --${{ matrix.arch }}'],
-    ['build-linux', 'linux', 'npm run build:linux']
+    ['build-windows', 'win32', 'npm run build:win -- --publish never'],
+    ['build-mac', 'darwin', 'npm run build:mac:adhoc -- --${{ matrix.arch }} --publish never'],
+    ['build-linux', 'linux', 'npm run build:linux -- --publish never']
   ]) {
     const job = workflow.jobs[jobName];
     assert.ok(job.needs.includes('prepare-sources'));
