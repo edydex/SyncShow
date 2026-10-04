@@ -1676,7 +1676,7 @@ function setWorkflowStage(stage) {
   } else if (stage === 'load') {
     scheduleCommunityPlannerLayout();
     resumeServiceFolderScanOnLoad();
-    activateLoadMode(state.loadMode);
+    activateLoadMode(activationOptions?.loadMode || state.loadMode);
   } else {
     scheduleCommunityPlannerLayout();
   }
@@ -1732,7 +1732,9 @@ async function navigateWorkflowStage(stage) {
       && state.serviceHandoff === loadedService && !state.activeLaunchPlan && !state.isStarting;
     state.community.handoffBusy = true;
     setPrepareLoadWarning('Load is open. Checking Prepare’s save; the previously loaded slides remain unchanged until saving is confirmed.');
-    await setWorkflowStage('load');
+    // Returning from the shared planner is a native-service handoff, even if
+    // the operator used the Legacy PPTX tab before opening Prepare.
+    await setWorkflowStage('load', { loadMode: 'syncshow' });
     if (!current()) {
       if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
       return;
