@@ -1,5 +1,7 @@
 'use strict';
 
+const { finished } = require('node:stream/promises');
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -102,7 +104,7 @@ async function packageFixture(t, targetKey, {
   await writeFile(
     asarSource,
     'packages/service-core/node/services/project/ServiceProject.js',
-    "'use strict';\n"
+    await fs.readFile(path.resolve(__dirname, '../packages/service-core/node/services/project/ServiceProject.js'))
   );
   if (privateConfig) {
     await writeFile(
@@ -111,8 +113,10 @@ async function packageFixture(t, targetKey, {
       '{"clientId":"must-not-ship"}\n'
     );
   }
+  await fs.cp(path.resolve(__dirname, '../assets/planner-editor'), path.join(asarSource, 'assets/planner-editor'), { recursive: true });
+  await writeFile(asarSource, 'assets/fonts/NotoSans-Variable.ttf', await fs.readFile(path.resolve(__dirname, '../assets/fonts/NotoSans-Variable.ttf')));
   await fs.mkdir(resourcesRoot, { recursive: true });
-  await asar.createPackage(asarSource, archivePath);
+  await finished(await asar.createPackage(asarSource, archivePath));
 
   const format = targetFormat(target.platform);
   const binary = binaryBytes(format, target.arch);
@@ -211,6 +215,8 @@ test('QA evidence binds exact artifacts and native architecture for all four tar
         true
       );
       assert.equal(result.evidence.runtime.architecture, fixture.arch);
+      assert.equal(result.evidence.bundledPlanner.verification, 'source-bytes-matched');
+      assert.ok(result.evidence.bundledPlanner.files.some(file => file.path.endsWith('.js')));
       for (const record of [
         result.evidence.appArchive,
         result.evidence.runtime,

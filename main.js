@@ -18446,7 +18446,10 @@ ipcMain.handle('community:planner:openActiveAdjust', async (event, request = {})
     if(bounds)communityPlannerView.setBounds(bounds);
     communityPlannerShowMode=false;notifyPlannerShowMode();
     const draft=communityPlannerCache.envelope(project.id).project,timeline=compileServiceProject(draft);
-    const cueId=handoff.cueIds[appState.currentSlide],number=timeline.cueIds.indexOf(cueId)+1;
+    // A pending saved take can replace the cue graph while the editor opens.
+    // Read its current handoff beside the current index, rather than mixing a
+    // new index with the old opening snapshot's ordinals.
+    const cueId=installedServiceHandoff().cueIds[appState.currentSlide],number=timeline.cueIds.indexOf(cueId)+1;
     const parents=new Map();
     for(const item of Object.values(draft.items))if(item.kind==='group')for(const child of item.childIds)parents.set(child,item.id);
     const sectionIds=[];let parent=parents.get(timeline.cues[cueId]?.itemId);

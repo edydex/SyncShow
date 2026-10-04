@@ -69,13 +69,13 @@ Installer formats are:
 
 ### Windows Installation
 
-1. Download the `.exe` installer from the [preview downloads](docs/COMMUNITY_PREVIEW.md#download-and-install)
+1. Download the `.exe` installer from the [latest public release](https://github.com/edydex/SyncShow/releases/latest).
 2. Run the installer and follow the prompts
 3. **Optional legacy/emergency fallback**: Ensure Microsoft PowerPoint or [LibreOffice](https://www.libreoffice.org/download/) is installed only if this computer must open older PowerPoint services. Within this optional fallback converter only, SyncShow uses installed PowerPoint before LibreOffice.
 
 ### Linux Installation
 
-1. Download the `.AppImage` or `.deb` from the [preview downloads](docs/COMMUNITY_PREVIEW.md#download-and-install)
+1. Download the `.AppImage` or `.deb` from the [latest public release](https://github.com/edydex/SyncShow/releases/latest).
 2. For AppImage:
    ```bash
    chmod +x SyncShow-*.AppImage

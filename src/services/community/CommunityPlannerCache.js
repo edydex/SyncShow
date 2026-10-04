@@ -4,10 +4,14 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const core = require('./HeritageServiceDocument');
-const { fsyncDirectory } = require('../project/StorageSafety');
+const { atomicWriteFile, ensurePrivateDirectory, readFileNoFollow } = require('../project/StorageSafety');
 
 const ENDPOINT = '/api/community/service-documents';
 const MAX_BYTES = 32 * 1024 * 1024;
+const MAX_RESPONSE_METADATA_BYTES = 64 * 1024;
+const RESPONSE_MAGIC = Buffer.from('SyncShow response 1\n');
+const MAX_RESPONSE_BYTES = RESPONSE_MAGIC.length + 4 + MAX_RESPONSE_METADATA_BYTES + MAX_BYTES;
+const RESOURCE_REVALIDATION_TIMEOUT_MS = 1200;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 function serviceEnvelope(raw) {
   const validated = core.validateHeritageServiceDocumentSource(raw.documentSource);
@@ -18,6 +22,27 @@ const json = (value, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
 });
 
+async function responseBytes(response) {
+  if (Number(response.headers.get('content-length')) > MAX_BYTES) return null;
+  const reader = response.clone().body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  const chunks = []; let length = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return Buffer.concat(chunks, length);
+      length += value.byteLength;
+      if (length > MAX_BYTES) {
+        // A cloned stream's cancellation may await the caller's original
+        // branch. Do not hold the request while abandoning this cache copy.
+        void reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally { reader.releaseLock(); }
+}
+
 /** The same Community editor runs online and offline. Its assets and private
  * document journal belong to one approved connection, never another account.
  * Pending writes retain their first remote base; reconnect cannot silently
@@ -26,9 +51,21 @@ class CommunityPlannerCache {
   constructor({ rootPath, origin, fetch, onState = () => {}, localRequest = async () => null, inspectImage, backgroundSync = false }) {
     this.rootPath = rootPath;
     this.origin = new URL(origin).origin;
-    this.fetch = request => fetch(new Request(request, {
-      signal: AbortSignal.timeout(new URL(request.url).pathname.includes('/assets/') ? 60000 : 8000)
-    }));
+    this.responseGenerations = new Map();
+    this.responseCommitted = new Map();
+    this.responseOrigins = new WeakMap();
+    this.fetch = async request => {
+      // Allocate before the fetch, including detached song/sermon prefetches.
+      // A newer successful read wins even if an older request returns last.
+      const target = request.method === 'GET' && new URL(request.url).origin === this.origin ? this.cachePath(request) : null;
+      const generation = target ? this.nextResponseGeneration(target) : null;
+      const response = await fetch(new Request(request, {
+        signal: AbortSignal.any([request.signal,
+          AbortSignal.timeout(new URL(request.url).pathname.includes('/assets/') ? 60000 : 8000)])
+      }));
+      if (target) this.responseOrigins.set(response, { target, generation });
+      return response;
+    };
     this.onState = onState;
     this.localRequest = localRequest;
     this.inspectImage = inspectImage;
@@ -38,11 +75,12 @@ class CommunityPlannerCache {
     this.offline = false;
     this.queue = Promise.resolve();
     this.persistQueue = Promise.resolve();
+    this.responseWrites = new Map();
     this.loaded = this.load();
   }
 
   async load() {
-    await fs.mkdir(this.rootPath, { recursive: true, mode: 0o700 });
+    this.rootPath = await ensurePrivateDirectory(this.rootPath);
     try {
       const saved = JSON.parse(await fs.readFile(path.join(this.rootPath, 'journal.json'), 'utf8'));
       if (saved.schemaVersion === 1) this.state = { ...saved, workspaceLanguage: ['en', 'ru'].includes(saved.workspaceLanguage) ? saved.workspaceLanguage : null, remoteBases: saved.remoteBases || {}, assets: saved.assets || {}, history: saved.history || {} };
@@ -52,13 +90,11 @@ class CommunityPlannerCache {
 
   async persist() {
     const target = path.join(this.rootPath, 'journal.json');
-    const temporary = `${target}.${crypto.randomUUID()}.tmp`;
     const snapshot = JSON.stringify(this.state);
     const operation = this.persistQueue.then(async () => {
-      const file = await fs.open(temporary, 'wx', 0o600);
-      try { await file.writeFile(snapshot); await file.sync(); } finally { await file.close(); }
-      await fs.rename(temporary, target);
-      await fsyncDirectory(this.rootPath);
+      // The shared writer verifies and flushes the published filename too.
+      // Windows cannot use a directory fsync as the rename durability barrier.
+      await atomicWriteFile(target, snapshot, { rootPath: this.rootPath });
       this.onState(this.summary());
     });
     this.persistQueue = operation.catch(() => {});
@@ -78,15 +114,39 @@ class CommunityPlannerCache {
     return path.join(this.rootPath, 'responses', crypto.createHash('sha256').update(key).digest('hex'));
   }
 
+  nextResponseGeneration(target) {
+    const generation = (this.responseGenerations.get(target) || 0) + 1;
+    this.responseGenerations.set(target, generation);
+    return generation;
+  }
+
   async cacheResponse(request, response) {
     if (!response.ok || request.method !== 'GET') return;
-    const bytes = Buffer.from(await response.clone().arrayBuffer());
-    if (bytes.length > MAX_BYTES) return;
-    const target = this.cachePath(request);
-    await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    const target = this.cachePath(request), observed = this.responseOrigins.get(response);
+    const generation = observed?.target === target ? observed.generation : this.nextResponseGeneration(target);
+    const bytes = await responseBytes(response);
+    if (!bytes) return;
+    if (response.headers.get('content-type')?.includes('application/json') && ![204, 205].includes(response.status)) {
+      try { JSON.parse(bytes.toString('utf8')); } catch { return; }
+    }
+    if ((this.responseCommitted.get(target) || 0) > generation) return;
     const headers = [...response.headers].filter(([key]) => !['set-cookie', 'content-encoding', 'content-length'].includes(key));
-    await fs.writeFile(`${target}.json`, JSON.stringify({ status: response.status, headers }), { mode: 0o600 });
-    await fs.writeFile(target, bytes, { mode: 0o600 });
+    const metadata = Buffer.from(JSON.stringify({ schemaVersion: 1, status: response.status, headers,
+      bodySize: bytes.length, bodySha256: crypto.createHash('sha256').update(bytes).digest('hex') }));
+    if (metadata.length > MAX_RESPONSE_METADATA_BYTES) return;
+    const length = Buffer.alloc(4); length.writeUInt32BE(metadata.length);
+    const snapshot = Buffer.concat([RESPONSE_MAGIC, length, metadata, bytes]);
+    const operation = (this.responseWrites.get(target) || Promise.resolve()).catch(() => {}).then(async () => {
+      if ((this.responseCommitted.get(target) || 0) > generation) return false;
+      await atomicWriteFile(`${target}.response`, snapshot, { rootPath: this.rootPath, maximumBytes: MAX_RESPONSE_BYTES });
+      this.responseCommitted.set(target, generation);
+      return true;
+    });
+    this.responseWrites.set(target, operation);
+    let published;
+    try { published = await operation; }
+    finally { if (this.responseWrites.get(target) === operation) this.responseWrites.delete(target); }
+    if (!published) return;
     if (new URL(request.url).pathname === '/admin/plan-service' && response.headers.get('content-type')?.includes('text/html')) {
       this.state.editorReady = true;
       await this.persist();
@@ -96,20 +156,41 @@ class CommunityPlannerCache {
   async cachedResponse(request) {
     const target = this.cachePath(request);
     try {
-      const metadata = JSON.parse(await fs.readFile(`${target}.json`, 'utf8'));
-      let bytes = await fs.readFile(target);
+      let metadata, bytes;
+      try {
+        const { buffer: stored } = await readFileNoFollow(`${target}.response`, MAX_RESPONSE_BYTES);
+        if (stored.length < RESPONSE_MAGIC.length + 4 || !stored.subarray(0, RESPONSE_MAGIC.length).equals(RESPONSE_MAGIC)) return null;
+        const length = stored.readUInt32BE(RESPONSE_MAGIC.length), offset = RESPONSE_MAGIC.length + 4;
+        if (length > MAX_RESPONSE_METADATA_BYTES || offset + length > stored.length) return null;
+        metadata = JSON.parse(stored.subarray(offset, offset + length).toString('utf8'));
+        bytes = stored.subarray(offset + length);
+        if (metadata.schemaVersion !== 1 || metadata.bodySize !== bytes.length
+          || bytes.length > MAX_BYTES || metadata.bodySha256 !== crypto.createHash('sha256').update(bytes).digest('hex')) return null;
+      } catch (error) {
+        if (error.code !== 'ENOENT') return null;
+        // Old installations stored metadata and body separately. Keep valid
+        // entries readable; partial files from an interrupted write are misses.
+        metadata = JSON.parse((await readFileNoFollow(`${target}.json`, MAX_RESPONSE_METADATA_BYTES)).buffer.toString('utf8'));
+        ({ buffer: bytes } = await readFileNoFollow(target, MAX_BYTES));
+      }
+      if (!Number.isInteger(metadata.status) || metadata.status < 200 || metadata.status > 299 || !Array.isArray(metadata.headers)) return null;
+      const responseHeaders = new Headers(metadata.headers);
+      if (responseHeaders.get('content-type')?.includes('application/json') && bytes.length) JSON.parse(bytes.toString('utf8'));
       if (new URL(request.url).pathname === '/admin/plan-service'
-        && new Headers(metadata.headers).get('content-type')?.includes('text/html')
+        && responseHeaders.get('content-type')?.includes('text/html')
         && ['en', 'ru'].includes(this.state.workspaceLanguage)) {
         bytes = Buffer.from(bytes.toString('utf8').replace(/(<html\b[^>]*?)\slang="[^"]*"/, `$1 lang="${this.state.workspaceLanguage}"`));
       }
-      return new Response(bytes, metadata);
-    } catch (error) { if (error.code !== 'ENOENT') throw error; return null; }
+      const noBody = [204, 205].includes(metadata.status);
+      if (noBody && bytes.length || !noBody && responseHeaders.get('content-type')?.includes('application/json') && !bytes.length) return null;
+      return new Response(noBody ? null : bytes, { status: metadata.status, headers: responseHeaders });
+    } catch { return null; }
   }
 
   async request(request) {
     await this.loaded;
     const url = new URL(request.url);
+    let cachedResource = null;
     if (url.origin !== this.origin) return this.fetch(request);
     if (url.pathname.startsWith('/syncshow-local/adjust/') || (this.activeServiceId && url.pathname==='/fonts/NotoSans-Variable.ttf')) return this.localRequest(request);
     if (this.activeServiceId) {
@@ -125,7 +206,16 @@ class CommunityPlannerCache {
       }
       if(request.method==='GET' && (url.pathname.startsWith(`${ENDPOINT}/library/`) || url.pathname.startsWith('/api/community/sermon-presentations'))) {
         const cached=await this.cachedResponse(request) || await this.resourceCache?.cachedResponse(request);
-        if(cached)return cached;
+        // Only media named by its content hash is immutable. Catalogs and song
+        // details must see newly created songs, revised lyrics and saved layouts.
+        // A cached resource bounds this explicit Add-slide read; a slow/offline
+        // server cannot hold up the operator, and no service GET is involved.
+        if(cached && /\/assets\/sha256(?::|%3A)[a-f0-9]{64}$/i.test(url.pathname))return cached;
+        if(cached) {
+          cachedResource=cached;
+          request=new Request(request,{signal:AbortSignal.any([request.signal,
+            AbortSignal.timeout(RESOURCE_REVALIDATION_TIMEOUT_MS)])});
+        }
       }
       // Resource reads are explicit Add-slide actions. The service itself is
       // always the pinned local show; it never follows a remote GET.
@@ -194,6 +284,11 @@ class CommunityPlannerCache {
       if (request.method === 'GET' && url.pathname === ENDPOINT && response.ok) {
         return this.listResponse(await response.json());
       }
+      if (this.activeServiceId && response.ok && request.method !== 'GET') {
+        // A resource-cache failure cannot turn a committed server write into
+        // an apparent save failure. Its next explicit read revalidates anyway.
+        try { await this.cacheResourceMutation(request, response); } catch { /* Keep the successful server acknowledgement. */ }
+      }
       this.onState(this.summary());
       return response;
     } catch (error) {
@@ -204,7 +299,7 @@ class CommunityPlannerCache {
       if (request.method === 'GET' && isDocument && this.state.documents[documentId]) {
         return json({ schemaVersion: 1, serviceDocument: this.envelope(documentId) });
       }
-      const cached = request.method === 'GET' ? await this.cachedResponse(request) : null;
+      const cached = cachedResource || (request.method === 'GET' ? await this.cachedResponse(request) : null);
       if (cached) {
         if (url.pathname === ENDPOINT) return this.listResponse(await cached.json());
         return cached;
@@ -214,17 +309,32 @@ class CommunityPlannerCache {
     }
   }
 
+  async cacheResourceMutation(request, response) {
+    const url=new URL(request.url);
+    const songLayout=new RegExp(`^${ENDPOINT}/library/songs/([^/]+)/layout$`).exec(url.pathname);
+    const slides=new RegExp(`^${ENDPOINT}/library/slides/[^/]+$`).test(url.pathname);
+    if(request.method==='PUT' && slides) {
+      const saved=await response.clone().json();
+      if(Array.isArray(saved.items))await this.cacheResponse(new Request(`${this.origin}${ENDPOINT}/library/slides`,
+        {headers:{Accept:'application/json'}}),json(saved));
+    } else if(request.method==='POST' && songLayout) {
+      const saved=await response.clone().json();
+      const detail=new Request(`${this.origin}${ENDPOINT}/library/songs/${songLayout[1]}`,{headers:{Accept:'application/json'}});
+      const cached=await this.cachedResponse(detail) || await this.resourceCache?.cachedResponse(detail);
+      if(saved.saved && saved.projectionStyle && cached) {
+        const value=await cached.json();
+        if(value.item?.syncId===songLayout[1])await this.cacheResponse(detail,json({...value,item:{...value.item,projectionStyle:saved.projectionStyle}}));
+      }
+    }
+  }
+
   async appendHistory(id, saveKind) {
     const entry = { id: `local-${crypto.randomUUID()}`, syncVersion: null,
       revision: this.state.documents[id].revision, savedAt: new Date().toISOString(),
       saveKind, savedBy: 'This computer' };
     entry.syncVersion = entry.id;
     const folder = path.join(this.rootPath, 'history');
-    await fs.mkdir(folder, { recursive: true, mode: 0o700 });
-    const file = await fs.open(path.join(folder, `${entry.id}.json`), 'wx', 0o600);
-    try { await file.writeFile(JSON.stringify(this.state.documents[id])); await file.sync(); }
-    finally { await file.close(); }
-    await fsyncDirectory(folder);
+    await atomicWriteFile(path.join(folder, `${entry.id}.json`), JSON.stringify(this.state.documents[id]), { rootPath: this.rootPath });
     (this.state.history[id] ||= []).push(entry);
     return entry;
   }
@@ -387,8 +497,7 @@ class CommunityPlannerCache {
       if (!image.width || !image.height || image.width * image.height > 100000000) return json({ error: 'Choose a valid picture.' }, 400);
       Object.assign(metadata, { width: image.width, height: image.height, orientation: image.orientation || 1 });
     }
-    await fs.mkdir(path.dirname(this.assetPath(id)), { recursive: true, mode: 0o700 });
-    await fs.writeFile(this.assetPath(id), bytes, { mode: 0o600 });
+    await atomicWriteFile(this.assetPath(id), bytes, { rootPath: this.rootPath });
     this.state.assets[id] = { metadata, pending: true };
     await this.persist();
     if (!this.offline) {
@@ -565,8 +674,7 @@ class CommunityPlannerCache {
     const review = await this.reviewConflict(id);
     if (review.remote.revision !== expectedRemoteRevision) throw new Error('Community changed again. Review the new version before choosing.');
     const archive = path.join(this.rootPath, 'conflict-copies');
-    await fs.mkdir(archive, { recursive: true, mode: 0o700 });
-    await fs.writeFile(path.join(archive, `${crypto.randomUUID()}.json`), JSON.stringify(review), { mode: 0o600 });
+    await atomicWriteFile(path.join(archive, `${crypto.randomUUID()}.json`), JSON.stringify(review), { rootPath: this.rootPath });
     if (resolution === 'use-community') {
       this.state.documents[id] = review.remote;
       this.state.remoteBases[id] = { revision: review.remote.revision, syncVersion: review.remote.syncVersion };

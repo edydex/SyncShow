@@ -6,6 +6,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 
 const asar = require('./lib/asar');
+const { verifyBundledPlannerIntegrity } = require('./lib/bundled-planner-integrity');
 
 const { packageTarget } = require('./lib/package-targets');
 const sourceManifest = require('../package.json');
@@ -472,6 +473,7 @@ async function verifyPackageSmoke({
 
   const packagedManifest = readAsarJson(archivePath, 'package.json');
   const application = normalizedApplicationIdentity(packagedManifest);
+  const bundledPlanner = await verifyBundledPlannerIntegrity(archivePath);
   const artifactPaths = await exactDistributableArtifacts(
     resolvedRoot,
     expectedArtifactNames(target, application)
@@ -547,6 +549,7 @@ async function verifyPackageSmoke({
     runtime,
     nativeArtifacts,
     artifacts,
+    bundledPlanner,
     privateGoogleDriveConfig: 'absent',
     packagedPdfRuntimeGate: 'required-by-workflow',
     packagedSharpRuntimeGate: 'required-by-workflow',
