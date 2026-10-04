@@ -20,6 +20,14 @@ async function focusPlannerCue({ syncId, cueId, number, sectionIds = [] }) {
   if (activeService() !== syncId && (picker()?.value !== syncId || picker().disabled)) return { focused: false };
   document.querySelector('.heritage-workspace-toolbar__views button:nth-child(2)')?.click();
   await frame();
+  // The stage-facing output is derived and read-only. Reopening Adjust must
+  // offer an editable audience slide, while retaining an English/Russian tab
+  // the operator already chose. Output labels can be localized.
+  const outputTabs=[...document.querySelectorAll('.heritage-service-planner__output-tabs [role="tab"]')];
+  if(outputTabs[2]?.getAttribute('aria-selected')==='true') {
+    outputTabs[0]?.click();
+    await frame();
+  }
   const visited = new Set();
   for (let depth = 0; depth < 32; depth++) {
     const rows = [...document.querySelectorAll('.heritage-service-planner__row[data-slide-id]')];

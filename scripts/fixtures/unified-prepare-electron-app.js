@@ -231,6 +231,11 @@ async function run() {
     assert.equal(await planner.executeJavaScript("document.querySelectorAll('.heritage-service-planner__row[data-selected=true]').length"),1,'Adjust selects only the current slide');
     const focus=await planner.executeJavaScript(`(()=>{const row=document.querySelector('[data-slide-id="${cueId}"]'),r=row.getBoundingClientRect(),sidebar=row.closest('aside').getBoundingClientRect();return {top:r.top,bottom:r.bottom,sidebarTop:sidebar.top,sidebarBottom:sidebar.bottom,viewport:innerHeight,edit:!!document.querySelector('.heritage-service-planner__stage [contenteditable]')};})()`);
     assert(focus.top>=Math.max(0,focus.sidebarTop)&&focus.bottom<=Math.min(focus.viewport,focus.sidebarBottom),JSON.stringify(focus));assert.equal(focus.edit,true);
+    await planner.executeJavaScript("[...document.querySelectorAll('[role=tab]')].find(button=>button.textContent==='Stage-Facing Screen').click();true");
+    await waitFor(()=>planner.executeJavaScript("document.querySelector('.heritage-service-planner__stage [contenteditable]')?.isContentEditable===false"),'read-only stage-facing preview');
+    await renderer('closeShowAdjust()');
+    await renderer('toggleShowAdjust()');
+    assert.equal(await planner.executeJavaScript("document.querySelector('.heritage-service-planner__stage [contenteditable]')?.isContentEditable"),true,'Reopening Adjust must open an editable audience output after a stage-facing preview');
     const outputs=BrowserWindow.getAllWindows().filter(win=>win.webContents.getURL().includes('display.html'));
     let english;
     for(const win of outputs) if(await win.webContents.executeJavaScript('displayState.language')==='fixture-english') english=win;
@@ -312,7 +317,7 @@ async function run() {
       assert.equal((await renderer('window.api.getAppState()')).currentSlide,index,'Scrolling/focusing must not take another slide');
     }
     assert.equal(serverRequests.slice(requestCount).some(request=>request.method==='GET' && request.path.startsWith('/api/community/service-documents') && !request.path.includes('/library/')),false,'Edits and live takes must not fetch service documents from Heritage; explicitly opened libraries may load resources');
-    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,adjustScrollTransitions:[20,88,20],audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
+    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,adjustScrollTransitions:[20,88,20],adjustRestoresEditableAudienceTab:true,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
   }
   if (loadQueueFixture) {
     const clickSlide = async index => {
