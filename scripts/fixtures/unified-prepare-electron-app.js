@@ -226,6 +226,8 @@ async function run() {
     let english;
     for(const win of outputs) if(await win.webContents.executeJavaScript('displayState.language')==='fixture-english') english=win;
     assert(english);
+    await renderer("elements.outputPreviewSelect.value='fixture-english';selectOutputPreview();true");
+    const originalPreview=await waitFor(()=>renderer("outputPreviewElements.get('fixture-english')?.image.getAttribute('src')"),'actual operator preview before edit');
     offline=false;
     holdWrites=true;
     const saveStart=performance.now();
@@ -242,14 +244,24 @@ async function run() {
     await renderer('goToSlide(70)');
     await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),'edited text on actual native output');
     const takeMs=performance.now()-takeStart;assert(takeMs<2000,`text edit take took ${takeMs}ms`);
+    const previewStart=performance.now();
+    await waitFor(async()=>{const source=await renderer("outputPreviewElements.get('fixture-english')?.image.getAttribute('src')");return source && source!==originalPreview;},'operator preview refresh after edited take');
+    const previewAfterTakeMs=performance.now()-previewStart;
+    assert(previewAfterTakeMs<500,`operator preview lagged ${previewAfterTakeMs}ms`);
     for(const output of outputs)assert.equal(await output.webContents.executeJavaScript('displayState.currentSlide'),70);
     holdWrites=false;heldWrites.splice(0).forEach(resolve=>resolve());
     await waitFor(()=>saved.project.items['section-2-22'].textByChannel.english.endsWith(' test'),'background upload eventually syncs');
     await renderer('toggleShowAdjust()');await waitFor(()=>planner.executeJavaScript(`document.querySelector('[data-slide-id="${cueId}"]')?.dataset.active === 'true'`),'Reopening Adjust follows the displayed cue');
     assert.equal(await planner.executeJavaScript("document.querySelector('.heritage-service-planner__stage [data-role=caption][contenteditable]').textContent.endsWith(' test')"),true);
+    await planner.executeJavaScript(`{const field=document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]');field.textContent+=' warm';field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));document.querySelector('button[aria-label="Save service"]').click();}true`);
+    await waitFor(async()=> (await renderer('window.api.getCommunityPlannerState()')).data?.showDraftReady,'background package ready while Adjust remains open');
+    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),false,'A ready backstage package must not change the audience');
     await renderer('closeShowAdjust()');
+    const readyTakeStart=performance.now();await renderer('goToSlide(70)');
+    await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),'prepared edit on actual output');
+    const readyTakeMs=performance.now()-readyTakeStart;assert(readyTakeMs<500,`ready edit take took ${readyTakeMs}ms`);
     assert.equal(serverRequests.slice(requestCount).some(request=>request.method==='GET'),false,'Edits and live takes must not fetch services from Heritage');
-    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
+    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
   }
   if (loadQueueFixture) {
     const clickSlide = async index => {

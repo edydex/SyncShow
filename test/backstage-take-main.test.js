@@ -17,6 +17,9 @@ function harness({ flush = async () => ({ok:true,serviceDocument:{syncId:'servic
   const services = {showPackagePublisher:{publish:async () => {events.push('compile');return publish ? publish(published) : published;}}};
   const context = vm.createContext({
     crypto,
+    backstageDraftRevision:remote=>crypto.createHash('sha256').update(JSON.stringify(remote.project)).digest('hex'),
+    prepareBackstageShowPackage:async()=>services.showPackagePublisher.publish(),
+    captureOutputPreviews:()=>events.push('capture'),
     communityActiveAdjust:null,
     require: name => name.endsWith('/ServiceProject') ? {serializeServiceProject:JSON.stringify} : require('../src/services/show/BackstageCueTarget'),
     communityPlannerCache:{envelope:()=>({project:{id:'service',title:'New draft'}})},
@@ -56,7 +59,16 @@ test('normal advance compiles latest draft and takes inserted successor through 
   assert.equal(take[1],1);
   assert.equal(take[2].forceRefresh,true);
   assert.equal(take[2].skipBackstage,true);
+  assert.equal(take[2].instantRefresh,false,'Advancing retains the normal transition');
   assert.ok(events.indexOf('activate')<events.indexOf(take));
+});
+test('retaking the displayed edited slide cuts immediately and refreshes the operator preview', async () => {
+  const {context,events}=harness();
+  assert.equal((await context.take({targetIndex:0})).preparedChanged,true);
+  const take=events.find(event=>Array.isArray(event));
+  assert.equal(take[1],0);
+  assert.equal(take[2].instantRefresh,true);
+  assert.ok(events.indexOf('capture')>events.indexOf(take));
 });
 test('the active Show draft remains authoritative when its view closes or Prepare opens another draft', async () => {
   for (const otherCache of [null,{envelope(){throw new Error('Prepare must not replace the active Show draft');}}]) {

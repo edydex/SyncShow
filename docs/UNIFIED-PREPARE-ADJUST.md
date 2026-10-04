@@ -163,3 +163,37 @@ Build the shared native editor with
 `SYNCSHOW_COMMUNITY_SOURCE=/path/to/heritage_study_bible npm run build:planner-editor`
 before packaging changes to its source. The generated bundle includes its
 source component fingerprint and third-party notices.
+
+## Faster saved-edit takes and previews (Preview 46)
+
+Native service outputs render HTML/CSS scenes, including text and local media.
+The thumbnail grid and operator LIVE preview use images; the LIVE preview is a
+capture of the acknowledged native output rather than a separate approximation.
+
+Saving an active Show draft starts preparing its exact revision in the
+background, independently of server upload. A normal take reuses that work or
+awaits the same in-flight job. Obsolete queued drafts can be skipped, while an
+explicitly requested take retains its exact revision. Preparation cannot change
+the active pointer or audience screen; the existing authorization, preemption
+and output acknowledgement checks still guard activation.
+
+Publishing avoids duplicate thumbnail reads and redundant immediate artifact
+rehashing, verifies scenes with bounded concurrent reads, and reuses verified
+media bytes. Final validation still rereads every artifact and checks scenes
+against the complete canonical timeline. Retaking the current edited cue skips
+the normal fade; advancing keeps it. The operator preview captures immediately
+after an edited retake and uses Electron's JPEG encoder for unrotated outputs.
+Session, revision and cue guards prevent delayed captures replacing newer ones.
+
+The isolated 96-cue rehearsal measured a local save at 131 ms, close at 66 ms,
+an immediate just-saved take at 760 ms, and a background-prepared take at 116 ms.
+The operator preview had already updated when checked after output confirmation.
+All three native outputs acknowledged the changed cue; background preparation
+left the audience unchanged, and Adjust made zero server document reads. These
+are local measurements, not a physical church display latency guarantee.
+
+The full suite passed 2,420 tests with two skips, and the additional current-cue
+instant-refresh assertion passed in the focused 11-test run. Packaged service
+core, Sharp and PDF runtime checks passed. Preview 46 (140046) was installed and
+verified in About; the existing 96-cue prepared-service pointer remained
+byte-for-byte unchanged. Preview 45 is retained as a rollback bundle.

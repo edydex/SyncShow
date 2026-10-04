@@ -352,7 +352,8 @@ async function handleNativeCueGoto(data) {
     const didReveal = await swapToNativeCue(
       nextLayerIndex,
       data?.syncMode ? data?.revealAt : null,
-      navigationVersion
+      navigationVersion,
+      data?.instantRefresh === true
     );
     if (!didReveal || !isCurrentNavigation(navigationVersion)) return;
 
@@ -505,13 +506,14 @@ async function swapToImage(imageUrl, revealAt, navigationVersion) {
   }
 }
 
-async function swapToNativeCue(layerIndex, revealAt, navigationVersion) {
+async function swapToNativeCue(layerIndex, revealAt, navigationVersion, instantRefresh = false) {
   if (!isCurrentNavigation(navigationVersion)) return false;
   const nextLayer = elements.nativeLayers[layerIndex];
   const previousLayer = elements.nativeLayers[displayState.nativeActiveLayer];
   const isInitialFrame = displayState.currentSlide < 0;
 
-  if (isInitialFrame) nextLayer.style.transition = 'none';
+  if (isInitialFrame || instantRefresh) nextLayer.style.transition = 'none';
+  if (instantRefresh) previousLayer.style.transition = 'none';
   try {
     return await scheduleReveal(revealAt, navigationVersion, () => {
       nextLayer.classList.add('active');
@@ -526,9 +528,10 @@ async function swapToNativeCue(layerIndex, revealAt, navigationVersion) {
       displayState.nativeActiveLayer = layerIndex;
     });
   } finally {
-    if (isInitialFrame) {
+    if (isInitialFrame || instantRefresh) {
       nextLayer.style.transition = `opacity ${displayState.fadeDuration}ms ease-in-out`;
     }
+    if (instantRefresh) previousLayer.style.transition = `opacity ${displayState.fadeDuration}ms ease-in-out`;
   }
 }
 

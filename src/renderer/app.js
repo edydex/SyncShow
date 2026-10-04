@@ -2936,6 +2936,8 @@ function renderShowAdjustStatus() {
     : 'Adjust backstage · click a slide or Next to show edits';
   elements.showAdjustStatus.textContent = state.community.plannerConflicts?.length
     ? 'Both versions changed. Your edits are safe on this computer; review Community sync. Click a slide or Next to show the draft.'
+    : state.community.plannerDraftPreparing
+      ? 'Saved backstage. Preparing the updated slides…'
     : state.community.plannerPending
       ? 'Saved on this computer. Waiting to sync. Click a slide or Next to show the draft.'
       : 'Changes are saved backstage. Click a slide or Next to show them.';
@@ -3122,6 +3124,8 @@ function handleCommunityPlannerStateChanged(payload = {}) {
   state.community.plannerPending = payload.pending || 0;
   state.community.plannerConflicts = payload.conflicts || [];
   state.community.plannerShowDraft = payload.showDraft === true;
+  state.community.plannerShowDraftReady = payload.showDraftReady === true;
+  state.community.plannerDraftPreparing = payload.showDraftPreparing === true;
   if (showAdjustOpen) renderShowAdjustStatus();
   const hasConflicts = state.community.plannerConflicts.length > 0;
   document.getElementById('plannerSyncStrip').hidden = !hasConflicts && !payload.offline && !payload.pending;
