@@ -21,8 +21,14 @@ const heldChecks = [];
 const loadQueueFixture = process.env.SYNCSHOW_LOAD_QUEUE_FIXTURE === '1';
 if (loadQueueFixture || editingFixture) {
   // Test renderers stay hidden: no rehearsal can cover the operator's screen.
-  BrowserWindow.prototype.show = function () {};
-  BrowserWindow.prototype.showInactive = function () {};
+  // Preserve the visibility the app requested so its recovery monitor tests
+  // the synthetic venue state rather than mistaking our hidden harness for a
+  // disconnected audience output during slower packaging/CI work.
+  const realVisible=BrowserWindow.prototype.isVisible,realHide=BrowserWindow.prototype.hide;
+  BrowserWindow.prototype.show = function () {this.fixtureRequestedVisible=true;};
+  BrowserWindow.prototype.showInactive = function () {this.fixtureRequestedVisible=true;};
+  BrowserWindow.prototype.hide = function () {this.fixtureRequestedVisible=false;return realHide.call(this);};
+  BrowserWindow.prototype.isVisible = function () {return this.fixtureRequestedVisible ?? realVisible.call(this);};
   BrowserWindow.prototype.setFullScreen = function () {};
 }
 const scopes = ['syncshow:service-documents:read', 'syncshow:service-documents:write'];
