@@ -8,6 +8,7 @@ const { atomicWriteFile, ensurePrivateDirectory } = require('../project/StorageS
 
 const ENDPOINT = '/api/community/service-documents';
 const MAX_BYTES = 32 * 1024 * 1024;
+const RESOURCE_REVALIDATION_TIMEOUT_MS = 1200;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 function serviceEnvelope(raw) {
   const validated = core.validateHeritageServiceDocumentSource(raw.documentSource);
@@ -27,7 +28,8 @@ class CommunityPlannerCache {
     this.rootPath = rootPath;
     this.origin = new URL(origin).origin;
     this.fetch = request => fetch(new Request(request, {
-      signal: AbortSignal.timeout(new URL(request.url).pathname.includes('/assets/') ? 60000 : 8000)
+      signal: AbortSignal.any([request.signal,
+        AbortSignal.timeout(new URL(request.url).pathname.includes('/assets/') ? 60000 : 8000)])
     }));
     this.onState = onState;
     this.localRequest = localRequest;
@@ -108,6 +110,7 @@ class CommunityPlannerCache {
   async request(request) {
     await this.loaded;
     const url = new URL(request.url);
+    let cachedResource = null;
     if (url.origin !== this.origin) return this.fetch(request);
     if (url.pathname.startsWith('/syncshow-local/adjust/') || (this.activeServiceId && url.pathname==='/fonts/NotoSans-Variable.ttf')) return this.localRequest(request);
     if (this.activeServiceId) {
@@ -123,7 +126,16 @@ class CommunityPlannerCache {
       }
       if(request.method==='GET' && (url.pathname.startsWith(`${ENDPOINT}/library/`) || url.pathname.startsWith('/api/community/sermon-presentations'))) {
         const cached=await this.cachedResponse(request) || await this.resourceCache?.cachedResponse(request);
-        if(cached)return cached;
+        // Only media named by its content hash is immutable. Catalogs and song
+        // details must see newly created songs, revised lyrics and saved layouts.
+        // A cached resource bounds this explicit Add-slide read; a slow/offline
+        // server cannot hold up the operator, and no service GET is involved.
+        if(cached && /\/assets\/sha256(?::|%3A)[a-f0-9]{64}$/i.test(url.pathname))return cached;
+        if(cached) {
+          cachedResource=cached;
+          request=new Request(request,{signal:AbortSignal.any([request.signal,
+            AbortSignal.timeout(RESOURCE_REVALIDATION_TIMEOUT_MS)])});
+        }
       }
       // Resource reads are explicit Add-slide actions. The service itself is
       // always the pinned local show; it never follows a remote GET.
@@ -192,6 +204,11 @@ class CommunityPlannerCache {
       if (request.method === 'GET' && url.pathname === ENDPOINT && response.ok) {
         return this.listResponse(await response.json());
       }
+      if (this.activeServiceId && response.ok && request.method !== 'GET') {
+        // A resource-cache failure cannot turn a committed server write into
+        // an apparent save failure. Its next explicit read revalidates anyway.
+        try { await this.cacheResourceMutation(request, response); } catch { /* Keep the successful server acknowledgement. */ }
+      }
       this.onState(this.summary());
       return response;
     } catch (error) {
@@ -202,13 +219,32 @@ class CommunityPlannerCache {
       if (request.method === 'GET' && isDocument && this.state.documents[documentId]) {
         return json({ schemaVersion: 1, serviceDocument: this.envelope(documentId) });
       }
-      const cached = request.method === 'GET' ? await this.cachedResponse(request) : null;
+      const cached = cachedResource || (request.method === 'GET' ? await this.cachedResponse(request) : null);
       if (cached) {
         if (url.pathname === ENDPOINT) return this.listResponse(await cached.json());
         return cached;
       }
       if (request.method === 'GET' && url.pathname === ENDPOINT) return this.listResponse({ schemaVersion: 1, items: [] });
       return json({ code: 'COMMUNITY_OFFLINE', error: 'This resource is not saved on this computer yet. Reconnect Community to download it.' }, 503);
+    }
+  }
+
+  async cacheResourceMutation(request, response) {
+    const url=new URL(request.url);
+    const songLayout=new RegExp(`^${ENDPOINT}/library/songs/([^/]+)/layout$`).exec(url.pathname);
+    const slides=new RegExp(`^${ENDPOINT}/library/slides/[^/]+$`).test(url.pathname);
+    if(request.method==='PUT' && slides) {
+      const saved=await response.clone().json();
+      if(Array.isArray(saved.items))await this.cacheResponse(new Request(`${this.origin}${ENDPOINT}/library/slides`,
+        {headers:{Accept:'application/json'}}),json(saved));
+    } else if(request.method==='POST' && songLayout) {
+      const saved=await response.clone().json();
+      const detail=new Request(`${this.origin}${ENDPOINT}/library/songs/${songLayout[1]}`,{headers:{Accept:'application/json'}});
+      const cached=await this.cachedResponse(detail) || await this.resourceCache?.cachedResponse(detail);
+      if(saved.saved && saved.projectionStyle && cached) {
+        const value=await cached.json();
+        if(value.item?.syncId===songLayout[1])await this.cacheResponse(detail,json({...value,item:{...value.item,projectionStyle:saved.projectionStyle}}));
+      }
     }
   }
 
