@@ -11,18 +11,19 @@ async function main() {
   const env = {...process.env, SYNCSHOW_TEST_USER_DATA_DIR:root, SYNCSHOW_UNIFIED_RESULT:resultPath,
     SYNCSHOW_LOAD_QUEUE_FIXTURE:'1', SYNCSHOW_GRID_REHEARSAL:'1'};
   delete env.ELECTRON_RUN_AS_NODE;
-  const run = await new Promise((resolve, reject) => {
+  const run = await new Promise(resolve => {
     const child = spawn(require('electron'), [path.join(__dirname,'fixtures','unified-prepare-electron-app.js'), '--syncshow-test-user-data', '--headless'],
       {cwd:path.join(__dirname,'..'), env, stdio:['ignore','pipe','pipe']});
-    let log='';const collect=chunk=>{log=(log+chunk.toString()).slice(-32000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
-    const timeout = setTimeout(()=>child.kill('SIGTERM'),90000);
-    child.once('error',error=>{clearTimeout(timeout);reject(error);});
-    child.once('close',code=>{clearTimeout(timeout);resolve({code,log});});
+    let log='',timedOut=false,forceKill;const collect=chunk=>{log=(log+chunk.toString()).slice(-32000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
+    const timeout = setTimeout(()=>{timedOut=true;child.kill('SIGTERM');forceKill=setTimeout(()=>child.kill('SIGKILL'),2000);},90000);
+    const clearTimers=()=>{clearTimeout(timeout);clearTimeout(forceKill);};
+    child.once('error',error=>{clearTimers();resolve({code:null,error:error.message,timedOut,log});});
+    child.once('close',(code,signal)=>{clearTimers();resolve({code,signal,timedOut,log});});
   });
   await fs.writeFile(path.join(root,'rehearsal.log'),run.log);
+  assert.equal(run.code,0,`Native rehearsal failed before a complete result: ${JSON.stringify({...run,root})}`);
   const result=JSON.parse(await fs.readFile(resultPath,'utf8'));
   assert.equal(result.ok,true,JSON.stringify({...result,root,log:run.log}));
-  assert.equal(run.code,0);
   console.log(JSON.stringify({...result,root},null,2));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
