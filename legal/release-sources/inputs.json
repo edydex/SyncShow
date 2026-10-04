@@ -55,10 +55,16 @@
     {
       "id": "chromium-build",
       "version": "150.0.7871.129",
-      "url": "https://chromium.googlesource.com/chromium/src/+archive/refs/tags/150.0.7871.129/build.tar.gz",
-      "sha256": "40025bb4fdd38d975588fa42a9cb1efb2cc55bb9783af9e872885878142ad760",
-      "bytes": 1851365,
-      "fileName": "chromium-build-150.0.7871.129-5e8ba904c7c9.archive"
+      "url": "https://chromium.googlesource.com/chromium/src/+archive/e69b30bba288603e514cffb4c79c359cac68e923/build.tar.gz",
+      "sha256": "2b6623c553fde706739f819c4852e253fb2b9749cccd880d21901b2cde795d72",
+      "bytes": 8919040,
+      "fileName": "chromium-build-150.0.7871.129-2b6623c553fd.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "40025bb4fdd38d975588fa42a9cb1efb2cc55bb9783af9e872885878142ad760",
+        "bytes": 1851365
+      },
+      "gitRevision": "e69b30bba288603e514cffb4c79c359cac68e923"
     },
     {
       "id": "electron",
@@ -72,9 +78,14 @@
       "id": "electron-ffmpeg",
       "version": "ad41607c61898cf7150e0fb20fe4bbabd44922a3",
       "url": "https://chromium.googlesource.com/chromium/third_party/ffmpeg/+archive/ad41607c61898cf7150e0fb20fe4bbabd44922a3.tar.gz",
-      "sha256": "32d2543bde7801a17b4ebf9d0291c53267218994c1e50bceda83eddb623a1cf6",
-      "bytes": 18435404,
-      "fileName": "electron-ffmpeg-ad41607c61898cf7150e0fb20fe4bbabd44922a3-32d2543bde78.archive"
+      "sha256": "4a200e8209374197dda028bb19340ebf216b067e2c7ee66cdd068488c03fca8a",
+      "bytes": 104273920,
+      "fileName": "electron-ffmpeg-ad41607c61898cf7150e0fb20fe4bbabd44922a3-4a200e820937.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "32d2543bde7801a17b4ebf9d0291c53267218994c1e50bceda83eddb623a1cf6",
+        "bytes": 18435404
+      }
     },
     {
       "id": "exif",
@@ -4944,97 +4955,157 @@
       "id": "skia-brotli",
       "version": "6d03dfbedda1615c4cba1211f8d81735575209c8",
       "url": "https://skia.googlesource.com/external/github.com/google/brotli.git/+archive/6d03dfbedda1615c4cba1211f8d81735575209c8.tar.gz",
-      "sha256": "c1d2c7c596a1a983888601d2c9702b2a30eb9302162790000faf6142bc0d23f6",
-      "bytes": 30702479,
-      "fileName": "skia-brotli-6d03dfbedda1615c4cba1211f8d81735575209c8-3f7e1af12229.archive"
+      "sha256": "63cfbbaaef310b25f909d9126a66ef7f92bbf8c300b9095bde5bfd0162d839b4",
+      "bytes": 51947520,
+      "fileName": "skia-brotli-6d03dfbedda1615c4cba1211f8d81735575209c8-63cfbbaaef31.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "c1d2c7c596a1a983888601d2c9702b2a30eb9302162790000faf6142bc0d23f6",
+        "bytes": 30702479
+      }
     },
     {
       "id": "skia-expat",
       "version": "6154446fccefbf3ca644894f598969113b0c7bcd",
       "url": "https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git/+archive/6154446fccefbf3ca644894f598969113b0c7bcd.tar.gz",
-      "sha256": "952d2c697cbd4349171b91d691ca42c6c5a78a0dbdb99b90d5d51520f5c152c9",
-      "bytes": 8441985,
-      "fileName": "skia-expat-6154446fccefbf3ca644894f598969113b0c7bcd-3454fa83e7ec.archive"
+      "sha256": "24c1cbecc18f7be120b5b523b4051d9ce31b733d50b77ad89746e0f52802bb6e",
+      "bytes": 136355840,
+      "fileName": "skia-expat-6154446fccefbf3ca644894f598969113b0c7bcd-24c1cbecc18f.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "952d2c697cbd4349171b91d691ca42c6c5a78a0dbdb99b90d5d51520f5c152c9",
+        "bytes": 8441985
+      }
     },
     {
       "id": "skia-freetype",
       "version": "264b5fbf5b912b39f98d038bf75d39be0a73f21b",
       "url": "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git/+archive/264b5fbf5b912b39f98d038bf75d39be0a73f21b.tar.gz",
-      "sha256": "9d7567c9d274aac5196b3a4d173e6aacfe20c4e896e2e682e6f52a2508a3b361",
-      "bytes": 2551051,
-      "fileName": "skia-freetype-264b5fbf5b912b39f98d038bf75d39be0a73f21b-148b3f6cbe8b.archive"
+      "sha256": "ba55fa5068f4f97b7870477680e69189c7c40cabda778cfc054e0aabaa3ac2b7",
+      "bytes": 11786240,
+      "fileName": "skia-freetype-264b5fbf5b912b39f98d038bf75d39be0a73f21b-ba55fa5068f4.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "9d7567c9d274aac5196b3a4d173e6aacfe20c4e896e2e682e6f52a2508a3b361",
+        "bytes": 2551051
+      }
     },
     {
       "id": "skia-harfbuzz",
       "version": "9cb1fee51069b206effb4736e443b038d230789d",
       "url": "https://chromium.googlesource.com/external/github.com/harfbuzz/harfbuzz.git/+archive/9cb1fee51069b206effb4736e443b038d230789d.tar.gz",
-      "sha256": "b4b8f3de856233a8d1c65f6e1e6bfcc603356bc3ede9972bfab8dd2ca8705cd6",
-      "bytes": 37301995,
-      "fileName": "skia-harfbuzz-9cb1fee51069b206effb4736e443b038d230789d-96464854c359.archive"
+      "sha256": "0e5603d5663653d44e96daf9b6c03e8d2281a813953ae1c80fd4b6122e8b9616",
+      "bytes": 100823040,
+      "fileName": "skia-harfbuzz-9cb1fee51069b206effb4736e443b038d230789d-0e5603d56636.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "b4b8f3de856233a8d1c65f6e1e6bfcc603356bc3ede9972bfab8dd2ca8705cd6",
+        "bytes": 37301995
+      }
     },
     {
       "id": "skia-highway",
       "version": "424360251cdcfc314cfc528f53c872ecd63af0f0",
       "url": "https://chromium.googlesource.com/external/github.com/google/highway.git/+archive/424360251cdcfc314cfc528f53c872ecd63af0f0.tar.gz",
-      "sha256": "20bc1c113dd5ac836a17765c78f0af3bca310fc54e19a55015ad78e0f0f6e0bf",
-      "bytes": 1491424,
-      "fileName": "skia-highway-424360251cdcfc314cfc528f53c872ecd63af0f0-80adaca21d1b.archive"
+      "sha256": "0b26bb5f1be964090e83e4e7a6d1e02b463bf654c07c990ce8eeaa577fcf00bd",
+      "bytes": 2836480,
+      "fileName": "skia-highway-424360251cdcfc314cfc528f53c872ecd63af0f0-0b26bb5f1be9.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "20bc1c113dd5ac836a17765c78f0af3bca310fc54e19a55015ad78e0f0f6e0bf",
+        "bytes": 1491424
+      }
     },
     {
       "id": "skia-icu",
       "version": "d578f2e8b7bd5938e21cfb6bf15c079e0aa5b738",
       "url": "https://chromium.googlesource.com/chromium/deps/icu.git/+archive/d578f2e8b7bd5938e21cfb6bf15c079e0aa5b738.tar.gz",
-      "sha256": "cb5e98c19341f1f6c5a4d5248cc65f81b59657926d175d3ea59aeb4349b97723",
-      "bytes": 55874960,
-      "fileName": "skia-icu-d578f2e8b7bd5938e21cfb6bf15c079e0aa5b738-8adec1eb2da5.archive"
+      "sha256": "e307195ef417ab49cd6da76cb16e8273b3d3133617af401c3dd6a6cff276d298",
+      "bytes": 234823680,
+      "fileName": "skia-icu-d578f2e8b7bd5938e21cfb6bf15c079e0aa5b738-e307195ef417.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "cb5e98c19341f1f6c5a4d5248cc65f81b59657926d175d3ea59aeb4349b97723",
+        "bytes": 55874960
+      }
     },
     {
       "id": "skia-libjpeg-turbo",
       "version": "e14cbfaa85529d47f9f55b0f104a579c1061f9ad",
       "url": "https://chromium.googlesource.com/chromium/deps/libjpeg_turbo.git/+archive/e14cbfaa85529d47f9f55b0f104a579c1061f9ad.tar.gz",
-      "sha256": "a62bae1e28e4c27555a795c617a7896684d67220a38214b0825ae1b3f3880606",
-      "bytes": 2623852,
-      "fileName": "skia-libjpeg-turbo-e14cbfaa85529d47f9f55b0f104a579c1061f9ad-6fb44cd8d9fa.archive"
+      "sha256": "8765fa87e13075b9ad4fd341952746c82ada0489977c736d6de424d1911bdf08",
+      "bytes": 7393280,
+      "fileName": "skia-libjpeg-turbo-e14cbfaa85529d47f9f55b0f104a579c1061f9ad-8765fa87e130.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "a62bae1e28e4c27555a795c617a7896684d67220a38214b0825ae1b3f3880606",
+        "bytes": 2623852
+      }
     },
     {
       "id": "skia-libjxl",
       "version": "a205468bc5d3a353fb15dae2398a101dff52f2d3",
       "url": "https://chromium.googlesource.com/external/gitlab.com/wg1/jpeg-xl.git/+archive/a205468bc5d3a353fb15dae2398a101dff52f2d3.tar.gz",
-      "sha256": "685a615405587df7bfec9ef6883a6561323890204286ea60c1f12f2a125125a3",
-      "bytes": 16998808,
-      "fileName": "skia-libjxl-a205468bc5d3a353fb15dae2398a101dff52f2d3-281be16bdf2a.archive"
+      "sha256": "ed3d28abedd7f0ab77993fafef0bd474d0afb912b42d033b6764e0e117e610f0",
+      "bytes": 24801280,
+      "fileName": "skia-libjxl-a205468bc5d3a353fb15dae2398a101dff52f2d3-ed3d28abedd7.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "685a615405587df7bfec9ef6883a6561323890204286ea60c1f12f2a125125a3",
+        "bytes": 16998808
+      }
     },
     {
       "id": "skia-libpng",
       "version": "d5515b5b8be3901aac04e5bd8bd5c89f287bcd33",
       "url": "https://skia.googlesource.com/third_party/libpng.git/+archive/d5515b5b8be3901aac04e5bd8bd5c89f287bcd33.tar.gz",
-      "sha256": "ad79eae1006a5ba9d22c1ef32785e078285eaf99a2e26faa5b72a1f21fa5e3ce",
-      "bytes": 1612798,
-      "fileName": "skia-libpng-d5515b5b8be3901aac04e5bd8bd5c89f287bcd33-a68fe2cd6911.archive"
+      "sha256": "af9e7667568e39a2cd93bd7b13f9dfc2698c11cdbc3a09dcc93016a1733ae909",
+      "bytes": 6819840,
+      "fileName": "skia-libpng-d5515b5b8be3901aac04e5bd8bd5c89f287bcd33-af9e7667568e.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "ad79eae1006a5ba9d22c1ef32785e078285eaf99a2e26faa5b72a1f21fa5e3ce",
+        "bytes": 1612798
+      }
     },
     {
       "id": "skia-libwebp",
       "version": "845d5476a866141ba35ac133f856fa62f0b7445f",
       "url": "https://chromium.googlesource.com/webm/libwebp.git/+archive/845d5476a866141ba35ac133f856fa62f0b7445f.tar.gz",
-      "sha256": "b60f28bccddd78062c5e88d6fb07163c250c0254f97165ac8a1ad9030b9894a5",
-      "bytes": 3813291,
-      "fileName": "skia-libwebp-845d5476a866141ba35ac133f856fa62f0b7445f-43f66a1d52a5.archive"
+      "sha256": "d806c9b01c7c5fc0bc96317f819118bd507a5d9eff63425db7627fa60f41350d",
+      "bytes": 8192000,
+      "fileName": "skia-libwebp-845d5476a866141ba35ac133f856fa62f0b7445f-d806c9b01c7c.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "b60f28bccddd78062c5e88d6fb07163c250c0254f97165ac8a1ad9030b9894a5",
+        "bytes": 3813291
+      }
     },
     {
       "id": "skia-wuffs",
       "version": "e3f919ccfe3ef542cfc983a82146070258fb57f8",
       "url": "https://skia.googlesource.com/external/github.com/google/wuffs-mirror-release-c.git/+archive/e3f919ccfe3ef542cfc983a82146070258fb57f8.tar.gz",
-      "sha256": "e0e1818d974ba2404f13710625a194eaf28cc48806b6474cac3dc464ec3ab186",
-      "bytes": 327724,
-      "fileName": "skia-wuffs-e3f919ccfe3ef542cfc983a82146070258fb57f8-8dcb8878d4a1.archive"
+      "sha256": "6e2aa955ba3b878ffe0878a06e062d102cac8a30292f0cbda1a8b94d9374b822",
+      "bytes": 2293760,
+      "fileName": "skia-wuffs-e3f919ccfe3ef542cfc983a82146070258fb57f8-6e2aa955ba3b.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "e0e1818d974ba2404f13710625a194eaf28cc48806b6474cac3dc464ec3ab186",
+        "bytes": 327724
+      }
     },
     {
       "id": "skia-zlib",
       "version": "646b7f569718921d7d4b5b8e22572ff6c76f2596",
       "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib/+archive/646b7f569718921d7d4b5b8e22572ff6c76f2596.tar.gz",
-      "sha256": "eacaf4aa92cc5c61d2d4c7f08045b2d6c9cacd87fec8b355120d83137432c418",
-      "bytes": 587329,
-      "fileName": "skia-zlib-646b7f569718921d7d4b5b8e22572ff6c76f2596-aa4e97c0a356.archive"
+      "sha256": "b56f99a33084c4c62e53c1e21c773fde746f0d3055c345e0765d78e41e0ab116",
+      "bytes": 2181120,
+      "fileName": "skia-zlib-646b7f569718921d7d4b5b8e22572ff6c76f2596-b56f99a33084.tar",
+      "archiveNormalization": "gitiles-tar-v1",
+      "reviewedTransport": {
+        "sha256": "eacaf4aa92cc5c61d2d4c7f08045b2d6c9cacd87fec8b355120d83137432c418",
+        "bytes": 587329
+      }
     },
     {
       "id": "tiff",
