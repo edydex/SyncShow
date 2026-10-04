@@ -4,7 +4,8 @@ import concurrent.futures
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import posixpath
 import re
 import tarfile
 import tempfile
@@ -27,6 +28,57 @@ def json_bytes(value):
     return (json.dumps(value, indent=2, ensure_ascii=False) + '\n').encode()
 
 
+def archive_path(raw, field):
+    if not raw or '\\' in raw or '\0' in raw or raw.startswith('/'):
+        raise ValueError('Unsafe Gitiles archive ' + field)
+    path = PurePosixPath(raw)
+    if '..' in path.parts or str(path) in ('', '.'):
+        raise ValueError('Unsafe Gitiles archive ' + field)
+    return str(path)
+
+
+def canonicalize_gitiles_tar(archive, destination):
+    """Pin source contents, modes and links; discard request-time tar metadata.
+
+    Gitiles creates new member/PAX mtimes on every download. Uncompressed PAX
+    output avoids compressor-version drift while preserving every source byte.
+    """
+    with tarfile.open(archive, 'r:*') as source:
+        members = {}
+        total_bytes = 0
+        for member in source:
+            name = archive_path(member.name, 'path')
+            if name in members:
+                raise ValueError('Duplicate Gitiles archive path: ' + name)
+            if not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
+                raise ValueError('Unsupported Gitiles archive member: ' + name)
+            total_bytes += member.size
+            if member.size < 0 or total_bytes > 2 * 1024 * 1024 * 1024:
+                raise ValueError('Gitiles archive contents exceed the source bound.')
+            if member.issym():
+                target = member.linkname
+                if not target or '\\' in target or '\0' in target or target.startswith('/'):
+                    raise ValueError('Unsafe Gitiles symlink: ' + name)
+                archive_path(posixpath.normpath(posixpath.join(posixpath.dirname(name), target)), 'symlink target')
+            elif member.islnk():
+                archive_path(member.linkname, 'hardlink target')
+            members[name] = member
+        for name in members:
+            for parent in PurePosixPath(name).parents:
+                if str(parent) in members and not members[str(parent)].isdir():
+                    raise ValueError('Gitiles archive path has a non-directory parent: ' + name)
+        with tarfile.open(destination, 'w', format=tarfile.PAX_FORMAT) as output:
+            for name, member in sorted(members.items()):
+                canonical = tarfile.TarInfo(name)
+                canonical.type = member.type
+                canonical.mode = member.mode
+                canonical.linkname = member.linkname
+                canonical.size = member.size if member.isfile() else 0
+                # uid/gid/owner names/PAX mtimes are transport metadata only.
+                canonical.uid = canonical.gid = canonical.mtime = 0
+                output.addfile(canonical, source.extractfile(member) if member.isfile() else None)
+
+
 def obtain(record, cache):
     destination = cache / record['fileName']
     if destination.is_symlink():
@@ -38,6 +90,7 @@ def obtain(record, cache):
     error = None
     for attempt in range(4):
         temporary = destination.with_suffix('.download')
+        normalized = destination.with_suffix('.canonical')
         try:
             request = urllib.request.Request(record['url'], headers={
                 'User-Agent': 'SyncShow-source-distribution/2 (https://github.com/edydex/SyncShow)'
@@ -45,12 +98,19 @@ def obtain(record, cache):
             with urllib.request.urlopen(request, timeout=120) as response, temporary.open('xb') as output:
                 for chunk in iter(lambda: response.read(1024 * 1024), b''):
                     output.write(chunk)
+            if record.get('archiveNormalization') == 'gitiles-tar-v1':
+                canonicalize_gitiles_tar(temporary, normalized)
+                temporary.unlink()
+                normalized.replace(temporary)
+            elif record.get('archiveNormalization'):
+                raise ValueError('Unknown source archive normalization: ' + record['id'])
             if temporary.stat().st_size != record['bytes'] or digest(temporary) != record['sha256']:
                 raise ValueError('Upstream source size or SHA-256 changed: ' + record['id'])
             temporary.replace(destination)
             return destination
         except Exception as caught:
             temporary.unlink(missing_ok=True)
+            normalized.unlink(missing_ok=True)
             error = caught
             if attempt < 3:
                 time.sleep(attempt + 1)
