@@ -1878,7 +1878,7 @@ async function refreshLoadedService() {
   loadFreshnessPromise = (async () => {
     const result = await sharedServiceController.refreshLoaded(loaded.project.id, loaded.project.revisionId, { isCurrent: current, progress });
     if (result?.state === 'superseded') return;
-    if (!current() && !(result?.state === 'updated' && state.serviceHandoff?.project?.id === loaded.project.id
+    if (!current() && !(['updated', 'queued', 'local-newer'].includes(result?.state) && state.serviceHandoff?.project?.id === loaded.project.id
       && state.workflowStage === 'load' && !state.activeLaunchPlan)) return;
     const messages = {
       current: 'Latest Community version checked. Ready to show.',

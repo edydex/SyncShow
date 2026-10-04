@@ -129,3 +129,12 @@ test('background refresh does not run from Prepare or during a live session',asy
     const f=appFixture();Object.assign(f.state,change);await f.refresh();assert.equal(f.calls.length,0);
   }
 });
+
+test('newly published local edits keep their sync warning after replacing the handoff',async()=>{
+  for (const outcome of ['queued','local-newer']) {
+    const f=appFixture(),opening=f.refresh();
+    f.state.serviceHandoff={project:{id,revisionId:'b'.repeat(64)}};
+    f.wait.resolve({state:outcome});await opening;
+    assert.match(f.notice.textContent,/edits.*sync with Community/);assert.equal(f.notice.dataset.kind,'warning');
+  }
+});
