@@ -26,6 +26,8 @@ jobs:
 
       - name: Check if version changed
         id: check
+        env:
+          RELEASE_BEFORE_SHA: ${{ github.event.before }}
         run: |
           # Get current version
           CURRENT_VERSION=$(node -p "require('./package.json').version")
@@ -65,12 +67,19 @@ jobs:
             exit 0
           fi
           
-          # Get previous version (from previous commit)
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            git show HEAD~1:package.json > /tmp/old-package.json 2>/dev/null || echo '{"version":"0.0.0"}' > /tmp/old-package.json
-            PREVIOUS_VERSION=$(node -p "require('/tmp/old-package.json').version")
-          else
-            PREVIOUS_VERSION="0.0.0"
+          # A push can contain several commits. Compare against the branch
+          # before the whole push, rather than only the final commit's parent.
+          # Initial pushes and absent/invalid old manifests start from zero.
+          PREVIOUS_VERSION="0.0.0"
+          if [[ "$RELEASE_BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] && [[ "$RELEASE_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            if PREVIOUS_PACKAGE=$(git show "$RELEASE_BEFORE_SHA:package.json" 2>/dev/null); then
+              PREVIOUS_VERSION=$(printf '%s' "$PREVIOUS_PACKAGE" | node -e '
+                try {
+                  const version = JSON.parse(require("node:fs").readFileSync(0, "utf8")).version;
+                  console.log(typeof version === "string" && version ? version : "0.0.0");
+                } catch { console.log("0.0.0"); }
+              ')
+            fi
           fi
           echo "Previous version: $PREVIOUS_VERSION"
           
