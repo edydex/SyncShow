@@ -41,7 +41,10 @@ with tempfile.TemporaryDirectory() as directory:
 `;
   const python = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
   const result = spawnSync(python, ['-B', '-c', script], {
-    cwd: path.resolve(__dirname, '..'), encoding: 'utf8', timeout: 10000
+    // Leave room for Python startup and fixture work on a busy Windows runner.
+    // A ten-second process limit timed out in full CI; keep this bounded and
+    // every source-integrity assertion mandatory.
+    cwd: path.resolve(__dirname, '..'), encoding: 'utf8', timeout: 60000
   });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   assert.deepEqual(JSON.parse(result.stdout), { metadataDrift: 'accepted',
