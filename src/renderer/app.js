@@ -1294,7 +1294,17 @@ function activateLoadMode(mode, { focusTab = false } = {}) {
   const activeTab = elements.loadModeTabs.find(tab => tab.dataset.loadTab === mode)
     || elements.loadModeTabs[0];
   if (!activeTab) return;
-  if (state.loadMode !== activeTab.dataset.loadTab) cancelQueuedStart('Start cancelled because the service source changed.');
+  if (state.loadMode !== activeTab.dataset.loadTab) {
+    cancelQueuedStart('Start cancelled because the service source changed.');
+    window.clearTimeout(state.serviceFolder.changeTimer);
+    state.serviceFolder.changeTimer = null;
+    if (state.serviceFolder.scanning) {
+      // A legacy source request may finish after the operator has selected a
+      // native service. It must never publish status or load files into it.
+      invalidateServiceFolderScan();
+      state.serviceFolder.folderChangedSinceLoad = true;
+    }
+  }
   state.loadMode = activeTab.dataset.loadTab;
   elements.loadModeTabs.forEach(tab => {
     const selected = tab === activeTab;
@@ -1310,6 +1320,8 @@ function activateLoadMode(mode, { focusTab = false } = {}) {
     refreshLoadLocalServices();
     // Let the service-opening controller finish its publication callback first.
     if (!state.community.handoffBusy) window.setTimeout(() => refreshLoadedService(), 0);
+  } else {
+    resumeServiceFolderScanOnLoad();
   }
   if (focusTab) activeTab.focus();
 }
@@ -4066,7 +4078,12 @@ async function initializeServiceFolder() {
   }
 
   try {
-    const changeResult = await window.api.checkServiceSetChanges();
+    // Native services do not depend on a previously configured PPTX/Drive
+    // source. Keep its verified offline snapshot available without contacting
+    // that source until the operator chooses the Legacy PPTX tab.
+    const changeResult = state.loadMode === 'pptx'
+      ? await window.api.checkServiceSetChanges()
+      : { current: await window.api.getCurrentServiceSet() };
     state.serviceFolder.current = changeResult?.current || null;
     state.serviceFolder.sourceChanges = Array.isArray(changeResult?.changes) ? changeResult.changes : [];
     state.serviceFolder.folderChangedSinceLoad = state.serviceFolder.sourceChanges.length > 0;
@@ -4085,6 +4102,10 @@ async function initializeServiceFolder() {
   }
 
   renderServiceFolder();
+  if (state.loadMode !== 'pptx') {
+    state.serviceFolder.folderChangedSinceLoad = hasConfiguredServiceSource();
+    return;
+  }
   if (hasConfiguredServiceSource()) {
     await scanLinkedServiceFolder({ reason: 'startup' });
   } else {
@@ -4140,7 +4161,7 @@ async function scanLinkedServiceFolder({ reason = 'manual' } = {}) {
     renderServiceFolder();
     return;
   }
-  if (!isLoadStage()) {
+  if (state.loadMode !== 'pptx' || !isLoadStage()) {
     state.serviceFolder.folderChangedSinceLoad = true;
     renderServiceFolder();
     return;
@@ -4165,6 +4186,10 @@ async function scanLinkedServiceFolder({ reason = 'manual' } = {}) {
       requestedDate: state.serviceFolder.requestedDate
     });
     if (requestVersion !== state.serviceFolder.scanVersion) return;
+    if (state.loadMode !== 'pptx' || !isLoadStage()) {
+      state.serviceFolder.folderChangedSinceLoad = true;
+      return;
+    }
     if (scan?.success === false) throw new Error(scan.error || scan.message || 'The service folder could not be scanned');
     if (!scan || !Array.isArray(scan.sets) || typeof scan.scanToken !== 'string') {
       throw new Error('SyncShow received an incomplete service-folder scan');
@@ -4188,6 +4213,10 @@ async function scanLinkedServiceFolder({ reason = 'manual' } = {}) {
     }
   } catch (error) {
     if (requestVersion !== state.serviceFolder.scanVersion) return;
+    if (state.loadMode !== 'pptx' || !isLoadStage()) {
+      state.serviceFolder.folderChangedSinceLoad = true;
+      return;
+    }
     console.error('[ServiceFolder] Scan failed:', error);
     state.serviceFolder.error = driveErrorMessage(error, 'The service folder is unavailable.');
     setStatus(`Could not check the service folder: ${state.serviceFolder.error}`);
@@ -4211,6 +4240,11 @@ function handleServiceFolderChanged(event = {}) {
   }
   renderServiceFolder();
 
+  if (state.loadMode !== 'pptx') {
+    state.serviceFolder.folderChangedSinceLoad = true;
+    return;
+  }
+
   if (!isLoadStage()) {
     setStatus('Newer service-folder files were detected. The live Show was not changed.');
     return;
@@ -4228,7 +4262,8 @@ function handleServiceFolderChanged(event = {}) {
 }
 
 function resumeServiceFolderScanOnLoad() {
-  if (!state.serviceFolder.folderChangedSinceLoad || !hasConfiguredServiceSource()) return;
+  if (state.loadMode !== 'pptx' || !isLoadStage()
+    || !state.serviceFolder.folderChangedSinceLoad || !hasConfiguredServiceSource()) return;
   window.clearTimeout(state.serviceFolder.changeTimer);
   state.serviceFolder.changeTimer = window.setTimeout(() => {
     state.serviceFolder.changeTimer = null;
@@ -4310,6 +4345,7 @@ async function maybeAutoLoadServiceSet(reason) {
       && (presentation.source === 'manual' || presentation.source === 'prepared')
   );
   if (!automaticLoadReasons.has(reason)
+    || state.loadMode !== 'pptx'
     || state.serviceFolder.loading
     || presentationConversionInFlight()
     || hasOperatorOwnedPresentation
