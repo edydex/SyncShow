@@ -8,6 +8,13 @@ const asar = require('./asar');
 const PLANNER_PREFIX = 'assets/planner-editor/';
 const FONT_ENTRY = 'assets/fonts/NotoSans-Variable.ttf';
 const sourceRoot = path.resolve(__dirname, '../..');
+const CORE_ENTRY = 'packages/service-core/node/services/project/ServiceProject.js';
+const EDITOR_SOURCE_ENTRIES = Object.freeze({
+  'community-server/src/components/PlanServiceClient.tsx': `${PLANNER_PREFIX}source/PlanServiceClient.tsx`,
+  'community-server/src/components/plannerSlides.ts': `${PLANNER_PREFIX}source/plannerSlides.ts`,
+  'community-server/packages/service-core/node/services/project/ServiceProject.js': CORE_ENTRY
+});
+const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
 function invalid(message) {
   const error = new Error(message);
@@ -53,7 +60,7 @@ async function verifyBundledPlannerIntegrity(archivePath, root = sourceRoot) {
     if (!packaged.length || !packaged.equals(source)) {
       invalid(`The packaged planner file ${entry} differs from the checked-out source.`);
     }
-    files.push({ path: entry, size: packaged.length, sha256: crypto.createHash('sha256').update(packaged).digest('hex') });
+    files.push({ path: entry, size: packaged.length, sha256: hash(packaged) });
   }
 
   let provenance;
@@ -64,6 +71,29 @@ async function verifyBundledPlannerIntegrity(archivePath, root = sourceRoot) {
     || !/^[a-f0-9]{64}$/.test(provenance.componentSha256 || '')
     || provenance.activeService !== true) invalid('The bundled planner provenance is invalid.');
 
+  // Earlier editor exports only recorded the main component's digest. Once
+  // sourceSha256 is present, the complete source contract is mandatory: source
+  // snapshots bind editor helpers, and the packaged core binds both runtimes.
+  if (Object.hasOwn(provenance, 'sourceSha256')) {
+    const sources = provenance.sourceSha256;
+    if (!sources || typeof sources !== 'object' || Array.isArray(sources)
+      || JSON.stringify(Object.keys(sources).sort()) !== JSON.stringify(Object.keys(EDITOR_SOURCE_ENTRIES).sort())
+      || Object.values(sources).some(value => typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value))
+      || sources[provenance.entry] !== provenance.componentSha256) {
+      invalid('The bundled planner source provenance is incomplete or inconsistent.');
+    }
+    for (const [originalPath, entry] of Object.entries(EDITOR_SOURCE_ENTRIES)) {
+      const packaged = bytesInArchive(archivePath, entry);
+      let source;
+      try { source = await fs.readFile(path.join(root, entry)); }
+      catch { invalid(`The checked-out planner source is missing ${entry}.`); }
+      if (!packaged.length || !packaged.equals(source) || hash(packaged) !== sources[originalPath]) {
+        invalid(`The bundled planner source digest for ${originalPath} differs from its actual packaged bytes.`);
+      }
+      if (entry === CORE_ENTRY) files.push({ path: entry, size: packaged.length, sha256: hash(packaged) });
+    }
+  }
+
   const html = bytesInArchive(archivePath, PLANNER_PREFIX + 'index.html').toString('utf8');
   const assets = [...html.matchAll(/(?:src|href)="\/syncshow-local\/adjust\/([^"?#]+)"/g)].map(match => match[1]);
   if (!assets.some(asset => asset.endsWith('.js')) || !assets.some(asset => asset.endsWith('.css'))
@@ -73,4 +103,4 @@ async function verifyBundledPlannerIntegrity(archivePath, root = sourceRoot) {
   return { ...provenance, verification: 'source-bytes-matched', files };
 }
 
-module.exports = { FONT_ENTRY, PLANNER_PREFIX, plannerSourceEntries, verifyBundledPlannerIntegrity };
+module.exports = { CORE_ENTRY, EDITOR_SOURCE_ENTRIES, FONT_ENTRY, PLANNER_PREFIX, plannerSourceEntries, verifyBundledPlannerIntegrity };
