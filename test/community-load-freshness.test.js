@@ -11,8 +11,8 @@ function mainFixture(options = {}) {
   let handoff = {project: {id, revisionId: revision}};
   const cached = options.cached === undefined ? {revision:'old-cache', project:{id}} : options.cached;
   const remote = {syncId:id, revision:options.remoteRevision || 'new-remote', documentSource:options.remoteSource || 'remote-source', project:{id, title:'Sunday', assets:{}}, syncVersion:20};
-  const local = {project:{id, title:'Sunday'}, revisionId:revision, documentSource:options.localSource || 'old-source', documentRevision: options.localRevision || 'old-base'};
-  const binding = {serverId:'church', syncId:id, documentRevision:options.baseRevision || 'old-base'};
+  const local = {project:{id, title:'Sunday'}, revisionId:options.localRevisionId || revision, documentSource:options.localSource || 'old-source', documentRevision: options.localRevision || 'old-base'};
+  const binding = {serverId:'church', syncId:id, documentRevision:options.baseRevision || 'old-base', localRevisionId:revision};
   const fetches=[], installs=[], bindings=[];
   const context = {connection:{serverId:'church', accessToken:'fixture-only'}, client:{async getServiceDocument() {fetches.push(id); if(options.wait) await options.wait; return remote;}}, projectStore:{}, bindingStore:{async get(){return binding;}}, outbox:{async get(){return null;}}};
   const sandbox = vm.createContext({appState:{activeLaunchPlan:options.live ? {} : null}, installedServiceHandoff:()=>handoff,
@@ -50,7 +50,7 @@ test('confirmed Prepare handoff can still use its exact cached offline edit',asy
   assert.equal(f.fetches.length,0); assert.equal(f.installs[0].opts.usePlannerCache,true);
 });
 test('concurrent native and Community changes require review',async()=>{
-  const f=mainFixture({localRevision:'local-edit'});
+  const f=mainFixture({localRevision:'local-edit',localRevisionId:'c'.repeat(64)});
   assert.equal((await f.open()).state,'conflict'); assert.equal(f.installs.length,0);
 });
 test('changing the loaded service while its server check runs cannot replace it',async()=>{
@@ -109,10 +109,11 @@ const appSource=fs.readFileSync(require.resolve('../src/renderer/app.js'),'utf8'
 function appFixture() {
   const wait=deferred(),calls=[],notice={dataset:{}};
   const state={serviceHandoff:{project:{id,revisionId:revision}},loadFreshness:{busy:false,message:'',kind:''},workflowStage:'load',loadMode:'syncshow',community:{}};
-  const sandbox=vm.createContext({state,document:{getElementById:()=>notice},checkReadyState(){},
+  const warning={hidden:true,textContent:''};
+  const sandbox=vm.createContext({state,elements:{loadPrepareWarning:warning},setPrepareLoadWarning(message){warning.hidden=!message;warning.textContent=message;},document:{getElementById:()=>notice},checkReadyState(){},
     sharedServiceController:{async refreshLoaded(syncId,rev,options){calls.push({syncId,rev,options}); options.progress('Checking Community…');return wait.promise;}}});
   vm.runInContext('let loadFreshnessPromise=null;\n'+appSource.slice(appSource.indexOf('function renderLoadFreshness('),appSource.indexOf('function planningStatusLabel(')),sandbox);
-  return{state,calls,notice,wait,refresh:()=>sandbox.refreshLoadedService()};
+  return{state,calls,notice,wait,warning,refresh:()=>sandbox.refreshLoadedService()};
 }
 test('the Load status checks only the selected service and coalesces repeated navigation',async()=>{
   const f=appFixture(), first=f.refresh(),second=f.refresh();
@@ -137,4 +138,15 @@ test('newly published local edits keep their sync warning after replacing the ha
     f.wait.resolve({state:outcome});await opening;
     assert.match(f.notice.textContent,/edits.*sync with Community/);assert.equal(f.notice.dataset.kind,'warning');
   }
+});
+
+test('a coalesced server counter does not invent a concurrent local edit',async()=>{
+  const f=mainFixture({localRevision:'local-counter-alias',baseRevision:'new-remote'});
+  assert.equal((await f.open()).state,'opened');assert.equal(f.installs[0].remote,f.remote);
+});
+test('a successful latest check makes an earlier Prepare save warning accurate',async()=>{
+  const f=appFixture();f.warning.hidden=false;f.warning.textContent='Prepare’s latest edits have not been loaded.';
+  const opening=f.refresh();f.wait.resolve({state:'current'});await opening;
+  assert.match(f.warning.textContent,/latest saved version is loaded.*pending edits/);
+  assert.doesNotMatch(f.warning.textContent,/latest edits have not been loaded/);
 });

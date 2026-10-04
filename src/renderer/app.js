@@ -1291,7 +1291,8 @@ function activateLoadMode(mode, { focusTab = false } = {}) {
   placeServiceInputCards();
   if (state.loadMode === 'syncshow') {
     refreshLoadLocalServices();
-    if (!state.community.handoffBusy) refreshLoadedService();
+    // Let the service-opening controller finish its publication callback first.
+    if (!state.community.handoffBusy) window.setTimeout(() => refreshLoadedService(), 0);
   }
   if (focusTab) activeTab.focus();
 }
@@ -1891,6 +1892,9 @@ async function refreshLoadedService() {
       busy: 'A service is already being opened. Check the latest version again when it finishes.',
       unshared: ''
     };
+    if (['current', 'updated'].includes(result?.state) && !elements.loadPrepareWarning.hidden) {
+      setPrepareLoadWarning('Community’s latest saved version is loaded. Prepare did not confirm its save; return to Prepare to check any pending edits.');
+    }
     state.loadFreshness.message = messages[result?.state] || '';
     state.loadFreshness.kind = ['current', 'updated'].includes(result?.state) ? 'success' : 'warning';
     renderLoadFreshness();

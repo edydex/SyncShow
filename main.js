@@ -18700,9 +18700,14 @@ async function openSharedServiceDocument(request) {
       binding
     });
   }
-  const localChanged = local.documentRevision !== binding.documentRevision;
+  // Prepare's coalesced server history can acknowledge a different revision
+  // counter from the editor journal. The native immutable snapshot identifies
+  // whether anything actually changed locally since that acknowledgement.
+  const localChanged = fresh
+    ? local.revisionId !== binding.localRevisionId
+    : local.documentRevision !== binding.documentRevision;
   const remoteChanged = remote.revision !== binding.documentRevision;
-  if (!localChanged && remoteChanged) {
+  if (!localChanged && (remoteChanged || fresh)) {
     return install();
   }
   const pending = await context.outbox.get(
