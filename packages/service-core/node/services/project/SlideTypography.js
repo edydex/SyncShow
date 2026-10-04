@@ -89,7 +89,8 @@ function applyTimelineTypography(project, cues, index) {
     if (!cue.presetId.startsWith('wotbc-') || !['song','bible'].includes(cue.kind)
       || cue.presetId.includes('title')) continue;
     const parent = (index.groupPathByItemId[item.id] || []).at(-1)?.id;
-    const group = cue.kind === 'song' ? item.id : `${parent || item.id}:${cue.presetId}`;
+    const passageParent = parent && project.items[parent]?.groupKind !== 'sermon' ? parent : item.id;
+    const group = cue.kind === 'song' ? item.id : `${passageParent}:${cue.presetId}`;
     if (!groups.has(group)) groups.set(group, []);
     groups.get(group).push(cue);
   }

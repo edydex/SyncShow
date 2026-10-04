@@ -101,7 +101,7 @@ async function preparedProject(t) {
 test('old renderer packages still open offline while fresh preparation uses a new identity', async t => {
   const fixture = await preparedProject(t);
   const current = await fixture.publisher.publish(fixture.publishOptions);
-  assert.equal(current.manifest.rendererVersion, 17);
+  assert.equal(current.manifest.rendererVersion, 18);
   const legacy = structuredClone(current.manifest);
   legacy.rendererVersion = 11;
   const identity = {};
@@ -178,6 +178,7 @@ test('publishes an immutable equal-length package, returns the exact presentatio
       'showPackageId',
       'slideCount',
       'sourceType',
+      'stageHints',
       'success',
       'translationCues'
     ]);
@@ -739,4 +740,55 @@ test('coordinated metadata and manifest checksum tampering cannot forge operator
     repaired.presentations.main.metadata.slides[0].text,
     'Welcome <everyone> & friends'
   );
+});
+
+test('new revisions render only changed visuals and reuse identical slides across services', async t => {
+  const f=await preparedProject(t);const first=[];
+  const previous=await f.publisher.publish({...f.publishOptions,onProgress:x=>first.push(x)});
+  await fs.rm(path.join(f.packagesPath,'.render-cache'),{recursive:true,force:true});
+  assert.equal(first.filter(x=>x.reused).length,0);
+  const next=structuredClone(f.saved.project);next.revision++;next.updatedAt='2026-07-22T18:35:00.000Z';next.items.welcome.operatorNotes='Operator-only edit';
+  const saved=await f.store.save(next,{expectedRevisionId:f.saved.revisionId});const reuse=[];
+  const operatorEdit=await f.publisher.publish({...f.publishOptions,revisionId:saved.revisionId,reusePackageId:previous.manifest.id,reusePackageManifestSha256:previous.manifestSha256,onProgress:x=>reuse.push(x)});
+  if(process.platform !== 'win32') for(const artifact of previous.manifest.artifacts.filter(x=>/\/(scene_.*\.json|slide_.*_thumb\.jpg)$/.test(x.path))) {
+    const before=await fs.stat(path.join(previous.packagePath,artifact.path)),after=await fs.stat(path.join(operatorEdit.packagePath,artifact.path));
+    assert.equal(after.ino,before.ino,'unchanged durable scene/thumbnail should be linked, not rewritten');
+  }
+  assert.equal(reuse.length,2);assert.ok(reuse.every(x=>x.reused));
+  const edited=structuredClone(saved.project);edited.revision++;edited.updatedAt='2026-07-22T18:36:00.000Z';edited.items.welcome.textByChannel.primary='Changed greeting';
+  const changed=await f.store.save(edited,{expectedRevisionId:saved.revisionId});const edits=[];
+  await f.publisher.publish({...f.publishOptions,revisionId:changed.revisionId,onProgress:x=>edits.push(x)});
+  assert.ok(edits.some(x=>!x.reused));
+  const another=structuredClone(changed.project);another.id='project-next-sunday';another.serviceDate='2026-08-02';
+  const imported=await f.store.installSharedSnapshot(another,{expectedRevisionId:null,assetBuffers:new Map()});const cross=[];
+  const crossPackage=await f.publisher.publish({...f.publishOptions,projectId:another.id,revisionId:imported.revisionId,onProgress:x=>cross.push(x)});
+  assert.equal(cross.length,2);assert.ok(cross.every(x=>x.reused));
+  const expectedThumbnail=crossPackage.manifest.artifacts.find(x=>x.path.startsWith(crossPackage.manifest.channels.find(x=>x.channelId==='primary').directory+'/')&&x.path.endsWith('_thumb.jpg'));
+  const files=await fs.readdir(path.join(f.packagesPath,'.render-cache'));
+  let thumbnail;
+  for(const file of files.filter(x=>x.endsWith('.json'))) {
+    const metadata=JSON.parse(await fs.readFile(path.join(f.packagesPath,'.render-cache',file),'utf8'));
+    if(metadata.sha256===expectedThumbnail.sha256) { thumbnail=file.replace(/\.json$/,'.jpg');break; }
+  }
+  assert.ok(thumbnail,'corrupt a thumbnail used by the current package');
+  await fs.writeFile(path.join(f.packagesPath,'.render-cache',thumbnail),'corrupt');
+  const third=structuredClone(another);third.id='project-third-sunday';
+  const installed=await f.store.installSharedSnapshot(third,{expectedRevisionId:null,assetBuffers:new Map()});
+  const repaired=[];
+  const repairedPackage=await f.publisher.publish({...f.publishOptions,projectId:third.id,revisionId:installed.revisionId,onProgress:x=>repaired.push(x)});
+  assert.ok(repaired.some(x=>!x.reused),'invalid cached bytes must render again');
+  await f.publisher.open(repairedPackage.manifest.id);
+});
+
+
+test('artifact reuse rejects bytes changed after prior-package verification', async t => {
+  const f=await preparedProject(t);const previous=await f.publisher.publish(f.publishOptions);
+  const reusable=await f.publisher._seedThumbnailCache(previous.manifest.id,previous.manifestSha256,previous.manifest.font.sha256,previous.manifest.renderOptions);
+  const artifact=previous.manifest.artifacts.find(x=>x.path.endsWith('_thumb.jpg'));
+  const source=path.join(previous.packagePath,artifact.path),bytes=await fs.readFile(source);
+  const staging=path.join(f.publisher.rootPath,'.test-staging');await fs.mkdir(staging,{mode:0o700});
+  await fs.writeFile(source,Buffer.alloc(bytes.length,0));
+  const target=path.join(staging,'channel','thumb.jpg');
+  assert.equal(await f.publisher._reuseArtifact(target,bytes,reusable,staging),false);
+  await assert.rejects(fs.lstat(target),{code:'ENOENT'});
 });

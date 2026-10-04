@@ -1584,7 +1584,7 @@ class CommunityClient {
     }
     try {
       if (response.redirected
-        || (response.status >= 300 && response.status < 400)
+        || (response.status >= 300 && response.status < 400 && !(response.status === 304 && expectedStatuses.includes(304)))
         || (response.url && new URL(response.url).origin !== target.origin)) {
         fail('UNSAFE_REDIRECT', 'Community server returned an unsafe redirect.', {
           status: response.status
@@ -2751,18 +2751,24 @@ class CommunityClient {
     ));
   }
 
-  async getServiceDocument({ syncId, accessToken, signal = null } = {}) {
+  async getServiceDocument({ syncId, accessToken, signal = null, knownRevision = null } = {}) {
     const resource = await this._serviceDocumentResource(signal);
     const id = boundedText(syncId, 'Community service-document sync ID', 128, {
       required: true,
       pattern: SYNC_ID_PATTERN
     });
     const url = `${resource.endpoint.replace(/\/+$/, '')}/${encodeURIComponent(id)}`;
-    const { payload } = await this._request(url, {
+    const revision = knownRevision === null ? null : boundedText(knownRevision, 'Known service revision', 64, { required: true, pattern: /^[a-f0-9]{64}$/ });
+    const { payload, response } = await this._request(url, {
       accessToken,
       signal,
+      ...(revision ? { headers: { 'If-None-Match': `"${revision}"` }, expectedStatuses: [200, 304], allowEmpty: true } : {}),
       maximumResponseBytes: MAX_HERITAGE_SERVICE_DOCUMENT_RESPONSE_BYTES
     });
+    if (response.status === 304) {
+      if (response.headers.get('etag') !== `"${revision}"`) fail('INVALID_RESPONSE', 'Community did not confirm the requested service revision.');
+      return { notModified: true, syncId: id, revision };
+    }
     const document = normalizeServiceDocumentResponse(payload);
     if (document.syncId !== id) {
       fail(

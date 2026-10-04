@@ -108,7 +108,7 @@ test('Friendly Load exposes one-deck and Singer choices on the input cards', () 
 });
 
 test('missing Singer input Start prompt keeps upload, derive, mirror, and disable together', () => {
-  const startPresentation = functionBlock('startPresentation');
+  const startPresentation = functionBlock('beginStartPresentation');
   const preflight = functionBlock('renderStartPreflight');
 
   assert.match(startPresentation, /questionIds: readiness\.needsChoices\.map\(output => output\.id\)/);

@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>16:9 caption output</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #displayContainer { height: 100%; width: 100%; overflow: hidden; background: black; }
+  .sample { padding: calc(4 * var(--output-vh, 1vh)); font: calc(5 * var(--output-vh, 1vh)) system-ui; color: #ddd; }
+</style>
+<link rel="stylesheet" href="/src/renderer/translation-display.css">
+<div id="displayContainer"><div class="sample">Prepared slide — unchanged translation reservation</div></div>
+<script>
+  window.api = { onTranslationFrame(fn) { window.addEventListener('message', event => fn(event.data)); } };
+</script>
+<script src="/src/renderer/output-viewport.js"></script>
+<script src="/src/renderer/translation-display.js"></script>

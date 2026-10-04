@@ -30,8 +30,8 @@ test('embedded Community planner keeps Electron privileges and navigation locked
   assert.match(main, /nodeIntegration: false/u);
   assert.match(main, /contextIsolation: true/u);
   assert.match(main, /sandbox: true/u);
-  assert.match(main, /partition: 'syncshow-community-planner'/u);
-  assert.doesNotMatch(main, /partition: 'persist:syncshow-community-planner'/u);
+  assert.match(main, /partition: `persist:syncshow-community-planner-\$\{connection\.id\}\$\{adjust \? '-adjust' : ''\}`/u);
+  assert.match(main, /CommunityPlannerCache/u);
   assert.match(main, /setPermissionRequestHandler\([\s\S]*callback\(false\)/u);
   assert.match(main, /setPermissionCheckHandler\(\(\) => false\)/u);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/u);
@@ -59,7 +59,7 @@ test('renderer receives only narrow planner open and status capabilities', () =>
   assert.match(main, /ipcMain\.handle\('community:planner:state'/u);
   assert.match(main, /ipcMain\.handle\('community:planner:layout'/u);
   assert.match(main, /bounds\.width < 640 \|\| bounds\.height < 420/u);
-  assert.match(app, /elements\.communityPlannerViewport\.getBoundingClientRect\(\)/u);
+  assert.match(app, /showAdjustOpen \? elements\.showAdjustViewport : elements\.communityPlannerViewport/u);
 });
 
 test('closing Community Prepare clears the stale open status', () => {
@@ -69,11 +69,12 @@ test('closing Community Prepare clears the stale open status', () => {
   );
 });
 
-test('Prepare offers explicit shared and offline workspaces without a computer password', () => {
+test('Prepare uses one cached editor online and offline without a computer password', () => {
   assert.match(html, /Uses only your Heritage Community admin account[^<]*never the computer.s system password/u);
   assert.match(html, /id="btnPrepareModeCommunity"[\s\S]*Heritage Community/u);
   assert.match(html, /id="btnPrepareModeLocal"[\s\S]*This computer[\s\S]*Works offline/u);
-  assert.match(app, /const requestedMode = activationOptions\?\.localTools === true[\s\S]*communityIsConnected\(\)[\s\S]*: 'local'/u);
+  assert.match(app, /const requestedMode = 'community'/u);
+  assert.match(html, /prepare-mode-tabs" hidden/u);
   assert.match(app, /if \(local\) \{[\s\S]*prepareController\?\.activate/u);
   assert.match(app, /return openCommunityPrepare\(\)/u);
 });

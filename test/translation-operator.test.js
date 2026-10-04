@@ -111,3 +111,73 @@ test('an unavailable processor reports a bounded readiness failure; ready cancel
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(failures.length, 1); operator.close();
 });
+
+test('stopping during operator startup replaces Start and waits for an idle acknowledgement', async () => {
+  const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
+  const sent = [];
+  const operator = new TranslationOperatorWindow({ BrowserWindow: null, stopTimeoutMs: 100 });
+  operator.window = { isDestroyed: () => false, destroy() {}, webContents: { send: (_event, command) => sent.push(command.phase) } };
+  operator.dispatch({ phase: 'live' });
+  const stop = operator.stop();
+  operator.markReady();
+  assert.deepEqual(sent, ['idle']);
+  operator.report({ phase: 'stopping' });
+  assert.ok(operator.stopWaiter);
+  operator.report({ phase: 'idle' }); await stop;
+  operator.close();
+});
+
+test('a Stop failure is not treated as a successful stop acknowledgement', async () => {
+  const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
+  const operator = new TranslationOperatorWindow({ BrowserWindow: null, stopTimeoutMs: 100 });
+  operator.window = { isDestroyed: () => false, destroy() {}, webContents: { send() {} } };
+  operator.ready = true; operator.dispatch({ phase: 'live' });
+  const stopped = operator.stop();
+  operator.report({ phase: 'error', message: 'Server unreachable' });
+  await assert.rejects(stopped, /Server unreachable/);
+  operator.close();
+});
+
+test('computer audio capture requires an explicit source selection and the owned operator frame', async () => {
+  const { TranslationOperatorWindow } = require('../src/services/translation/TranslationOperatorWindow');
+  const handlers = {}; let destroyed = false; let sourceReads = 0;
+  const contents = { id: 8, mainFrame: { url: `${origin}/admin/live-translation` },
+    isDestroyed: () => destroyed, getURL: () => `${origin}/admin/live-translation`, on() {},
+    setWindowOpenHandler() {}, session: {
+      setPermissionRequestHandler(handler) { handlers.permission = handler; },
+      setPermissionCheckHandler(handler) { handlers.check = handler; },
+      setDisplayMediaRequestHandler(handler) { handlers.capture = handler; },
+      webRequest: { onBeforeSendHeaders() {} }, on() {},
+    } };
+  class FakeWindow {
+    constructor() { this.webContents = contents; }
+    on() {} isDestroyed() { return destroyed; } destroy() { destroyed = true; }
+    async loadURL() {} show() {} focus() {}
+  }
+  const operator = new TranslationOperatorWindow({ BrowserWindow: FakeWindow,
+    desktopCapturer: { async getSources() { sourceReads++; return [{ id: 'screen:1' }]; } } });
+  await operator.open({ id: 'test', baseUrl: origin, accessToken: 'test-only' }, null, { hidden: true });
+  const capture = (changes = {}) => new Promise(resolve => handlers.capture({ frame: contents.mainFrame, audioRequested: true, ...changes }, resolve));
+  assert.deepEqual(await capture(), {});
+  assert.equal(sourceReads, 0);
+  operator.computerAudioSelected = true;
+  assert.deepEqual(await capture({ frame: { url: contents.getURL() } }), {});
+  assert.deepEqual(await capture({ audioRequested: false }), {});
+  assert.deepEqual(await capture(), { video: { id: 'screen:1' }, audio: 'loopback' });
+  assert.equal(sourceReads, 1);
+  const details = { isMainFrame: true, requestingUrl: contents.getURL() };
+  const requestPermission = (types, overrides = {}) => new Promise(resolve => handlers.permission(contents, 'media', resolve, {...details, mediaTypes:types, ...overrides}));
+  assert.equal(await requestPermission([]), true, 'Electron display capture has no device mediaTypes');
+  assert.equal(await requestPermission(['video']), false, 'camera remains denied');
+  assert.equal(await requestPermission(['audio','video']), false);
+  assert.equal(await requestPermission([], {isMainFrame:false}), false);
+  operator.computerAudioSelected = false;
+  assert.equal(await requestPermission([]), false);
+  operator.computerAudioSelected = true;
+
+  assert.equal(handlers.check(contents, 'display-capture', origin, details), true);
+  assert.equal(handlers.check(contents, 'display-capture', 'https://other.test', details), false);
+  assert.equal(handlers.check(contents, 'display-capture', origin, { ...details, isMainFrame: false }), false);
+  operator.close();
+  assert.deepEqual(await capture(), {});
+});

@@ -7,10 +7,21 @@
 
   const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+  function validServiceDate(value) {
+    if (typeof value !== 'string' || !ISO_DATE.test(value)) return false;
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }
+
+  function isPastServiceDate(serviceDate, currentDate) {
+    return validServiceDate(serviceDate) && validServiceDate(currentDate)
+      && serviceDate < currentDate;
+  }
+
   function preparedServiceDateGuard({
     presentations,
     serviceHandoff,
-    selectedDate,
+    currentDate,
     confirmedKeys
   } = {}) {
     const loaded = Object.values(
@@ -30,26 +41,26 @@
         requiresConfirmation: false,
         key: null,
         serviceDate: null,
-        selectedDate: null
+        currentDate: null
       });
     }
 
-    const serviceDate = ISO_DATE.test(project.serviceDate || '')
+    const serviceDate = validServiceDate(project.serviceDate)
       ? project.serviceDate
       : null;
-    const requestedDate = ISO_DATE.test(selectedDate || '')
-      ? selectedDate
+    const today = validServiceDate(currentDate)
+      ? currentDate
       : null;
-    if (!serviceDate || !requestedDate || serviceDate === requestedDate) {
+    if (!isPastServiceDate(serviceDate, today)) {
       return Object.freeze({
         requiresConfirmation: false,
         key: null,
         serviceDate,
-        selectedDate: requestedDate
+        currentDate: today
       });
     }
 
-    const key = [project.id, project.revisionId, requestedDate].join(':');
+    const key = [project.id, project.revisionId, today].join(':');
     const alreadyConfirmed = confirmedKeys instanceof Set
       ? confirmedKeys.has(key)
       : Array.isArray(confirmedKeys) && confirmedKeys.includes(key);
@@ -57,9 +68,9 @@
       requiresConfirmation: !alreadyConfirmed,
       key,
       serviceDate,
-      selectedDate: requestedDate
+      currentDate: today
     });
   }
 
-  return Object.freeze({ preparedServiceDateGuard });
+  return Object.freeze({ preparedServiceDateGuard, isPastServiceDate });
 });

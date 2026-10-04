@@ -14,6 +14,7 @@ const {
   sha256File
 } = require('./package-legal-bundle');
 const { packageTarget } = require('./lib/package-targets');
+const { readReleaseSourceMaterials, sha256 } = require('./lib/release-source-materials');
 
 class ReleaseLegalVerificationError extends Error {
   constructor(code, message, details = {}) {
@@ -348,13 +349,13 @@ async function verifyChecksumFile(legalRoot) {
   }
 }
 
-async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) {
+async function verifyLegalBundle(manifestPath, { requireComplete = true, sourceProjectDir, sourceRoot } = {}) {
   const resolvedManifest = path.resolve(manifestPath);
   const legalRoot = path.dirname(resolvedManifest);
   const manifest = await readJson(resolvedManifest);
   if (
     manifest.schemaVersion !== LEGAL_SCHEMA_VERSION
-    || manifest.inventoryScope !== 'partial-audited-components-only'
+    || !['partial-audited-components-only', 'reviewed-runtime-and-corresponding-source'].includes(manifest.inventoryScope)
     || manifest.nativeArtifactHashScope !== 'after-pack-before-platform-signing'
     || !manifest.target
   ) {
@@ -369,18 +370,21 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
   if (manifest.target.key !== target.key) {
     fail('LEGAL_MANIFEST_TARGET', 'Legal manifest target fields disagree.');
   }
-  if (
-    manifest.releaseLegalStatus !== 'blocked'
-    || !exactBlockers(manifest)
-  ) {
-    fail('LEGAL_STATUS_INVALID', 'Legal manifest does not preserve the reviewed blocked status and blocker set.');
+  const materialsVerified = manifest.releaseLegalStatus === 'materials-verified';
+  if (materialsVerified
+    ? manifest.inventoryScope !== 'reviewed-runtime-and-corresponding-source'
+      || !Array.isArray(manifest.releaseReadinessBlockers) || manifest.releaseReadinessBlockers.length !== 0
+      || !manifest.sourceMaterials
+    : manifest.releaseLegalStatus !== 'blocked' || !exactBlockers(manifest)
+      || manifest.inventoryScope !== 'partial-audited-components-only' || manifest.sourceMaterials) {
+    fail('LEGAL_STATUS_INVALID', 'Legal manifest source status or blocker set is not supported by reviewed evidence.');
   }
   const packagedApplication = await packagedApplicationIdentity(legalRoot);
   verifyComponentInventory(manifest, target, packagedApplication);
 
   const packageRoot = packageOutputRoot(resolvedManifest, target.platform);
   const expectedDocumentPaths = [
-    'COMPONENTS.partial.json',
+    materialsVerified ? 'COMPONENTS.json' : 'COMPONENTS.partial.json',
     'INDEX.html',
     'RELINKING.md',
     'SOURCE_AVAILABILITY.txt',
@@ -399,7 +403,8 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
     ...sourceNotices.map(record => record.bundlePath),
     'notices/electron-43.2.0/LICENSE',
     'notices/electron-43.2.0/LICENSES.chromium.html',
-    'notices/fonts/NotoSans-OFL.txt'
+    'notices/fonts/NotoSans-OFL.txt',
+    ...(materialsVerified ? ['notices/native-sources/THIRD_PARTY_NOTICES.txt'] : [])
   ];
   const expectedProvenancePaths = [
     `provenance/${target.canvasPackage}/README.md`,
@@ -409,7 +414,8 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
         `provenance/${target.libvipsPackage}/README.md`,
         `provenance/${target.libvipsPackage}/versions.json`
       ]
-      : [`provenance/${target.sharpPackage}/versions.json`])
+      : [`provenance/${target.sharpPackage}/versions.json`]),
+    ...(materialsVerified ? ['provenance/release-source-receipt.json'] : [])
   ];
   exactRecordPaths(manifest.documents, expectedDocumentPaths, 'document');
   exactRecordPaths(manifest.notices, expectedNoticePaths, 'notice');
@@ -486,7 +492,17 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true } = {}) 
   }
 
   await verifyChecksumFile(legalRoot);
-  if (requireComplete) {
+  if (materialsVerified) {
+    const sources = await readReleaseSourceMaterials({ version: packagedApplication.version, required: true,
+      ...(sourceProjectDir ? { projectDir: sourceProjectDir } : {}), ...(sourceRoot ? { root: sourceRoot } : {}) });
+    const retainedReceipt = await readJson(path.join(legalRoot, 'provenance/release-source-receipt.json'));
+    if (JSON.stringify(manifest.sourceMaterials) !== JSON.stringify(sources.receipt)
+      || JSON.stringify(retainedReceipt) !== JSON.stringify(sources.receipt)
+      || manifest.notices.find(record => record.path === 'notices/native-sources/THIRD_PARTY_NOTICES.txt')?.sha256 !== sha256(sources.noticeBytes)
+      || manifest.documents.find(record => record.path === 'RELINKING.md')?.sha256 !== sha256(sources.rebuildingBytes)) {
+      fail('RELEASE_SOURCE_CHANGED', 'Packaged notice/source/replacement evidence differs from the checked release asset.');
+    }
+  } else if (requireComplete) {
     const blockerIds = manifest.releaseReadinessBlockers.map(blocker => blocker.id);
     fail(
       'RELEASE_LEGAL_BLOCKED',

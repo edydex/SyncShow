@@ -1,11 +1,13 @@
 'use strict';
+const translationCueSettings = require('./TranslationCueSettings');
+const { resolveSermonContext } = require('./SermonContext');
 const {normalizeTextStyle, applyTimelineTypography} = require('./SlideTypography');
 const { normalizeSermonOptions, sermonSlideBlocks } = require('./SermonPresentation');
 const { normalizeCanvasObjects, canvasAssetIds } = require('./CanvasLayout');
 const { scriptureFlowText } = require('./SlideFormatting');
 const { localizeReadingBlocks } = require('./ReadingLabels');
 
-const { normalizeSongPresentation, presentationTitleBlocks, presentationLyricBlocks } = require('./SongPresentation');
+const { normalizeSongPresentation, presentationTitleBlocks, presentationLyricBlocks, presentationPrimaryChannelId } = require('./SongPresentation');
 
 const { Buffer, crypto } = require('../../runtime');
 const { isValidIsoDate } = require('../service-set/ServiceDate');
@@ -372,6 +374,7 @@ function normalizeBlock(raw, field) {
         actual: normalized.contentSha256
       });
     }
+    if (raw.displayReference !== undefined) normalized.displayReference = text(raw.displayReference, `${field}.displayReference`, 160);
     if (raw.displayText !== undefined) {
       normalized.displayText = text(raw.displayText, `${field}.displayText`, 20000, { required: true, trim: false });
       if (!normalized.displayText.trim()) fail('MISSING_TEXT', 'Slide text cannot be empty. Use a blank slide instead.');
@@ -510,6 +513,16 @@ function normalizeTranslationCues(value) {
   return result;
 }
 
+function normalizeTranslationSettingsMap(value, actions) {
+  if (!isRecord(value) || Object.keys(value).length>1000) fail('INVALID_TRANSLATION_CUES', 'Invalid cue settings.');
+  const result = {};
+  for (const [key, settings] of Object.entries(value)) {
+    if (actions?.[key]!=='start') fail('INVALID_TRANSLATION_CUES', 'Settings require a Start Translate cue.');
+    Object.defineProperty(result, key, { value: translationCueSettings.normalizeSettings(settings), enumerable:true, configurable:true,writable:true });
+  }
+  return result;
+}
+
 function normalizeCue(raw, expectedId = null) {
   if (!isRecord(raw)) fail('INVALID_CUE', 'Every cue must be an object.');
   const cueId = id(raw.id || expectedId, 'Cue id');
@@ -539,6 +552,11 @@ function normalizeCue(raw, expectedId = null) {
     operatorNotes: text(raw.operatorNotes, `Cue ${cueId} operatorNotes`, 4000, { trim: false }),
     presetId: id(raw.presetId || defaultPresetForKind(raw.kind), `Cue ${cueId} presetId`)
   };
+  if (raw.showNextSlideHints !== undefined) {
+    if (typeof raw.showNextSlideHints !== 'boolean') fail('INVALID_SERMON_PRESENTATION', 'Next-slide hint visibility must be a boolean.');
+    normalized.showNextSlideHints = raw.showNextSlideHints;
+  }
+  if (raw.translationSettings !== undefined) normalized.translationSettings = translationCueSettings.normalizeSettings(raw.translationSettings);
   if (raw.textStyle !== undefined) normalized.textStyle = normalizeTextStyle(raw.textStyle);
   if (raw.sourceLeafKey !== undefined) normalized.sourceLeafKey = text(raw.sourceLeafKey, 'Source slide key', 300, { required: true });
   if (raw.translationAction !== undefined) {
@@ -2402,6 +2420,7 @@ function normalizeProjectItem(raw, channelIds, now) {
   };
   if (raw.textStyle !== undefined) common.textStyle = normalizeTextStyle(raw.textStyle);
   if (raw.translationCues !== undefined) common.translationCues = normalizeTranslationCues(raw.translationCues);
+  if (raw.translationCueSettings !== undefined) common.translationCueSettings = normalizeTranslationSettingsMap(raw.translationCueSettings, common.translationCues);
   if (Object.prototype.hasOwnProperty.call(raw, 'plannedDurationSeconds')) {
     common.plannedDurationSeconds = finiteInteger(
       raw.plannedDurationSeconds,
@@ -4184,10 +4203,16 @@ function compileServiceProject(rawProject, options = {}) {
   const cueIds = [];
   const cues = {};
   const index = project._index || validateProjectTree(project);
+  let activeTranslationSettings;
   const addCue = (item, leafKey, rawCue) => {
+    const action = item.translationCues?.[leafKey];
+    if (action==='start') activeTranslationSettings = item.translationCueSettings?.[leafKey];
+    if (action==='stop') activeTranslationSettings = undefined;
     const cueId = deterministicCueId(project.id, item.id, leafKey);
     if (cues[cueId]) fail('CUE_ID_COLLISION', `Compiled cue id collision at ${item.id}.`);
     const cue = normalizeCue({ ...rawCue, id: cueId, itemId: item.id, sourceLeafKey: leafKey,
+      ...(sermonContext[item.id]?.showNextSlideHints === false ? {showNextSlideHints:false} : {}),
+      ...(activeTranslationSettings ? {translationSettings:activeTranslationSettings} : {}),
       ...(item.translationCues?.[leafKey] ? { translationAction: item.translationCues[leafKey] } : {}) });
     if (cue.presetId === 'wotbc-reading-title') {
       for (const channelId of project.channelIds) {
@@ -4200,26 +4225,12 @@ function compileServiceProject(rawProject, options = {}) {
     cues[cueId] = cue;
   };
 
-  const sermonHeadings = new Map();
-  const compileLeaf = item => {
+  const sermonContext = resolveSermonContext(project);
+  const compileLeaf = rawItem => {
+    const context = sermonContext[rawItem.id];
+    const item = context?.item || rawItem;
     const groupRecords = index.groupPathByItemId[item.id] || [];
     const groupPath = groupRecords.map(group => group.title);
-    const scope = [...groupRecords].reverse().find(group => group.kind === 'sermon')?.id || groupRecords[0]?.id || 'root';
-    if (item.kind === 'song' || item.presetId === 'wotbc-reading-title') sermonHeadings.delete(scope);
-    if (item.kind === 'sermon') {
-      const isTitle = item.sermonTemplate === 'title' || item.presetId === 'wotbc-sermon-title';
-      const isPoint = item.sermonTemplate === 'point' || item.presetId === 'wotbc-sermon';
-      if (isTitle || isPoint) {
-        const headings = {};
-        for (const channelId of project.channelIds) {
-          const lines = String(item.textByChannel?.[channelId] || '').split('\n').map(line => line.trim()).filter(Boolean);
-          const point = isPoint ? lines.filter(line => /^(?:[IVXLCDM]+|\d+|[a-zа-я])[.)]\s+/iu.test(line)).at(-1) : null;
-          const heading = point || item.titlesByChannel?.[channelId] || '';
-          if (heading) headings[channelId] = heading;
-        }
-        sermonHeadings.set(scope, headings);
-      }
-    }
     if (item.kind === 'song') {
       const resolvedByChannel = Object.fromEntries(project.channelIds.map(channelId => [
         channelId,
@@ -4306,8 +4317,8 @@ function compileServiceProject(rawProject, options = {}) {
         titleChannels[channelId] = {
           mode: resolved.mode === 'derive' ? 'condensed' : 'content',
           ...(resolved.mode === 'derive'
-            ? { sourceChannelId: item.songPresentation?.primaryChannelId || resolved.sourceChannelId,
-                sourceBlocks: [{ type: 'text', role: 'title', text: resolvedByChannel[item.songPresentation?.primaryChannelId || resolved.sourceChannelId].resource.document.title }] }
+            ? { sourceChannelId: presentationPrimaryChannelId(item, 'title') || resolved.sourceChannelId,
+                sourceBlocks: [{ type: 'text', role: 'title', text: resolvedByChannel[presentationPrimaryChannelId(item, 'title') || resolved.sourceChannelId].resource.document.title }] }
             : {}),
           blocks: presentationTitleBlocks(item, resolvedByChannel, channelId) || titleBlocks
         };
@@ -4344,10 +4355,10 @@ function compileServiceProject(rawProject, options = {}) {
             channels[channelId] = {
               mode: resolved.mode === 'derive' ? 'condensed' : 'content',
               ...(resolved.mode === 'derive'
-                ? { sourceChannelId: item.songPresentation?.primaryChannelId || resolved.sourceChannelId,
-                    sourceBlocks: [{ type: 'text', role: 'lyrics', text: resolvedByChannel[item.songPresentation?.primaryChannelId || resolved.sourceChannelId].resource.document.sections.find(candidate => candidate.id === entry.sectionId).slides[slideIndex].lines.join('\n') }] }
+                ? { sourceChannelId: presentationPrimaryChannelId(item, `${entry.id}/${sourceSlide.id}`) || resolved.sourceChannelId,
+                    sourceBlocks: [{ type: 'text', role: 'lyrics', text: resolvedByChannel[presentationPrimaryChannelId(item, `${entry.id}/${sourceSlide.id}`) || resolved.sourceChannelId].resource.document.sections.find(candidate => candidate.id === entry.sectionId).slides[slideIndex].lines.join('\n') }] }
                 : {}),
-              blocks: presentationLyricBlocks(item, resolvedByChannel, channelId, entry.sectionId, slideIndex)
+              blocks: presentationLyricBlocks(item, resolvedByChannel, channelId, entry.sectionId, slideIndex, `${entry.id}/${sourceSlide.id}`)
                 || [{ type: 'text', role: 'lyrics', text: lines.join('\n') }]
             };
           }
@@ -4375,7 +4386,7 @@ function compileServiceProject(rawProject, options = {}) {
       for (const channelId of project.channelIds) {
         const passage = item.passagesByChannel[channelId];
         channels[channelId] = passage
-          ? { mode: 'content', blocks: [...(item.presetId === 'wotbc-sermon-scripture' && sermonHeadings.get(scope)?.[channelId] ? [{ type: 'text', role: 'title', text: sermonHeadings.get(scope)[channelId] }] : []), passage] }
+          ? { mode: 'content', blocks: [...(item.presetId === 'wotbc-sermon-scripture' && context?.headings[channelId] ? [{ type: 'text', role: 'title', text: context.headings[channelId] }] : []), passage] }
           : { mode: 'hide', blocks: [] };
       }
       addCue(item, 'self', {
@@ -4428,13 +4439,13 @@ function compileServiceProject(rawProject, options = {}) {
               mode: projectionSource?.mode === 'condensed'
                 ? 'condensed'
                 : 'content',
-              blocks: sermonSlideBlocks(item.sermonTemplate === 'quote' && !item.titlesByChannel?.[channelId] && sermonHeadings.get(scope)?.[channelId] ? {...item, titlesByChannel: {...item.titlesByChannel, [channelId]: sermonHeadings.get(scope)[channelId]}} : item, channelId)
+              blocks: sermonSlideBlocks(item, channelId)
             }
           : { mode: 'hide', blocks: [] };
       }
       // An unconfigured sermon output borrows a complete authored output. Do
       // not treat deliberately hidden outputs or image-only titles as missing.
-      const filled = project.channelIds.filter(channelId => channels[channelId].blocks.some(block =>
+      const filled = project.channelIds.filter(channelId => context?.complete[channelId] !== false && channels[channelId].blocks.some(block =>
         block.type === 'text' ? Boolean(block.text.trim()) : block.type === 'canvas' ? block.objects.some(object => object.type !== 'text' || object.text.trim()) : true));
       for (const channelId of project.channelIds) {
         const channel = channels[channelId];

@@ -19,6 +19,39 @@ const BASE_URL = 'https://community.example.test/';
 const ACCESS_TOKEN = 'community-access-token-0000000001';
 const NOW = '2026-08-13T20:00:00.000Z';
 
+test('a short caller deadline aborts discovery or the conditional document read', async () => {
+  for (const blockedPhase of ['discovery', 'document']) {
+    const requests = [];
+    let aborted = false;
+    const client = new CommunityClient({
+      baseUrl: BASE_URL,
+      fetchImpl: async (url, options) => {
+        requests.push(url);
+        if (url.endsWith(DISCOVERY_PATH) && blockedPhase === 'document') return json(discovery());
+        return new Promise((_resolve, reject) => {
+          const abort = () => { aborted = true; reject(options.signal.reason); };
+          if (options.signal.aborted) abort();
+          else options.signal.addEventListener('abort', abort, { once: true });
+        });
+      }
+    });
+    // Keep the fixture alive independently of AbortSignal's unref'ed timer.
+    const keepAlive = setTimeout(() => {}, 2000);
+    const started = Date.now();
+    try {
+      await assert.rejects(client.getServiceDocument({
+        syncId: 'service-2026-07-26', accessToken: ACCESS_TOKEN,
+        knownRevision: 'a'.repeat(64), signal: AbortSignal.timeout(40)
+      }), error => error.code === 'REQUEST_CANCELLED');
+      assert.equal(aborted, true);
+      assert(Date.now() - started < 1500, blockedPhase);
+      assert.equal(requests.length, blockedPhase === 'document' ? 2 : 1);
+    } finally {
+      clearTimeout(keepAlive);
+    }
+  }
+});
+
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
@@ -354,4 +387,25 @@ test('uploads and downloads exact private videos without image-only headers', as
   assert.equal(put.options.headers['Content-Type'], 'video/mp4');
   assert.equal(put.options.headers['X-Heritage-Asset-Width'], undefined);
   assert.equal(put.options.headers['X-Heritage-Asset-Orientation'], undefined);
+});
+
+test('unchanged revisions use authenticated conditional GET without downloading a document', async () => {
+  const known=revision(source());const requests=[];
+  const client=new CommunityClient({baseUrl:BASE_URL,fetchImpl:async(input,options)=>{
+    if(new URL(input).pathname===DISCOVERY_PATH)return json(discovery());
+    requests.push(options);return new Response(null,{status:304,headers:{ETag:`"${known}"`}});
+  }});
+  const result=await client.getServiceDocument({syncId:'service-2026-07-26',accessToken:ACCESS_TOKEN,knownRevision:known});
+  assert.deepEqual(result,{notModified:true,syncId:'service-2026-07-26',revision:known});
+  assert.equal(requests.length,1);assert.equal(requests[0].headers['If-None-Match'],`"${known}"`);
+  assert.equal(requests[0].headers.Authorization,`SyncShow ${ACCESS_TOKEN}`);
+});
+test('changed conditional reads validate the complete canonical document and reject mismatched confirmations', async () => {
+  const before=revision(source()), changed=source('Updated service');let wrong=false;
+  const client=new CommunityClient({baseUrl:BASE_URL,fetchImpl:async input=>{
+    if(new URL(input).pathname===DISCOVERY_PATH)return json(discovery());
+    return wrong ? new Response(null,{status:304,headers:{ETag:'"wrong"'}}) : json({serviceDocument:envelope(changed)});
+  }});
+  assert.equal((await client.getServiceDocument({syncId:'service-2026-07-26',accessToken:ACCESS_TOKEN,knownRevision:before})).documentSource,changed);
+  wrong=true;await assert.rejects(client.getServiceDocument({syncId:'service-2026-07-26',accessToken:ACCESS_TOKEN,knownRevision:before}),error=>error.code==='INVALID_RESPONSE');
 });

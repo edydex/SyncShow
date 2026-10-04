@@ -80,6 +80,30 @@ test('singer scene and raster keep full primary lyrics and a width-fitted first-
   assert.match(compileNativeCueScene(switched.cues[switched.cueIds[1]], 'media', {width:1920,height:1080}).current.body, /^English one/);
 });
 
+test('single audience language survives reopen and native scene/raster compilation on all screens', async () => {
+  const original = songProject(), renderer = new NativeSlideRenderer();
+  const resources = JSON.stringify(original.resources);
+  for (const audienceLanguage of ['english','russian','both']) {
+    const draft = JSON.parse(JSON.stringify(original));
+    draft.items.song.songPresentation.audienceLanguage = audienceLanguage;
+    draft.items.song.songPresentation.stackedTranslation = audienceLanguage === 'both';
+    draft.items.song.lyricsPresetId = audienceLanguage === 'both' ? 'wotbc-song-stacked' : 'wotbc-song-lyrics';
+    const project = core.normalizeServiceProject(draft);
+    assert.equal(project.items.song.songPresentation.audienceLanguage,audienceLanguage);
+    assert.equal(JSON.stringify(project.resources),resources);
+    const timeline = core.compileServiceProject(project);
+    for (const channelId of ['english','russian','media']) {
+      const cue = timeline.cues[timeline.cueIds[1]];
+      const scene = compileNativeCueScene(cue,channelId,{width:1920,height:1080});
+      const text = channelId === 'media' ? scene.current.body : scene.body;
+      if(audienceLanguage==='english') { assert.match(text,/English/);assert.doesNotMatch(text,/Первая/); }
+      if(audienceLanguage==='russian') { assert.match(text,/Первая/);assert.doesNotMatch(text,/English/); }
+      const frame = await renderer.renderCue(cue,channelId);
+      assert.equal(frame.info.width,1920);assert.equal(frame.info.height,1080);
+    }
+  }
+});
+
 test('singer cue fits real glyph widths without shrinking or breaking graphemes', async () => {
   const renderer = new NativeSlideRenderer();
   const options = { width: 800, fontSize: 80, weight: '600' };

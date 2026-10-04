@@ -1,0 +1,6 @@
+{
+  "kind": "shared-community-editor",
+  "entry": "community-server/src/components/PlanServiceClient.tsx",
+  "componentSha256": "8564925ce83852b12be51175267395716a7058dbedb73b32ae5229abe189dc47",
+  "activeService": true
+}

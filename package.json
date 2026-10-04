@@ -1,6 +1,6 @@
 {
   "name": "sync-show",
-  "version": "1.4.0-preview.35",
+  "version": "2.0.0",
   "description": "Synchronized configurable presentation outputs for church services",
   "main": "main.js",
   "scripts": {
@@ -31,7 +31,8 @@
     "build:verify-app-launch": "node scripts/verify-packaged-app-launch.js",
     "build:verify-remote-lan": "node scripts/verify-packaged-remote-lan.js",
     "build:verify-release-legal": "node scripts/verify-release-legal.js",
-    "generate-icon": "node scripts/generate-icon.js"
+    "generate-icon": "node scripts/generate-icon.js",
+    "build:planner-editor": "node scripts/build-planner-editor.js"
   },
   "keywords": [
     "presentation",
@@ -76,10 +77,10 @@
   "build": {
     "appId": "com.church.syncshow",
     "productName": "SyncShow",
-    "buildVersion": "140035",
+    "buildVersion": "200000",
     "beforePack": "scripts/beforePack.js",
     "afterPack": "scripts/afterPack.js",
-    "copyright": "Copyright \u00a9 2026 Church Media Team",
+    "copyright": "Copyright © 2026 Church Media Team",
     "win": {
       "target": [
         {
@@ -113,7 +114,8 @@
           "NSAllowsArbitraryLoads": false,
           "NSAllowsLocalNetworking": true
         },
-        "NSMicrophoneUsageDescription": "SyncShow uses the microphone or mixer you choose when you connect audio for live sermon translation."
+        "NSMicrophoneUsageDescription": "SyncShow uses the microphone or mixer you choose when you connect audio for live sermon translation.",
+        "NSAudioCaptureUsageDescription": "SyncShow captures computer audio only when you choose Computer audio for service translation."
       }
     },
     "linux": {

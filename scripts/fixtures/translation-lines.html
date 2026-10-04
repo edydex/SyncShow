@@ -1,0 +1,79 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Translation line movement rehearsal</title>
+<style>
+  body { margin: 24px; background: #151b25; color: #fff; font: 16px system-ui; }
+  button, select { margin: 0 8px 12px 0; padding: 8px; font: inherit; }
+  iframe { display: block; width: min(100%, 1280px); aspect-ratio: 16 / 9; border: 1px solid #708090; }
+  output { display: block; white-space: pre-wrap; margin-top: 12px; }
+</style>
+<h1>Translation line movement rehearsal</h1>
+<p>Synthetic captions through the real output renderer. No audio capture or provider calls.</p>
+<button id="stream">Stream Russian sentences</button>
+<button id="append">Append one word</button>
+<button id="reset">New session</button>
+<label>Layout <select id="layout"><option value="lower-third">Appearing sentences</option><option value="ticker">Ticker</option><option value="full-screen">Full screen</option></select></label>
+<label>Output width <select id="width"><option>1280</option><option>960</option><option>640</option></select></label>
+<label>Rotation <select id="rotation"><option value="0">Normal</option><option value="90">90 degrees</option><option value="270">270 degrees</option></select></label>
+<iframe title="Actual 16:9 translation output"></iframe>
+<output id="metrics" aria-live="off"></output>
+<script>
+  const output = document.querySelector('iframe');
+  output.src = './translation-lines-output.html';
+  let session = 1, phrases = [], timer, animationFrames = 0, movingSamples = [];
+  const text = [
+    'Мы можем доверять Богу даже тогда, когда не понимаем всего происходящего.',
+    'Он не оставляет нас одних и ведёт нас шаг за шагом.',
+    'Поэтому будем ободрять друг друга и помнить о Его верности каждый день.',
+    'Новая строка появляется сразу, пока предложение ещё продолжается и поступают следующие слова.'
+  ];
+  const layout = document.getElementById('layout');
+  function send() {
+    output.contentWindow.postMessage({ outputId: 'russian', sessionId: String(session), language: 'ru', layout: layout.value,
+      fontScale: 1, moving: true, manual: false, phrases }, location.origin);
+  }
+  document.getElementById('stream').onclick = () => {
+    clearInterval(timer); phrases = []; session++; animationFrames = 0; movingSamples = [];
+    const words = text.flatMap((sentence, i) => sentence.split(' ').map(word => ({ word, key: String(i) })));
+    timer = setInterval(() => {
+      const next = words.shift();
+      if (!next) { clearInterval(timer); return; }
+      let phrase = phrases.at(-1);
+      if (phrase?.key !== next.key) { phrase = { key: next.key, revision: 0, streaming: true, text: '' }; phrases.push(phrase); }
+      phrase.text += (phrase.text ? ' ' : '') + next.word; phrase.revision++; send();
+    }, 160);
+  };
+  document.getElementById('append').onclick = () => {
+    let phrase = phrases.at(-1);
+    if (!phrase) { phrase = { key: 'manual', revision: 0, streaming: true, text: '' }; phrases.push(phrase); }
+    phrase.text += ' слово'; phrase.revision++; send();
+  };
+  document.getElementById('reset').onclick = () => { clearInterval(timer); session++; phrases = []; send(); };
+  layout.onchange = send;
+  document.getElementById('width').onchange = e => { output.style.width = e.target.value + 'px'; };
+  document.getElementById('rotation').onchange = e => {
+    output.style.aspectRatio = e.target.value === '0' ? '16 / 9' : '9 / 16';
+    output.src = './translation-lines-output.html?testOutputRotation=' + e.target.value;
+  };
+  output.onload = send;
+  function inspect() {
+    const doc = output.contentDocument;
+    const layer = doc?.querySelector('.translation-layer'), viewport = doc?.querySelector('.translation-copy'), track = doc?.querySelector('.translation-lines');
+    if (layer && viewport) {
+      const style = output.contentWindow.getComputedStyle(layer);
+      const active = track?.getAnimations().some(animation => animation.playState === 'running');
+      if (active) {
+        animationFrames++;
+        if (movingSamples.length < 20) movingSamples.push(output.contentWindow.getComputedStyle(track).transform);
+      }
+      document.getElementById('metrics').textContent = JSON.stringify({
+        fontSize: style.fontSize, lineHeight: style.lineHeight,
+        visibleLines: +(parseFloat(output.contentWindow.getComputedStyle(viewport).height) / parseFloat(style.lineHeight)).toFixed(2),
+        bandPercent: +(parseFloat(style.height) / parseFloat(output.contentWindow.getComputedStyle(doc.body).height) * 100).toFixed(2),
+        animationFrames, movingSamples, current: doc.querySelector('[aria-current="true"]')?.textContent
+      }, null, 2);
+    }
+    requestAnimationFrame(inspect);
+  }
+  inspect();
+</script>

@@ -7,6 +7,7 @@ const { buildLegalBundle } = require('./package-legal-bundle');
 const {
   MAC_LOCAL_NETWORK_USAGE_DESCRIPTION,
   MAC_MICROPHONE_USAGE_DESCRIPTION,
+  MAC_AUDIO_CAPTURE_USAGE_DESCRIPTION,
   MAC_UNRELATED_DEVICE_USAGE_KEYS,
   verifyMacRemoteNetworkMetadata
 } = require('./lib/mac-network-privacy');
@@ -40,6 +41,8 @@ function applyMacRemoteNetworkMetadata(infoPlistPath, {
   );
   runPlistBuddy(infoPlistPath, 'Delete :NSMicrophoneUsageDescription', { optional: true });
   runPlistBuddy(infoPlistPath, `Add :NSMicrophoneUsageDescription string ${MAC_MICROPHONE_USAGE_DESCRIPTION}`);
+  runPlistBuddy(infoPlistPath, 'Delete :NSAudioCaptureUsageDescription', { optional: true });
+  runPlistBuddy(infoPlistPath, `Add :NSAudioCaptureUsageDescription string ${MAC_AUDIO_CAPTURE_USAGE_DESCRIPTION}`);
   for (const key of MAC_UNRELATED_DEVICE_USAGE_KEYS) {
     runPlistBuddy(infoPlistPath, `Delete :${key}`, { optional: true });
   }

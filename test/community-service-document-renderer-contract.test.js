@@ -67,7 +67,7 @@ test('concurrent edits require a visible choice and never auto-overwrite', () =>
   assert.match(html, /id="btnKeepLocalService"/u);
   assert.match(main, /kind: 'concurrent-change'/u);
   assert.match(main, /localChanged && !remoteChanged/u);
-  assert.match(main, /!localChanged && remoteChanged/u);
+  assert.match(main, /!localChanged && \(remoteChanged \|\| fresh\)/u);
 });
 
 test('linked local mutations autosave through the narrow durable service bridge', () => {

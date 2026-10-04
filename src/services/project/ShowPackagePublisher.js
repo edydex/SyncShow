@@ -1,4 +1,5 @@
 'use strict';
+const { nextSlideHint, singerSourceCue } = require('./SingerPresentation');
 
 const crypto = require('crypto');
 const fs = require('fs/promises');
@@ -87,6 +88,33 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+function artifactRecord(relativePath, bytes) {
+  const buffer=Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  return {path:relativePath,size:buffer.length,sha256:sha256(buffer)};
+}
+
+// Keep disk work bounded, and settle all workers before staging cleanup on a
+// failure. Each file still receives its normal durability and checksum checks.
+async function mapBounded(values, operation, concurrency = 8) {
+  const results = new Array(values.length);
+  let cursor = 0, failure;
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (!failure && cursor < values.length) {
+      const index = cursor++;
+      try { results[index] = await operation(values[index], index); }
+      catch (error) { failure ||= error; }
+    }
+  }));
+  if (failure) throw failure;
+  return results;
+}
+
+function visualCue(cue) {
+  if (!cue) return null;
+  const { id, itemId, sourceLeafKey, sourceReference, groupPath, operatorNotes, ...visual } = cue;
+  return visual;
+}
+
 function roleDirectoryName(roleId) {
   return `channel-${sha256(roleId).slice(0, 24)}`;
 }
@@ -159,6 +187,105 @@ class ShowPackagePublisher {
     if (privateFontConfigDirectory !== fontConfigDirectory) {
       throw new Error('ShowPackagePublisher fontconfig cache escaped its storage root');
     }
+  }
+
+  _thumbnailKey(cue, channelId, nextCue, fontSha256, renderOptions) {
+    const condensed = cue.channels?.[channelId]?.mode === 'condensed' && cue.channels[channelId].sourceChannelId;
+    return sha256(canonicalJson({ rendererVersion: NATIVE_RENDERER_VERSION,
+      fontSha256, renderOptions, channelId, cue: visualCue(cue),
+      nextCue: condensed ? visualCue(nextCue) : null }));
+  }
+
+  async _seedThumbnailCache(packageId, expectedManifestSha256, fontSha256, renderOptions) {
+    const reusable = new Map();
+    reusable.thumbnails = new Map();
+    if (!packageId || !SHOW_PACKAGE_PATTERN.test(packageId) || !/^[a-f0-9]{64}$/.test(expectedManifestSha256)) return reusable;
+    const previousPath = path.join(this.rootPath, packageId);
+    let previous;
+    try { const opened = await this.open(packageId); if (opened.manifestSha256 !== expectedManifestSha256) return reusable; previous = opened.manifest; }
+    catch (error) { if (error instanceof ShowPackageError || error.code === 'ENOENT') return reusable; throw error; }
+    for (const artifact of previous.artifacts) {
+      if (/\/(?:scene_\d+\.json|slide_\d+_thumb\.jpg)$/.test(artifact.path) || SAFE_ASSET_PATH.test(artifact.path)) {
+        reusable.set(`${artifact.sha256}:${artifact.size}`, path.join(previousPath, artifact.path));
+      }
+    }
+    if (previous.rendererVersion !== NATIVE_RENDERER_VERSION || previous.font.sha256 !== fontSha256
+      || canonicalJson(previous.renderOptions) !== canonicalJson(renderOptions)) return reusable;
+    const { buffer } = await readFileNoFollow(path.join(previousPath, 'timeline.json'), MAX_MANIFEST_BYTES);
+    if (sha256(buffer) !== previous.timelineSha256) return reusable;
+    const timeline = normalizeCueTimeline(JSON.parse(buffer.toString('utf8')));
+    for (const channel of previous.channels) {
+      await mapBounded(timeline.cueIds, async (cueId, index) => {
+        const cue = timeline.cues[cueId], nextCue = timeline.cues[timeline.cueIds[index + 1]] || null;
+        const key = this._thumbnailKey(cue, channel.channelId, nextCue, fontSha256, renderOptions);
+        const cached=await this._cachedThumbnail(key);
+        if (cached) { reusable.thumbnails.set(key,cached); return; }
+        const relative = `${channel.directory}/slide_${String(index + 1).padStart(3, '0')}_thumb.jpg`;
+        const expected = previous.artifacts.find(artifact => artifact.path === relative);
+        const { buffer: thumbnail } = await readFileNoFollow(path.join(previousPath, relative), MAX_RASTER_ARTIFACT_BYTES);
+        // Recheck after opening; a previous package is only a cache source, never
+        // permission to use bytes that changed since manifest verification.
+        if (expected && thumbnail.length === expected.size && sha256(thumbnail) === expected.sha256) {
+          await this._cacheThumbnail(key, thumbnail);
+          reusable.thumbnails.set(key,thumbnail);
+        }
+      });
+    }
+    return reusable;
+  }
+
+  async _reuseArtifact(target, bytes, reusable, stagingPath) {
+    const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+    const expected = sha256(buffer);
+    const source = reusable.get(`${expected}:${buffer.length}`);
+    if (!source) return false;
+    await ensureConfinedDirectory(this.rootPath, path.dirname(source));
+    await ensureConfinedDirectory(stagingPath, path.dirname(target));
+    let linked = false, verified = false;
+    try {
+      // Reuse already durable bytes, then verify the actual linked file. A
+      // replaced source or symlink can never become a trusted artifact.
+      await fs.link(source, target);
+      linked = true;
+      verified = await hashFileNoFollow(target, buffer.length) === expected;
+      return verified;
+    } catch (error) {
+      if (!['ENOENT', 'EXDEV', 'EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)
+        && !error.code?.startsWith('STORAGE_')) throw error;
+      return false;
+    } finally {
+      if (linked && !verified) await fs.unlink(target).catch(() => {});
+    }
+  }
+
+  async _cachedThumbnail(key) {
+    const cache = await ensureConfinedDirectory(this.rootPath, path.join(this.rootPath, '.render-cache'));
+    const entry = path.join(cache, `${key}.json`);
+    try {
+      const { buffer: source } = await readFileNoFollow(entry, 2048);
+      const metadata = JSON.parse(source.toString('utf8'));
+      if (!metadata || typeof metadata !== 'object' || !/^[a-f0-9]{64}$/.test(metadata.sha256) || !Number.isSafeInteger(metadata.size)) return null;
+      const { buffer } = await readFileNoFollow(path.join(cache, `${key}.jpg`), MAX_RASTER_ARTIFACT_BYTES);
+      return buffer.length === metadata.size && sha256(buffer) === metadata.sha256 ? buffer : null;
+    } catch (error) {
+      if (error.code === 'ENOENT' || error instanceof SyntaxError || error.code?.startsWith('STORAGE_')) return null;
+      throw error;
+    }
+  }
+
+  async _cacheThumbnail(key, buffer) {
+    // Repeated lyrics can share a visual key while bounded workers are
+    // running. Publish that cache entry once so atomic flushes cannot race.
+    this.thumbnailWrites ||= new Map();
+    if (this.thumbnailWrites.has(key)) return this.thumbnailWrites.get(key);
+    const task = (async () => {
+      const cache = await ensureConfinedDirectory(this.rootPath, path.join(this.rootPath, '.render-cache'));
+      await atomicWriteFile(path.join(cache, `${key}.jpg`), buffer, { rootPath: this.rootPath, maximumBytes: MAX_RASTER_ARTIFACT_BYTES, mode: 0o600 });
+      await atomicWriteFile(path.join(cache, `${key}.json`), canonicalJson({ sha256: sha256(buffer), size: buffer.length }), { rootPath: this.rootPath, maximumBytes: 2048, mode: 0o600 });
+    })();
+    this.thumbnailWrites.set(key, task);
+    try { await task; }
+    finally { if (this.thumbnailWrites.get(key) === task) this.thumbnailWrites.delete(key); }
   }
 
   _normalizeRoleMapping(project, rawMapping) {
@@ -329,7 +456,7 @@ class ShowPackagePublisher {
       || manifest.compilerVersion !== 3
       // Retain previously supported offline packages, including the last Mac
       // test build, while new preparation receives a fresh renderer identity.
-      || ![11, 15, 16, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
+      || ![11, 15, 16, 17, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
       || !Number.isSafeInteger(manifest.cueCount)
       || manifest.cueCount < 1
       || manifest.cueCount > MAX_PACKAGE_CUES
@@ -474,7 +601,7 @@ class ShowPackagePublisher {
 
     const seenArtifacts = new Set();
     const artifactByPath = new Map();
-    for (const artifact of manifest.artifacts) {
+    await mapBounded(manifest.artifacts, async artifact => {
       if (!artifact
         || typeof artifact.path !== 'string'
         || path.isAbsolute(artifact.path)
@@ -506,7 +633,7 @@ class ShowPackagePublisher {
         fail('SHOW_PACKAGE_CORRUPT', `Show package artifact ${artifact.path} failed its checksum.`);
       }
       artifactByPath.set(artifact.path, artifact);
-    }
+    });
     for (const asset of packageAssets.values()) {
       const artifact = artifactByPath.get(asset.path);
       if (!artifact || artifact.size !== asset.size || artifact.sha256 !== asset.sha256) {
@@ -534,7 +661,7 @@ class ShowPackagePublisher {
       fail('SHOW_PACKAGE_CORRUPT', 'The Show timeline does not match its package manifest.');
     }
 
-    Object.defineProperty(manifest, 'translationCues', { value: timeline.cueIds.map(id => ({ id, ...(timeline.cues[id].translationAction ? { translationAction: timeline.cues[id].translationAction } : {}) })) });
+    Object.defineProperty(manifest, 'translationCues', { value: timeline.cueIds.map(id => ({ id, ...(timeline.cues[id].translationAction ? { translationAction: timeline.cues[id].translationAction, ...(timeline.cues[id].translationSettings ? {translationSettings:timeline.cues[id].translationSettings} : {}) } : {}) })) });
     let serviceHandoff;
     let handoffSource;
     try {
@@ -628,8 +755,7 @@ class ShowPackagePublisher {
           );
         }
       }
-      const scenes = [];
-      for (let cueIndex = 0; cueIndex < manifest.cueCount; cueIndex += 1) {
+      const scenes = await mapBounded(manifest.cueIds, async (_cueId, cueIndex) => {
         const number = String(cueIndex + 1).padStart(3, '0');
         const scenePath = path.join(packagePath, channel.directory, `scene_${number}.json`);
         let scene;
@@ -670,8 +796,12 @@ class ShowPackagePublisher {
           }
           referencedAssetIds.add(assetId);
         }
-        scenes.push(scene);
-      }
+        return scene;
+      });
+      channel.stageHints = timeline.cueIds.map((id, index) => ({
+        show: timeline.cues[id].showNextSlideHints !== false,
+        text: nextSlideHint(singerSourceCue(timeline.cues[timeline.cueIds[index + 1]] || null, channel.channelId), channel.channelId)
+      }));
       channel.metadata = metadata;
       channel.scenes = scenes;
     }
@@ -706,6 +836,7 @@ class ShowPackagePublisher {
         slideCount: manifest.cueCount,
         metadata: channel.metadata,
         scenes: channel.scenes,
+        stageHints: channel.stageHints,
         assetPaths: Object.fromEntries(manifest.assets.map(asset => [
           asset.id,
           path.resolve(packagePath, asset.path)
@@ -870,6 +1001,7 @@ class ShowPackagePublisher {
         }
       }
 
+      const reusable = await this._seedThumbnailCache(options.reusePackageId, options.reusePackageManifestSha256, fontSha256, renderOptions);
       const stagingPath = path.join(this.rootPath, `.staging-${packageId}-${this.randomUUID()}`);
       await ensureConfinedDirectory(this.rootPath, stagingPath);
       let published = false;
@@ -901,8 +1033,7 @@ class ShowPackagePublisher {
           const directory = roleDirectoryName(roleId);
           const channelPath = path.join(stagingPath, directory);
           await ensureConfinedDirectory(stagingPath, channelPath);
-          const slides = [];
-          for (const [cueIndex, cueId] of timeline.cueIds.entries()) {
+          const slides = await mapBounded(timeline.cueIds, async (cueId, cueIndex) => {
             const number = String(cueIndex + 1).padStart(3, '0');
             const sceneName = `scene_${number}.json`;
             const thumbName = `slide_${number}_thumb.jpg`;
@@ -918,46 +1049,43 @@ class ShowPackagePublisher {
               nextCue
             });
             const serializedScene = serializeNativeCueScene(scene);
-            await atomicWriteFile(scenePath, serializedScene, {
+            if (!await this._reuseArtifact(scenePath, serializedScene, reusable, stagingPath)) await atomicWriteFile(scenePath, serializedScene, {
               maximumBytes: MAX_NATIVE_SCENE_BYTES,
               mode: 0o600,
               rootPath: stagingPath
             });
             for (const assetId of sceneAssetIds(scene)) referencedAssetIds.add(assetId);
-            const rendered = channel?.mode === 'condensed' && channel.sourceChannelId
-              ? await renderer.renderSingerPreview(
-                  cue,
-                  channel.sourceChannelId,
-                  nextCue
-                )
-              : await renderer.renderCue(cue, channelId);
-            const thumbnail = await this.sharp(rendered.info.data)
-              .resize(renderOptions.thumbnailWidth, null, { fit: 'inside', withoutEnlargement: true })
-              .jpeg({ quality: 85 })
-              .toBuffer();
+            const condensed = channel?.mode === 'condensed' && channel.sourceChannelId;
+            // Every visual input, font, viewport and renderer version is pinned.
+            // Singer previews also include the next cue, so editing it invalidates
+            // the previous cue's hint. Audit identities never change the pixels.
+            const renderKey = this._thumbnailKey(cue, channelId, nextCue, fontSha256, renderOptions);
+            let thumbnail = reusable.thumbnails.get(renderKey) || await this._cachedThumbnail(renderKey);
+            const reused = Boolean(thumbnail);
+            if (!thumbnail) {
+              const rendered = condensed
+                ? await renderer.renderSingerPreview(cue, channel.sourceChannelId, nextCue)
+                : await renderer.renderCue(cue, channelId);
+              thumbnail = await this.sharp(rendered.info.data)
+                .resize(renderOptions.thumbnailWidth, null, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 85 }).toBuffer();
+              await this._cacheThumbnail(renderKey, thumbnail);
+            }
             // Use Node's long-path support instead of passing a potentially
             // >260-character staging path to the native image library.
-            await atomicWriteFile(thumbPath, thumbnail, {
+            if (!await this._reuseArtifact(thumbPath, thumbnail, reusable, stagingPath)) await atomicWriteFile(thumbPath, thumbnail, {
               maximumBytes: MAX_RASTER_ARTIFACT_BYTES,
               mode: 0o600,
               rootPath: stagingPath
             });
-            for (const fileName of [sceneName, thumbName]) {
-              const filePath = path.join(channelPath, fileName);
-              const stats = await fs.stat(filePath);
-              artifacts.push({
-                path: `${directory}/${fileName}`,
-                size: stats.size,
-                sha256: await hashFileNoFollow(
-                  filePath,
-                  fileName.endsWith('.json') ? MAX_NATIVE_SCENE_BYTES : MAX_RASTER_ARTIFACT_BYTES
-                )
-              });
-            }
-            slides.push(rendered.metadata);
+            // Record the bytes we intended to publish. Final package validation
+            // still rereads and hashes every file, so a changed artifact fails.
+            artifacts.push(artifactRecord(`${directory}/${sceneName}`,serializedScene),
+              artifactRecord(`${directory}/${thumbName}`,thumbnail));
             completed += 1;
-            options.onProgress?.({ completed, total, roleId, channelId, cueIndex, cueId });
-          }
+            options.onProgress?.({ completed, total, roleId, channelId, cueIndex, cueId, reused });
+            return condensed ? singerCueMetadata(cue, channel.sourceChannelId, nextCue) : cueMetadataForChannel(cue, channelId);
+          });
           const metadata = {
             schemaVersion: 1,
             sourceType: 'service-project',
@@ -970,17 +1098,13 @@ class ShowPackagePublisher {
           };
           const metadataName = 'metadata.json';
           const metadataPath = path.join(channelPath, metadataName);
-          await atomicWriteFile(metadataPath, canonicalJson(metadata), {
+          const metadataSource=canonicalJson(metadata);
+          await atomicWriteFile(metadataPath, metadataSource, {
             maximumBytes: MAX_MANIFEST_BYTES,
             mode: 0o600,
             rootPath: stagingPath
           });
-          const metadataStats = await fs.stat(metadataPath);
-          artifacts.push({
-            path: `${directory}/${metadataName}`,
-            size: metadataStats.size,
-            sha256: await hashFileNoFollow(metadataPath, MAX_MANIFEST_BYTES)
-          });
+          artifacts.push(artifactRecord(`${directory}/${metadataName}`,metadataSource));
           channels.push({
             roleId,
             channelId,
@@ -1008,7 +1132,7 @@ class ShowPackagePublisher {
             const targetPath = path.join(stagingPath, relativePath);
             const maximumBytes = asset.kind === 'video' ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
             const { buffer } = await readFileNoFollow(resolved.assetPath, maximumBytes);
-            await atomicWriteFile(targetPath, buffer, {
+            if (!await this._reuseArtifact(targetPath,buffer,reusable,stagingPath)) await atomicWriteFile(targetPath, buffer, {
               maximumBytes,
               mode: 0o600,
               rootPath: stagingPath
@@ -1023,38 +1147,26 @@ class ShowPackagePublisher {
                 ? { width: asset.width, height: asset.height }
                 : {})
             });
-            artifacts.push({
-              path: relativePath,
-              size: asset.size,
-              sha256: await hashFileNoFollow(targetPath, maximumBytes)
-            });
+            artifacts.push(artifactRecord(relativePath,buffer));
           }
         }
 
         const timelinePath = path.join(stagingPath, 'timeline.json');
-        await atomicWriteFile(timelinePath, canonicalJson(timeline), {
+        const timelineSource=canonicalJson(timeline);
+        await atomicWriteFile(timelinePath, timelineSource, {
           maximumBytes: MAX_MANIFEST_BYTES,
           mode: 0o600,
           rootPath: stagingPath
         });
-        const timelineStats = await fs.stat(timelinePath);
-        artifacts.push({
-          path: 'timeline.json',
-          size: timelineStats.size,
-          sha256: await hashFileNoFollow(timelinePath, MAX_MANIFEST_BYTES)
-        });
+        artifacts.push(artifactRecord('timeline.json',timelineSource));
         const handoffPath = path.join(stagingPath, 'handoff.json');
-        await atomicWriteFile(handoffPath, serializeServiceHandoff(serviceHandoff), {
+        const handoffSource=serializeServiceHandoff(serviceHandoff);
+        await atomicWriteFile(handoffPath, handoffSource, {
           maximumBytes: MAX_MANIFEST_BYTES,
           mode: 0o600,
           rootPath: stagingPath
         });
-        const handoffStats = await fs.stat(handoffPath);
-        artifacts.push({
-          path: 'handoff.json',
-          size: handoffStats.size,
-          sha256: await hashFileNoFollow(handoffPath, MAX_MANIFEST_BYTES)
-        });
+        artifacts.push(artifactRecord('handoff.json',handoffSource));
         artifacts.sort((a, b) => a.path.localeCompare(b.path));
         const manifest = {
           schemaVersion: SHOW_PACKAGE_SCHEMA_VERSION,

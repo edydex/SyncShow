@@ -13,6 +13,16 @@ SyncShow bundles the Heritage per-book JSON for BSB and LSV from the same
 pinned revision. The app code remains MIT licensed; the translation text
 retains the rights stated below.
 
+## Russian Synodal (SYNO-W)
+
+Russian Synodal (russyn) from eBible.org, remapped to Western versification
+by Heritage Study Bible. Public domain. The exact per-book JSON was copied
+without changing text from Heritage Study Bible revision
+`711d8345810b57780773ff958628c88f6c6f085e` on 2026-09-30.
+`data/SYNO-W-provenance.json` records each copied file's SHA-256.
+This bundled edition lets the same Community editor insert Russian readings
+when the church server is unreachable.
+
 ## Berean Standard Bible (BSB)
 
 The BSB text is dedicated to the public domain (CC0). Attribution is not

@@ -1,23 +1,26 @@
-:root { --translation-band: 0px; --translation-content-scale: 1; }
-#displayContainer, #singerContainer { height: calc(100% - var(--translation-band)); }
-/* Preserve a live Bible passage's tested typography when a caption band is
-   enabled mid-reading. The whole passage fits above the band without reflow. */
+:root { --translation-band: 0px; }
+/* Native slides reserve captions in their saved layout. Applying a second
+   reduction here would shrink the full slide and its text a second time. */
 #displayContainer .bible-overlay, #singerContainer .bible-overlay {
-  width: calc(100 * var(--output-vw, 1vw)); height: calc(100 * var(--output-vh, 1vh)); bottom: auto;
-  transform: scale(var(--translation-content-scale)); transform-origin: top center;
+  width: 100%; height: calc(100% - var(--translation-band)); bottom: auto;
 }
 .translation-layer {
   position: fixed; inset: auto 0 0; z-index: 40;
   height: var(--translation-band); overflow: hidden;
   background: #070b12; color: #fff; border-top: 2px solid #7f9ba8;
-  font: 500 calc(calc(4.1 * var(--output-vh, 1vh)) * var(--translation-font, 1))/1.35 system-ui, sans-serif;
+  font: 500 calc(calc(8.2 * var(--output-vh, 1vh)) * var(--translation-font, 1))/1.2 system-ui, sans-serif;
   padding: calc(2 * var(--output-vh, 1vh)) calc(4 * var(--output-vw, 1vw)); pointer-events: none;
 }
 .translation-layer[hidden], .cleared .translation-layer { display: none; }
-.translation-layer[data-layout="full-screen"] { inset: 0; height: 100%; padding: calc(5 * var(--output-vh, 1vh)) calc(6 * var(--output-vw, 1vw)); border: 0; font-size: calc(calc(5.2 * var(--output-vh, 1vh)) * var(--translation-font, 1)); }
-.translation-layer[data-layout="ticker"] { padding: 0; display: flex; align-items: center; font-size: calc(calc(4.8 * var(--output-vh, 1vh)) * var(--translation-font, 1)); }
+.translation-layer[data-layout="lower-third"] { line-height: 1.08; padding-block: calc(.8 * var(--output-vh, 1vh)); }
+.translation-layer[data-layout="lower-third"] .translation-copy { max-height: 3lh; }
+.translation-lines { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; will-change: transform; }
+.translation-copy.rolling { mask-image: linear-gradient(to bottom, transparent, #000 .2lh); }
+.translation-measure { position: absolute; top: 0; left: 0; visibility: hidden; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
+.translation-layer[data-layout="full-screen"] { inset: 0; height: 100%; padding: calc(5 * var(--output-vh, 1vh)) calc(6 * var(--output-vw, 1vw)); border: 0; font-size: calc(calc(10.4 * var(--output-vh, 1vh)) * var(--translation-font, 1)); }
+.translation-layer[data-layout="ticker"] { padding: 0; display: flex; align-items: center; font-size: min(calc(10 * var(--output-vh, 1vh)), calc(9.6 * var(--output-vh, 1vh) * var(--translation-font, 1))); line-height: 1.05; }
 .translation-layer[data-layout="ticker"][hidden], .cleared .translation-layer[data-layout="ticker"] { display: none; }
 .translation-copy { height: 100%; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
-.translation-copy p { margin: 0 0 0.65em; }
-.translation-copy p:last-child { margin-bottom: 0; }
+.translation-sentence.previous { color: #a6adb9; }
+.translation-sentence.current { color: #fff; }
 .translation-layer[data-layout="ticker"] .translation-copy { flex: 0 0 auto; height: auto; white-space: pre; overflow: visible; will-change: transform; }

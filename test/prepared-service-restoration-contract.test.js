@@ -110,7 +110,7 @@ test('explicit PowerPoint conversion and cache restore clear the durable native 
   );
 });
 
-test('renderer keeps restored native service primary and confirms a date mismatch once', () => {
+test('renderer keeps restored native service primary and checks its age against the live clock', () => {
   const load = between(
     rendererSource,
     'async function loadAppState()',
@@ -135,18 +135,20 @@ test('renderer keeps restored native service primary and confirms a date mismatc
   const dateConfirmation = between(
     rendererSource,
     'function confirmPreparedServiceDate()',
-    'async function startPresentation('
+    'async function beginStartPresentation('
   );
   assert.match(dateConfirmation, /preparedServiceDateConfirmations/);
   assert.match(
     dateConfirmation,
     /SyncShowPreparedServiceGuard\.preparedServiceDateGuard/
   );
-  assert.match(dateConfirmation, /Start this exact prepared service anyway\?/);
+  assert.match(dateConfirmation, /const currentDate = serviceDateForProfile\(\)/);
+  assert.doesNotMatch(dateConfirmation, /serviceFolder\.requestedDate/);
+  assert.match(dateConfirmation, /Start this older service anyway\?/);
 
   const start = between(
     rendererSource,
-    'async function startPresentation(',
+    'async function beginStartPresentation(',
     'function getAttemptOutput('
   );
   assert.match(start, /if \(!confirmPreparedServiceDate\(\)\) return/);

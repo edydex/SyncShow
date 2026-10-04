@@ -8,6 +8,7 @@ ipcRenderer.on('translation:cue-command', (_event, command) => {
 });
 contextBridge.exposeInMainWorld('syncShowTranslation', {
   version: 1,
+  computerAudio: process.platform==='darwin' || process.platform==='win32',
   onCommand(callback) {
     if (typeof callback !== 'function') throw new Error('A command handler is required.');
     handler = callback;

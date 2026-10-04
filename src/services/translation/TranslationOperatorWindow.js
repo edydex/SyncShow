@@ -37,23 +37,30 @@ function operatorRequestHeaders(details, origin, accessToken, webContentsId) {
   return headers;
 }
 
-function audioPermission({ webContents, owner, permission, origin, details, check = false }) {
+function audioPermission({ webContents, owner, permission, origin, details, check = false, computerAudioSelected = false }) {
   if (webContents !== owner || owner.isDestroyed() || permission !== 'media'
     || details?.isMainFrame !== true || !operatorPage(owner.getURL(), origin)
     || !operatorPage(details.requestingUrl, origin)) return false;
+  // Electron 43 reports getDisplayMedia as media with no device mediaTypes.
+  // Only the explicitly selected computer source may reach the separately
+  // guarded display handler; camera requests still carry video and are denied.
+  if (!check && computerAudioSelected && Array.isArray(details.mediaTypes) && details.mediaTypes.length === 0) return true;
   return check ? details.mediaType === 'audio'
     : Array.isArray(details.mediaTypes) && details.mediaTypes.length === 1 && details.mediaTypes[0] === 'audio';
 }
 
 class TranslationOperatorWindow {
-  constructor({ BrowserWindow, changed = () => {}, failed = () => {}, readyTimeoutMs = 15000, stopTimeoutMs = 5000 }) {
+  constructor({ BrowserWindow, desktopCapturer, changed = () => {}, failed = () => {}, readyTimeoutMs = 15000, stopTimeoutMs = 55000 }) {
     this.BrowserWindow = BrowserWindow;
+    this.desktopCapturer = desktopCapturer;
+    this.computerAudioSelected = false;
     this.changed = changed;
     this.failed = failed;
     this.readyTimeoutMs = readyTimeoutMs;
     this.stopTimeoutMs = stopTimeoutMs;
     this.readyTimer = null;
     this.stopWaiter = null;
+    this.stopPending = null;
     this.lastStatus = 'idle';
     this.window = null;
     this.connectionId = null;
@@ -79,26 +86,33 @@ class TranslationOperatorWindow {
   markReady() { clearTimeout(this.readyTimer); this.readyTimer = null; this.ready = true; if (this.command) this.dispatch(this.command); }
   report(status) {
     this.lastStatus = status.phase;
-    if (['idle', 'error'].includes(status.phase)) this.stopWaiter?.();
+    if (status.phase === 'idle') this.stopWaiter?.();
+    else if (status.phase === 'error') this.stopWaiter?.(new Error(status.message || 'Translation Stop was not confirmed.'));
+  }
+  stop(command = this.command) {
+    if (this.stopPending) return this.stopPending;
+    if (!command || !this.window || this.window.isDestroyed()) return Promise.resolve();
+    if (this.command?.phase === 'idle' && this.lastStatus === 'idle') return Promise.resolve();
+    this.stopPending = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => finish(new Error('The translation server did not confirm Stop. Retry Stop or check Live translation on the Community server.')), this.stopTimeoutMs);
+      const finish = error => {
+        clearTimeout(timer); this.stopWaiter = null;
+        if (error) { this.failed(error.message); reject(error); } else resolve();
+      };
+      this.stopWaiter = finish;
+      // Queue Stop even if the operator page is still loading: a late Ready
+      // must never dispatch the obsolete Start that this command replaces.
+      this.dispatch({ ...command, phase: 'idle' });
+    }).finally(() => { this.stopPending = null; });
+    return this.stopPending;
   }
   async shutdown() {
-    if (this.window && !this.window.isDestroyed() && this.command && (this.command.phase !== 'idle' || !['idle', 'error'].includes(this.lastStatus)) && this.ready) {
-      await new Promise(resolve => {
-        const timer = setTimeout(() => {
-          this.failed('The translation server did not confirm Stop. Check Live translation on the Community server.');
-          finish();
-        }, this.stopTimeoutMs);
-        const finish = () => { clearTimeout(timer); this.stopWaiter = null; resolve(); };
-        this.stopWaiter = finish;
-        this.dispatch({ ...this.command, phase: 'idle' });
-      });
-    }
-    this.close();
+    try { await this.stop(); } finally { this.close(); }
   }
 
   close() {
     clearTimeout(this.readyTimer); this.readyTimer = null;
-    this.stopWaiter?.();
+    this.stopWaiter?.(new Error('Translation controls closed before Stop was confirmed.'));
     this.command = null; this.ready = false; this.origin = null;
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
@@ -133,13 +147,23 @@ class TranslationOperatorWindow {
     win.on('close', event => { if (this.command?.phase !== 'idle' && this.command) { event.preventDefault(); win.hide(); } });
     const session = contents.session;
     session.setPermissionRequestHandler((webContents, permission, callback, details) => {
-      callback(audioPermission({ webContents, owner: contents, permission, origin, details }));
+      if(permission==='display-capture') return callback(Boolean(this.computerAudioSelected && webContents===contents && details?.isMainFrame===true && operatorPage(contents.getURL(),origin) && operatorPage(details.requestingUrl,origin)));
+      callback(audioPermission({ webContents, owner: contents, permission, origin, details, computerAudioSelected: this.computerAudioSelected }));
     });
     session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
       if (requestingOrigin !== origin && requestingOrigin !== `${origin}/`) return false;
+      if(permission==='display-capture') return Boolean(this.computerAudioSelected && webContents===contents && details?.isMainFrame===true && operatorPage(contents.getURL(),origin) && operatorPage(details.requestingUrl,origin));
       return audioPermission({ webContents, owner: contents, permission, origin, details, check: true });
     });
-    session.setDisplayMediaRequestHandler((_request, callback) => callback({}));
+    session.setDisplayMediaRequestHandler(async (request, callback) => {
+      if (!this.computerAudioSelected || !request.audioRequested || !this.owns({sender:contents,senderFrame:request.frame})
+        || !operatorPage(request.frame?.url,origin) || request.frame!==contents.mainFrame || !this.desktopCapturer) return callback({});
+      try {
+        const sources = await this.desktopCapturer.getSources({types:['screen'],thumbnailSize:{width:0,height:0}});
+        if(this.window!==win || win.isDestroyed() || !this.computerAudioSelected || !sources.length)return callback({});
+        callback({video:sources[0],audio:'loopback'});
+      } catch { callback({}); }
+    });
     session.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
       callback({ requestHeaders: operatorRequestHeaders(details, origin, connection.accessToken, contents.id) });
     });

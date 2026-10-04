@@ -102,6 +102,7 @@ class TranslationProjection {
       sequence: segment.sequence,
       revision,
       final: segment.final,
+      streaming: segment.delivery === 'streaming',
       text: segment.text,
       language: segment.language
     });
@@ -137,7 +138,8 @@ class TranslationProjection {
         : this.state.active ? 'live' : 'idle',
       sessionId: this.state.sessionId,
       languages: this.state.languages.map(value => ({ ...value })),
-      // Provisional text is available to the operator, but never queued on a projector.
+      // Native interpreter revisions are append-only and safe to stream. ASR
+      // drafts still stay off the projector until finalized.
       captions: Object.fromEntries([...this.phrases].map(([language, phrases]) => [
         language, [...phrases.values()].slice(-8).map(value => ({ ...value }))
       ]))
@@ -157,7 +159,7 @@ class TranslationProjection {
       manual: Boolean(manual),
       moving: snapshot.status === 'live' || Boolean(manual),
       phrases: manual ? [{ key: `manual:${outputId}:${manual.version}`, text: manual.text, final: true, revision: manual.version }]
-        : available ? (snapshot.captions[settings.language] ?? []).filter(item => item.final) : []
+        : available ? (snapshot.captions[settings.language] ?? []).filter(item => item.final || item.streaming) : []
     };
   }
 }

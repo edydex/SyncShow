@@ -1,4 +1,5 @@
 'use strict';
+const {reservation} = require('./TranslationCueSettings');
 const {textPreset} = require('./SlideTypography');
 const { normalizeCanvasObjects, canvasText, BRACE_PATH } = require('./CanvasLayout');
 
@@ -10,7 +11,7 @@ const { parseBibleReference } = require('../bible/BibleReferenceParser');
 const { scriptureFlowText } = require('../bible/ScriptureText');
 const { scriptureDisplay, scriptureCredit } = require('./SlideFormatting');
 const { resolveNativeTextPreset } = require('./NativePresetCatalog');
-const { singerSourceCue, singerNextLine } = require('./SingerPresentation');
+const { singerSourceCue, nextSlideHint, singerNextLine } = require('./SingerPresentation');
 const { MAX_IMAGE_PIXELS } = require('./ServiceProject');
 
 const MAX_RENDER_PIXELS = 3840 * 2160;
@@ -331,7 +332,7 @@ function cueTextForChannel(cue, channelId) {
 function nativeCueSingerNext(nextCue, channelId) {
   return singerNextFromText(
     nextCue !== null && nextCue !== undefined,
-    singerNextLine(cueTextForChannel(singerSourceCue(nextCue, channelId), channelId))
+    nextSlideHint(singerSourceCue(nextCue, channelId), channelId)
   );
 }
 
@@ -379,7 +380,7 @@ function singerCueMetadata(cue, sourceChannelId, nextCue = null) {
     ...cueMetadataForChannel(singerSourceCue(cue, sourceChannelId), sourceChannelId),
     layout: 'singer-current-next',
     sourceChannelId,
-    next: nativeCueSingerNext(nextCue, sourceChannelId)
+    next: cue.showNextSlideHints === false ? {state: 'blank', text: ''} : nativeCueSingerNext(nextCue, sourceChannelId)
   };
 }
 
@@ -550,7 +551,7 @@ class NativeSlideRenderer {
     const quoteCredit = presetId === 'wotbc-sermon-quote';
     const composites = [];
     const hasTitle = Boolean(String(title || '').trim()) && preset.showTitle;
-    const resolutionScale = Math.min(1, this.width / 1920, this.height / 1080);
+    const resolutionScale = Math.min(1, this.width / 1920, this.captionLayout ? Infinity : this.height / 1080);
     let titleBottom = 0;
     if (hasTitle) {
       const titleWidth = this.width * (churchLayout ? 0.98 : 0.82);
@@ -610,7 +611,7 @@ class NativeSlideRenderer {
       fontSize: churchLayout ? preset.bodySize * resolutionScale : preset.bodySize,
       minimumFontSize: Math.max(
         14,
-        Math.round(preset.bodyMinimumSize * resolutionScale)
+        Math.round((this.captionLayout ? Math.min(32, preset.bodyMinimumSize) : preset.bodyMinimumSize) * resolutionScale)
       ),
       foreground: preset.bodyForeground || '#f8fafc',
       weight: preset.bodyWeight,
@@ -665,7 +666,7 @@ class NativeSlideRenderer {
     onTypography = () => {}
   }) {
     const composites = [];
-    const logicalScale = Math.min(this.width / 1920, this.height / 1080);
+    const logicalScale = Math.min(this.width / 1920, this.captionLayout ? Infinity : this.height / 1080);
     const titleLayer = await this._textLayer(title, {
       width: this.width * 0.94,
       maxHeight: this.height * (subtitle ? 0.42 : 0.7),
@@ -806,6 +807,19 @@ class NativeSlideRenderer {
 
   async renderCue(cue, channelId, outputPath = null) {
     if (!cue || typeof cue !== 'object') throw new TypeError('A compiled cue is required');
+    const reserved = reservation(cue.translationSettings, channelId);
+    if (reserved > 0 && !this.captionLayout) {
+      // Render the smaller content region at full width, then pad the saved
+      // preview to the original 16:9 frame. Never resize the resulting bitmap.
+      const contentRenderer = Object.assign(Object.create(Object.getPrototypeOf(this)), this, {
+        height: Math.floor(this.height * (1 - reserved)), captionLayout: true
+      });
+      const content = await contentRenderer.renderCue({...cue, translationSettings: undefined}, channelId);
+      const pipeline = this._background('#000000').composite([{input: content.info.data, left: 0, top: 0}])
+        .jpeg({quality: this.jpegQuality, chromaSubsampling: '4:4:4'});
+      const result = outputPath ? {info: await pipeline.toFile(outputPath)} : await pipeline.toBuffer({resolveWithObject:true});
+      return {...content, info: {...result.info, ...(result.data ? {data:result.data} : {})}};
+    }
     const channel = cue.channels?.[channelId];
     let pipeline;
     let textValue = '';
@@ -840,7 +854,7 @@ class NativeSlideRenderer {
         const display = scriptureDisplay(bibleBlock, cue.presetId);
         textValue = display.text;
         pipeline = await this._renderTextSlide({
-          title: cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : bibleBlock.reference,
+          title: cue.presetId === 'wotbc-sermon-scripture' ? textBlocks.find(block => block.role === 'title')?.text || '' : (bibleBlock.displayReference ?? bibleBlock.reference),
           textStyle: cue.textStyle,
           credit: scriptureCredit(bibleBlock),
           body: textValue,
@@ -926,8 +940,9 @@ class NativeSlideRenderer {
   }
 
   async renderSingerPreview(cue, sourceChannelId, nextCue = null, outputPath = null) {
-    cue = singerSourceCue(cue, sourceChannelId);
+    cue = {...singerSourceCue(cue, sourceChannelId), translationSettings: undefined};
     const current = await this.renderCue(cue, sourceChannelId);
+    if (cue.showNextSlideHints === false) return { ...current, metadata: singerCueMetadata(cue, sourceChannelId, nextCue) };
     const padding = Math.max(8, Math.round(this.width * 0.012));
     const footerHeight = Math.max(68, Math.round(this.height * 0.19));
     const dividerThickness = Math.max(4, Math.round(this.height * 0.011));
@@ -943,7 +958,7 @@ class NativeSlideRenderer {
       .jpeg({ quality: this.jpegQuality, chromaSubsampling: '4:4:4' })
       .toBuffer();
 
-    const next = nativeCueSingerNext(nextCue, sourceChannelId);
+    const next = cue.showNextSlideHints === false ? {state: 'blank', text: ''} : nativeCueSingerNext(nextCue, sourceChannelId);
     const footerText = next.state === 'text'
       ? next.text
       : next.state === 'end' ? 'End of presentation' : '';

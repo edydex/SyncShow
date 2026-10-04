@@ -34,6 +34,8 @@ const state = {
   suggestedService: null,
   testOutput: { enabled: false, displayId: null, layout: 'vertical', rotation: 0 },
   testOutputSaving: false,
+  presentationMode: 'auto',
+  lastSingleScreenRole: null,
   loadLocalServices: {
     items: [],
     busy: false,
@@ -44,7 +46,11 @@ const state = {
   cachedRestorePlan: null,
   restoreGroupId: null,
   startAttempt: null,
+  initializingLoad: true,
+  queuedStart: null,
+  loadActionNotice: null,
   serviceHandoff: null,
+  loadFreshness: { busy: false, message: '', kind: '' },
   preparedServiceRestore: { status: 'none' },
   preparedServiceDateConfirmations: new Set(),
   postShowOutcome: null,
@@ -123,7 +129,7 @@ const state = {
     busy: false,
     error: null
   },
-  thumbnailSelection: 'all',
+  thumbnailSelection: 'default',
   thumbnailZoom: 100,  // percentage, 50-200
   singerFontSize: 36,   // px, 12-120
   singerCharLimit: 70,  // characters, 10-500
@@ -173,6 +179,7 @@ function setSelectValuePreservingCustomOption(select, value, formatLabel) {
 
 // DOM Elements
 const elements = {
+  loadPrepareWarning: document.getElementById('loadPrepareWarning'),
   appSubtitle: document.getElementById('appSubtitle'),
   btnStagePrepare: document.getElementById('btnStagePrepare'),
   btnStageLoad: document.getElementById('btnStageLoad'),
@@ -277,6 +284,9 @@ const elements = {
   loadModeTabs: Array.from(document.querySelectorAll('[data-load-tab]')),
   loadModePanels: Array.from(document.querySelectorAll('[data-load-panel]')),
   btnTestOutput: document.getElementById('btnTestOutput'),
+  presentationMode: document.getElementById('presentationMode'),
+  presentationScreenSummary: document.getElementById('presentationScreenSummary'),
+  presentationModeHelp: document.getElementById('presentationModeHelp'),
   testOutputEnabled: document.getElementById('testOutputEnabled'),
   testOutputDisplay: document.getElementById('testOutputDisplay'),
   testOutputLayout: document.getElementById('testOutputLayout'),
@@ -318,6 +328,10 @@ const elements = {
   preflightTitle: document.getElementById('preflightTitle'),
   preflightDescription: document.getElementById('preflightDescription'),
   preflightError: document.getElementById('preflightError'),
+  preflightLoadNotice: document.getElementById('preflightLoadNotice'),
+  loadActionStatus: document.getElementById('loadActionStatus'),
+  loadActionMessage: document.getElementById('loadActionMessage'),
+  btnCancelLoadAction: document.getElementById('btnCancelLoadAction'),
   preflightChoices: document.getElementById('preflightChoices'),
   preflightReview: document.getElementById('preflightReview'),
   btnCancelPreflight: document.getElementById('btnCancelPreflight'),
@@ -387,6 +401,11 @@ const elements = {
   btnClearDisplays: document.getElementById('btnClearDisplays'),
   btnStopDisplays: document.getElementById('btnStopDisplays'),
   btnBackToSetup: document.getElementById('btnBackToSetup'),
+  btnShowAdjust: document.getElementById('btnShowAdjust'),
+  btnCloseShowAdjust: document.getElementById('btnCloseShowAdjust'),
+  showAdjustPanel: document.getElementById('showAdjustPanel'),
+  showAdjustViewport: document.getElementById('showAdjustViewport'),
+  showAdjustStatus: document.getElementById('showAdjustStatus'),
   btnPrevSlide: document.getElementById('btnPrevSlide'),
   btnNextSlide: document.getElementById('btnNextSlide'),
   volunteerControlBar: document.getElementById('volunteerControlBar'),
@@ -480,6 +499,12 @@ let communityPollTimer = null;
 let communityStatusUnsubscribe = null;
 let communityPlannerStateUnsubscribe = null;
 let communityPlannerLayoutFrame = null;
+let loadFreshnessPromise = null;
+const loadWorkWaiters = new Set();
+let showAdjustOpen = false;
+let showAdjustBusy = false;
+let showAdjustGeneration = 0;
+let plannerConflictReview = null;
 
 function setTextIfChanged(element, value) {
   const text = String(value ?? '');
@@ -538,7 +563,8 @@ async function init() {
       api: window.api,
       prepareController,
       onStatus: setStatus,
-      onLoaded: refreshPublishedProject
+      onLoaded: refreshPublishedProject,
+      onBusyChanged: () => checkReadyState()
     }).initialize();
   }
   setupEventListeners();
@@ -588,10 +614,16 @@ async function init() {
 
   // Register main-process listeners before requesting initial state so a
   // display-change notification cannot be lost during startup.
+  await loadAppState();
+  state.initializingLoad = false;
+  checkReadyState();
+  await refreshLoadedService();
+  // Connection/capability discovery can be slow when offline. Restore the
+  // verified local package and finish the bounded revision check first, so
+  // these background settings cannot hold a queued start hostage.
   await refreshPrivateDriveOAuthState();
   await refreshCommunityStatus();
   await refreshCommunityPlannerState();
-  await loadAppState();
   await refreshRemoteControl({ refreshBindings: true });
   await initializeServiceFolder();
 }
@@ -602,6 +634,10 @@ function setupEventListeners() {
   elements.btnStagePrepare.addEventListener('click', () => navigateWorkflowStage('prepare'));
   elements.btnStageLoad.addEventListener('click', () => navigateWorkflowStage('load'));
   elements.btnStageShow.addEventListener('click', () => navigateWorkflowStage('show'));
+  document.addEventListener('pointerdown', cancelPendingPrepareLoad, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') cancelPendingPrepareLoad();
+  }, true);
   elements.btnPrepareModeCommunity.addEventListener('click', () => activatePrepareMode('community'));
   elements.btnPrepareModeLocal.addEventListener('click', () => activatePrepareMode('local'));
   elements.btnOpenCommunityServiceFromLoad.addEventListener('click', async () => {
@@ -655,6 +691,7 @@ function setupEventListeners() {
   });
   elements.outputPreviewSelect.addEventListener('change', selectOutputPreview);
   elements.btnTestOutput.addEventListener('click', () => startPresentation(true));
+  elements.btnCancelLoadAction.addEventListener('click', () => cancelQueuedStart());
   [elements.testOutputEnabled, elements.testOutputDisplay, elements.testOutputLayout, elements.testOutputRotation]
     .forEach(input => input.addEventListener('change', saveTestOutputSettings));
 
@@ -672,6 +709,10 @@ function setupEventListeners() {
     tab.addEventListener('keydown', handlePrepareAddTabKeydown);
   });
   elements.btnStartPresentation.addEventListener('click', startPresentation);
+  elements.presentationMode.addEventListener('change', () => {
+    state.presentationMode = elements.presentationMode.value;
+    checkReadyState();
+  });
   elements.btnRestorePrevious.addEventListener('click', restoreCachedPresentations);
   elements.btnChooseServiceFolder.addEventListener('click', chooseAndLinkServiceFolder);
   elements.btnConnectPrivateDrive.addEventListener('click', connectPrivateDrive);
@@ -727,6 +768,12 @@ function setupEventListeners() {
   elements.btnClearDisplays.addEventListener('click', clearDisplays);
   elements.btnStopDisplays.addEventListener('click', stopDisplays);
   elements.btnBackToSetup.addEventListener('click', () => backToSetup('load'));
+  document.getElementById('btnReviewPlannerConflict').addEventListener('click', reviewPlannerConflict);
+  document.getElementById('btnReviewAdjustConflict').addEventListener('click', reviewPlannerConflict);
+  document.getElementById('btnPlannerUseCommunity').addEventListener('click', () => resolvePlannerConflict('use-community'));
+  document.getElementById('btnPlannerKeepLocal').addEventListener('click', () => resolvePlannerConflict('keep-local'));
+  elements.btnShowAdjust.addEventListener('click', toggleShowAdjust);
+  elements.btnCloseShowAdjust.addEventListener('click', closeShowAdjust);
   elements.btnShowHandoffCompleted.addEventListener(
     'click',
     completeAndOpenPostShowSermonHandoff
@@ -1247,6 +1294,7 @@ function activateLoadMode(mode, { focusTab = false } = {}) {
   const activeTab = elements.loadModeTabs.find(tab => tab.dataset.loadTab === mode)
     || elements.loadModeTabs[0];
   if (!activeTab) return;
+  if (state.loadMode !== activeTab.dataset.loadTab) cancelQueuedStart('Start cancelled because the service source changed.');
   state.loadMode = activeTab.dataset.loadTab;
   elements.loadModeTabs.forEach(tab => {
     const selected = tab === activeTab;
@@ -1258,7 +1306,11 @@ function activateLoadMode(mode, { focusTab = false } = {}) {
     panel.hidden = panel.dataset.loadPanel !== state.loadMode;
   });
   placeServiceInputCards();
-  if (state.loadMode === 'syncshow') refreshLoadLocalServices();
+  if (state.loadMode === 'syncshow') {
+    refreshLoadLocalServices();
+    // Let the service-opening controller finish its publication callback first.
+    if (!state.community.handoffBusy) window.setTimeout(() => refreshLoadedService(), 0);
+  }
   if (focusTab) activeTab.focus();
 }
 
@@ -1397,8 +1449,8 @@ async function saveTestOutputSettings() {
 }
 
 async function openLocalServiceInPrepare(projectId) {
-  await setWorkflowStage('prepare', { localTools: true });
-  await prepareController?.openProjectById?.(projectId);
+  await setWorkflowStage('prepare');
+  if (state.community.plannerOpen) communityCheckedResult(await window.api.openPlannerService(projectId));
 }
 
 async function loadLocalService(project, button) {
@@ -1577,7 +1629,9 @@ function setWorkflowStage(stage) {
     ? arguments[1]
     : undefined;
   if (!['prepare', 'load', 'show'].includes(stage)) return Promise.resolve(false);
+  if (stage !== 'load') cancelQueuedStart();
   state.workflowStage = stage;
+  if (stage !== 'show') { ++showAdjustGeneration; window.api.setPlannerShowMode?.(false).catch(() => {}); showAdjustOpen = false; elements.showAdjustPanel.hidden = true; elements.btnShowAdjust.setAttribute('aria-pressed', 'false'); }
   for (const candidate of ['prepare', 'load', 'show']) {
     document.body.classList.toggle(`${candidate}-stage`, candidate === stage);
   }
@@ -1605,11 +1659,7 @@ function setWorkflowStage(stage) {
 
   let activation = Promise.resolve(true);
   if (stage === 'prepare') {
-    const requestedMode = activationOptions?.localTools === true
-      ? 'local'
-      : communityIsConnected()
-        ? state.prepareMode
-        : 'local';
+    const requestedMode = 'community';
     activation = activatePrepareMode(requestedMode, activationOptions);
   } else if (stage === 'load') {
     scheduleCommunityPlannerLayout();
@@ -1621,14 +1671,29 @@ function setWorkflowStage(stage) {
   return activation;
 }
 
+function setPrepareLoadWarning(message) {
+  elements.loadPrepareWarning.textContent = message;
+  elements.loadPrepareWarning.hidden = !message;
+}
+
+function cancelPendingPrepareLoad() {
+  if (state.workflowStage !== 'load' || !state.community.handoffBusy) return;
+  state.community.handoffGeneration++;
+  state.community.handoffBusy = false;
+  setPrepareLoadWarning('Prepare’s latest edits have not been loaded. Choose a saved service, or return to Prepare to save.');
+}
+
 async function navigateWorkflowStage(stage) {
   if (stage === state.workflowStage) {
     if (stage === 'prepare' && state.prepareMode === 'community') {
       await openCommunityPrepare();
+    } else if (stage === 'load') {
+      await refreshLoadedService();
     }
     return;
   }
-  if (state.workflowStage === 'prepare' && prepareController?.isBusy?.()) {
+  if (state.workflowStage === 'prepare' && prepareController?.isBusy?.()
+    && !(stage === 'load' && state.prepareMode === 'community')) {
     setStatus('Wait for the current Prepare change to finish before leaving this screen');
     return;
   }
@@ -1647,6 +1712,45 @@ async function navigateWorkflowStage(stage) {
     return;
   }
 
+  if (stage === 'load' && state.workflowStage === 'prepare' && state.prepareMode === 'community') {
+    const generation = state.community.handoffGeneration = (state.community.handoffGeneration || 0) + 1;
+    const loadedService = state.serviceHandoff;
+    const current = () => state.community.handoffGeneration === generation
+      && state.workflowStage === 'load' && state.loadMode === 'syncshow'
+      && state.serviceHandoff === loadedService && !state.activeLaunchPlan && !state.isStarting;
+    state.community.handoffBusy = true;
+    setPrepareLoadWarning('Load is open. Checking Prepare’s save; the previously loaded slides remain unchanged until saving is confirmed.');
+    await setWorkflowStage('load');
+    if (!current()) {
+      if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
+      return;
+    }
+    let timeout;
+    try {
+      const handoff = communityCheckedResult(await Promise.race([
+        window.api.prepareCommunityPlannerForLoad(),
+        new Promise((resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error('Prepare has not confirmed saving yet. Its latest edits have not been loaded. Return to Prepare to save, or choose a saved service below.')), 3000);
+        })
+      ]));
+      if (!current()) return;
+      setPrepareLoadWarning('');
+      if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId, { isCurrent: current, fresh: false });
+    } catch (error) {
+      if (current()) {
+        const warning = `Load is available, but Prepare’s latest edits have not been loaded. ${operatorErrorMessage(error, 'Save in Prepare before loading that service.')}`;
+        setPrepareLoadWarning(warning);
+        setStatus(warning);
+      }
+    } finally {
+      clearTimeout(timeout);
+      if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
+      updateWorkflowNavigationAvailability();
+      checkReadyState();
+    }
+    if (state.community.handoffGeneration === generation && state.workflowStage === 'load') await refreshLoadedService();
+    return;
+  }
   setWorkflowStage(stage);
 }
 
@@ -1659,6 +1763,7 @@ async function loadAppState() {
     const appState = await window.api.getAppState();
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
+    state.activeLaunchPlan = appState.activeLaunchPlan;
     state.displays = appState.displays;
     applyServiceHandoff(appState.serviceHandoff);
     state.preparedServiceRestore = appState.preparedServiceRestore || {
@@ -1756,9 +1861,82 @@ function applyServiceHandoff(rawHandoff) {
   const nextKey = state.serviceHandoff
     ? `${state.serviceHandoff.project.id}:${state.serviceHandoff.project.revisionId}`
     : null;
-  if (previousKey !== nextKey) state.postShowOutcome = null;
+  if (previousKey !== nextKey) {
+    state.postShowOutcome = null;
+    state.loadFreshness.message = '';
+    renderLoadFreshness();
+  }
   renderLoadServiceHandoff();
   renderShowCueContext();
+}
+
+function renderLoadFreshness() {
+  const node = document.getElementById('loadServiceFreshness');
+  if (!node) return;
+  node.textContent = state.loadFreshness.message;
+  node.hidden = !state.loadFreshness.message;
+  node.dataset.kind = state.loadFreshness.kind;
+  renderLoadActionStatus();
+}
+
+async function refreshLoadedService({ reuseRecent = false } = {}) {
+  if (loadFreshnessPromise) return loadFreshnessPromise;
+  const loaded = state.serviceHandoff;
+  if (!loaded || !sharedServiceController?.refreshLoaded || state.workflowStage !== 'load'
+    || state.loadMode !== 'syncshow' || state.community.handoffBusy
+    || state.isPresenting || state.activeLaunchPlan || state.isStarting || state.startAttempt) return;
+  const key = `${loaded.project.id}:${loaded.project.revisionId}`;
+  const age = Date.now() - (state.loadFreshness.checkedAt || 0);
+  const reusable = ['current', 'updated', 'unavailable', 'unshared'].includes(state.loadFreshness.lastResult?.state);
+  if (reuseRecent && reusable && state.loadFreshness.checkedKey === key && age >= 0 && age < 10000) return state.loadFreshness.lastResult;
+  const current = () => state.serviceHandoff === loaded && state.workflowStage === 'load'
+    && state.loadMode === 'syncshow' && !state.isPresenting && !state.activeLaunchPlan
+    && !state.isStarting && !state.startAttempt;
+  const progress = message => {
+    if (!current()) return;
+    state.loadFreshness.message = message;
+    state.loadFreshness.kind = '';
+    if (state.queuedStart) state.queuedStart.message = message;
+    renderLoadFreshness();
+  };
+  state.loadFreshness.busy = true;
+  progress('Checking for the latest saved version…');
+  checkReadyState();
+  loadFreshnessPromise = (async () => {
+    const result = window.navigator?.onLine === false
+      ? { state: 'unavailable', offline: true }
+      : await sharedServiceController.refreshLoaded(loaded.project.id, loaded.project.revisionId, { isCurrent: current, progress });
+    if (result?.state === 'superseded') return;
+    if (!current() && !(['updated', 'queued', 'local-newer'].includes(result?.state) && state.serviceHandoff?.project?.id === loaded.project.id
+      && state.workflowStage === 'load' && !state.activeLaunchPlan)) return;
+    const messages = {
+      current: 'Latest Community version checked. Ready to show.',
+      updated: 'Updated to the latest Community version. Ready to show.',
+      unavailable: 'Could not check Community. The saved package is available offline; its latest version has not been verified.',
+      'prepare-pending': 'Prepare has local edits waiting to sync or be reviewed. The loaded package has been kept. Open in Prepare to continue.',
+      conflict: 'Community and this computer both changed. Review both versions; the loaded package has been kept.',
+      queued: 'Loaded local edits. They are waiting to sync with Community.',
+      'local-newer': 'Loaded this computer’s newer edits. They still need to sync with Community.',
+      busy: 'A service is already being opened. Check the latest version again when it finishes.',
+      unshared: ''
+    };
+    if (['current', 'updated'].includes(result?.state) && !elements.loadPrepareWarning.hidden) {
+      setPrepareLoadWarning('Community’s latest saved version is loaded. Prepare did not confirm its save; return to Prepare to check any pending edits.');
+    }
+    state.loadFreshness.message = messages[result?.state] || '';
+    state.loadFreshness.kind = ['current', 'updated'].includes(result?.state) ? 'success' : 'warning';
+    if (result?.state === 'unavailable' && result.phase === 'prepare') state.loadFreshness.message = 'The update could not be prepared. Using the previously saved local copy.';
+    state.loadFreshness.lastResult = result;
+    state.loadFreshness.checkedAt = Date.now();
+    state.loadFreshness.checkedKey = `${state.serviceHandoff.project.id}:${state.serviceHandoff.project.revisionId}`;
+    renderLoadFreshness();
+    return result;
+  })().finally(() => {
+    state.loadFreshness.busy = false;
+    loadFreshnessPromise = null;
+    checkReadyState();
+  });
+  return loadFreshnessPromise;
 }
 
 function planningStatusLabel(status) {
@@ -2731,6 +2909,176 @@ function renderCommunitySettings() {
   }
 }
 
+async function reviewPlannerConflict() {
+  try {
+    plannerConflictReview = communityCheckedResult(await window.api.reviewPlannerConflict());
+    const describe = value => `${value.title} · version ${value.syncVersion} · ${new Date(value.changedAt).toLocaleString()}`;
+    document.getElementById('plannerConflictLocal').textContent = describe(plannerConflictReview.local);
+    document.getElementById('plannerConflictRemote').textContent = describe(plannerConflictReview.remote);
+    await window.api.layoutCommunityPlanner({visible:false});
+    document.getElementById('plannerConflictDialog').showModal();
+    document.getElementById('plannerConflictDialog').addEventListener('close', scheduleCommunityPlannerLayout, {once:true});
+  } catch (error) { setStatus(error.message); }
+}
+async function resolvePlannerConflict(resolution) {
+  if (!plannerConflictReview) return;
+  try {
+    const result = communityCheckedResult(await window.api.resolvePlannerConflict({syncId:plannerConflictReview.syncId,remoteRevision:plannerConflictReview.remoteRevision,resolution}));
+    if (!result.resolved) throw new Error('Community changed again. Review both versions before choosing.');
+    document.getElementById('plannerConflictDialog').close();
+    plannerConflictReview = null;
+    setStatus('Version choice saved. Click a slide or Next to show the saved changes.');
+  } catch (error) { document.getElementById('plannerConflictStatus').textContent = error.message; }
+}
+
+function renderShowAdjustStatus() {
+  document.getElementById('showAdjustDraft').textContent = state.community.plannerShowDraft
+    ? 'Backstage draft · changes are not on screen yet'
+    : 'Adjust backstage · click a slide or Next to show edits';
+  elements.showAdjustStatus.textContent = state.community.plannerConflicts?.length
+    ? 'Both versions changed. Your edits are safe on this computer; review Community sync. Click a slide or Next to show the draft.'
+    : state.community.plannerDraftPreparing
+      ? 'Saved backstage. Preparing the updated slides…'
+    : state.community.plannerPending
+      ? 'Saved on this computer. Waiting to sync. Click a slide or Next to show the draft.'
+      : 'Changes are saved backstage. Click a slide or Next to show them.';
+}
+
+async function toggleShowAdjust() {
+  if (showAdjustOpen) return closeShowAdjust();
+  if (showAdjustBusy) return;
+  if (!state.serviceHandoff?.project?.id) {
+    setStatus('Adjust is available for a prepared native service. Prepare a service before using Adjust.'); return;
+  }
+  showAdjustOpen = true;
+  const generation = ++showAdjustGeneration;
+  const current = () => generation === showAdjustGeneration && showAdjustOpen && state.workflowStage === 'show';
+  elements.showAdjustPanel.hidden = false;
+  elements.btnShowAdjust.setAttribute('aria-pressed', 'true');
+  renderShowAdjustStatus();
+  try {
+    elements.showAdjustStatus.textContent='Opening the active slide…';
+    // Main selects the active local Show and its current cue. No service picker,
+    // server page, or remote document read participates in this path.
+    const rect=elements.showAdjustViewport.getBoundingClientRect();
+    const result=communityCheckedResult(await window.api.openActiveShowAdjust({bounds:{
+      x:Math.max(0,Math.round(rect.left)),y:Math.max(0,Math.round(rect.top)),
+      width:Math.round(rect.width),height:Math.round(rect.height)
+    }}));
+    if (!current()) return;
+    state.community.plannerOpen=result.opened===true;
+    await syncCommunityPlannerLayout();
+  } catch (error) { if (current()) elements.showAdjustStatus.textContent = error.message; }
+}
+
+async function closeShowAdjust() {
+  if (showAdjustBusy) return;
+  showAdjustBusy = true;
+  ++showAdjustGeneration;
+  // Hide the native editor before waiting for a save. It sits above the web
+  // thumbnail grid, so leaving it visible can swallow clicks after closing.
+  showAdjustOpen = false;
+  elements.showAdjustPanel.hidden = true;
+  elements.btnShowAdjust.setAttribute('aria-pressed', 'false');
+  scheduleCommunityPlannerLayout();
+  try {
+    await window.api.layoutCommunityPlanner({ visible: false });
+    await window.api.setPlannerShowMode(false);
+    if (state.community.plannerOpen) communityCheckedResult(await window.api.flushCommunityPlanner());
+  } catch (error) {
+    setStatus(`Adjust closed. ${error.message} Your edits remain backstage; reopen Adjust to review them.`);
+  } finally {
+    showAdjustBusy = false;
+    renderVolunteerShowControls();
+    elements.btnShowAdjust.focus({preventScroll:true});
+    updateThumbnailHighlight({behavior:'instant'});
+  }
+}
+
+let backstageRefreshPromise = null;
+let backstagePreview = null;
+let backstagePreviewKey = null;
+let backstagePreviewGeneration = 0;
+
+function showBackstagePreview() {
+  return state.workflowStage==='show' && state.activeLaunchPlan
+    && backstagePreview?.projectId===state.serviceHandoff?.project?.id ? backstagePreview : null;
+}
+
+function thumbnailCurrentIndex() {
+  const preview=showBackstagePreview();
+  return preview ? preview.cueIds.indexOf(state.showState?.currentCue?.id || cueAt(state.currentSlide)?.id) : state.currentSlide;
+}
+
+function clearBackstagePreview() {
+  ++backstagePreviewGeneration;
+  backstagePreviewKey=null;
+  const changed=Boolean(backstagePreview);
+  backstagePreview=null;
+  if(changed)renderThumbnails();
+}
+
+async function refreshBackstagePreview(key) {
+  if(state.workflowStage!=='show' || !state.activeLaunchPlan || key===backstagePreviewKey)return;
+  backstagePreviewKey=key;
+  const generation=++backstagePreviewGeneration,revisionId=state.serviceHandoff?.project?.revisionId;
+  try {
+    const preview=communityCheckedResult(await window.api.getBackstagePreview(key));
+    if(generation!==backstagePreviewGeneration || state.workflowStage!=='show')return;
+    if(revisionId!==state.serviceHandoff?.project?.revisionId) {backstagePreviewKey=null;return;}
+    if(!preview || preview.key!==key || preview.projectId!==state.serviceHandoff?.project?.id) {backstagePreviewKey=null;return;}
+    backstagePreview=preview;
+    const scrollTop=elements.thumbnailsGrid.scrollTop;
+    const focusedCue=document.activeElement?.dataset?.cueId;
+    renderThumbnails();
+    elements.thumbnailsGrid.scrollTop=scrollTop;
+    if(focusedCue)[...elements.thumbnailsGrid.querySelectorAll('.thumbnail-item')].find(item=>item.dataset.cueId===focusedCue)?.focus({preventScroll:true});
+  } catch(error) {
+    if(generation===backstagePreviewGeneration) {backstagePreviewKey=null;setStatus(`Could not refresh saved slide previews. ${error.message}`);}
+  }
+}
+
+async function takeBackstagePreviewSlide(cueId,preview) {
+  if(showAdjustOpen || showEndSessionBlocksAction() || state.cueNavigationBusy)return;
+  state.cueNavigationBusy=true;
+  const action=beginShowOutputAction();
+  elements.btnPrevSlide.setAttribute('aria-busy','true');
+  elements.btnNextSlide.setAttribute('aria-busy','true');
+  updateBibleLiveIndicator();
+  try {
+    const result=await window.api.takeBackstagePreview({cueId,sessionId:preview.sessionId,projectId:preview.projectId});
+    applyShowOutputActionResult(action,result);
+    if(result?.preparedChanged)await refreshTakenBackstageDraft();
+  } catch(error) {
+    if(action.id===state.showActionRequest)showOutputActionError('Could not show the saved slide',error);
+  } finally {
+    state.cueNavigationBusy=false;
+    elements.btnPrevSlide.removeAttribute('aria-busy');
+    elements.btnNextSlide.removeAttribute('aria-busy');
+    updateBibleLiveIndicator();
+  }
+}
+
+async function refreshTakenBackstageDraft() {
+  if (backstageRefreshPromise) return backstageRefreshPromise;
+  backstageRefreshPromise = (async () => {
+    const current = await window.api.getAppState();
+    state.currentSlide = current.currentSlide; state.totalSlides = current.totalSlides;
+    state.activeLaunchPlan = current.activeLaunchPlan;
+    applyServiceHandoff(current.serviceHandoff);
+    applyRuntimePresentationState(current.presentations, { replaceSource: true });
+    if (current.showState) handleShowStateChanged(current.showState);
+    await loadSlidesIfNeeded(); renderThumbnails();
+    if(state.community.plannerShowDraftPreviewKey)void refreshBackstagePreview(state.community.plannerShowDraftPreviewKey);
+    renderShowAdjustStatus();
+    setStatus(current.showState?.phase === 'live'
+      ? 'Saved draft shown. Further edits stay backstage until you click a slide or Next.'
+      : 'Saved draft loaded. Restore the outputs before continuing.');
+  })();
+  try { return await backstageRefreshPromise; }
+  finally { backstageRefreshPromise = null; }
+}
+
 function renderCommunityPrepare() {
   const available = typeof window.api?.openCommunityPlanner === 'function';
   const connected = available && communityIsConnected();
@@ -2743,7 +3091,7 @@ function renderCommunityPrepare() {
   } else if (!connected) {
     elements.communityPrepareStatus.dataset.kind = 'warning';
     elements.communityPrepareStatus.textContent =
-      'Connect Heritage Community from Admin Settings on the Load page, or use This computer.';
+      'Connect Heritage Community once in Admin Settings. The same editor and downloaded library stay available offline.';
   } else if (state.community.plannerError) {
     elements.communityPrepareStatus.dataset.kind = 'error';
     elements.communityPrepareStatus.textContent = state.community.plannerError;
@@ -2752,8 +3100,10 @@ function renderCommunityPrepare() {
       'Opening the planner supplied by Heritage Community…';
   } else if (state.community.plannerOpen) {
     elements.communityPrepareStatus.dataset.kind = 'success';
-    elements.communityPrepareStatus.textContent =
-      'Connected. Loading the shared planner…';
+    elements.communityPrepareStatus.textContent = state.community.plannerConflicts?.length
+      ? 'Both versions changed. Local edits are saved; review Community before syncing.'
+      : state.community.plannerPending ? 'Saved on this computer. Waiting to sync.'
+      : state.community.plannerOffline ? 'Working offline with the same editor.' : 'Connected. Loading the shared planner…';
   } else {
     elements.communityPrepareStatus.textContent =
       'Loading the shared planner…';
@@ -2762,11 +3112,12 @@ function renderCommunityPrepare() {
 }
 
 function communityPlannerShouldBeVisible() {
-  return state.workflowStage === 'prepare'
-    && state.prepareMode === 'community'
-    && communityIsConnected()
+  return ((state.workflowStage === 'show' && showAdjustOpen)
+    || (state.workflowStage === 'prepare' && state.prepareMode === 'community'))
+    && (showAdjustOpen || communityIsConnected())
+    && !document.getElementById('plannerConflictDialog').open
     && state.community.plannerOpen
-    && !elements.communityPrepareShell.hidden;
+    && (showAdjustOpen || !elements.communityPrepareShell.hidden);
 }
 
 async function syncCommunityPlannerLayout() {
@@ -2775,7 +3126,7 @@ async function syncCommunityPlannerLayout() {
     await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
     return;
   }
-  const rect = elements.communityPlannerViewport.getBoundingClientRect();
+  const rect = (showAdjustOpen ? elements.showAdjustViewport : elements.communityPlannerViewport).getBoundingClientRect();
   if (rect.width < 640 || rect.height < 420) {
     await window.api.layoutCommunityPlanner({ visible: false }).catch(() => {});
     return;
@@ -2808,7 +3159,7 @@ function scheduleCommunityPlannerLayout() {
 }
 
 async function activatePrepareMode(mode, options = {}) {
-  const selected = mode === 'local' ? 'local' : 'community';
+  const selected = 'community';
   state.prepareMode = selected;
   const local = selected === 'local';
   elements.communityPrepareShell.hidden = local;
@@ -2839,6 +3190,22 @@ async function activatePrepareMode(mode, options = {}) {
 
 function handleCommunityPlannerStateChanged(payload = {}) {
   const wasOpen = state.community.plannerOpen;
+  state.community.plannerOffline = payload.offline === true;
+  state.community.plannerPending = payload.pending || 0;
+  state.community.plannerConflicts = payload.conflicts || [];
+  state.community.plannerShowDraft = payload.showDraft === true;
+  state.community.plannerShowDraftReady = payload.showDraftReady === true;
+  state.community.plannerDraftPreparing = payload.showDraftPreparing === true;
+  state.community.plannerShowDraftPreviewKey = payload.showDraftPreviewKey || null;
+  if(!payload.showDraft)clearBackstagePreview();
+  else if(payload.showDraftPreviewKey)void refreshBackstagePreview(payload.showDraftPreviewKey);
+  renderBackstagePreviewStatus();
+  if (showAdjustOpen) renderShowAdjustStatus();
+  const hasConflicts = state.community.plannerConflicts.length > 0;
+  document.getElementById('plannerSyncStrip').hidden = !hasConflicts && !payload.offline && !payload.pending;
+  document.getElementById('plannerSyncStatus').textContent = hasConflicts ? 'Both versions changed. Your local edits are preserved.' : payload.pending ? 'Saved on this computer. Waiting to sync.' : 'Working offline with your downloaded library.';
+  document.getElementById('btnReviewPlannerConflict').hidden = !hasConflicts;
+  document.getElementById('btnReviewAdjustConflict').hidden = !hasConflicts;
   state.community.plannerOpen = payload?.open === true;
   state.community.plannerBusy = false;
   state.community.plannerError = typeof payload?.error?.message === 'string'
@@ -4012,12 +4379,10 @@ function renderServiceRoleSummary(scan, selectedSet) {
 function serviceSetWarnings(scan, selectedSet) {
   const warnings = [];
   if (selectedSet.dateStatus !== 'not-applicable'
-    && selectedSet.serviceDate !== scan.requestedDate) {
+    && window.SyncShowPreparedServiceGuard.isPastServiceDate(selectedSet.serviceDate, serviceDateForProfile())) {
     warnings.push({
       kind: 'warning',
-      text: selectedSet.serviceDate
-        ? `These files are dated ${formatServiceDate(selectedSet.serviceDate)}, not the selected service date (${formatServiceDate(scan.requestedDate)}).`
-        : `These files have no recognized date. Confirm that they are for ${formatServiceDate(scan.requestedDate)} before starting.`
+      text: `These files are dated ${formatServiceDate(selectedSet.serviceDate)}, which is before today. Check that you want to use this older service.`
     });
   }
 
@@ -4275,7 +4640,8 @@ function renderServiceFolder() {
     elements.serviceSetResults.hidden = false;
     if (!state.serviceFolder.scanning && !state.serviceFolder.loading && !serviceError) {
       const ready = selectedSet.complete
-        && (selectedSet.dateStatus === 'matches' || selectedSet.dateStatus === 'not-applicable');
+        && (selectedSet.dateStatus === 'not-applicable' || (selectedSet.serviceDate
+          && !window.SyncShowPreparedServiceGuard.isPastServiceDate(selectedSet.serviceDate, serviceDateForProfile())));
       elements.serviceFolderCard.dataset.state = ready ? 'ready' : 'attention';
       setServiceStateBadge(ready ? 'ready' : 'attention', ready ? 'Ready to load' : 'Review files');
       const foundCount = Object.values(selectedSet.inputs || {}).filter(Boolean).length;
@@ -5873,18 +6239,14 @@ function checkFilenameDate(language, filePath) {
     if (state.presentations[language]?.loaded) setRoleCardState(language, 'ready', 'Ready');
     return;
   }
-  const expectedDate = state.serviceFolder.requestedDate || serviceDateForProfile();
-  const [expectedYear, expectedMonth, expectedDay] = expectedDate.split('-').map(Number);
-  const match = parsed.year === expectedYear
-    && parsed.month === expectedMonth
-    && parsed.day === expectedDay;
-  if (match) {
+  const fileDate = `${parsed.year}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day).padStart(2, '0')}`;
+  if (!window.SyncShowPreparedServiceGuard.isPastServiceDate(fileDate, serviceDateForProfile())) {
     warningEl.style.display = 'none';
     setRoleCardState(language, 'ready', 'Ready');
   } else {
-    const fileDate = new Date(parsed.year, parsed.month - 1, parsed.day)
+    const label = new Date(parsed.year, parsed.month - 1, parsed.day)
       .toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    warningEl.textContent = `⚠ File date (${fileDate}) does not match the selected service date`;
+    warningEl.textContent = `⚠ File date (${label}) is before today. Check that you want to use this older file.`;
     warningEl.style.display = 'block';
     setRoleCardState(language, 'attention', 'May be old');
   }
@@ -5966,6 +6328,7 @@ function handleDisplaysUpdated(displays) {
   renderProfileEditor();
   renderOutputHealth();
   checkReadyState();
+  if (state.startAttempt?.snapshot.singleScreen && !state.isStarting) renderStartPreflight();
 }
 
 async function refreshDisplays() {
@@ -6021,11 +6384,46 @@ function getLoadedRoles({ requireExtractedText = false } = {}) {
   });
 }
 
+function getSingleScreenRoles() {
+  return window.SyncShowPresentationMode.singleScreenRoles(
+    state.profile?.inputRoles, state.presentations, state.profile?.outputs
+  ).filter(role => state.presentations[role.id]?.loaded);
+}
+
+function buildSingleScreenOutput(roleId, displayId) {
+  return window.SyncShowPresentationMode.singleScreenOutput({
+    roleId, displayId, displays: state.displays,
+    roles: state.profile?.inputRoles, presentations: state.presentations,
+    outputs: state.profile?.outputs
+  });
+}
+
+function renderPresentationMode() {
+  const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
+  const mode = window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode);
+  elements.presentationMode.value = state.presentationMode;
+  elements.presentationMode.disabled = state.isPresenting || state.isStarting || !!state.startAttempt;
+  elements.presentationMode.options[0].textContent = `Automatic · ${external.length <= 1 ? 'one screen' : 'saved screen setup'}`;
+  elements.presentationScreenSummary.textContent = external.length === 0
+    ? 'Connect a presentation screen'
+    : `${external.length} external ${external.length === 1 ? 'screen' : 'screens'} connected`;
+  elements.presentationModeHelp.textContent = external.length === 0
+    ? 'Connect a TV or projector in extended-display mode. Your controls stay on this screen.'
+    : mode === 'single'
+      ? 'Start Show asks which language to present full-screen. Your saved screen setup stays unchanged.'
+      : 'Use your saved audience and stage screens, or choose One screen for a simpler setup.';
+}
+
 function getReadinessState(testOutput = false) {
-  const outputs = getConfiguredOutputs();
+  const singleScreen = !testOutput && window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode) === 'single';
+  const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
+  const singleRoles = getSingleScreenRoles();
+  const outputs = singleScreen
+    ? (external.length && singleRoles.length ? [buildSingleScreenOutput(singleRoles[0].id, external[0].id)] : [])
+    : getConfiguredOutputs();
   const routes = outputs.map(output => ({
     output,
-    decision: getServiceOutputDecision(output)
+    decision: singleScreen ? { mode: 'direct' } : getServiceOutputDecision(output)
   }));
   const activeRoutes = routes.filter(route => route.decision?.mode !== 'disabled');
   const activeOutputs = activeRoutes.map(route => route.output);
@@ -6050,7 +6448,9 @@ function getReadinessState(testOutput = false) {
   const demoReady = !testOutput || (state.testOutput.enabled && !!demoTarget && !state.testOutputSaving);
   if (!demoReady) issues.push('Choose a connected external demo screen in Admin Settings → Screen Setup');
 
-  if (outputs.length === 0) issues.push('Choose at least one output screen in Admin Settings');
+  if (singleScreen && external.length === 0) issues.push('Connect an external presentation screen');
+  if (singleScreen && singleRoles.length === 0) issues.push('Load a service or a language slideshow');
+  if (!singleScreen && outputs.length === 0) issues.push('Choose at least one output screen in Admin Settings');
   if (outputs.length > 0 && activeOutputs.length === 0) {
     issues.push('Use at least one configured screen for this service');
   }
@@ -6076,11 +6476,13 @@ function getReadinessState(testOutput = false) {
       `Finish reloading ${state.serviceFolder.staleRoleIds.map(roleId => getRoleLabel(roleId)).join(', ')} so files from different services are not mixed`
     );
   }
+  if (state.loadFreshness?.busy) issues.push('Checking the latest saved service');
   if (state.isStarting) issues.push('Output windows are starting');
   if (state.startAttempt && !state.isStarting) issues.push('Finish or cancel the current Start Show choices');
 
   const isReady = demoReady && activeOutputs.length > 0
     && !conversionPending
+    && !state.loadFreshness?.busy
     && !state.isStarting
     && !state.startAttempt
     && slideCountsMatch
@@ -6094,6 +6496,7 @@ function getReadinessState(testOutput = false) {
 
   return {
     isReady,
+    singleScreen,
     issues,
     outputs,
     activeOutputs,
@@ -6122,7 +6525,11 @@ function renderReadiness(readiness) {
   elements.readinessCard.hidden = state.friendlyMode && isReady && needsChoices.length === 0;
 
   if (isReady) {
-    if (needsChoices.length > 0) {
+    if (readiness.singleScreen) {
+      elements.readinessIcon.textContent = '→';
+      elements.readinessTitle.textContent = 'Ready for one screen';
+      elements.readinessSummary.textContent = 'Start Show will ask which language to present.';
+    } else if (needsChoices.length > 0) {
       elements.readinessIcon.textContent = '→';
       elements.readinessTitle.textContent = 'Ready for a quick choice';
       elements.readinessSummary.textContent = `${state.testOutput.enabled ? 'Test Output' : 'Start Show'} will ask what to use for ${needsChoices.length === 1 ? needsChoices[0].name : `${needsChoices.length} outputs`}.`;
@@ -6135,16 +6542,25 @@ function renderReadiness(readiness) {
   }
 
   if (state.friendlyMode) {
+    if (state.initializingLoad || state.loadFreshness.busy || state.community.handoffBusy) {
+      elements.readinessIcon.textContent = '…';
+      elements.readinessTitle.textContent = 'Preparing the service';
+      elements.readinessSummary.textContent = 'Click Start Show or Test Output. It will continue when the service is ready.';
+      return;
+    }
     elements.readinessIcon.textContent = conversionPending ? '…' : '!';
     if (conversionPending) {
       elements.readinessTitle.textContent = 'Loading slideshows';
-      elements.readinessSummary.textContent = 'Start Show will unlock when the cards finish loading.';
+      elements.readinessSummary.textContent = 'Click Start Show or Test Output. It will continue when loading finishes.';
     } else if (!slideCountsMatch) {
       elements.readinessTitle.textContent = 'Slideshows do not match';
       elements.readinessSummary.textContent = issues.find(issue => issue.startsWith('Slideshows assigned')) || 'Choose matching files before starting.';
     } else if (state.serviceFolder.staleRoleIds.length > 0) {
       elements.readinessTitle.textContent = 'Finish loading today’s files';
       elements.readinessSummary.textContent = 'A newer service is only partly loaded. The previous service will not be mixed into it.';
+    } else if (readiness.singleScreen) {
+      elements.readinessTitle.textContent = 'One-screen presentation';
+      elements.readinessSummary.textContent = issues.join(' · ');
     } else {
       elements.readinessTitle.textContent = 'Admin setup needed';
       elements.readinessSummary.textContent = 'An output screen needs attention. Open Admin Settings to finish the venue setup.';
@@ -6156,7 +6572,7 @@ function renderReadiness(readiness) {
   elements.readinessTitle.textContent = issues.length === 1
     ? 'One thing needs attention'
     : `${issues.length} things need attention`;
-  elements.readinessSummary.textContent = 'Start Show will unlock when these are resolved:';
+  elements.readinessSummary.textContent = 'Resolve these before starting:';
 
   const fragment = document.createDocumentFragment();
   for (const issue of issues) {
@@ -6167,7 +6583,115 @@ function renderReadiness(readiness) {
   elements.readinessIssues.appendChild(fragment);
 }
 
+function notifyLoadWork() {
+  for (const resolve of loadWorkWaiters) resolve();
+  loadWorkWaiters.clear();
+}
+
+function offlineLaunchNotice() {
+  if (state.loadFreshness.lastResult?.state !== 'unavailable') return '';
+  if (state.loadFreshness.lastResult.phase === 'prepare') return 'The update could not be prepared. Using the previously saved local copy.';
+  return `${state.loadFreshness.lastResult.offline ? 'No internet connection.' : 'Community is unavailable.'} Using the saved local copy; the latest version could not be checked.`;
+}
+
+function renderLoadActionStatus() {
+  if (!elements.loadActionStatus) return;
+  const action = state.queuedStart;
+  const launching = state.isStarting;
+  const label = action?.testOutput || state.startAttempt?.snapshot?.testOutput ? 'Test Output' : 'Start Show';
+  const busy = Boolean(action || launching || state.loadFreshness.busy);
+  const message = action
+    ? `${action.message || 'Preparing the service…'} ${label} will continue automatically.`
+    : launching ? `Opening ${label === 'Test Output' ? 'the test output' : 'the show'}…`
+      : state.loadActionNotice?.message || (state.loadFreshness.busy ? 'Checking for updates… You can start while this finishes.' : offlineLaunchNotice());
+  elements.loadActionMessage.textContent = message;
+  elements.loadActionStatus.hidden = !message;
+  elements.loadActionStatus.dataset.kind = busy ? '' : state.loadActionNotice?.kind || (offlineLaunchNotice() ? 'warning' : '');
+  elements.loadActionStatus.querySelector('.load-action-spinner').hidden = !busy;
+  elements.loadActionStatus.setAttribute('aria-busy', String(busy));
+  elements.btnCancelLoadAction.hidden = !action;
+  for (const [button, testOutput] of [[elements.btnStartPresentation, false], [elements.btnTestOutput, true]]) {
+    const selected = Boolean((action && action.testOutput === testOutput) || (launching && Boolean(state.startAttempt?.snapshot?.testOutput) === testOutput));
+    button.setAttribute('aria-busy', String(selected));
+    button.textContent = selected ? testOutput ? 'Opening preview…' : 'Starting…' : testOutput ? 'Test Output' : 'Start Show';
+  }
+}
+
+function cancelQueuedStart(message = 'Start cancelled.') {
+  if (!state.queuedStart) return;
+  state.queuedStart = null;
+  state.loadActionNotice = { message, kind: '' };
+  notifyLoadWork();
+  checkReadyState();
+}
+
+function queuedStartIsCurrent(action) {
+  return state.queuedStart === action && state.workflowStage === 'load' && state.loadMode === action.mode
+    && !state.isPresenting && !state.activeLaunchPlan && !state.isStarting && !state.startAttempt
+    && (!action.serviceId || state.serviceHandoff?.project?.id === action.serviceId);
+}
+
+function hasPendingLoadWork() {
+  return state.initializingLoad || state.community.handoffBusy || state.loadFreshness.busy
+    || state.serviceFolder.loading || sharedServiceController?.isBusy?.()
+    || Object.values(state.presentations).some(presentation => presentation.pending);
+}
+
+async function waitForLoadWork(action) {
+  while (queuedStartIsCurrent(action) && hasPendingLoadWork()) {
+    action.message = state.loadFreshness.busy ? state.loadFreshness.message || 'Checking for updates…'
+      : state.community.handoffBusy ? 'Saving Prepare’s latest changes…' : 'Loading the service…';
+    renderLoadActionStatus();
+    await new Promise(resolve => loadWorkWaiters.add(resolve));
+  }
+}
+
+function startPresentation(testOutput = false) {
+  if (state.queuedStart) return state.queuedStart.promise;
+  if (state.isPresenting || state.isStarting || state.startAttempt || state.workflowStage !== 'load') return;
+  const action = { testOutput: testOutput === true, mode: state.loadMode,
+    serviceId: state.community.handoffBusy || state.initializingLoad ? null : state.serviceHandoff?.project?.id,
+    message: 'Preparing the service…' };
+  state.queuedStart = action;
+  state.loadActionNotice = null;
+  checkReadyState();
+  action.promise = (async () => {
+    // Reuse a startup check already in flight; never launch an obsolete service
+    // after cancellation, navigation, or a different service selection.
+    await waitForLoadWork(action);
+    if (!queuedStartIsCurrent(action)) return;
+    action.serviceId = state.serviceHandoff?.project?.id;
+    action.message = 'Checking for updates…';
+    renderLoadActionStatus();
+    const latest = await refreshLoadedService({ reuseRecent: true });
+    await waitForLoadWork(action);
+    if (!queuedStartIsCurrent(action)) return;
+    if (['conflict', 'prepare-pending', 'busy', 'superseded'].includes(latest?.state)) {
+      state.loadActionNotice = { message: state.loadFreshness.message || 'Review the service in Prepare before starting.', kind: 'warning' };
+      return;
+    }
+    const readiness = getReadinessState(action.testOutput);
+    if (!readiness.isReady) {
+      state.loadActionNotice = { message: readiness.issues[0] || 'Load a service before starting.', kind: 'warning' };
+      return;
+    }
+    state.queuedStart = null;
+    await beginStartPresentation(action.testOutput);
+  })().catch(error => {
+    if (state.queuedStart === action) state.loadActionNotice = { message: operatorErrorMessage(error, 'The service could not be started.'), kind: 'warning' };
+  }).finally(() => {
+    if (state.queuedStart === action) {
+      if (!queuedStartIsCurrent(action) && !state.loadActionNotice) state.loadActionNotice = { message: 'The service changed. Click Start Show again when ready.', kind: '' };
+      state.queuedStart = null;
+    }
+    checkReadyState();
+  });
+  return action.promise;
+}
+
 function checkReadyState() {
+  notifyLoadWork();
+  renderPresentationMode();
   const readiness = getReadinessState();
   const {
     isReady,
@@ -6177,17 +6701,18 @@ function checkReadyState() {
     needsChoices
   } = readiness;
 
-  elements.btnStartPresentation.disabled = !isReady;
+  const starting = Boolean(state.isPresenting || state.isStarting || state.startAttempt || state.queuedStart);
+  elements.btnStartPresentation.disabled = starting;
   renderTestOutputSettings();
-  const demoReadiness = getReadinessState(true);
-  elements.btnTestOutput.disabled = state.isPresenting || !demoReadiness.isReady;
-  elements.btnTestOutput.title = demoReadiness.issues.join(' · ') || 'Preview all outputs together';
-  renderReadiness(state.testOutput.enabled ? demoReadiness : readiness);
+  elements.btnTestOutput.disabled = starting;
+  elements.btnTestOutput.title = starting ? 'Finish or cancel the current action' : 'Preview all outputs together';
+  renderLoadActionStatus();
+  renderReadiness(readiness);
 
   // Display rescans and preference saves can occur while Show is live. Keep
   // those background readiness updates from replacing the operator's live
   // status message with Load-screen guidance.
-  if (state.isPresenting) return;
+  if (state.isPresenting || state.queuedStart) return;
 
   if (isReady) {
     setStatus(needsChoices.length > 0
@@ -6205,35 +6730,51 @@ function checkReadyState() {
 }
 
 function confirmPreparedServiceDate() {
-  const selectedDate = state.serviceFolder.requestedDate
-    || serviceDateForProfile();
+  // Read the clock for every start attempt, including after midnight in a
+  // long-running app. The PowerPoint search date is unrelated to Show.
+  const currentDate = serviceDateForProfile();
   const guard = window.SyncShowPreparedServiceGuard.preparedServiceDateGuard({
     presentations: state.presentations,
     serviceHandoff: state.serviceHandoff,
-    selectedDate,
+    currentDate,
     confirmedKeys: state.preparedServiceDateConfirmations
   });
   if (!guard.requiresConfirmation) return true;
 
   const title = state.serviceHandoff.project.title || 'This prepared service';
   const confirmed = window.confirm(
-    `${title} is dated ${formatServiceDate(guard.serviceDate)}, but Load is set to ${formatServiceDate(guard.selectedDate)}. Start this exact prepared service anyway?`
+    `${title} is dated ${formatServiceDate(guard.serviceDate)}, which is before today (${formatServiceDate(guard.currentDate)}). Start this older service anyway?`
   );
   if (confirmed) {
     state.preparedServiceDateConfirmations.add(guard.key);
     return true;
   }
   setStatus(
-    'Start cancelled. Choose the intended service date or prepare the correct service before opening output screens.'
+    'Start cancelled. Load the intended service before opening output screens.'
   );
   return false;
 }
 
-async function startPresentation(testOutput = false) {
+async function beginStartPresentation(testOutput = false) {
   testOutput = testOutput === true;
+  recheckLoadedPresentationDates();
+  if (state.loadMode === 'pptx') renderServiceFolder();
   const readiness = getReadinessState(testOutput);
   if (!readiness.isReady) return;
   if (!confirmPreparedServiceDate()) return;
+  if (readiness.singleScreen) {
+    state.startAttempt = {
+      id: Date.now(), status: 'single-screen', error: null, decisions: {}, questionIds: [], cursor: 0,
+      snapshot: { singleScreen: true, testOutput: false, outputs: [], settings: {
+        fadeDuration: parseIntegerOr(elements.fadeDuration.value, 300), syncMode: elements.syncMode.checked || false,
+        singerFontSize: state.singerFontSize, singerCharLimit: state.singerCharLimit, singerTextPadding: state.singerTextPadding
+      } }
+    };
+    checkReadyState();
+    renderStartPreflight();
+    elements.startPreflightDialog.showModal();
+    return;
+  }
 
   const serviceDecisions = window.SyncShowServiceOutputPlan.filterDecisionsForOutputs(
     readiness.outputs,
@@ -6331,6 +6872,7 @@ function createPreflightSourceSelect(mode, roles, selectedRole) {
 }
 
 function updatePreflightSourceVisibility() {
+  if (state.startAttempt?.snapshot.singleScreen) return;
   const selectedMode = elements.preflightChoices
     .querySelector('input[name="preflightAction"]:checked')?.value;
   elements.preflightChoices.querySelectorAll('.preflight-source').forEach(label => {
@@ -6338,11 +6880,55 @@ function updatePreflightSourceVisibility() {
   });
 }
 
+function renderSingleScreenPreflight(attempt) {
+  const previousRole = elements.preflightChoices.querySelector('input[name="preflightAction"]:checked')?.value;
+  const previousDisplay = document.getElementById('singleScreenDisplay')?.value;
+  const displays = window.SyncShowPresentationMode.externalDisplays(state.displays);
+  const roles = getSingleScreenRoles();
+  elements.preflightProgress.textContent = 'ONE SCREEN';
+  elements.preflightTitle.textContent = 'Which language would you like to present?';
+  elements.preflightDescription.textContent = 'One full-screen presentation. Your controls stay on this computer.';
+  elements.preflightChoices.replaceChildren();
+  elements.preflightChoices.hidden = false;
+  elements.preflightReview.hidden = true;
+  elements.preflightError.hidden = !attempt.error;
+  elements.preflightError.textContent = attempt.error || '';
+  for (const role of roles) {
+    createPreflightChoice({ value: role.id, title: getRoleLabel(role.id),
+      description: `${state.presentations[role.id].slideCount} slides`,
+      checked: role.id === (previousRole || state.lastSingleScreenRole)
+    });
+  }
+  const label = document.createElement('label');
+  label.className = 'preflight-source'; label.textContent = 'Presentation screen';
+  const select = document.createElement('select');
+  select.id = 'singleScreenDisplay'; select.className = 'display-dropdown';
+  for (const display of displays) {
+    const option = document.createElement('option'); option.value = String(display.id);
+    option.textContent = display.label; select.append(option);
+  }
+  if (displays.some(display => String(display.id) === previousDisplay)) select.value = previousDisplay;
+  select.disabled = displays.length < 2;
+  label.append(select); elements.preflightChoices.append(label);
+  elements.btnPreflightBack.hidden = true;
+  elements.btnPreflightContinue.textContent = 'Start Show';
+  elements.btnPreflightContinue.disabled = !displays.length || !roles.length;
+  if (!displays.length) {
+    elements.preflightError.hidden = false;
+    elements.preflightError.textContent = 'Connect an external presentation screen to continue.';
+  }
+}
+
 function renderStartPreflight() {
   const attempt = state.startAttempt;
   if (!attempt) return;
+  elements.preflightLoadNotice.textContent = offlineLaunchNotice();
+  elements.preflightLoadNotice.hidden = !elements.preflightLoadNotice.textContent;
+
+  if (attempt.snapshot.singleScreen) { renderSingleScreenPreflight(attempt); return; }
 
   const isReview = attempt.status === 'review';
+  elements.btnPreflightContinue.disabled = false;
   elements.preflightChoices.replaceChildren();
   elements.preflightReview.replaceChildren();
   elements.preflightChoices.hidden = isReview;
@@ -6487,6 +7073,20 @@ async function handlePreflightSubmit(event) {
   if (!attempt) return;
 
   attempt.error = null;
+  if (attempt.snapshot.singleScreen) {
+    const roleId = elements.preflightChoices.querySelector('input[name="preflightAction"]:checked')?.value;
+    const displayId = document.getElementById('singleScreenDisplay')?.value;
+    try {
+      if (!roleId) throw new Error('Choose a language to present.');
+      const output = buildSingleScreenOutput(roleId, displayId);
+      attempt.snapshot.outputs = [output];
+      attempt.snapshot.preferredTimelineRoleId = roleId;
+      attempt.decisions = { [output.id]: { mode: 'direct', explicit: true } };
+      state.lastSingleScreenRole = roleId;
+      await launchStartAttempt();
+    } catch (error) { attempt.error = error.message; renderStartPreflight(); }
+    return;
+  }
   if (attempt.status === 'review') {
     await launchStartAttempt();
     return;
@@ -6628,7 +7228,8 @@ async function launchStartAttempt() {
     renderThumbnails();
     updateSlideCounter();
     window.api.requestOutputPreviews();
-    setStatus(attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor' : 'Presentation started');
+    setStatus(attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor'
+      : attempt.snapshot.singleScreen ? `${getRoleLabel(attempt.snapshot.preferredTimelineRoleId)} — presenting on one screen` : 'Presentation started');
     window.setTimeout(() => {
       const target = !elements.btnNextSlide.disabled
         ? elements.btnNextSlide
@@ -7837,6 +8438,7 @@ async function navigateSlide(delta, forwardInput = 'right') {
       ? window.api.prevSlide()
       : window.api.nextSlide(forwardInput));
     applyShowOutputActionResult(action, result);
+    if (result?.preparedChanged) await refreshTakenBackstageDraft();
     if (result?.videoHandled) {
       setStatus(result.videoState === 'playing'
         ? 'Video playing — Space pauses; Right skips to the next cue'
@@ -7863,6 +8465,7 @@ async function navigateSlide(delta, forwardInput = 'right') {
 }
 
 async function goToSlide(slideIndex) {
+  if (showAdjustOpen) return;
   if (showEndSessionBlocksAction()) return;
   if (slideIndex < 0 || slideIndex >= state.totalSlides) return;
   if (state.cueNavigationBusy) return;
@@ -7875,6 +8478,7 @@ async function goToSlide(slideIndex) {
   try {
     const result = await window.api.navigateToSlide(slideIndex);
     applyShowOutputActionResult(action, result);
+    if (result?.preparedChanged) await refreshTakenBackstageDraft();
   } catch (error) {
     console.error('Error changing slides:', error);
     if (action.id === state.showActionRequest) {
@@ -7940,6 +8544,7 @@ function renderVolunteerShowControls(showState = state.showState) {
     : 0;
 
   document.body.classList.toggle('volunteer-show-locked', locked);
+  elements.btnShowAdjust.disabled = locked || showAdjustBusy;
   elements.volunteerControlBar.hidden = !volunteer;
   elements.btnUnlockVolunteerControls.hidden = !volunteer || !locked;
   elements.btnLockVolunteerControls.hidden = !volunteer || locked;
@@ -8043,6 +8648,8 @@ function handleShowStateChanged(payload = {}) {
   if (state.showState && next.revision < state.showState.revision) return false;
 
   state.showState = next;
+  if(['idle','hidden','interrupted'].includes(next.phase))clearBackstagePreview();
+  if (['backstage-draft-taken', 'backstage-draft-recovery'].includes(payload?.reason)) refreshTakenBackstageDraft().catch(error => setStatus(error.message));
   if (next.currentCue && Number.isInteger(next.currentCue.index)) {
     state.currentSlide = next.currentCue.index;
   }
@@ -8204,7 +8811,11 @@ function renderOutputPreviews(plan = state.activeLaunchPlan) {
     option.value = output.id;
     option.textContent = output.name;
     elements.outputPreviewSelect.append(option);
-    const body = createElement('div', 'mini-preview-img');
+    const body = createElement('button', 'mini-preview-img');
+    body.type = 'button';
+    body.title = 'Click to take the current slide again, including saved edits';
+    body.setAttribute('aria-label', `${output.name}: take current slide again`);
+    body.addEventListener('click', () => goToSlide(state.currentSlide));
     const image = document.createElement('img');
     image.alt = `${output.name} output`;
     body.append(image);
@@ -8251,18 +8862,19 @@ function updateSlideCounter() {
   renderShowCueContext();
 }
 
-function updateThumbnailHighlight() {
+function updateThumbnailHighlight({behavior='smooth'} = {}) {
+  updateShowSectionHighlight();
   document.querySelectorAll('.thumbnail-item').forEach(item => {
     const index = Number.parseInt(item.dataset.index, 10);
     window.SyncShowShowAccessibility.setThumbnailCurrentState(
       item,
-      index === state.currentSlide
+      index === thumbnailCurrentIndex()
     );
   });
   
   // Scroll active thumbnail into view - scroll earlier when in lower third of viewport
-  const activeThumb = document.querySelector('.thumbnail-item.active');
   const grid = elements.thumbnailsGrid;
+  const activeThumb = grid?.querySelector('.thumbnail-item.active');
   
   if (activeThumb && grid) {
     const gridRect = grid.getBoundingClientRect();
@@ -8272,11 +8884,15 @@ function updateThumbnailHighlight() {
     const lowerThreshold = gridRect.top + gridRect.height * 0.6;
 
     // Scroll up only when the thumbnail's top has left the viewport
-    if (thumbRect.top > lowerThreshold || thumbRect.top < gridRect.top) {
-      const scrollOffset = activeThumb.offsetTop - (grid.offsetHeight / 2) + (activeThumb.offsetHeight / 2);
+    if (gridRect.height > 0 && (thumbRect.top > lowerThreshold
+      || thumbRect.top < gridRect.top || thumbRect.bottom > gridRect.bottom)) {
+      // offsetTop can be relative to a different positioned ancestor. Use
+      // viewport rectangles plus the grid's own scroll position instead.
+      const scrollOffset = grid.scrollTop + thumbRect.top - gridRect.top
+        - (grid.clientHeight - thumbRect.height) / 2;
       grid.scrollTo({
         top: Math.max(0, scrollOffset),
-        behavior: 'smooth'
+        behavior
       });
     }
   }
@@ -8319,9 +8935,9 @@ function persistThumbnailZoom() {
 
 function applyThumbnailZoom() {
   const zoom = state.thumbnailZoom / 100;
-  const imgHeight = Math.round(150 * zoom);
-  const itemMinHeight = Math.round(175 * zoom);
-  const minWidth = Math.round(250 * zoom);
+  const imgHeight = Math.round(112 * zoom);
+  const itemMinHeight = Math.round(142 * zoom);
+  const minWidth = Math.round(200 * zoom);
 
   elements.zoomLevel.textContent = `${state.thumbnailZoom}%`;
   elements.thumbnailsGrid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${minWidth}px, 1fr))`;
@@ -8379,10 +8995,11 @@ function createThumbnailImage(language, thumbnail, slideNumber, imgHeight) {
 }
 
 function getThumbnailSelection() {
+  const preview=showBackstagePreview();
   const roleOrder = getDeckRoles().map(role => role.id);
   const slidesByRole = Object.fromEntries(roleOrder.map(role => [
     role,
-    state.presentations[role]?.slides || []
+    preview?.slidesByRole[role] || state.presentations[role]?.slides || []
   ]));
   const routedRoles = state.activeLaunchPlan
     ? new Set(state.activeLaunchPlan.outputs.map(output => output.sourceRoleId))
@@ -8390,17 +9007,18 @@ function getThumbnailSelection() {
   const availableRoles = roleOrder.filter(role =>
     slidesByRole[role].length > 0 && (!routedRoles || routedRoles.has(role))
   );
+  if (availableRoles.length === 0) {
+    renderThumbnailRoleSelector([]);
+    return { slidesByRole, selectedRoles: [] };
+  }
   let selection = state.thumbnailSelection;
   if (selection === 'all' && availableRoles.length < 2) {
     selection = availableRoles.includes(state.activeLaunchPlan?.timelineRoleId)
       ? state.activeLaunchPlan.timelineRoleId
       : availableRoles[0];
   } else if (selection !== 'all' && !availableRoles.includes(selection)) {
-    selection = availableRoles.length > 1
-      ? 'all'
-      : (availableRoles.includes(state.activeLaunchPlan?.timelineRoleId)
-        ? state.activeLaunchPlan.timelineRoleId
-        : availableRoles[0]);
+    selection = availableRoles.includes(state.activeLaunchPlan?.timelineRoleId)
+      ? state.activeLaunchPlan.timelineRoleId : availableRoles[0];
   }
   state.thumbnailSelection = selection || 'all';
   renderThumbnailRoleSelector(availableRoles);
@@ -8443,6 +9061,9 @@ function renderThumbnailRoleSelector(availableRoles) {
 // Thumbnail Rendering - Using Base64 images
 function renderThumbnails() {
   const grid = elements.thumbnailsGrid;
+  const scrollTop=grid.scrollTop;
+  const preview=showBackstagePreview();
+  renderBackstagePreviewStatus();
   const { slidesByRole, selectedRoles } = getThumbnailSelection();
   const roleMarks = Object.fromEntries(selectedRoles.map(role => [
     role,
@@ -8462,20 +9083,31 @@ function renderThumbnails() {
   
   // Compute pixel heights from zoom level
   const zoom = state.thumbnailZoom / 100;
-  const imgHeight = Math.round(150 * zoom);
-  const itemMinHeight = Math.round(175 * zoom);
+  const imgHeight = Math.round(112 * zoom);
+  const itemMinHeight = Math.round(142 * zoom);
 
   const fragment = document.createDocumentFragment();
+  const sections = showServiceSections(count);
+  renderShowServiceSections(sections);
 
   for (let i = 0; i < count; i++) {
+    const section = sections.find(value => value.start === i);
+    if (section) {
+      const heading = createElement('div', 'show-grid-section');
+      heading.dataset.sectionStart = String(i);
+      heading.dataset.kind = section.kind;
+      heading.append(createElement('strong', '', section.title), createElement('span', '', `${section.count} slides`));
+      fragment.append(heading);
+    }
     const slides = selectedRoles.map(role => ({ role, slide: slidesByRole[role][i] }));
     const text = (slides.find(({ slide }) => slide?.text)?.slide.text || '').substring(0, 80) || '—';
-    const isCurrent = i === state.currentSlide;
+    const isCurrent = i === thumbnailCurrentIndex();
 
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'thumbnail-item';
     item.dataset.index = String(i);
+    if(preview)item.dataset.cueId=preview.cueIds[i];
     item.dataset.showTransport = 'true';
     item.disabled = (
       state.showState?.operator?.controls
@@ -8538,12 +9170,68 @@ function renderThumbnails() {
 
     item.append(header, images, label);
     item.addEventListener('click', () => {
-      goToSlide(i);
+      if(preview)void takeBackstagePreviewSlide(preview.cueIds[i],preview);
+      else goToSlide(i);
     });
     fragment.appendChild(item);
   }
 
   grid.replaceChildren(fragment);
+  // Replacing the grid during saved draft refreshes can reset its scroll
+  // offset. Keep the operator's place even while Adjust covers the grid.
+  grid.scrollTop=scrollTop;
+}
+
+function showServiceSections(count = state.totalSlides) {
+  const preview=showBackstagePreview();
+  const previewSlides=preview?.slidesByRole[state.activeLaunchPlan?.timelineRoleId];
+  const sections = [];
+  for (let index = 0; index < count; index++) {
+    const cue = preview ? previewSlides?.[index] : cueAt(index);
+    const title = cue?.groupPath?.[0] || cue?.title || 'Slides';
+    const key = cue?.itemPathIds?.[0] || cue?.groupPath?.[0] || cue?.itemId || 'slides';
+    const previous = sections.at(-1);
+    if (previous?.key === key) previous.count += 1;
+    else sections.push({ key, title, kind: cue?.kind || 'slides', start: index, count: 1 });
+  }
+  return sections;
+}
+
+function renderShowServiceSections(sections) {
+  document.getElementById('showServiceTitle').textContent = state.serviceHandoff?.project?.title || 'Loaded slides';
+  const list = document.getElementById('showServiceSections');
+  list.replaceChildren();
+  for (const section of sections) {
+    const button = createElement('button', 'show-service-section');
+    button.type = 'button'; button.dataset.sectionStart = String(section.start);
+    button.append(createElement('span', '', section.title), createElement('small', '', String(section.count)));
+    button.addEventListener('click', () => {
+      const heading = elements.thumbnailsGrid.querySelector(`[data-section-start="${section.start}"]`);
+      heading?.scrollIntoView({block:'start',behavior:'smooth'});
+      for (const item of list.children) item.classList.toggle('is-browsing', item === button);
+    });
+    list.append(button);
+  }
+  updateShowSectionHighlight();
+}
+
+function updateShowSectionHighlight() {
+  const currentIndex=thumbnailCurrentIndex();
+  const buttons = [...document.getElementById('showServiceSections').children];
+  buttons.forEach((button, index) => {
+    const active = currentIndex >= Number(button.dataset.sectionStart)
+      && (index === buttons.length - 1 || currentIndex < Number(buttons[index + 1].dataset.sectionStart));
+    button.classList.toggle('is-live', active);
+    if (active) button.setAttribute('aria-current', 'location'); else button.removeAttribute('aria-current');
+  });
+}
+
+function renderBackstagePreviewStatus() {
+  const node=document.getElementById('backstagePreviewStatus');
+  if(!node)return;
+  node.hidden=!state.community.plannerShowDraft || state.workflowStage!=='show';
+  node.textContent=state.community.plannerDraftPreparing ? 'Updating previews…'
+    : showBackstagePreview() ? 'Saved edits · click a slide to show them' : 'Saved edits stay backstage';
 }
 
 // Keyboard Handling

@@ -19,7 +19,7 @@ const DERIVED_SINGER_NEXT_STATES = Object.freeze([
   'text',
   'text',
   'text',
-  'blank',
+  'text',
   'text',
   'text',
   'text',
@@ -400,13 +400,13 @@ function verifyDerivedSingerResult(result, resolution) {
   );
   assert.equal(
     result.derivedSingerChecks[4].next.text,
-    BSB_READING_BODY
+    'Ephesians 3:10–12'
   );
   assert.equal(
     result.derivedSingerChecks[6].next.text,
     'Во Христе мы с дерзновением приходим к Богу.'
   );
-  assert.equal(result.derivedSingerChecks[3].next.text, '');
+  assert.equal(result.derivedSingerChecks[3].next.text, 'Blue welcome background');
   assert.equal(result.derivedSingerChecks[7].next.text, '');
   assert.equal(result.derivedSingerChecks[8].next.text, '');
   assert.equal(result.overflowProbe, null);

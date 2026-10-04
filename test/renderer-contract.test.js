@@ -37,7 +37,7 @@ test('every renderer element lookup has a matching unique HTML id', () => {
   const htmlIdSet = new Set(htmlIds);
 
   assert.deepEqual(
-    [...lookedUpIds].filter(id => !htmlIdSet.has(id)),
+    [...lookedUpIds].filter(id => !htmlIdSet.has(id) && !matches(appSource, /\.id = '([^']+)'/g).includes(id)),
     [],
     'app.js must not look up missing elements'
   );

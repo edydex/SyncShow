@@ -1,0 +1,35 @@
+'use strict';
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const vm=require('node:vm');
+const {focusPlannerCue}=require('../src/services/community/PlannerCueFocus');
+function fixture() {
+  const calls=[],picker={value:'service',disabled:false};let rows;
+  const row=(id,number,onClick)=>({dataset:{slideId:id},hasAttribute:()=>false,querySelector:selector=>({textContent:selector.endsWith('__kind')?(number?String(number):'▸'):(number?`${number}. Section`:id)}),
+    dispatchEvent:e=>{calls.push(['click',id,e.ctrlKey]);onClick();},scrollIntoView:()=>calls.push(['scroll',id]),focus:()=>calls.push(['focus',id])});
+  const target=row('live-cue',27,()=>{target.dataset.active='true';});
+  const nested=row('nested',0,()=>{rows=[outer,nested,target];});
+  const outer=row('outer',0,()=>{rows=[outer,nested];});
+  rows=[outer];
+  const document={activeElement:{closest:()=>true,blur:()=>calls.push(['commit'])},
+    querySelector:selector=>selector.includes('service-picker')?picker:selector.includes('__views')?{click:()=>calls.push(['edit'])}:null,
+    querySelectorAll:()=>rows};
+  const context=vm.createContext({document,window:{location:{origin:'https://community.test'},postMessage:message=>calls.push(['message',message.type])},MouseEvent:class {constructor(type,options){Object.assign(this,options)}},requestAnimationFrame:cb=>setImmediate(cb),cancelAnimationFrame:clearImmediate,clearTimeout,setTimeout,Date,Promise,Number,Set});
+  vm.runInContext(`this.focus=${focusPlannerCue.toString()}`,context);
+  return {calls,target,context};
+}
+test('Adjust reveals the current slide through nested collapsed sections and opens Edit without reloading or taking',async()=>{
+  const f=fixture();const result=await f.context.focus({syncId:'service',cueId:'live-cue',number:27,sectionIds:['outer','nested']});
+  assert.equal(result.focused,true);
+  assert.deepEqual(f.calls,[['commit'],['edit'],['click','outer',true],['click','nested',true],['click','live-cue',false],['scroll','live-cue'],['focus','live-cue']]);
+});
+test('a section title selects only its own slide rather than all its descendants',async()=>{
+  const f=fixture();f.target.hasAttribute=()=>true;
+  assert.equal((await f.context.focus({syncId:'service',cueId:'live-cue',number:27,sectionIds:['outer','nested']})).focused,true);
+  assert.ok(f.calls.some(value=>value[0]==='click'&&value[1]==='live-cue'&&value[2]===true));
+});
+test('a missing draft slide cannot trigger a live take or alter its text',async()=>{
+  const f=fixture();const result=await f.context.focus({syncId:'service',cueId:'removed-cue',number:28,sectionIds:['outer','nested']});
+  assert.equal(result.focused,false);
+  assert.equal(f.calls.some(x=>x[0]==='message'),false);
+});

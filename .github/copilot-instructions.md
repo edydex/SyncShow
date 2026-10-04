@@ -41,7 +41,7 @@
 - **Singer screen:** Can use a supplied deck, mirror another role, derive current/next text, or be disabled per service
 - **Community service plans:** Keep import separate from explicit required-item preparation. Preparation is exact Community-read-only, main-token-owned, cursor-preserving, and must end in a fresh review without opening a project or entering Load/Show
 - **App icon generation:** Use `scripts/generate-icon.js` for consistent branding
-- **Release boundary:** QA packages include a blocked-status target-specific legal-evidence bundle. Never bypass the release gate or call it complete corresponding-source/relinking evidence.
+- **Release boundary:** Ordinary QA packages without sealed source assets remain blocked. Public builds must validate the checksum-pinned same-release native source ZIP, receipt, notices and replacement instructions with `scripts/verify-release-legal.js`; never bypass that gate. See `legal/release-sources/REBUILDING.md`. Packaged checks do not establish physical venue acceptance.
 
 ## Converter Module
 
