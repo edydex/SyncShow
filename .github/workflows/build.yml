@@ -150,7 +150,7 @@ jobs:
           path: release-sources
 
       - name: Build Windows installer
-        run: npm run build:win
+        run: npm run build:win -- --publish never
         env:
           SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
@@ -235,7 +235,7 @@ jobs:
           path: release-sources
 
       - name: Build macOS installer
-        run: npm run build:mac:adhoc -- --${{ matrix.arch }}
+        run: npm run build:mac:adhoc -- --${{ matrix.arch }} --publish never
         env:
           SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
@@ -320,7 +320,7 @@ jobs:
           path: release-sources
 
       - name: Build Linux packages
-        run: npm run build:linux
+        run: npm run build:linux -- --publish never
         env:
           SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
 
