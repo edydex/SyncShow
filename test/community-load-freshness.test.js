@@ -15,7 +15,7 @@ function mainFixture(options = {}) {
   const binding = {serverId:'church', syncId:id, documentRevision:options.baseRevision || 'old-base', localRevisionId:revision};
   const fetches=[], installs=[], bindings=[], requests=[];
   const context = {connection:{serverId:'church', accessToken:'fixture-only'}, client:{async getServiceDocument(request) {requests.push(request);fetches.push(id); if(options.wait) await options.wait; return remote;}}, projectStore:{}, bindingStore:{async get(){return binding;}}, outbox:{async get(){return options.nativePending || null;}}};
-  const sandbox = vm.createContext({appState:{activeLaunchPlan:options.live ? {} : null}, installedServiceHandoff:()=>handoff,
+  const sandbox = vm.createContext({AbortSignal, appState:{activeLaunchPlan:options.live ? {} : null}, installedServiceHandoff:()=>handoff,
     communityRequestKeys(){}, prepareId:value=>value, prepareRevision:value=>value,
     failMainOperation(code,message){throw Object.assign(new Error(message), {code});},
     communityServiceDocumentContext:async()=>context, communityPlannerCache:{envelope:()=>cached},
@@ -110,10 +110,10 @@ function appFixture() {
   const wait=deferred(),calls=[],notice={dataset:{}};
   const state={serviceHandoff:{project:{id,revisionId:revision}},loadFreshness:{busy:false,message:'',kind:''},workflowStage:'load',loadMode:'syncshow',community:{}};
   const warning={hidden:true,textContent:''};
-  const sandbox=vm.createContext({state,elements:{loadPrepareWarning:warning},setPrepareLoadWarning(message){warning.hidden=!message;warning.textContent=message;},document:{getElementById:()=>notice},checkReadyState(){},
+  const sandbox=vm.createContext({window:{navigator:{onLine:true}}, state,elements:{loadPrepareWarning:warning},renderLoadActionStatus(){},setPrepareLoadWarning(message){warning.hidden=!message;warning.textContent=message;},document:{getElementById:()=>notice},checkReadyState(){},
     sharedServiceController:{async refreshLoaded(syncId,rev,options){calls.push({syncId,rev,options}); options.progress('Checking Community…');return wait.promise;}}});
   vm.runInContext('let loadFreshnessPromise=null;\n'+appSource.slice(appSource.indexOf('function renderLoadFreshness('),appSource.indexOf('function planningStatusLabel(')),sandbox);
-  return{state,calls,notice,wait,warning,refresh:()=>sandbox.refreshLoadedService()};
+  return{state,calls,notice,wait,warning,setOffline:value=>{sandbox.window.navigator.onLine=!value;},refresh:options=>sandbox.refreshLoadedService(options)};
 }
 test('the Load status checks only the selected service and coalesces repeated navigation',async()=>{
   const f=appFixture(), first=f.refresh(),second=f.refresh();
@@ -163,4 +163,33 @@ test('Prepare-to-Load reuses the already loaded exact cached snapshot',async()=>
 test('queued native edits are retained before a conditional server read',async()=>{
  const f=mainFixture({cached:null,nativePending:{revision:'local-outbox'}});
  assert.equal((await f.open()).state,'queued');assert.equal(f.fetches.length,0);assert.equal(f.installs.length,0);
+});
+
+test('starting immediately after a successful check reuses its exact recent revision',async()=>{
+  const f=appFixture(),opening=f.refresh();f.wait.resolve({state:'current'});await opening;
+  assert.equal((await f.refresh({reuseRecent:true})).state,'current');assert.equal(f.calls.length,1);
+  f.state.loadFreshness.checkedAt=Date.now()-11000;
+  await f.refresh({reuseRecent:true});assert.equal(f.calls.length,2);
+});
+
+test('resolved conflicts and a busy earlier check are checked again before starting', async () => {
+  for (const state of ['conflict', 'busy', 'prepare-pending']) {
+    const f = appFixture(), opening = f.refresh();
+    f.wait.resolve({ state });
+    await opening;
+    await f.refresh({ reuseRecent: true });
+    assert.equal(f.calls.length, 2, state);
+  }
+});
+
+test('known offline mode skips the network and identifies an unverified local fallback',async()=>{
+  const f=appFixture();f.setOffline(true);
+  const result=await f.refresh();assert.equal(result.offline,true);assert.equal(f.calls.length,0);
+  assert.equal(f.notice.dataset.kind,'warning');assert.match(f.notice.textContent,/available offline/);
+});
+
+test('automatic revision reads have a bounded cancellation signal; cached Prepare reads do not',async()=>{
+  const f=mainFixture({cached:null});await f.open();
+  assert.ok(f.requests[0].signal instanceof AbortSignal);assert.equal(f.requests[0].signal.aborted,false);
+  await f.open({fresh:false});assert.equal(f.requests[1].signal,null);
 });

@@ -44,11 +44,16 @@
         <button id="btnOpenSettings" class="btn btn-secondary" aria-controls="advancedSetupDetails">
           Admin Settings
         </button>
-        <button id="btnStartPresentation" class="btn btn-primary btn-start" disabled>
+        <button id="btnStartPresentation" class="btn btn-primary btn-start">
           Start Show
         </button>
       </div>
     </header>
+    <div id="loadActionStatus" class="load-action-status" role="status" hidden>
+      <span class="load-action-spinner" aria-hidden="true" hidden></span>
+      <span id="loadActionMessage"></span>
+      <button id="btnCancelLoadAction" class="btn btn-secondary" type="button" hidden>Cancel</button>
+    </div>
     <div id="translationCueStatus" role="status" hidden style="padding:8px 18px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color)"></div>
 
     <section id="preparePanel" class="prepare-panel" aria-labelledby="communityPrepareHeading">
@@ -2893,6 +2898,7 @@
       <p id="preflightProgress" class="section-kicker"></p>
       <h2 id="preflightTitle">Choose what to show</h2>
       <p id="preflightDescription"></p>
+      <p id="preflightLoadNotice" class="preflight-note" role="status" hidden></p>
       <p id="preflightError" class="preflight-error" role="alert" hidden></p>
 
       <fieldset id="preflightChoices" class="preflight-choices">

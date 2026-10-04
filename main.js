@@ -18669,6 +18669,7 @@ async function openSharedServiceDocument(request) {
     && binding.localRevisionId === local.revisionId;
   const remote = (!fresh && cached) || await context.client.getServiceDocument({
     syncId, accessToken: context.connection.accessToken,
+    signal: fresh ? AbortSignal.timeout(4000) : null,
     knownRevision: canCheckRevision ? binding.documentRevision : null
   });
   if (fresh && !stillLoaded()) return { state: 'superseded' };

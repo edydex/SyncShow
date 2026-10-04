@@ -10,7 +10,15 @@ const { CommunityConnectionStore } = require('../../src/services/community/Commu
 const { AppLocalCredentialStorage } = require('../../src/services/community/AppLocalCredentialStorage');
 const root = process.env.SYNCSHOW_TEST_USER_DATA_DIR;
 const resultPath = process.env.SYNCSHOW_UNIFIED_RESULT;
-let offline = false, saved;
+let offline = false, saved, holdChecks = false;
+const heldChecks = [];
+const loadQueueFixture = process.env.SYNCSHOW_LOAD_QUEUE_FIXTURE === '1';
+if (loadQueueFixture) {
+  // Test renderers stay hidden: no rehearsal can cover the operator's screen.
+  BrowserWindow.prototype.show = function () {};
+  BrowserWindow.prototype.showInactive = function () {};
+  BrowserWindow.prototype.setFullScreen = function () {};
+}
 const scopes = ['syncshow:service-documents:read', 'syncshow:service-documents:write'];
 const fakeDisplays = [
   { id: 1, internal: true, bounds: { x: 0, y: 0, width: 1400, height: 900 } },
@@ -32,11 +40,12 @@ async function waitFor(callback, label) {
   throw new Error(`Timed out: ${label}`);
 }
 function json(response, body, status = 200) { response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(body)); }
+function serviceWire() { const {syncId,syncVersion,revision,documentSource,status,changedAt}=saved;return {serviceDocument:{syncId,syncVersion,revision,documentSource,status,changedAt}}; }
 async function body(request) { const chunks = []; for await (const chunk of request) chunks.push(chunk); return JSON.parse(Buffer.concat(chunks)); }
 const plannerHtml = `<!doctype html><html><head><style>body{margin:0;background:#121a2d;color:white;font:16px system-ui;padding:30px}input,button{font:inherit;margin:8px;padding:10px}section{margin-top:25px}</style></head><body><h1>Prepare service · offline fixture</h1><input id="text" value="Original slide"><button id="save">Save</button><p id="status"></p><section id="preview"></section><script>
 let service, dirty=false;
 const endpoint='/api/community/service-documents';
-async function open(id){service=(await (await fetch(endpoint+'/'+id,{headers:{Accept:'application/json'}})).json()).serviceDocument;document.getElementById('text').value=service.project.items.point.textByChannel.english;document.getElementById('preview').textContent=service.project.title;dirty=false;}
+async function open(id){service=(await (await fetch(endpoint+'/'+id,{headers:{Accept:'application/json'}})).json()).serviceDocument;service.project ||= JSON.parse(service.documentSource).project;document.getElementById('text').value=service.project.items.point.textByChannel.english;document.getElementById('preview').textContent=service.project.title;dirty=false;}
 document.getElementById('text').oninput=()=>dirty=true;
 async function save(){if(dirty){const project=structuredClone(service.project);for(const channel of project.channelIds)project.items.point.textByChannel[channel]=document.getElementById('text').value;project.revision++;project.updatedAt=new Date().toISOString();const doc={...service.document,project};function stable(v){if(Array.isArray(v))return v.map(stable);if(v&&typeof v==='object')return Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])]));return v};const source=JSON.stringify(stable(doc))+'\\n';const response=await fetch(endpoint+'/'+service.syncId,{method:'PUT',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({schemaVersion:1,requestId:crypto.randomUUID(),syncId:service.syncId,baseRevision:service.revision,baseSyncVersion:service.syncVersion,documentSource:source,status:'planning',saveKind:'manual'})});if(!response.ok)throw new Error('Save failed '+response.status);service=(await response.json()).serviceDocument;dirty=false;}document.getElementById('status').textContent=service.desktop?.pending?'Saved locally':'Saved';return service;}
 document.getElementById('save').onclick=()=>save().catch(error=>document.getElementById('status').textContent=error.message);window.addEventListener('message',async event=>{if(event.source!==window||event.origin!==location.origin)return;const value=event.data;if(value.type==='heritage-editor:open')await open(value.syncId);if(value.type==='heritage-editor:flush'){try{if(window.fixtureFlushMode==='ignore')return;if(window.fixtureFlushMode==='fail')throw new Error('Fixture save failed');const serviceDocument=await save();window.postMessage({type:'heritage-editor:flushed',requestId:value.requestId,ok:true,serviceDocument},location.origin)}catch(error){window.postMessage({type:'heritage-editor:flushed',requestId:value.requestId,ok:false,error:error.message},location.origin)}}});open('service-fixture');
@@ -53,13 +62,14 @@ const server = http.createServer(async (request, response) => {
   });
   if (url.pathname.endsWith('/service-documents')) return json(response, { nextCursor: null, hasMore: false, items: [{ syncId: saved.syncId, title: saved.project.title, serviceDate: saved.project.serviceDate, status: saved.status, revision: saved.revision, syncVersion: saved.syncVersion, changedAt: saved.changedAt }] });
   if (url.pathname.endsWith('/service-documents/service-fixture')) {
+    if (holdChecks && request.method === 'GET') { heldChecks.push(response); return; }
     if (request.method === 'PUT') {
       const raw = await body(request);
       if (raw.baseRevision !== saved.revision) return json(response, { error: 'conflict' }, 412);
       const validated = core.validateHeritageServiceDocumentSource(raw.documentSource);
       saved = { ...validated, syncId: raw.syncId, syncVersion: saved.syncVersion + 1, status: raw.status, changedAt: new Date().toISOString() };
     }
-    return json(response, { schemaVersion: 1, serviceDocument: saved });
+    return json(response, serviceWire());
   }
   return json(response, { error: 'not found' }, 404);
 });
@@ -94,8 +104,13 @@ async function run() {
     apiBaseUrl: `${baseUrl}api/community/syncshow/v1`, account: { id: 'fixture-admin', email: 'fixture@example.test', name: 'Fixture' }, scopes,
     accessToken: 'fixture-token-12345678901234567890', refreshToken: null, expiresAt: '2027-01-01T00:00:00.000Z' });
   const control = await waitFor(() => BrowserWindow.getAllWindows().find(win => win.webContents.getURL().endsWith('/src/renderer/index.html') && !win.webContents.isLoading()), 'control');
+  if (loadQueueFixture) control.webContents.setBackgroundThrottling(false);
   control.webContents.on('console-message', (_event, level, message) => { if (level >= 2) console.error('[renderer]', message); });
   const renderer = source => control.webContents.executeJavaScript(source);
+  const settledScreenshot = async name => {
+    await renderer('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    await fs.writeFile(path.join(root, name), (await control.capturePage()).toPNG());
+  };
   await renderer(`window.fixtureStages=[];const original=setWorkflowStage;setWorkflowStage=function(...args){window.fixtureStages.push({stage:args[0],stack:new Error().stack});return original(...args)};true`);
   await renderer(`refreshCommunityStatus();`);
   await renderer(`document.getElementById('btnStagePrepare').click();`);
@@ -138,6 +153,41 @@ async function run() {
   const published = await renderer(`window.api.publishServiceProject({projectId:'service-fixture',revisionId:${JSON.stringify(opened.data.revisionId)}})`);
   assert.equal(published.success, true);
   await renderer(`refreshPublishedProject({},{});`);
+  if (loadQueueFixture) {
+    await renderer("state.presentationMode='single';setWorkflowStage('load');true");
+    await waitFor(() => renderer('!state.initializingLoad && !state.loadFreshness.busy'), 'initial check');
+    holdChecks = true;
+    await renderer('state.loadFreshness.checkedAt=0;void refreshLoadedService();true');
+    await waitFor(() => heldChecks.length, 'held version check');
+    assert.equal(await renderer('elements.btnStartPresentation.disabled'), false);
+    await renderer('elements.btnStartPresentation.click();true');
+    assert.equal(await renderer('Boolean(state.queuedStart)'), true);
+    assert.equal(await renderer('elements.btnStartPresentation.getAttribute("aria-busy")'), 'true');
+    assert.match(await renderer('elements.loadActionMessage.textContent'), /continue automatically/);
+    await settledScreenshot('queued-start.png');
+    await renderer('elements.btnCancelLoadAction.click();true');
+    holdChecks = false;
+    for (const response of heldChecks.splice(0)) json(response, serviceWire());
+    await waitFor(() => renderer('!state.loadFreshness.busy'), 'cancelled check finished');
+    assert.equal(Boolean((await renderer('window.api.getAppState()')).activeLaunchPlan), false);
+    assert.equal(await renderer('state.startAttempt'), null);
+    assert.match(await renderer('elements.loadActionMessage.textContent'), /cancelled/);
+
+    // A stalled network must fall back in four seconds, then continue directly
+    // into the existing language/output chooser without a second Start click.
+    holdChecks = true;
+    await renderer('state.loadFreshness.checkedAt=0;elements.btnStartPresentation.click();true');
+    const offlineStarted = Date.now();
+    await waitFor(() => renderer('!state.queuedStart'), 'bounded offline queued start');
+    assert(Date.now() - offlineStarted < 6000);
+    assert.match(await renderer('offlineLaunchNotice()'), /saved local copy.*could not be checked/);
+    assert.equal(await renderer('elements.startPreflightDialog.open'), true);
+    assert.match(await renderer('elements.preflightLoadNotice.textContent'), /saved local copy/);
+    await settledScreenshot('offline-local-copy.png');
+    await renderer('cancelStartAttempt();true');
+    holdChecks = false;
+    for (const response of heldChecks.splice(0)) response.destroy();
+  }
   const state = await renderer(`window.api.getAppState()`);
   const presentations = state.presentations;
   const roles = Object.keys(presentations);
@@ -148,6 +198,31 @@ async function run() {
   await renderer(`(async()=>{handleShowStateChanged((await window.api.getAppState()).showState);setWorkflowStage('show');await loadAppState();})()`);
   const before = await renderer(`window.api.getAppState()`);
   assert.equal(await renderer(`state.workflowStage`), 'show');
+  if (loadQueueFixture) {
+    const clickSlide = async index => {
+      const box = await renderer(`(()=>{const button=document.querySelector('.thumbnail-item[data-index="${index}"]');button.scrollIntoView({block:'center'});const r=button.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),disabled:button.disabled};})()`);
+      assert.equal(box.disabled, false, 'The selected thumbnail must accept a mouse click');
+      control.webContents.sendInputEvent({type:'mouseDown',button:'left',x:box.x,y:box.y,clickCount:1});
+      control.webContents.sendInputEvent({type:'mouseUp',button:'left',x:box.x,y:box.y,clickCount:1});
+      await waitFor(async () => (await renderer('window.api.getAppState()')).currentSlide === index, `mouse take ${index}`);
+      assert.equal(await renderer('state.currentSlide'), index);
+      assert.equal(await renderer('document.querySelector(".thumbnail-item.active").dataset.index'), String(index));
+      const outputs = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL().includes('display.html'));
+      assert.equal(outputs.length, 3);
+      for (const output of outputs) assert.equal(await output.webContents.executeJavaScript(`document.body.textContent.includes('Slide ${index % 7 + 1}') || document.body.textContent.includes('Слайд ${index % 7 + 1}')`), true);
+    };
+    await clickSlide(9);
+    await clickSlide(17);
+    await renderer('elements.btnShowAdjust.click();true');
+    await waitFor(() => renderer('showAdjustOpen && state.community.plannerOpen'), 'Adjust open');
+    await renderer(`document.querySelector('.thumbnail-item[data-index="2"]').click();true`);
+    assert.equal((await renderer('window.api.getAppState()')).currentSlide, 17, 'Editing mode must not take a slide live');
+    await renderer('closeShowAdjust()');
+    await clickSlide(2);
+    await settledScreenshot('show-mouse-take.png');
+    await fs.writeFile(resultPath, JSON.stringify({ok:true,queuedClick:true,cancelPreventsLaunch:true,offlineBoundedFallback:true,offlinePreflightNotice:true,mouseTakes:[9,17,2],allThreeOutputsConfirmed:true},null,2));
+    return;
+  }
   await delay(300);
   await fs.writeFile(path.join(root, 'show.png'), (await control.capturePage()).toPNG());
   planner.on('console-message', event => console.error('[planner]', event.message));

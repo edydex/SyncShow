@@ -19,6 +19,39 @@ const BASE_URL = 'https://community.example.test/';
 const ACCESS_TOKEN = 'community-access-token-0000000001';
 const NOW = '2026-08-13T20:00:00.000Z';
 
+test('a short caller deadline aborts discovery or the conditional document read', async () => {
+  for (const blockedPhase of ['discovery', 'document']) {
+    const requests = [];
+    let aborted = false;
+    const client = new CommunityClient({
+      baseUrl: BASE_URL,
+      fetchImpl: async (url, options) => {
+        requests.push(url);
+        if (url.endsWith(DISCOVERY_PATH) && blockedPhase === 'document') return json(discovery());
+        return new Promise((_resolve, reject) => {
+          const abort = () => { aborted = true; reject(options.signal.reason); };
+          if (options.signal.aborted) abort();
+          else options.signal.addEventListener('abort', abort, { once: true });
+        });
+      }
+    });
+    // Keep the fixture alive independently of AbortSignal's unref'ed timer.
+    const keepAlive = setTimeout(() => {}, 2000);
+    const started = Date.now();
+    try {
+      await assert.rejects(client.getServiceDocument({
+        syncId: 'service-2026-07-26', accessToken: ACCESS_TOKEN,
+        knownRevision: 'a'.repeat(64), signal: AbortSignal.timeout(40)
+      }), error => error.code === 'REQUEST_CANCELLED');
+      assert.equal(aborted, true);
+      assert(Date.now() - started < 1500, blockedPhase);
+      assert.equal(requests.length, blockedPhase === 'document' ? 2 : 1);
+    } finally {
+      clearTimeout(keepAlive);
+    }
+  }
+});
+
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), {
     status,

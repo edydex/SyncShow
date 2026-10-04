@@ -115,6 +115,7 @@
       elements.useCommunity.disabled = busy;
       elements.keepLocal.disabled = busy;
       elements.dialog.setAttribute('aria-busy', busy ? 'true' : 'false');
+      options.onBusyChanged?.(busy);
     }
 
     function renderConflict() {
@@ -335,6 +336,7 @@
     async function refreshLoaded(syncId, revisionId, { isCurrent = () => true, progress = onStatus } = {}) {
       if (state.busy) return { state: 'busy' };
       setBusy(true);
+      let phase = 'check';
       try {
         const binding = checked(await api.getCommunityServiceDocumentState({ projectId: syncId }));
         if (!isCurrent()) return { state: 'superseded' };
@@ -352,10 +354,11 @@
           return result;
         }
         if (['current', 'prepare-pending', 'superseded'].includes(result.state)) return result;
+        phase = 'prepare';
         const loaded = await showOpenedService(syncId, result, { isCurrent, progress, expectedLoadedRevisionId: revisionId });
         return loaded ? { ...result, state: result.state === 'opened' ? 'updated' : result.state } : { state: 'superseded' };
       } catch (error) {
-        return { state: 'unavailable', message: error.message };
+        return { state: 'unavailable', phase, message: error.message };
       } finally {
         setBusy(false);
         renderList();
@@ -495,6 +498,7 @@
         return openService(syncId, null, { fresh: options.fresh !== false, ...options });
       },
       refreshLoaded,
+      isBusy: () => state.busy,
       projectChanged,
       refresh: refreshCapability
     });

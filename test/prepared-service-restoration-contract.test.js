@@ -135,7 +135,7 @@ test('renderer keeps restored native service primary and checks its age against 
   const dateConfirmation = between(
     rendererSource,
     'function confirmPreparedServiceDate()',
-    'async function startPresentation('
+    'async function beginStartPresentation('
   );
   assert.match(dateConfirmation, /preparedServiceDateConfirmations/);
   assert.match(
@@ -148,7 +148,7 @@ test('renderer keeps restored native service primary and checks its age against 
 
   const start = between(
     rendererSource,
-    'async function startPresentation(',
+    'async function beginStartPresentation(',
     'function getAttemptOutput('
   );
   assert.match(start, /if \(!confirmPreparedServiceDate\(\)\) return/);

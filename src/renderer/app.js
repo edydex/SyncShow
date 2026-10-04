@@ -46,6 +46,9 @@ const state = {
   cachedRestorePlan: null,
   restoreGroupId: null,
   startAttempt: null,
+  initializingLoad: true,
+  queuedStart: null,
+  loadActionNotice: null,
   serviceHandoff: null,
   loadFreshness: { busy: false, message: '', kind: '' },
   preparedServiceRestore: { status: 'none' },
@@ -325,6 +328,10 @@ const elements = {
   preflightTitle: document.getElementById('preflightTitle'),
   preflightDescription: document.getElementById('preflightDescription'),
   preflightError: document.getElementById('preflightError'),
+  preflightLoadNotice: document.getElementById('preflightLoadNotice'),
+  loadActionStatus: document.getElementById('loadActionStatus'),
+  loadActionMessage: document.getElementById('loadActionMessage'),
+  btnCancelLoadAction: document.getElementById('btnCancelLoadAction'),
   preflightChoices: document.getElementById('preflightChoices'),
   preflightReview: document.getElementById('preflightReview'),
   btnCancelPreflight: document.getElementById('btnCancelPreflight'),
@@ -493,8 +500,10 @@ let communityStatusUnsubscribe = null;
 let communityPlannerStateUnsubscribe = null;
 let communityPlannerLayoutFrame = null;
 let loadFreshnessPromise = null;
+const loadWorkWaiters = new Set();
 let showAdjustOpen = false;
 let showAdjustBusy = false;
+let showAdjustGeneration = 0;
 let plannerConflictReview = null;
 
 function setTextIfChanged(element, value) {
@@ -554,7 +563,8 @@ async function init() {
       api: window.api,
       prepareController,
       onStatus: setStatus,
-      onLoaded: refreshPublishedProject
+      onLoaded: refreshPublishedProject,
+      onBusyChanged: () => checkReadyState()
     }).initialize();
   }
   setupEventListeners();
@@ -604,11 +614,16 @@ async function init() {
 
   // Register main-process listeners before requesting initial state so a
   // display-change notification cannot be lost during startup.
+  await loadAppState();
+  state.initializingLoad = false;
+  checkReadyState();
+  await refreshLoadedService();
+  // Connection/capability discovery can be slow when offline. Restore the
+  // verified local package and finish the bounded revision check first, so
+  // these background settings cannot hold a queued start hostage.
   await refreshPrivateDriveOAuthState();
   await refreshCommunityStatus();
   await refreshCommunityPlannerState();
-  await loadAppState();
-  await refreshLoadedService();
   await refreshRemoteControl({ refreshBindings: true });
   await initializeServiceFolder();
 }
@@ -676,6 +691,7 @@ function setupEventListeners() {
   });
   elements.outputPreviewSelect.addEventListener('change', selectOutputPreview);
   elements.btnTestOutput.addEventListener('click', () => startPresentation(true));
+  elements.btnCancelLoadAction.addEventListener('click', () => cancelQueuedStart());
   [elements.testOutputEnabled, elements.testOutputDisplay, elements.testOutputLayout, elements.testOutputRotation]
     .forEach(input => input.addEventListener('change', saveTestOutputSettings));
 
@@ -1278,6 +1294,7 @@ function activateLoadMode(mode, { focusTab = false } = {}) {
   const activeTab = elements.loadModeTabs.find(tab => tab.dataset.loadTab === mode)
     || elements.loadModeTabs[0];
   if (!activeTab) return;
+  if (state.loadMode !== activeTab.dataset.loadTab) cancelQueuedStart('Start cancelled because the service source changed.');
   state.loadMode = activeTab.dataset.loadTab;
   elements.loadModeTabs.forEach(tab => {
     const selected = tab === activeTab;
@@ -1612,8 +1629,9 @@ function setWorkflowStage(stage) {
     ? arguments[1]
     : undefined;
   if (!['prepare', 'load', 'show'].includes(stage)) return Promise.resolve(false);
+  if (stage !== 'load') cancelQueuedStart();
   state.workflowStage = stage;
-  if (stage !== 'show') { window.api.setPlannerShowMode?.(false).catch(() => {}); showAdjustOpen = false; elements.showAdjustPanel.hidden = true; elements.btnShowAdjust.setAttribute('aria-pressed', 'false'); }
+  if (stage !== 'show') { ++showAdjustGeneration; window.api.setPlannerShowMode?.(false).catch(() => {}); showAdjustOpen = false; elements.showAdjustPanel.hidden = true; elements.btnShowAdjust.setAttribute('aria-pressed', 'false'); }
   for (const candidate of ['prepare', 'load', 'show']) {
     document.body.classList.toggle(`${candidate}-stage`, candidate === stage);
   }
@@ -1728,6 +1746,7 @@ async function navigateWorkflowStage(stage) {
       clearTimeout(timeout);
       if (state.community.handoffGeneration === generation) state.community.handoffBusy = false;
       updateWorkflowNavigationAvailability();
+      checkReadyState();
     }
     if (state.community.handoffGeneration === generation && state.workflowStage === 'load') await refreshLoadedService();
     return;
@@ -1856,14 +1875,19 @@ function renderLoadFreshness() {
   node.textContent = state.loadFreshness.message;
   node.hidden = !state.loadFreshness.message;
   node.dataset.kind = state.loadFreshness.kind;
+  renderLoadActionStatus();
 }
 
-async function refreshLoadedService() {
+async function refreshLoadedService({ reuseRecent = false } = {}) {
   if (loadFreshnessPromise) return loadFreshnessPromise;
   const loaded = state.serviceHandoff;
   if (!loaded || !sharedServiceController?.refreshLoaded || state.workflowStage !== 'load'
     || state.loadMode !== 'syncshow' || state.community.handoffBusy
     || state.isPresenting || state.activeLaunchPlan || state.isStarting || state.startAttempt) return;
+  const key = `${loaded.project.id}:${loaded.project.revisionId}`;
+  const age = Date.now() - (state.loadFreshness.checkedAt || 0);
+  const reusable = ['current', 'updated', 'unavailable', 'unshared'].includes(state.loadFreshness.lastResult?.state);
+  if (reuseRecent && reusable && state.loadFreshness.checkedKey === key && age >= 0 && age < 10000) return state.loadFreshness.lastResult;
   const current = () => state.serviceHandoff === loaded && state.workflowStage === 'load'
     && state.loadMode === 'syncshow' && !state.isPresenting && !state.activeLaunchPlan
     && !state.isStarting && !state.startAttempt;
@@ -1871,13 +1895,16 @@ async function refreshLoadedService() {
     if (!current()) return;
     state.loadFreshness.message = message;
     state.loadFreshness.kind = '';
+    if (state.queuedStart) state.queuedStart.message = message;
     renderLoadFreshness();
   };
   state.loadFreshness.busy = true;
   progress('Checking for the latest saved version…');
   checkReadyState();
   loadFreshnessPromise = (async () => {
-    const result = await sharedServiceController.refreshLoaded(loaded.project.id, loaded.project.revisionId, { isCurrent: current, progress });
+    const result = window.navigator?.onLine === false
+      ? { state: 'unavailable', offline: true }
+      : await sharedServiceController.refreshLoaded(loaded.project.id, loaded.project.revisionId, { isCurrent: current, progress });
     if (result?.state === 'superseded') return;
     if (!current() && !(['updated', 'queued', 'local-newer'].includes(result?.state) && state.serviceHandoff?.project?.id === loaded.project.id
       && state.workflowStage === 'load' && !state.activeLaunchPlan)) return;
@@ -1897,6 +1924,10 @@ async function refreshLoadedService() {
     }
     state.loadFreshness.message = messages[result?.state] || '';
     state.loadFreshness.kind = ['current', 'updated'].includes(result?.state) ? 'success' : 'warning';
+    if (result?.state === 'unavailable' && result.phase === 'prepare') state.loadFreshness.message = 'The update could not be prepared. Using the previously saved local copy.';
+    state.loadFreshness.lastResult = result;
+    state.loadFreshness.checkedAt = Date.now();
+    state.loadFreshness.checkedKey = `${state.serviceHandoff.project.id}:${state.serviceHandoff.project.revisionId}`;
     renderLoadFreshness();
     return result;
   })().finally(() => {
@@ -2912,34 +2943,50 @@ function renderShowAdjustStatus() {
 
 async function toggleShowAdjust() {
   if (showAdjustOpen) return closeShowAdjust();
+  if (showAdjustBusy) return;
   if (!state.serviceHandoff?.project?.id) {
     setStatus('Adjust is available for a prepared native service. Prepare a service before using Adjust.'); return;
   }
   showAdjustOpen = true;
+  const generation = ++showAdjustGeneration;
+  const current = () => generation === showAdjustGeneration && showAdjustOpen && state.workflowStage === 'show';
   elements.showAdjustPanel.hidden = false;
   elements.btnShowAdjust.setAttribute('aria-pressed', 'true');
   renderShowAdjustStatus();
   try {
     await openCommunityPrepare();
+    if (!current()) return;
     if (!state.community.plannerOpen) throw new Error('Prepare could not open.');
+    // Adjust is an editor. Selecting a slide must never take it to the audience.
+    await window.api.setPlannerShowMode(false);
+    if (!current()) return;
     communityCheckedResult(await window.api.openPlannerService(state.serviceHandoff.project.id));
-    await window.api.setPlannerShowMode(true);
+    if (!current()) return;
     scheduleCommunityPlannerLayout();
-  } catch (error) { elements.showAdjustStatus.textContent = error.message; }
+  } catch (error) { if (current()) elements.showAdjustStatus.textContent = error.message; }
 }
 
 async function closeShowAdjust() {
   if (showAdjustBusy) return;
-  if (state.community.plannerOpen) {
-    try { communityCheckedResult(await window.api.flushCommunityPlanner()); }
-    catch (error) { elements.showAdjustStatus.textContent = error.message; return; }
-  }
-  await window.api.setPlannerShowMode(false);
+  showAdjustBusy = true;
+  ++showAdjustGeneration;
+  // Hide the native editor before waiting for a save. It sits above the web
+  // thumbnail grid, so leaving it visible can swallow clicks after closing.
   showAdjustOpen = false;
   elements.showAdjustPanel.hidden = true;
   elements.btnShowAdjust.setAttribute('aria-pressed', 'false');
   scheduleCommunityPlannerLayout();
-  elements.btnShowAdjust.focus();
+  try {
+    await window.api.layoutCommunityPlanner({ visible: false });
+    await window.api.setPlannerShowMode(false);
+    if (state.community.plannerOpen) communityCheckedResult(await window.api.flushCommunityPlanner());
+  } catch (error) {
+    setStatus(`Adjust closed. ${error.message} Your edits remain backstage; reopen Adjust to review them.`);
+  } finally {
+    showAdjustBusy = false;
+    renderVolunteerShowControls();
+    elements.btnShowAdjust.focus();
+  }
 }
 
 let backstageRefreshPromise = null;
@@ -6419,10 +6466,16 @@ function renderReadiness(readiness) {
   }
 
   if (state.friendlyMode) {
+    if (state.initializingLoad || state.loadFreshness.busy || state.community.handoffBusy) {
+      elements.readinessIcon.textContent = '…';
+      elements.readinessTitle.textContent = 'Preparing the service';
+      elements.readinessSummary.textContent = 'Click Start Show or Test Output. It will continue when the service is ready.';
+      return;
+    }
     elements.readinessIcon.textContent = conversionPending ? '…' : '!';
     if (conversionPending) {
       elements.readinessTitle.textContent = 'Loading slideshows';
-      elements.readinessSummary.textContent = 'Start Show will unlock when the cards finish loading.';
+      elements.readinessSummary.textContent = 'Click Start Show or Test Output. It will continue when loading finishes.';
     } else if (!slideCountsMatch) {
       elements.readinessTitle.textContent = 'Slideshows do not match';
       elements.readinessSummary.textContent = issues.find(issue => issue.startsWith('Slideshows assigned')) || 'Choose matching files before starting.';
@@ -6443,7 +6496,7 @@ function renderReadiness(readiness) {
   elements.readinessTitle.textContent = issues.length === 1
     ? 'One thing needs attention'
     : `${issues.length} things need attention`;
-  elements.readinessSummary.textContent = 'Start Show will unlock when these are resolved:';
+  elements.readinessSummary.textContent = 'Resolve these before starting:';
 
   const fragment = document.createDocumentFragment();
   for (const issue of issues) {
@@ -6454,7 +6507,114 @@ function renderReadiness(readiness) {
   elements.readinessIssues.appendChild(fragment);
 }
 
+function notifyLoadWork() {
+  for (const resolve of loadWorkWaiters) resolve();
+  loadWorkWaiters.clear();
+}
+
+function offlineLaunchNotice() {
+  if (state.loadFreshness.lastResult?.state !== 'unavailable') return '';
+  if (state.loadFreshness.lastResult.phase === 'prepare') return 'The update could not be prepared. Using the previously saved local copy.';
+  return `${state.loadFreshness.lastResult.offline ? 'No internet connection.' : 'Community is unavailable.'} Using the saved local copy; the latest version could not be checked.`;
+}
+
+function renderLoadActionStatus() {
+  if (!elements.loadActionStatus) return;
+  const action = state.queuedStart;
+  const launching = state.isStarting;
+  const label = action?.testOutput || state.startAttempt?.snapshot?.testOutput ? 'Test Output' : 'Start Show';
+  const busy = Boolean(action || launching || state.loadFreshness.busy);
+  const message = action
+    ? `${action.message || 'Preparing the service…'} ${label} will continue automatically.`
+    : launching ? `Opening ${label === 'Test Output' ? 'the test output' : 'the show'}…`
+      : state.loadActionNotice?.message || (state.loadFreshness.busy ? 'Checking for updates… You can start while this finishes.' : offlineLaunchNotice());
+  elements.loadActionMessage.textContent = message;
+  elements.loadActionStatus.hidden = !message;
+  elements.loadActionStatus.dataset.kind = busy ? '' : state.loadActionNotice?.kind || (offlineLaunchNotice() ? 'warning' : '');
+  elements.loadActionStatus.querySelector('.load-action-spinner').hidden = !busy;
+  elements.loadActionStatus.setAttribute('aria-busy', String(busy));
+  elements.btnCancelLoadAction.hidden = !action;
+  for (const [button, testOutput] of [[elements.btnStartPresentation, false], [elements.btnTestOutput, true]]) {
+    const selected = Boolean((action && action.testOutput === testOutput) || (launching && Boolean(state.startAttempt?.snapshot?.testOutput) === testOutput));
+    button.setAttribute('aria-busy', String(selected));
+    button.textContent = selected ? testOutput ? 'Opening preview…' : 'Starting…' : testOutput ? 'Test Output' : 'Start Show';
+  }
+}
+
+function cancelQueuedStart(message = 'Start cancelled.') {
+  if (!state.queuedStart) return;
+  state.queuedStart = null;
+  state.loadActionNotice = { message, kind: '' };
+  notifyLoadWork();
+  checkReadyState();
+}
+
+function queuedStartIsCurrent(action) {
+  return state.queuedStart === action && state.workflowStage === 'load' && state.loadMode === action.mode
+    && !state.isPresenting && !state.activeLaunchPlan && !state.isStarting && !state.startAttempt
+    && (!action.serviceId || state.serviceHandoff?.project?.id === action.serviceId);
+}
+
+function hasPendingLoadWork() {
+  return state.initializingLoad || state.community.handoffBusy || state.loadFreshness.busy
+    || state.serviceFolder.loading || sharedServiceController?.isBusy?.()
+    || Object.values(state.presentations).some(presentation => presentation.pending);
+}
+
+async function waitForLoadWork(action) {
+  while (queuedStartIsCurrent(action) && hasPendingLoadWork()) {
+    action.message = state.loadFreshness.busy ? state.loadFreshness.message || 'Checking for updates…'
+      : state.community.handoffBusy ? 'Saving Prepare’s latest changes…' : 'Loading the service…';
+    renderLoadActionStatus();
+    await new Promise(resolve => loadWorkWaiters.add(resolve));
+  }
+}
+
+function startPresentation(testOutput = false) {
+  if (state.queuedStart) return state.queuedStart.promise;
+  if (state.isPresenting || state.isStarting || state.startAttempt || state.workflowStage !== 'load') return;
+  const action = { testOutput: testOutput === true, mode: state.loadMode,
+    serviceId: state.community.handoffBusy || state.initializingLoad ? null : state.serviceHandoff?.project?.id,
+    message: 'Preparing the service…' };
+  state.queuedStart = action;
+  state.loadActionNotice = null;
+  checkReadyState();
+  action.promise = (async () => {
+    // Reuse a startup check already in flight; never launch an obsolete service
+    // after cancellation, navigation, or a different service selection.
+    await waitForLoadWork(action);
+    if (!queuedStartIsCurrent(action)) return;
+    action.serviceId = state.serviceHandoff?.project?.id;
+    action.message = 'Checking for updates…';
+    renderLoadActionStatus();
+    const latest = await refreshLoadedService({ reuseRecent: true });
+    await waitForLoadWork(action);
+    if (!queuedStartIsCurrent(action)) return;
+    if (['conflict', 'prepare-pending', 'busy', 'superseded'].includes(latest?.state)) {
+      state.loadActionNotice = { message: state.loadFreshness.message || 'Review the service in Prepare before starting.', kind: 'warning' };
+      return;
+    }
+    const readiness = getReadinessState(action.testOutput);
+    if (!readiness.isReady) {
+      state.loadActionNotice = { message: readiness.issues[0] || 'Load a service before starting.', kind: 'warning' };
+      return;
+    }
+    state.queuedStart = null;
+    await beginStartPresentation(action.testOutput);
+  })().catch(error => {
+    if (state.queuedStart === action) state.loadActionNotice = { message: operatorErrorMessage(error, 'The service could not be started.'), kind: 'warning' };
+  }).finally(() => {
+    if (state.queuedStart === action) {
+      if (!queuedStartIsCurrent(action) && !state.loadActionNotice) state.loadActionNotice = { message: 'The service changed. Click Start Show again when ready.', kind: '' };
+      state.queuedStart = null;
+    }
+    checkReadyState();
+  });
+  return action.promise;
+}
+
 function checkReadyState() {
+  notifyLoadWork();
   renderPresentationMode();
   const readiness = getReadinessState();
   const {
@@ -6465,17 +6625,18 @@ function checkReadyState() {
     needsChoices
   } = readiness;
 
-  elements.btnStartPresentation.disabled = !isReady;
+  const starting = Boolean(state.isPresenting || state.isStarting || state.startAttempt || state.queuedStart);
+  elements.btnStartPresentation.disabled = starting;
   renderTestOutputSettings();
-  const demoReadiness = getReadinessState(true);
-  elements.btnTestOutput.disabled = state.isPresenting || !demoReadiness.isReady;
-  elements.btnTestOutput.title = demoReadiness.issues.join(' · ') || 'Preview all outputs together';
+  elements.btnTestOutput.disabled = starting;
+  elements.btnTestOutput.title = starting ? 'Finish or cancel the current action' : 'Preview all outputs together';
+  renderLoadActionStatus();
   renderReadiness(readiness);
 
   // Display rescans and preference saves can occur while Show is live. Keep
   // those background readiness updates from replacing the operator's live
   // status message with Load-screen guidance.
-  if (state.isPresenting) return;
+  if (state.isPresenting || state.queuedStart) return;
 
   if (isReady) {
     setStatus(needsChoices.length > 0
@@ -6518,12 +6679,8 @@ function confirmPreparedServiceDate() {
   return false;
 }
 
-async function startPresentation(testOutput = false) {
+async function beginStartPresentation(testOutput = false) {
   testOutput = testOutput === true;
-  const beforeCheck = state.serviceHandoff;
-  let latest = await refreshLoadedService();
-  if (state.serviceHandoff !== beforeCheck && latest?.state !== 'updated') latest = await refreshLoadedService();
-  if (['conflict', 'prepare-pending', 'busy'].includes(latest?.state)) return;
   recheckLoadedPresentationDates();
   if (state.loadMode === 'pptx') renderServiceFolder();
   const readiness = getReadinessState(testOutput);
@@ -6689,6 +6846,8 @@ function renderSingleScreenPreflight(attempt) {
 function renderStartPreflight() {
   const attempt = state.startAttempt;
   if (!attempt) return;
+  elements.preflightLoadNotice.textContent = offlineLaunchNotice();
+  elements.preflightLoadNotice.hidden = !elements.preflightLoadNotice.textContent;
 
   if (attempt.snapshot.singleScreen) { renderSingleScreenPreflight(attempt); return; }
 
@@ -8230,6 +8389,7 @@ async function navigateSlide(delta, forwardInput = 'right') {
 }
 
 async function goToSlide(slideIndex) {
+  if (showAdjustOpen) return;
   if (showEndSessionBlocksAction()) return;
   if (slideIndex < 0 || slideIndex >= state.totalSlides) return;
   if (state.cueNavigationBusy) return;
@@ -8308,7 +8468,7 @@ function renderVolunteerShowControls(showState = state.showState) {
     : 0;
 
   document.body.classList.toggle('volunteer-show-locked', locked);
-  elements.btnShowAdjust.disabled = locked;
+  elements.btnShowAdjust.disabled = locked || showAdjustBusy;
   elements.volunteerControlBar.hidden = !volunteer;
   elements.btnUnlockVolunteerControls.hidden = !volunteer || !locked;
   elements.btnLockVolunteerControls.hidden = !volunteer || locked;

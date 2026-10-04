@@ -19,7 +19,7 @@ function fixture() {
     window: { api: { prepareCommunityPlannerForLoad: () => saving } },
     sharedServiceController: { openById: async id => loaded.push(id) },
     setWorkflowStage: async stage => { state.workflowStage = stage; },
-    setStatus: text => notices.push(text), updateWorkflowNavigationAvailability: () => {},
+    setStatus: text => notices.push(text), updateWorkflowNavigationAvailability: () => {}, checkReadyState: () => {},
     communityCheckedResult: result => { if (result.success === false) throw new Error(result.error.message); return result.data; },
     operatorErrorMessage: error => error.message,
     setTimeout: (callback, milliseconds) => { assert.equal(milliseconds, 3000); timeout = callback; return 1; },

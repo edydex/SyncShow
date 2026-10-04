@@ -37,7 +37,7 @@ function fixture() {
   vm.runInContext([
     functionSource('function serviceDateForProfile(', 'function formatServiceDate('),
     functionSource('function formatServiceDate(', 'function isLoadStage('),
-    functionSource('function confirmPreparedServiceDate()', 'async function startPresentation('),
+    functionSource('function confirmPreparedServiceDate()', 'async function beginStartPresentation('),
     functionSource('function checkFilenameDate(', 'function recheckLoadedPresentationDates('),
     functionSource('function serviceSetWarnings(', 'function serviceSourceView(')
   ].join('\n'), context);
