@@ -12,12 +12,19 @@ permitted; SyncShow imposes no additional restriction on modifying or replacing
 them. The app has no native-library signature allowlist. Platform signatures
 must be replaced when changing a signed application.
 
-The source ZIP retains the unmodified upstream archives, their build scripts,
+The source ZIP retains upstream source archives, their build scripts,
 and a conservative superset of their license/copyright terms. Some retained
 terms concern tests or build dependencies rather than linked code. The index
 does not claim those unused components are part of SyncShow. Permissive
 MIT/BSD/Apache components require their notices, not a bit-for-bit reproducible
 native build. LGPL and MPL sources are provided in full.
+
+Gitiles source exports use request-time file/PAX modification dates, so those
+exports are sealed as deterministic uncompressed tar archives. Only transport
+dates and owner metadata are normalized; every file byte, filename, mode and
+link target is retained and included in the pinned SHA-256. The source index
+marks these inputs with `archiveNormalization: gitiles-tar-v1`. Downloads with
+changed source bytes, modes or links are rejected rather than silently repinned.
 
 ## libvips and its dependencies
 
