@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const http = require('node:http');
+const crypto = require('node:crypto');
 const electron = require('electron');
 const { app, BrowserWindow } = electron;
 const core = require('../../src/services/community/HeritageServiceDocument');
@@ -13,6 +14,8 @@ const resultPath = process.env.SYNCSHOW_UNIFIED_RESULT;
 let offline = false, saved, holdChecks = false, holdWrites = false;
 const heldWrites = [];
 const editingFixture = process.env.SYNCSHOW_ADJUST_EDITING_FIXTURE;
+const mixedAdjustFixture=process.env.SYNCSHOW_MIXED_ADJUST_FIXTURE==='1';
+const mediaAssets=new Map();
 const serverRequests=[];
 const heldChecks = [];
 const loadQueueFixture = process.env.SYNCSHOW_LOAD_QUEUE_FIXTURE === '1';
@@ -57,6 +60,10 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://127.0.0.1:${server.address().port}`);
   serverRequests.push({method:request.method,path:url.pathname});
   if (offline) return json(response, { error: 'offline' }, 503);
+  if(url.pathname.includes('/service-documents/') && url.pathname.includes('/assets/')) {
+    const bytes=mediaAssets.get(decodeURIComponent(url.pathname.split('/').at(-1)));
+    if(bytes){response.writeHead(200,{'Content-Type':'image/png'});response.end(bytes);return;}
+  }
   if (editingFixture && url.pathname.startsWith('/assets/')) { const file=path.join(editingFixture,url.pathname);response.writeHead(200,{'Content-Type':file.endsWith('.css')?'text/css':'application/javascript'});response.end(await fs.readFile(file));return; }
   if (editingFixture && url.pathname === '/admin/plan-service') { response.writeHead(200,{'Content-Type':'text/html'});response.end(await fs.readFile(path.join(editingFixture,'community-server/tests/browser/native-adjust.html')));return; }
   if (url.pathname === '/admin/plan-service') { response.writeHead(200, { 'Content-Type': 'text/html' }); response.end(plannerHtml); return; }
@@ -86,7 +93,7 @@ async function run() {
   await app.whenReady();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}/`;
-  const project = { schemaVersion: 1, kind: 'syncshow-service-project', id: 'service-fixture', title: 'Offline rehearsal', serviceDate: '2026-10-04',
+  let project = { schemaVersion: 1, kind: 'syncshow-service-project', id: 'service-fixture', title: 'Offline rehearsal', serviceDate: '2026-10-04',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), revision: 1, preferredProfileId: 'main-sanctuary',
     channelIds: ['english', 'russian', 'media'], channels: { english: { id: 'english', label: 'English', language: 'en' }, russian: { id: 'russian', label: 'Russian', language: 'ru' }, media: { id: 'media', label: 'Media', language: 'und' } },
     rootItemIds: ['point'], items: { point: { id: 'point', kind: 'notice', title: 'Point', textByChannel: { english: 'Original slide', russian: 'Original slide', media: 'Original slide' }, presetId: 'notice-text', operatorNotes: '' } }, resources: {}, assets: {}, presetPack: { id: 'main-sanctuary', version: 1, sha256: null } };
@@ -102,6 +109,26 @@ async function run() {
       project.items[id] = {id,kind:'group',groupKind:'section',title,childIds,operatorNotes:''};
       project.rootItemIds.push(id);
     }
+  }
+  let mixedLyricCueId,mixedRepeatCueId,mixedPictureCueId;
+  if(mixedAdjustFixture) {
+    const {addSongResource,parseSongDocument,compileServiceProject}=require('../../src/services/project');
+    const song=(id,title,language,lines)=>parseSongDocument(['---',`id: ${id}`,`title: ${title}`,`language: ${language}`,'authors: Isolated native rehearsal','---','^1',...lines,'^chorus',language==='en'?'Fixture chorus in English':'Испытательный припев'].join('\n'));
+    const russian=addSongResource(project,song('mixed-song-ru','Испытательная песня','ru',['Сохраняем русский текст','Вторая строка']));project=russian.project;
+    const english=addSongResource(project,song('mixed-song-en','Native mixed song','en',['Keep the English text','Second line']));project=structuredClone(english.project);
+    project.rootItemIds.push('mixed-song');project.items['mixed-song']={id:'mixed-song',kind:'song',title:'Bilingual fixture song',primaryChannelId:'russian',
+      variants:{russian:{mode:'content',resourceId:russian.resourceId},english:{mode:'content',resourceId:english.resourceId},media:{mode:'derive',from:'russian',transform:{id:'first-lines',version:1,maxLines:2}}},
+      arrangement:[{id:'mixed-verse',sectionId:'verse-1'},{id:'mixed-chorus',sectionId:'chorus'},{id:'mixed-repeat',sectionId:'chorus'}],titlePresetId:'song-title',lyricsPresetId:'song-lyrics',operatorNotes:'',
+      songPresentation:{stackedTranslation:true,primaryChannelId:'russian',secondaryChannelId:'english',credits:'Original fixture words',audienceLanguage:'both'}};
+    const bytes=await require('sharp')({create:{width:64,height:36,channels:3,background:'#286040'}}).png().toBuffer();
+    const sha=crypto.createHash('sha256').update(bytes).digest('hex'),assetId=`sha256:${sha}`;mediaAssets.set(assetId,bytes);
+    project.assets[assetId]={id:assetId,kind:'image',sha256:sha,fileName:'welcome-fixture.png',storedName:`${sha}.png`,mediaType:'image/png',size:bytes.length,createdAt:project.createdAt,width:64,height:36,altText:'Synthetic welcome media'};
+    project.rootItemIds.push('mixed-picture');project.items['mixed-picture']={id:'mixed-picture',kind:'picture',title:'Reusable welcome fixture',assetId,channelIds:project.channelIds,fit:'fit',altText:'Synthetic welcome media',attribution:'Native rehearsal',presetId:'picture-fullscreen',operatorNotes:''};
+    const timeline=compileServiceProject(project);
+    mixedLyricCueId=timeline.cueIds.find(id=>timeline.cues[id].itemId==='mixed-song' && timeline.cues[id].sourceLeafKey.startsWith('mixed-chorus/'));
+    mixedRepeatCueId=timeline.cueIds.find(id=>timeline.cues[id].itemId==='mixed-song' && timeline.cues[id].sourceLeafKey.startsWith('mixed-repeat/'));
+    mixedPictureCueId=timeline.cueIds.find(id=>timeline.cues[id].itemId==='mixed-picture');
+    assert(mixedLyricCueId&&mixedPictureCueId,'Mixed fixture has stable song and media cues');
   }
   const validated = core.validateHeritageServiceDocumentSource(core.serializeHeritageServiceDocument(core.createHeritageServiceDocument(project)));
   saved = { ...validated, syncId: project.id, syncVersion: 1, status: 'planning', changedAt: new Date().toISOString() };
@@ -213,6 +240,7 @@ async function run() {
     const requestCount=serverRequests.length;
     await renderer('goToSlide(70)');
     const liveState=await renderer('window.api.getAppState()');
+    assert.equal(liveState.currentSlide,70,'The initial native rehearsal cue must be on screen before Adjust');
     const cueId=liveState.serviceHandoff.cueIds[70];
     const assertShowSlideVisible=async label=>{
       const box=await renderer(`(()=>{const grid=elements.thumbnailsGrid,row=grid.querySelector('.thumbnail-item.active'),r=row.getBoundingClientRect(),g=grid.getBoundingClientRect();return {top:r.top,bottom:r.bottom,gridTop:g.top,gridBottom:g.bottom,scrollTop:grid.scrollTop,index:row.dataset.index};})()`);
@@ -254,20 +282,20 @@ async function run() {
     const adjustJournals=path.join(root,'community','planner-adjust','fixture-connection');
     const journal=JSON.parse(await fs.readFile(path.join(adjustJournals,(await fs.readdir(adjustJournals))[0],'journal.json'),'utf8'));
     assert(journal.documents['service-fixture'].project.items['section-2-22'].textByChannel.english.endsWith(' test'),'Saved text must be durable before taking it');
-    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Audience unchanged while editing');
+    assert.equal(await english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes(' test')"),false,'Audience unchanged while editing');
     await waitFor(()=>renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"] .thumb-text')?.textContent.includes(' test')`),'saved text appears in Show grid before any live take');
     assert.notEqual(await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"] img').src`),originalThumbnail,'Saved text must update the actual grid image');
     assert.equal((await renderer('window.api.getAppState()')).serviceHandoff.project.revisionId,originalShowRevision,'Draft preview cannot activate the saved package');
     assert.equal(await renderer("outputPreviewElements.get('fixture-english')?.image.getAttribute('src')"),originalPreview,'LIVE OUTPUT still mirrors the unchanged audience');
-    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Background preview refresh cannot project edits');
+    assert.equal(await english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes(' test')"),false,'Background preview refresh cannot project edits');
     await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"]').click();true`);
-    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Selecting a draft thumbnail while Adjust is open must not take it live');
+    assert.equal(await english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes(' test')"),false,'Selecting a draft thumbnail while Adjust is open must not take it live');
     await renderer('elements.thumbnailsGrid.scrollTo({top:0,behavior:"instant"});true');
     const closeStart=performance.now();await renderer('closeShowAdjust()');const closeMs=performance.now()-closeStart;assert(closeMs<1500,`close waited ${closeMs}ms`);
     await assertShowSlideVisible('Closing Adjust returns to the live slide after preview rebuild');
     const takeStart=performance.now();
     await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"]').click();true`);
-    await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),'edited text on actual native output');
+    await waitFor(()=>english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes(' test')"),'edited text on actual native output');
     const takeMs=performance.now()-takeStart;assert(takeMs<2000,`text edit take took ${takeMs}ms`);
     const previewStart=performance.now();
     await waitFor(async()=>{const source=await renderer("outputPreviewElements.get('fixture-english')?.image.getAttribute('src')");return source && source!==originalPreview;},'operator preview refresh after edited take');
@@ -282,10 +310,10 @@ async function run() {
     await planner.executeJavaScript(`{const field=document.querySelector('.heritage-service-planner__stage [data-role="caption"][contenteditable]');field.textContent+=' warm';field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));document.querySelector('button[aria-label="Save service"]').click();}true`);
     await waitFor(async()=> (await renderer('window.api.getCommunityPlannerState()')).data?.showDraftReady,'background package ready while Adjust remains open');
     await waitFor(()=>renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"] .thumb-text')?.textContent.includes(' warm')`),'further saved edits update previews without switching slides');
-    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),false,'A ready backstage package must not change the audience');
+    assert.equal(await english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes(' warm')"),false,'A ready backstage package must not change the audience');
     await renderer('closeShowAdjust()');
     const readyTakeStart=performance.now();await renderer('goToSlide(70)');
-    await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),'prepared edit on actual output');
+    await waitFor(()=>english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes(' warm')"),'prepared edit on actual output');
     const readyTakeMs=performance.now()-readyTakeStart;assert(readyTakeMs<500,`ready edit take took ${readyTakeMs}ms`);
     await renderer('toggleShowAdjust()');
     const previousCueId=liveState.serviceHandoff.cueIds[69];
@@ -293,14 +321,14 @@ async function run() {
     await waitFor(()=>planner.executeJavaScript("!document.querySelector('.heritage-add-workspace').hidden"),'add slide palette');
     await planner.executeJavaScript("document.querySelector('.heritage-add-utilities button').click();true");
     await planner.executeJavaScript("document.querySelector('button[aria-label=\"Save service\"]').click();true");
-    await waitFor(()=>renderer(`backstagePreview?.cueIds.length===97 && document.querySelector('.thumbnail-item.active')?.dataset.cueId==='${cueId}'`),'draft preview follows the stable live cue after insertion');
+    await waitFor(()=>renderer(`backstagePreview?.cueIds.length===${liveState.totalSlides+1} && document.querySelector('.thumbnail-item.active')?.dataset.cueId==='${cueId}'`),'draft preview follows the stable live cue after insertion');
     assert.equal(await renderer(`document.querySelector('.thumbnail-item.active').dataset.index`),'71','The draft position changes while the live cue identity stays highlighted');
     assert.equal((await renderer('window.api.getAppState()')).currentSlide,70,'Browsing the inserted draft cannot move the audience');
     await renderer('closeShowAdjust()');
     await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"]').click();true`);
-    await waitFor(()=>renderer(`!state.cueNavigationBusy && state.showState?.currentCue?.id==='${cueId}' && state.showState.currentCue.index===71 && state.totalSlides===97`),'draft thumbnail takes by stable cue identity after insertion');
+    await waitFor(()=>renderer(`!state.cueNavigationBusy && state.showState?.currentCue?.id==='${cueId}' && state.showState.currentCue.index===71 && state.totalSlides===${liveState.totalSlides+1}`),'draft thumbnail takes by stable cue identity after insertion');
     for(const output of outputs)assert.equal(await output.webContents.executeJavaScript('displayState.currentSlide'),71);
-    assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),true,'Taking the shifted draft tile must retain the intended content');
+    assert.equal(await english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes(' warm')"),true,'Taking the shifted draft tile must retain the intended content');
     // Reuse the native editor after browsing elsewhere and resizing while it is
     // hidden. Selection alone is insufficient: the slide must be in view in
     // both panes, without any audience take during the transitions.
@@ -316,8 +344,38 @@ async function run() {
       await assertShowSlideVisible(`Returning from Adjust at slide ${index+1}`);
       assert.equal((await renderer('window.api.getAppState()')).currentSlide,index,'Scrolling/focusing must not take another slide');
     }
+    if(mixedAdjustFixture) {
+      offline=true;
+      const originalCueIds=await renderer('state.serviceHandoff.cueIds');
+      const songIndex=await renderer(`state.serviceHandoff.cueIds.indexOf(${JSON.stringify(mixedLyricCueId)})`);
+      await renderer(`goToSlide(${songIndex})`);
+      const originalSongThumbnail=await renderer(`document.querySelector('.thumbnail-item[data-index="${songIndex}"] img').src`);
+      await renderer('toggleShowAdjust()');await assertAdjustSlideVisible(mixedLyricCueId);
+      await planner.executeJavaScript(`{const field=[...document.querySelectorAll('.heritage-service-planner__stage [data-role=lyrics]')].find(field=>field.textContent.includes('Fixture chorus in English'));if(!field?.isContentEditable)throw new Error('The pinned bilingual song lyrics must be editable');field.textContent+=' changed backstage';field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));field.blur();document.querySelector('button[aria-label="Save service"]').click();}true`);
+      await waitFor(()=>renderer(`document.querySelector('.thumbnail-item[data-cue-id="${mixedLyricCueId}"] img')?.src!==${JSON.stringify(originalSongThumbnail)} && Boolean(document.querySelector('.thumbnail-item[data-cue-id="${mixedLyricCueId}"] img'))`),'bilingual lyric thumbnail pixels update offline');
+      assert.equal(await english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('changed backstage')"),false,'Song edits remain backstage');
+      await renderer('closeShowAdjust()');await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${mixedLyricCueId}"]').click();true`);
+      await waitFor(()=>english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('changed backstage') && (document.querySelector('.native-cue-layer.active')?.textContent || '').includes('Испытательный припев')"),'both pinned languages remain on the edited native song');
+      await waitFor(()=>renderer('!state.cueNavigationBusy'),'edited song take and preview acknowledgment complete');
+      assert.deepEqual(await renderer('state.serviceHandoff.cueIds'),originalCueIds,'Native song correction preserves every original live cue ID');
+      const repeatIndex=await renderer(`state.serviceHandoff.cueIds.indexOf(${JSON.stringify(mixedRepeatCueId)})`);
+      await renderer(`goToSlide(${repeatIndex})`);
+      assert.equal((await renderer('window.api.getAppState()')).currentSlide,repeatIndex,'Retaking the unedited repetition selects its stable index');
+      const repeatOutput=await english.webContents.executeJavaScript("({slide:displayState.currentSlide,text:document.querySelector('.native-cue-layer.active')?.textContent})");
+      assert.equal(repeatOutput.slide,repeatIndex,JSON.stringify(repeatOutput));
+      assert(!repeatOutput.text.includes('changed backstage'),JSON.stringify(repeatOutput));
+      await waitFor(()=>english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('Fixture chorus in English') && !(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('changed backstage')"),'the later repeated chorus retains its original words');
+      await renderer(`goToSlide(${songIndex})`);
+      await waitFor(()=>english.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('changed backstage')"),'the original edited song cue remains safe to retake');
+      const pictureIndex=await renderer(`state.serviceHandoff.cueIds.indexOf(${JSON.stringify(mixedPictureCueId)})`);
+      await renderer(`goToSlide(${pictureIndex})`);
+      for(const output of outputs) {
+        await waitFor(()=>output.webContents.executeJavaScript("[...document.querySelector('.native-cue-layer.active').querySelectorAll('img')].some(image=>image.complete && image.naturalWidth===64)"),'native fingerprinted picture renders offline');
+        assert.equal(await output.webContents.executeJavaScript('displayState.currentSlide'),pictureIndex);
+      }
+    }
     assert.equal(serverRequests.slice(requestCount).some(request=>request.method==='GET' && request.path.startsWith('/api/community/service-documents') && !request.path.includes('/library/')),false,'Edits and live takes must not fetch service documents from Heritage; explicitly opened libraries may load resources');
-    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,adjustScrollTransitions:[20,88,20],adjustRestoresEditableAudienceTab:true,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
+    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:liveState.totalSlides,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,adjustScrollTransitions:[20,88,20],adjustRestoresEditableAudienceTab:true,mixedSongAndMediaOffline: mixedAdjustFixture,repeatedChorusRetakePreservesIdentity:mixedAdjustFixture,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
   }
   if (loadQueueFixture) {
     const clickSlide = async index => {
@@ -330,7 +388,7 @@ async function run() {
       assert.equal(await renderer('document.querySelector(".thumbnail-item.active").dataset.index'), String(index));
       const outputs = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL().includes('display.html'));
       assert.equal(outputs.length, 3);
-      for (const output of outputs) assert.equal(await output.webContents.executeJavaScript(`document.body.textContent.includes('Slide ${index % 7 + 1}') || document.body.textContent.includes('Слайд ${index % 7 + 1}')`), true);
+      for (const output of outputs) assert.equal(await output.webContents.executeJavaScript(`(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('Slide ${index % 7 + 1}') || (document.querySelector('.native-cue-layer.active')?.textContent || '').includes('Слайд ${index % 7 + 1}')`), true);
     };
     await clickSlide(9);
     await clickSlide(17);
@@ -356,13 +414,13 @@ async function run() {
   const unchanged = await renderer(`window.api.getAppState()`);
   assert.equal(unchanged.serviceHandoff.project.revisionId, before.serviceHandoff.project.revisionId);
   const display = BrowserWindow.getAllWindows().find(win => win.webContents.getURL().includes('display.html'));
-  assert.equal(await display.webContents.executeJavaScript("document.body.textContent.includes('Original slide')"), true);
+  assert.equal(await display.webContents.executeJavaScript("(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('Original slide')"), true);
   assert.equal(await renderer(`Boolean(document.getElementById('btnApplyShowAdjust'))`), false, 'No extra Apply step');
   await renderer(`goToSlide(state.currentSlide)`);
   const after = await renderer(`window.api.getAppState()`);
   assert.notEqual(after.serviceHandoff.project.revisionId, before.serviceHandoff.project.revisionId);
   assert.equal(after.currentSlide, before.currentSlide);
-  await waitFor(() => display.webContents.executeJavaScript(`document.body.textContent.includes('Backstage offline edit')`), 'actual display retaken');
+  await waitFor(() => display.webContents.executeJavaScript(`(document.querySelector('.native-cue-layer.active')?.textContent || '').includes('Backstage offline edit')`), 'actual display retaken');
   assert.equal(await renderer(`state.workflowStage`), 'show', JSON.stringify(await renderer('window.fixtureStages')));
   await delay(300);
   const screenshot = path.join(root, 'adjust.png');

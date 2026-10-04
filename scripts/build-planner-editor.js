@@ -17,6 +17,13 @@ async function main(){
   }
   await fs.writeFile(path.join(outDir,'THIRD_PARTY_NOTICES.txt'),notices.join('\n\n')+'\n');
   const entry='community-server/src/components/PlanServiceClient.tsx',componentSha256=crypto.createHash('sha256').update(await fs.readFile(path.join(source,entry))).digest('hex');
-  await fs.writeFile(path.join(outDir,'source.json'),JSON.stringify({kind:'shared-community-editor',entry,componentSha256,activeService:true},null,2)+'\n');
+  const sourceSha256={};
+  await fs.mkdir(path.join(outDir,'source'),{recursive:true});
+  for(const file of [entry,'community-server/src/components/plannerSlides.ts','community-server/packages/service-core/node/services/project/ServiceProject.js']) {
+    const bytes=await fs.readFile(path.join(source,file));
+    sourceSha256[file]=crypto.createHash('sha256').update(bytes).digest('hex');
+    if(file.endsWith('.tsx') || file.endsWith('.ts'))await fs.writeFile(path.join(outDir,'source',path.basename(file)),bytes);
+  }
+  await fs.writeFile(path.join(outDir,'source.json'),JSON.stringify({kind:'shared-community-editor',entry,componentSha256,sourceSha256,activeService:true},null,2)+'\n');
 }
 main().catch(error=>{console.error(error);process.exitCode=1});

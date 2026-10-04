@@ -2460,7 +2460,10 @@ function normalizeProjectItem(raw, channelIds, now) {
       const arrangementId = id(entry.id, `Song arrangement entry ${index + 1} id`);
       if (arrangementIds.has(arrangementId)) fail('DUPLICATE_ARRANGEMENT_ID', `Song arrangement repeats id ${arrangementId}.`);
       arrangementIds.add(arrangementId);
-      return { id: arrangementId, sectionId: id(entry.sectionId, `Song arrangement entry ${index + 1} sectionId`) };
+      return { id: arrangementId, sectionId: id(entry.sectionId, `Song arrangement entry ${index + 1} sectionId`),
+        ...(entry.cueSectionId !== undefined
+          ? { cueSectionId: id(entry.cueSectionId, `Song arrangement entry ${index + 1} cueSectionId`) }
+          : {}) };
     });
     let primaryChannelId = null;
     if (raw.primaryChannelId !== undefined && raw.primaryChannelId !== null) {
@@ -4340,6 +4343,10 @@ function compileServiceProject(rawProject, options = {}) {
       for (const entry of item.arrangement) {
         const sourceSection = source.document.sections.find(section => section.id === entry.sectionId);
         for (const [slideIndex, sourceSlide] of sourceSection.slides.entries()) {
+          // A private correction to a repeated section changes its content
+          // section, while the original page identity remains safe to retake.
+          const sourceSlideId = entry.cueSectionId ? `${entry.cueSectionId}-slide-${slideIndex + 1}` : sourceSlide.id;
+          const sourceLeafKey = `${entry.id}/${sourceSlideId}`;
           const channels = {};
           for (const channelId of project.channelIds) {
             const resolved = resolvedByChannel[channelId];
@@ -4355,14 +4362,14 @@ function compileServiceProject(rawProject, options = {}) {
             channels[channelId] = {
               mode: resolved.mode === 'derive' ? 'condensed' : 'content',
               ...(resolved.mode === 'derive'
-                ? { sourceChannelId: presentationPrimaryChannelId(item, `${entry.id}/${sourceSlide.id}`) || resolved.sourceChannelId,
-                    sourceBlocks: [{ type: 'text', role: 'lyrics', text: resolvedByChannel[presentationPrimaryChannelId(item, `${entry.id}/${sourceSlide.id}`) || resolved.sourceChannelId].resource.document.sections.find(candidate => candidate.id === entry.sectionId).slides[slideIndex].lines.join('\n') }] }
+                ? { sourceChannelId: presentationPrimaryChannelId(item, sourceLeafKey) || resolved.sourceChannelId,
+                    sourceBlocks: [{ type: 'text', role: 'lyrics', text: resolvedByChannel[presentationPrimaryChannelId(item, sourceLeafKey) || resolved.sourceChannelId].resource.document.sections.find(candidate => candidate.id === entry.sectionId).slides[slideIndex].lines.join('\n') }] }
                 : {}),
-              blocks: presentationLyricBlocks(item, resolvedByChannel, channelId, entry.sectionId, slideIndex, `${entry.id}/${sourceSlide.id}`)
+              blocks: presentationLyricBlocks(item, resolvedByChannel, channelId, entry.sectionId, slideIndex, sourceLeafKey)
                 || [{ type: 'text', role: 'lyrics', text: lines.join('\n') }]
             };
           }
-          addCue(item, `${entry.id}/${sourceSlide.id}`, {
+          addCue(item, sourceLeafKey, {
             kind: 'song',
             title: `${item.title} — ${sourceSection.label}${sourceSection.slides.length > 1 ? ` ${slideIndex + 1}` : ''}`,
             groupPath: [...groupPath, item.title, sourceSection.label],
@@ -5786,7 +5793,8 @@ function duplicateProjectItem(rawProject, options = {}) {
       delete copied.sourceRangeReplacement;
       copied.arrangement = original.arrangement.map(entry => ({
         id: duplicateId('arr', randomUUID, usedIds),
-        sectionId: entry.sectionId
+        sectionId: entry.sectionId,
+        ...(entry.cueSectionId !== undefined ? { cueSectionId: entry.cueSectionId } : {})
       }));
     }
     if (copied.kind === 'bible' && copied.sermonReading) {
