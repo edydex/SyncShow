@@ -4185,12 +4185,10 @@ function renderServiceRoleSummary(scan, selectedSet) {
 function serviceSetWarnings(scan, selectedSet) {
   const warnings = [];
   if (selectedSet.dateStatus !== 'not-applicable'
-    && selectedSet.serviceDate !== scan.requestedDate) {
+    && window.SyncShowPreparedServiceGuard.isPastServiceDate(selectedSet.serviceDate, serviceDateForProfile())) {
     warnings.push({
       kind: 'warning',
-      text: selectedSet.serviceDate
-        ? `These files are dated ${formatServiceDate(selectedSet.serviceDate)}, not the selected service date (${formatServiceDate(scan.requestedDate)}).`
-        : `These files have no recognized date. Confirm that they are for ${formatServiceDate(scan.requestedDate)} before starting.`
+      text: `These files are dated ${formatServiceDate(selectedSet.serviceDate)}, which is before today. Check that you want to use this older service.`
     });
   }
 
@@ -4448,7 +4446,8 @@ function renderServiceFolder() {
     elements.serviceSetResults.hidden = false;
     if (!state.serviceFolder.scanning && !state.serviceFolder.loading && !serviceError) {
       const ready = selectedSet.complete
-        && (selectedSet.dateStatus === 'matches' || selectedSet.dateStatus === 'not-applicable');
+        && (selectedSet.dateStatus === 'not-applicable' || (selectedSet.serviceDate
+          && !window.SyncShowPreparedServiceGuard.isPastServiceDate(selectedSet.serviceDate, serviceDateForProfile())));
       elements.serviceFolderCard.dataset.state = ready ? 'ready' : 'attention';
       setServiceStateBadge(ready ? 'ready' : 'attention', ready ? 'Ready to load' : 'Review files');
       const foundCount = Object.values(selectedSet.inputs || {}).filter(Boolean).length;
@@ -6046,18 +6045,14 @@ function checkFilenameDate(language, filePath) {
     if (state.presentations[language]?.loaded) setRoleCardState(language, 'ready', 'Ready');
     return;
   }
-  const expectedDate = state.serviceFolder.requestedDate || serviceDateForProfile();
-  const [expectedYear, expectedMonth, expectedDay] = expectedDate.split('-').map(Number);
-  const match = parsed.year === expectedYear
-    && parsed.month === expectedMonth
-    && parsed.day === expectedDay;
-  if (match) {
+  const fileDate = `${parsed.year}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day).padStart(2, '0')}`;
+  if (!window.SyncShowPreparedServiceGuard.isPastServiceDate(fileDate, serviceDateForProfile())) {
     warningEl.style.display = 'none';
     setRoleCardState(language, 'ready', 'Ready');
   } else {
-    const fileDate = new Date(parsed.year, parsed.month - 1, parsed.day)
+    const label = new Date(parsed.year, parsed.month - 1, parsed.day)
       .toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    warningEl.textContent = `⚠ File date (${fileDate}) does not match the selected service date`;
+    warningEl.textContent = `⚠ File date (${label}) is before today. Check that you want to use this older file.`;
     warningEl.style.display = 'block';
     setRoleCardState(language, 'attention', 'May be old');
   }
@@ -6425,32 +6420,35 @@ function checkReadyState() {
 }
 
 function confirmPreparedServiceDate() {
-  const selectedDate = state.serviceFolder.requestedDate
-    || serviceDateForProfile();
+  // Read the clock for every start attempt, including after midnight in a
+  // long-running app. The PowerPoint search date is unrelated to Show.
+  const currentDate = serviceDateForProfile();
   const guard = window.SyncShowPreparedServiceGuard.preparedServiceDateGuard({
     presentations: state.presentations,
     serviceHandoff: state.serviceHandoff,
-    selectedDate,
+    currentDate,
     confirmedKeys: state.preparedServiceDateConfirmations
   });
   if (!guard.requiresConfirmation) return true;
 
   const title = state.serviceHandoff.project.title || 'This prepared service';
   const confirmed = window.confirm(
-    `${title} is dated ${formatServiceDate(guard.serviceDate)}, but Load is set to ${formatServiceDate(guard.selectedDate)}. Start this exact prepared service anyway?`
+    `${title} is dated ${formatServiceDate(guard.serviceDate)}, which is before today (${formatServiceDate(guard.currentDate)}). Start this older service anyway?`
   );
   if (confirmed) {
     state.preparedServiceDateConfirmations.add(guard.key);
     return true;
   }
   setStatus(
-    'Start cancelled. Choose the intended service date or prepare the correct service before opening output screens.'
+    'Start cancelled. Load the intended service before opening output screens.'
   );
   return false;
 }
 
 async function startPresentation(testOutput = false) {
   testOutput = testOutput === true;
+  recheckLoadedPresentationDates();
+  if (state.loadMode === 'pptx') renderServiceFolder();
   const readiness = getReadinessState(testOutput);
   if (!readiness.isReady) return;
   if (!confirmPreparedServiceDate()) return;

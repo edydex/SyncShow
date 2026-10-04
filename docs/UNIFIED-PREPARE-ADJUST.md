@@ -5,6 +5,13 @@ panel. The previous native authoring surface is retained internally for its
 import and compatibility controllers, but is no longer a second Prepare tab.
 Prepare → Load → Show remains the volunteer workflow.
 
+Date warnings use the current day in the venue time zone at each Start Show
+attempt. Today's and future services are allowed; an older prepared service
+requires confirmation once per exact revision and current day. The PowerPoint
+search date does not affect this check. Filename and folder warnings also flag
+only dates before today, and are refreshed before starting, including when the
+app has remained open across midnight.
+
 The approved Community connection owns a private persistent browser session
 and a private disk cache. The original editor HTML, Next assets and downloaded
 libraries are available after reopening offline. English BSB/LSV and Russian
