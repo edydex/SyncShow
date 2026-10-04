@@ -15,7 +15,11 @@ async function focusPlannerCue({ syncId, cueId, number, sectionIds = [] }) {
   if (editing?.closest('input,textarea,[contenteditable]')) { editing.blur(); await frame(); }
   const picker = () => document.querySelector('.heritage-service-planner__service-picker select');
   const activeService = () => document.querySelector('[data-active-service]')?.dataset.activeService;
-  if (!document.querySelector('[data-active-service]') && picker()?.value !== syncId) window.postMessage({ type: 'heritage-editor:open', syncId }, window.location.origin);
+  // The bundled Adjust surface opens its active service during React mount.
+  // Posting another open before hydration creates two async loads; the later
+  // one can reset selection after we have focused the current live cue.
+  const activeSurface = window.location.pathname?.startsWith('/syncshow-local/adjust/');
+  if (!activeSurface && !document.querySelector('[data-active-service]') && picker()?.value !== syncId) window.postMessage({ type: 'heritage-editor:open', syncId }, window.location.origin);
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
     if (activeService() === syncId || (picker()?.value === syncId && !picker().disabled)) break;
