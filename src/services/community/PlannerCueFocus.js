@@ -7,6 +7,10 @@ async function focusPlannerCue({ syncId, cueId, number, sectionIds = [] }) {
     const id = requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
     const timer = setTimeout(() => { cancelAnimationFrame(id); resolve(); }, 50);
   });
+  const settle = async predicate => {
+    const deadline = Date.now() + 500;
+    do { await frame(); if (predicate()) return; } while (Date.now() < deadline);
+  };
   const editing = document.activeElement;
   if (editing?.closest('input,textarea,[contenteditable]')) { editing.blur(); await frame(); }
   const picker = () => document.querySelector('.heritage-service-planner__service-picker select');
@@ -28,15 +32,16 @@ async function focusPlannerCue({ syncId, cueId, number, sectionIds = [] }) {
     outputTabs[0]?.click();
     await frame();
   }
-  const visited = new Set();
-  for (let depth = 0; depth < 32; depth++) {
+  const visited = new Set(), selectionDeadline = Date.now() + 3000;
+  for (let depth = 0; depth < 32 && Date.now() < selectionDeadline; depth++) {
     const rows = [...document.querySelectorAll('.heritage-service-planner__row[data-slide-id]')];
     const target = rows.find(row => row.dataset.slideId === cueId);
     if (target) {
       // Ordinary slides replace the selection. Section title controls use
       // Ctrl/Command to select just the title rather than every descendant.
       target.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: target.hasAttribute('aria-expanded') }));
-      await frame();
+      await settle(() => [...document.querySelectorAll('.heritage-service-planner__row[data-slide-id]')]
+        .some(row => row.dataset.slideId === cueId && row.dataset.active === 'true'));
       const selected = [...document.querySelectorAll('.heritage-service-planner__row[data-slide-id]')]
         .find(row => row.dataset.slideId === cueId);
       selected?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
@@ -53,8 +58,15 @@ async function focusPlannerCue({ syncId, cueId, number, sectionIds = [] }) {
     if (!owner && !candidates.length) break;
     const section = owner || candidates[0].row;
     visited.add(section.dataset.slideId);
+    const before = rows.map(row => row.dataset.slideId).join('|');
     section.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
-    await frame();
+    // React can commit a cold editor after the first animation frame. Do not
+    // select a fallback row from the old collapsed outline while it is pending.
+    await settle(() => {
+      const current = [...document.querySelectorAll('.heritage-service-planner__row[data-slide-id]')];
+      return current.map(row => row.dataset.slideId).join('|') !== before
+        || current.find(row => row.dataset.slideId === section.dataset.slideId)?.getAttribute?.('aria-expanded') === 'true';
+    });
   }
   return { focused: false, cueId };
 }

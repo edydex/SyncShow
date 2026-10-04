@@ -3,10 +3,10 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const vm=require('node:vm');
 const {focusPlannerCue}=require('../src/services/community/PlannerCueFocus');
-function fixture({stageFacing=false}={}) {
+function fixture({stageFacing=false,delayedCommit=false}={}) {
   const calls=[],picker={value:'service',disabled:false};let rows;
   const row=(id,number,onClick)=>({dataset:{slideId:id},hasAttribute:()=>false,querySelector:selector=>({textContent:selector.endsWith('__kind')?(number?String(number):'▸'):(number?`${number}. Section`:id)}),
-    dispatchEvent:e=>{calls.push(['click',id,e.ctrlKey]);onClick();},scrollIntoView:()=>calls.push(['scroll',id]),focus:()=>calls.push(['focus',id])});
+    dispatchEvent:e=>{calls.push(['click',id,e.ctrlKey]);if(delayedCommit)setTimeout(onClick,75);else onClick();},scrollIntoView:()=>calls.push(['scroll',id]),focus:()=>calls.push(['focus',id])});
   const target=row('live-cue',27,()=>{target.dataset.active='true';});
   const nested=row('nested',0,()=>{rows=[outer,nested,target];});
   const outer=row('outer',0,()=>{rows=[outer,nested];});
@@ -43,4 +43,11 @@ test('an existing Russian audience tab stays selected when opening Adjust',async
   const f=fixture();
   await f.context.focus({syncId:'service',cueId:'live-cue',number:27,sectionIds:['outer','nested']});
   assert.equal(f.calls.some(value=>value[0]==='audience-output'),false);
+});
+test('a cold React commit after the first frame cannot skip the containing section or current slide',async()=>{
+  const f=fixture({delayedCommit:true});
+  const result=await f.context.focus({syncId:'service',cueId:'live-cue',number:27,sectionIds:['outer','nested']});
+  assert.equal(result.focused,true);
+  assert.deepEqual(f.calls.filter(value=>value[0]==='click'),[['click','outer',true],['click','nested',true],['click','live-cue',false]]);
+  assert.deepEqual(f.calls.slice(-2),[['scroll','live-cue'],['focus','live-cue']]);
 });
