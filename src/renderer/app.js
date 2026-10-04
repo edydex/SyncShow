@@ -2960,10 +2960,14 @@ async function toggleShowAdjust() {
     elements.showAdjustStatus.textContent='Opening the active slide…';
     // Main selects the active local Show and its current cue. No service picker,
     // server page, or remote document read participates in this path.
-    const result=communityCheckedResult(await window.api.openActiveShowAdjust());
+    const rect=elements.showAdjustViewport.getBoundingClientRect();
+    const result=communityCheckedResult(await window.api.openActiveShowAdjust({bounds:{
+      x:Math.max(0,Math.round(rect.left)),y:Math.max(0,Math.round(rect.top)),
+      width:Math.round(rect.width),height:Math.round(rect.height)
+    }}));
     if (!current()) return;
     state.community.plannerOpen=result.opened===true;
-    scheduleCommunityPlannerLayout();
+    await syncCommunityPlannerLayout();
   } catch (error) { if (current()) elements.showAdjustStatus.textContent = error.message; }
 }
 
@@ -2986,7 +2990,8 @@ async function closeShowAdjust() {
   } finally {
     showAdjustBusy = false;
     renderVolunteerShowControls();
-    elements.btnShowAdjust.focus();
+    elements.btnShowAdjust.focus({preventScroll:true});
+    updateThumbnailHighlight({behavior:'instant'});
   }
 }
 
@@ -8857,7 +8862,7 @@ function updateSlideCounter() {
   renderShowCueContext();
 }
 
-function updateThumbnailHighlight() {
+function updateThumbnailHighlight({behavior='smooth'} = {}) {
   updateShowSectionHighlight();
   document.querySelectorAll('.thumbnail-item').forEach(item => {
     const index = Number.parseInt(item.dataset.index, 10);
@@ -8868,8 +8873,8 @@ function updateThumbnailHighlight() {
   });
   
   // Scroll active thumbnail into view - scroll earlier when in lower third of viewport
-  const activeThumb = document.querySelector('.thumbnail-item.active');
   const grid = elements.thumbnailsGrid;
+  const activeThumb = grid?.querySelector('.thumbnail-item.active');
   
   if (activeThumb && grid) {
     const gridRect = grid.getBoundingClientRect();
@@ -8879,11 +8884,15 @@ function updateThumbnailHighlight() {
     const lowerThreshold = gridRect.top + gridRect.height * 0.6;
 
     // Scroll up only when the thumbnail's top has left the viewport
-    if (thumbRect.top > lowerThreshold || thumbRect.top < gridRect.top) {
-      const scrollOffset = activeThumb.offsetTop - (grid.offsetHeight / 2) + (activeThumb.offsetHeight / 2);
+    if (gridRect.height > 0 && (thumbRect.top > lowerThreshold
+      || thumbRect.top < gridRect.top || thumbRect.bottom > gridRect.bottom)) {
+      // offsetTop can be relative to a different positioned ancestor. Use
+      // viewport rectangles plus the grid's own scroll position instead.
+      const scrollOffset = grid.scrollTop + thumbRect.top - gridRect.top
+        - (grid.clientHeight - thumbRect.height) / 2;
       grid.scrollTo({
         top: Math.max(0, scrollOffset),
-        behavior: 'smooth'
+        behavior
       });
     }
   }
@@ -9052,6 +9061,7 @@ function renderThumbnailRoleSelector(availableRoles) {
 // Thumbnail Rendering - Using Base64 images
 function renderThumbnails() {
   const grid = elements.thumbnailsGrid;
+  const scrollTop=grid.scrollTop;
   const preview=showBackstagePreview();
   renderBackstagePreviewStatus();
   const { slidesByRole, selectedRoles } = getThumbnailSelection();
@@ -9167,6 +9177,9 @@ function renderThumbnails() {
   }
 
   grid.replaceChildren(fragment);
+  // Replacing the grid during saved draft refreshes can reset its scroll
+  // offset. Keep the operator's place even while Adjust covers the grid.
+  grid.scrollTop=scrollTop;
 }
 
 function showServiceSections(count = state.totalSlides) {

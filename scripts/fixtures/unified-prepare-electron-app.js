@@ -214,6 +214,15 @@ async function run() {
     await renderer('goToSlide(70)');
     const liveState=await renderer('window.api.getAppState()');
     const cueId=liveState.serviceHandoff.cueIds[70];
+    const assertShowSlideVisible=async label=>{
+      const box=await renderer(`(()=>{const grid=elements.thumbnailsGrid,row=grid.querySelector('.thumbnail-item.active'),r=row.getBoundingClientRect(),g=grid.getBoundingClientRect();return {top:r.top,bottom:r.bottom,gridTop:g.top,gridBottom:g.bottom,scrollTop:grid.scrollTop,index:row.dataset.index};})()`);
+      assert(box.top>=box.gridTop && box.bottom<=box.gridBottom,`${label}: ${JSON.stringify(box)}`);
+    };
+    const assertAdjustSlideVisible=async id=>{
+      const box=await planner.executeJavaScript(`(()=>{const row=document.querySelector('[data-slide-id="${id}"]'),r=row.getBoundingClientRect(),sidebar=row.closest('aside').getBoundingClientRect();return {top:r.top,bottom:r.bottom,sidebarTop:sidebar.top,sidebarBottom:sidebar.bottom,viewport:innerHeight,selected:row.dataset.active};})()`);
+      assert.equal(box.selected,'true');
+      assert(box.top>=Math.max(0,box.sidebarTop) && box.bottom<=Math.min(box.viewport,box.sidebarBottom),`Adjust slide visibility: ${JSON.stringify(box)}`);
+    };
     await renderer('toggleShowAdjust()');
     planner=await waitFor(()=>electron.webContents.getAllWebContents().find(contents=>contents.getURL().includes('/syncshow-local/adjust/index.html')&&!contents.isLoading()),'bundled local Adjust');
     await waitFor(()=>planner.executeJavaScript(`document.querySelector('[data-slide-id="${cueId}"]')?.dataset.active === 'true'`),'Adjust selects live cue');
@@ -248,7 +257,9 @@ async function run() {
     assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Background preview refresh cannot project edits');
     await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"]').click();true`);
     assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),false,'Selecting a draft thumbnail while Adjust is open must not take it live');
+    await renderer('elements.thumbnailsGrid.scrollTo({top:0,behavior:"instant"});true');
     const closeStart=performance.now();await renderer('closeShowAdjust()');const closeMs=performance.now()-closeStart;assert(closeMs<1500,`close waited ${closeMs}ms`);
+    await assertShowSlideVisible('Closing Adjust returns to the live slide after preview rebuild');
     const takeStart=performance.now();
     await renderer(`document.querySelector('.thumbnail-item[data-cue-id="${cueId}"]').click();true`);
     await waitFor(()=>english.webContents.executeJavaScript("document.body.textContent.includes(' test')"),'edited text on actual native output');
@@ -285,8 +296,23 @@ async function run() {
     await waitFor(()=>renderer(`!state.cueNavigationBusy && state.showState?.currentCue?.id==='${cueId}' && state.showState.currentCue.index===71 && state.totalSlides===97`),'draft thumbnail takes by stable cue identity after insertion');
     for(const output of outputs)assert.equal(await output.webContents.executeJavaScript('displayState.currentSlide'),71);
     assert.equal(await english.webContents.executeJavaScript("document.body.textContent.includes(' warm')"),true,'Taking the shifted draft tile must retain the intended content');
+    // Reuse the native editor after browsing elsewhere and resizing while it is
+    // hidden. Selection alone is insufficient: the slide must be in view in
+    // both panes, without any audience take during the transitions.
+    for(const index of [19,87,19]) {
+      control.setSize(index===87?1400:1200,index===87?900:700);
+      await renderer(`goToSlide(${index})`);
+      const id=(await renderer('window.api.getAppState()')).serviceHandoff.cueIds[index];
+      await renderer('toggleShowAdjust()');
+      await assertAdjustSlideVisible(id);
+      await planner.executeJavaScript("document.querySelector('.heritage-service-planner aside').scrollTop=0;true");
+      await renderer('elements.thumbnailsGrid.scrollTo({top:0,behavior:"instant"});renderThumbnails();true');
+      await renderer('closeShowAdjust()');
+      await assertShowSlideVisible(`Returning from Adjust at slide ${index+1}`);
+      assert.equal((await renderer('window.api.getAppState()')).currentSlide,index,'Scrolling/focusing must not take another slide');
+    }
     assert.equal(serverRequests.slice(requestCount).some(request=>request.method==='GET' && request.path.startsWith('/api/community/service-documents') && !request.path.includes('/library/')),false,'Edits and live takes must not fetch service documents from Heritage; explicitly opened libraries may load resources');
-    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
+    await fs.writeFile(resultPath,JSON.stringify({ok:true,actualSharedEditor:true,bundledColdOfflineAdjust:true,noServiceSelector:true,noServerReadsDuringAdjust:true,slideCount:96,focusedSlide:71,localSaveMs,closeMs,takeMs,readyTakeMs,previewAfterTakeMs,savedThumbnailUpdatesWithoutTake:true,livePreviewStableUntilTake:true,draftPreviewDoesNotActivatePackage:true,insertedSlidePreservesLiveCueIdentity:true,adjustScrollTransitions:[20,88,20],audienceStableWhileEditing:true,threeOutputsAcknowledged:true,backgroundSyncCompleted:true},null,2));return;
   }
   if (loadQueueFixture) {
     const clickSlide = async index => {

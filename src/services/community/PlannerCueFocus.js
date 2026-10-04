@@ -31,7 +31,7 @@ async function focusPlannerCue({ syncId, cueId, number, sectionIds = [] }) {
       await frame();
       const selected = [...document.querySelectorAll('.heritage-service-planner__row[data-slide-id]')]
         .find(row => row.dataset.slideId === cueId);
-      selected?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      selected?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
       selected?.focus({ preventScroll: true });
       return { focused: selected?.dataset.active === 'true', cueId };
     }

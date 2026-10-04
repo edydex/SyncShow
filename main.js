@@ -7893,6 +7893,23 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
   };
 }
 
+function communityPlannerBounds(raw) {
+  const bounds = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? {
+        x: Math.round(Number(raw.x)),
+        y: Math.round(Number(raw.y)),
+        width: Math.round(Number(raw.width)),
+        height: Math.round(Number(raw.height))
+      }
+    : null;
+  if (!bounds || !Object.values(bounds).every(Number.isFinite)
+    || bounds.x < 0 || bounds.y < 0 || bounds.width < 640 || bounds.height < 420
+    || bounds.width > 8192 || bounds.height > 8192) {
+    failMainOperation('COMMUNITY_PLANNER_LAYOUT_INVALID', 'Embedded Prepare needs a valid visible area.');
+  }
+  return bounds;
+}
+
 function layoutCommunityPlannerView(request = {}) {
   const allowedKeys = new Set(['visible', 'bounds']);
   if (!request || typeof request !== 'object' || Array.isArray(request)
@@ -7908,25 +7925,7 @@ function layoutCommunityPlannerView(request = {}) {
   }
   const visible = request.visible === true;
   if (visible) {
-    const raw = request.bounds;
-    const bounds = raw && typeof raw === 'object' && !Array.isArray(raw)
-      ? {
-          x: Math.round(Number(raw.x)),
-          y: Math.round(Number(raw.y)),
-          width: Math.round(Number(raw.width)),
-          height: Math.round(Number(raw.height))
-        }
-      : null;
-    const finite = bounds && Object.values(bounds).every(Number.isFinite);
-    if (!finite || bounds.x < 0 || bounds.y < 0
-      || bounds.width < 640 || bounds.height < 420
-      || bounds.width > 8192 || bounds.height > 8192) {
-      failMainOperation(
-        'COMMUNITY_PLANNER_LAYOUT_INVALID',
-        'Embedded Prepare needs a valid visible area.'
-      );
-    }
-    planner.setBounds(bounds);
+    planner.setBounds(communityPlannerBounds(request.bounds));
   }
   planner.setVisible(visible);
   return communityPlannerStatePayload();
@@ -18410,9 +18409,12 @@ ipcMain.handle('community:status', async (event) => {
   }));
 });
 
-ipcMain.handle('community:planner:openActiveAdjust', async event => {
+ipcMain.handle('community:planner:openActiveAdjust', async (event, request = {}) => {
   requireControlSender(event);
   return communityIpcResult(async () => {
+    requirePrepareRequest(request, 1024);
+    requireExactPrepareKeys(request, ['bounds'], 'Adjust');
+    const bounds=request.bounds ? communityPlannerBounds(request.bounds) : null;
     const handoff=installedServiceHandoff(),pointer=currentPreparedServicePointer;
     if(!appState.activeLaunchPlan || !handoff?.project || !pointer)throw new Error('Start a native service before opening Adjust.');
     const sessionId=outputSessionId;
@@ -18438,6 +18440,10 @@ ipcMain.handle('community:planner:openActiveAdjust', async event => {
     };
     await openCommunityPlannerWindow({adjust:{...communityAdjustSession,envelope,remoteBase,assetLoader}});
     if(sessionId!==outputSessionId || project.id!==currentPreparedServicePointer?.projectId)throw new Error('The show changed while Adjust was opening. Open Adjust again.');
+    // Scroll against the actual editor viewport, rather than its initial 1x1
+    // surface or the previous window size. Visibility remains renderer-owned
+    // so a cancelled/late open cannot cover Show again.
+    if(bounds)communityPlannerView.setBounds(bounds);
     communityPlannerShowMode=false;notifyPlannerShowMode();
     const draft=communityPlannerCache.envelope(project.id).project,timeline=compileServiceProject(draft);
     const cueId=handoff.cueIds[appState.currentSlide],number=timeline.cueIds.indexOf(cueId)+1;

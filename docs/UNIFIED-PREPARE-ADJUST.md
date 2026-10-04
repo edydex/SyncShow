@@ -227,3 +227,25 @@ was installed and verified in About. Both existing durable Show draft sources
 remained unchanged after restart; normal Load freshness picked up Community
 revision 127 from the previously loaded revision 126. Preview 46 is retained
 as a rollback bundle. Physical venue acceptance remains separate.
+
+## Keep the active slide visible across Adjust (Preview 48)
+
+Opening Adjust sizes its native editor to the current panel before selecting
+and centering the live cue. It cannot use the initial 1x1 surface or a stale
+window size for scrolling. Visibility remains owned by the renderer, so a late
+open cannot resurface after closing. Closing Adjust immediately brings the
+current live thumbnail into view. Thumbnail rebuilds preserve the grid offset;
+scrolling uses viewport geometry instead of an offset from a different ancestor.
+
+The isolated native rehearsal reproduced the original return-to-top failure.
+It verifies repeated transitions on slides 20, 88 and 20 after resizing the
+window, browsing the editor elsewhere, and rebuilding saved draft previews.
+Every transition checks actual row/tile viewport bounds and unchanged audience
+cue identity. It also retains the saved-edit preview, offline, stable cue and
+three-output acknowledgement checks.
+
+The full suite passed 2,425 tests with two skips. Packaged service-core, Sharp
+and PDF runtime checks passed. Preview 48 (140048) was installed and verified
+in About. The existing prepared-service pointer and all three durable Show
+draft sources remained unchanged after restart. Preview 47 is retained as a
+rollback bundle. No Heritage server deployment is part of this update.
