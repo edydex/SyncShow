@@ -111,6 +111,8 @@ async function packageFixture(t, targetKey, {
       '{"clientId":"must-not-ship"}\n'
     );
   }
+  await fs.cp(path.resolve(__dirname, '../assets/planner-editor'), path.join(asarSource, 'assets/planner-editor'), { recursive: true });
+  await writeFile(asarSource, 'assets/fonts/NotoSans-Variable.ttf', await fs.readFile(path.resolve(__dirname, '../assets/fonts/NotoSans-Variable.ttf')));
   await fs.mkdir(resourcesRoot, { recursive: true });
   await asar.createPackage(asarSource, archivePath);
 
@@ -211,6 +213,8 @@ test('QA evidence binds exact artifacts and native architecture for all four tar
         true
       );
       assert.equal(result.evidence.runtime.architecture, fixture.arch);
+      assert.equal(result.evidence.bundledPlanner.verification, 'source-bytes-matched');
+      assert.ok(result.evidence.bundledPlanner.files.some(file => file.path.endsWith('.js')));
       for (const record of [
         result.evidence.appArchive,
         result.evidence.runtime,

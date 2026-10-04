@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const core = require('./HeritageServiceDocument');
-const { fsyncDirectory } = require('../project/StorageSafety');
+const { atomicWriteFile, ensurePrivateDirectory } = require('../project/StorageSafety');
 
 const ENDPOINT = '/api/community/service-documents';
 const MAX_BYTES = 32 * 1024 * 1024;
@@ -42,7 +42,7 @@ class CommunityPlannerCache {
   }
 
   async load() {
-    await fs.mkdir(this.rootPath, { recursive: true, mode: 0o700 });
+    this.rootPath = await ensurePrivateDirectory(this.rootPath);
     try {
       const saved = JSON.parse(await fs.readFile(path.join(this.rootPath, 'journal.json'), 'utf8'));
       if (saved.schemaVersion === 1) this.state = { ...saved, workspaceLanguage: ['en', 'ru'].includes(saved.workspaceLanguage) ? saved.workspaceLanguage : null, remoteBases: saved.remoteBases || {}, assets: saved.assets || {}, history: saved.history || {} };
@@ -52,13 +52,11 @@ class CommunityPlannerCache {
 
   async persist() {
     const target = path.join(this.rootPath, 'journal.json');
-    const temporary = `${target}.${crypto.randomUUID()}.tmp`;
     const snapshot = JSON.stringify(this.state);
     const operation = this.persistQueue.then(async () => {
-      const file = await fs.open(temporary, 'wx', 0o600);
-      try { await file.writeFile(snapshot); await file.sync(); } finally { await file.close(); }
-      await fs.rename(temporary, target);
-      await fsyncDirectory(this.rootPath);
+      // The shared writer verifies and flushes the published filename too.
+      // Windows cannot use a directory fsync as the rename durability barrier.
+      await atomicWriteFile(target, snapshot, { rootPath: this.rootPath });
       this.onState(this.summary());
     });
     this.persistQueue = operation.catch(() => {});
@@ -220,11 +218,7 @@ class CommunityPlannerCache {
       saveKind, savedBy: 'This computer' };
     entry.syncVersion = entry.id;
     const folder = path.join(this.rootPath, 'history');
-    await fs.mkdir(folder, { recursive: true, mode: 0o700 });
-    const file = await fs.open(path.join(folder, `${entry.id}.json`), 'wx', 0o600);
-    try { await file.writeFile(JSON.stringify(this.state.documents[id])); await file.sync(); }
-    finally { await file.close(); }
-    await fsyncDirectory(folder);
+    await atomicWriteFile(path.join(folder, `${entry.id}.json`), JSON.stringify(this.state.documents[id]), { rootPath: this.rootPath });
     (this.state.history[id] ||= []).push(entry);
     return entry;
   }
@@ -387,8 +381,7 @@ class CommunityPlannerCache {
       if (!image.width || !image.height || image.width * image.height > 100000000) return json({ error: 'Choose a valid picture.' }, 400);
       Object.assign(metadata, { width: image.width, height: image.height, orientation: image.orientation || 1 });
     }
-    await fs.mkdir(path.dirname(this.assetPath(id)), { recursive: true, mode: 0o700 });
-    await fs.writeFile(this.assetPath(id), bytes, { mode: 0o600 });
+    await atomicWriteFile(this.assetPath(id), bytes, { rootPath: this.rootPath });
     this.state.assets[id] = { metadata, pending: true };
     await this.persist();
     if (!this.offline) {
@@ -565,8 +558,7 @@ class CommunityPlannerCache {
     const review = await this.reviewConflict(id);
     if (review.remote.revision !== expectedRemoteRevision) throw new Error('Community changed again. Review the new version before choosing.');
     const archive = path.join(this.rootPath, 'conflict-copies');
-    await fs.mkdir(archive, { recursive: true, mode: 0o700 });
-    await fs.writeFile(path.join(archive, `${crypto.randomUUID()}.json`), JSON.stringify(review), { mode: 0o600 });
+    await atomicWriteFile(path.join(archive, `${crypto.randomUUID()}.json`), JSON.stringify(review), { rootPath: this.rootPath });
     if (resolution === 'use-community') {
       this.state.documents[id] = review.remote;
       this.state.remoteBases[id] = { revision: review.remote.revision, syncVersion: review.remote.syncVersion };
