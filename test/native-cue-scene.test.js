@@ -339,3 +339,27 @@ test('planned captions reserve full-width content space only on the selected aud
   assert.throws(()=>validateBrowserScene({...scene,captionReservation:-1}), /reservation/);
   assert.equal(JSON.stringify(original),before);
 });
+
+test('bilingual songs carry a constrained sub-line gap boundary through both validators', () => {
+  const scene=compileNativeCueScene(compiledTextCue({kind:'song',presetId:'wotbc-song-stacked',channels:{primary:{mode:'content',blocks:[
+    {type:'text',role:'lyrics',text:'Основной язык'},
+    {type:'text',role:'lyrics',text:'Second language',spans:[{start:0,end:15,fontScale:.85,foreground:'#ffc000'}]}
+  ]}}}),'primary',CANVAS);
+  assert.equal(scene.songLanguageBreak,'Основной язык'.length);
+  assert.equal(scene.body[scene.songLanguageBreak],'\n');
+  assert.equal(validateBrowserScene(scene).songLanguageBreak,scene.songLanguageBreak);
+  for (const invalid of [0,1.5,scene.body.length,scene.songLanguageBreak+1]) {
+    assert.throws(()=>normalizeNativeCueScene({...scene,songLanguageBreak:invalid}));
+    assert.throws(()=>validateBrowserScene({...scene,songLanguageBreak:invalid}));
+  }
+  assert.throws(()=>normalizeNativeCueScene({...scene,sourceKind:'sermon'}));
+  const historical=compileNativeCueScene(compiledTextCue({kind:'song',presetId:'wotbc-song-stacked',channels:{primary:{mode:'content',blocks:[{type:'text',role:'lyrics',text:'a'},{type:'text',role:'lyrics',text:'b'}]}}}),'primary',{...CANVAS,rendererVersion:19});
+  assert.equal(historical.songLanguageBreak,undefined);
+});
+
+
+test('historical song title geometry remains verifiable after the Arial typography update', () => {
+  const cue=compiledTextCue({kind:'song',presetId:'wotbc-song-title',channels:{primary:{mode:'content',blocks:[{type:'text',role:'title',text:'Song'},{type:'text',role:'subtitle',text:'Песня'}]}}});
+  assert.equal(compileNativeCueScene(cue,'primary',{...CANVAS,rendererVersion:19}).style.subtitleSize,128);
+  assert.equal(compileNativeCueScene(cue,'primary',CANVAS).style.subtitleSize,122);
+});

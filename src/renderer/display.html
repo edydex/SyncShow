@@ -8,6 +8,10 @@
   <link rel="stylesheet" href="translation-display.css">
   <link rel="stylesheet" href="teaching-display.css">
   <style>
+    @font-face {font-family:"SyncShow Presentation";src:url("../../assets/fonts/LiberationSans-Regular.ttf") format("truetype");font-weight:100 500;font-style:normal;font-display:block;}
+    @font-face {font-family:"SyncShow Presentation";src:url("../../assets/fonts/LiberationSans-Bold.ttf") format("truetype");font-weight:600 900;font-style:normal;font-display:block;}
+    @font-face {font-family:"SyncShow Presentation";src:url("../../assets/fonts/LiberationSans-Italic.ttf") format("truetype");font-weight:100 500;font-style:italic;font-display:block;}
+    @font-face {font-family:"SyncShow Presentation";src:url("../../assets/fonts/LiberationSans-BoldItalic.ttf") format("truetype");font-weight:600 900;font-style:italic;font-display:block;}
     * {
       margin: 0;
       padding: 0;
@@ -102,7 +106,7 @@
       flex: 0 0 auto;
       overflow: hidden;
       color: #fff;
-      font-family: "SyncShow Noto Sans", sans-serif;
+      font-family: Arial, "SyncShow Presentation", sans-serif;
       font-kerning: normal;
       text-rendering: geometricPrecision;
     }
@@ -251,7 +255,7 @@
       align-items: center;
       justify-content: center;
       color: #333;
-      font-family: system-ui, sans-serif;
+      font-family: Arial, "SyncShow Presentation", sans-serif;
       font-size: 24px;
     }
     
@@ -289,7 +293,7 @@
       background:
         radial-gradient(circle at 78% 14%, rgba(70, 92, 150, 0.24), transparent 32%),
         linear-gradient(145deg, #07101f 0%, #101a31 58%, #080d18 100%);
-      font-family: "Segoe UI", system-ui, sans-serif;
+      font-family: Arial, "SyncShow Presentation", sans-serif;
     }
 
     .bible-overlay[hidden] {
@@ -315,7 +319,7 @@
       gap: 0.34em;
       max-width: 1500px;
       overflow: hidden;
-      font-family: Georgia, "Times New Roman", serif;
+      font-family: Arial, "SyncShow Presentation", sans-serif;
       font-size: clamp(38px, calc(4.15 * var(--output-vw, 1vw)), 78px);
       line-height: 1.28;
       text-wrap: balance;
@@ -344,7 +348,7 @@
     .bible-verse-number {
       margin-right: 0.32em;
       color: #aabcf0;
-      font-family: "Segoe UI", system-ui, sans-serif;
+      font-family: Arial, "SyncShow Presentation", sans-serif;
       font-size: 0.48em;
       font-weight: 800;
       vertical-align: super;

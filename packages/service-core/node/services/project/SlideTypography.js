@@ -1,10 +1,11 @@
 'use strict';
 
-const metrics = require('./NotoSansMetrics.json');
+const metrics = require('./ArialCompatibleMetrics.json');
 const { resolveNativeTextPreset } = require('./NativePresetCatalog');
 const { scriptureDisplay, scriptureCredit } = require('./SlideFormatting');
 
-// These advances come from the bundled Noto Sans font at each displayed weight.
+// These advances come from the bundled Arial-compatible Liberation Sans faces.
+// Arial and Liberation Sans use the same advances; 400/500 are regular, 600/700 bold.
 // A small shaping allowance covers kerning and browser/Pango rounding. It is
 // independent of viewport size, so all renderers receive the same saved size.
 const advanceCache = new Map();
@@ -67,6 +68,21 @@ function groupFontSize(cues, maximum, minimum) {
       if (Object.values(cue.channels).some(channel => channel.blocks.some(block => block.type === 'bible' && scriptureCredit(block)))) {
         height = Math.min(height, 1080 * (.84 - (preset.bodyTopPercent || 2) / 100));
       }
+      if (cue.kind === 'song') {
+        return Object.values(cue.channels).filter(channel => !['hide', 'condensed', 'current-next'].includes(channel.mode)).every(channel => {
+          const blocks = channel.blocks.filter(block => block.type === 'text' && block.role === 'lyrics' && block.text.trim());
+          let usedHeight = 0;
+          for (const block of blocks) {
+            const uniform = block.spans?.find(span => span.start === 0 && span.end === block.text.length);
+            const blockSize = size * (uniform?.fontScale || 1);
+            usedHeight += wrappedLines(block.text, blockSize, width, uniform?.weight || preset.bodyWeight)
+              * blockSize * (1 + (preset.lineSpacingPercent ?? 8) / 100);
+            if (size !== minimum && block.text.split('\n').some(line => textWidth(line, blockSize, uniform?.weight || preset.bodyWeight) > width)) return false;
+          }
+          if (cue.presetId === 'wotbc-song-stacked' && blocks.length > 1) usedHeight += size * .22;
+          return usedHeight <= height;
+        });
+      }
       return cueBodies(cue).every(body => {
         const lines = wrappedLines(body, size, width, preset.bodyWeight);
         return lines * size * (1 + (preset.lineSpacingPercent ?? 8) / 100) <= height
@@ -97,14 +113,23 @@ function applyTimelineTypography(project, cues, index) {
   for (const entries of groups.values()) {
     const maximum = Math.min(...entries.map(cue => cue.textStyle?.bodySize || textPreset(cue.presetId).bodySize));
     const minimum = entries[0].kind === 'song' ? Math.max(32, Math.ceil(maximum * .75)) : Math.min(maximum, 42);
-    const key = JSON.stringify([maximum, minimum, entries.map(cue => [cue.presetId,cueBodies(cue),Object.values(cue.channels).some(channel => channel.blocks.some(block => block.type === 'bible' && scriptureCredit(block)))])]);
+    const key = JSON.stringify([maximum, minimum, entries.map(cue => [cue.presetId,cueBodies(cue),Object.values(cue.channels).map(channel => [channel.mode,channel.blocks.map(block => [block.role,block.spans])]),Object.values(cue.channels).some(channel => channel.blocks.some(block => block.type === 'bible' && scriptureCredit(block)))])]);
     let size = fittedCache.get(key);
     if (!size) {
       size = groupFontSize(entries, maximum, minimum);
       if (fittedCache.size >= 128) fittedCache.delete(fittedCache.keys().next().value);
       fittedCache.set(key, size);
     }
-    for (const cue of entries) cue.textStyle = {...cue.textStyle, bodySize: size};
+    for (const cue of entries) {
+      // Keep a song visually consistent, while letting its shorter default-size
+      // pages grow by at most 20%. Manual sizes keep their ceiling and the
+      // existing safety fit rather than receiving automatic enlargement.
+      const manualSize = project.items[cue.itemId]?.textStyle?.bodySize;
+      const pageMaximum = Math.min(maximum, Math.round(size * 1.2));
+      const pageSize = cue.kind === 'song' && !manualSize
+        ? groupFontSize([cue], pageMaximum, size) : size;
+      cue.textStyle = {...cue.textStyle, bodySize: pageSize};
+    }
   }
 }
 module.exports = {textWidth, wrappedLines, normalizeTextStyle, textPreset, groupFontSize, applyTimelineTypography};

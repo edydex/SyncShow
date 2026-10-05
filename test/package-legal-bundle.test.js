@@ -157,6 +157,7 @@ async function legalFixture(t, {
     'assets/fonts/OFL-NotoSans.txt',
     'Noto Sans OFL fixture\n'
   );
+  await writeFile(unpackedRoot, 'assets/fonts/OFL-LiberationSans.txt', 'Liberation Sans OFL fixture\n');
   await writeFile(
     appOutDir,
     'SyncShow.app/Contents/Frameworks/Electron Framework.framework/'

@@ -407,6 +407,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
       ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
       ...(raw.backgroundDimOpacity !== undefined ? ['backgroundDimOpacity'] : []),
       ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
+      ...(raw.songLanguageBreak !== undefined ? ['songLanguageBreak'] : []),
       'background',
       'body',
       'bodySpans',
@@ -429,6 +430,10 @@ function normalizeNativeCueScene(raw, expected = {}) {
       title,
       body,
       bodySpans: normalizeSceneSpans(raw.bodySpans, body),
+      ...(raw.songLanguageBreak !== undefined ? {songLanguageBreak: (() => {
+        if (common.sourceKind !== 'song' || !Number.isSafeInteger(raw.songLanguageBreak) || raw.songLanguageBreak < 1 || raw.songLanguageBreak >= body.length - 1 || body[raw.songLanguageBreak] !== '\n') throw new TypeError('Invalid song language boundary');
+        return raw.songLanguageBreak;
+      })()} : {}),
       ...(raw.titleSpans !== undefined ? { titleSpans: normalizeSceneSpans(raw.titleSpans, title, 'scene.titleSpans') } : {}),
       ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: ASSET_ID_PATTERN.test(raw.backgroundAssetId) ? raw.backgroundAssetId : fail('INVALID_NATIVE_SCENE', 'Invalid background image.') } : {}),
       ...(raw.backgroundDimOpacity !== undefined ? { backgroundDimOpacity: typeof raw.backgroundDimOpacity === 'number' && raw.backgroundDimOpacity >= 0 && raw.backgroundDimOpacity <= 1 ? raw.backgroundDimOpacity : fail('INVALID_NATIVE_SCENE', 'Invalid background dimming.') } : {}),
@@ -559,7 +564,7 @@ function resolvedTextStyle(preset, hasTitle, presetId = '') {
   };
 }
 
-function songTitleScene(cue, title, subtitle, credit, canvas) {
+function songTitleScene(cue, title, subtitle, credit, canvas, options = {}) {
   return normalizeNativeCueScene({
     schemaVersion: NATIVE_CUE_SCENE_SCHEMA_VERSION,
     kind: NATIVE_CUE_SCENE_KIND,
@@ -582,7 +587,7 @@ function songTitleScene(cue, title, subtitle, credit, canvas) {
       titleWidthPercent: 94,
       titleTopPercent: 10,
       titleRegionHeightPercent: 70,
-      subtitleSize: cue.presetId === 'wotbc-song-title' ? 128 : 92,
+      subtitleSize: cue.presetId === 'wotbc-song-title' ? (options.rendererVersion < 20 ? 128 : 122) : 92,
       subtitleMinimumSize: 36,
       subtitleForeground: cue.presetId === 'wotbc-song-title' ? '#ffc000' : '#ffff00',
       subtitleWeight: '500',
@@ -616,7 +621,7 @@ function textScene(cue, channel, canvas, options = {}) {
     if (cue.kind === 'song' && localizedTitle) {
       const subtitle = textBlocks.find(block => block.role === 'subtitle')?.text || '';
       const credit = textBlocks.find(block => block.role === 'credit')?.text || '';
-      return songTitleScene(cue, localizedTitle, subtitle, credit, canvas);
+      return songTitleScene(cue, localizedTitle, subtitle, credit, canvas, options);
     }
     const bodyParts = [];
     const bodySeparator = cue.presetId === 'wotbc-song-stacked' ? '\n' : '\n\n';
@@ -660,6 +665,7 @@ function textScene(cue, channel, canvas, options = {}) {
     title,
     body,
     bodySpans,
+    ...(!(options.rendererVersion < 20) && cue.presetId === 'wotbc-song-stacked' && textBlocks.filter(block => block.role === 'lyrics' && block.text).length === 2 ? {songLanguageBreak: textBlocks.find(block => block.role === 'lyrics' && block.text).text.length} : {}),
     ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
     ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId, ...(!legacy ? {backgroundDimOpacity: channel.blocks.find(block => block.type === 'image' && block.role === 'background').dimOpacity ?? 0.55} : {}) } : {}),
     ...(bibleCredit ? { credit: bibleCredit } : {}),

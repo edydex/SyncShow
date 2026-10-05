@@ -21,7 +21,7 @@ async function fixture(t, mutate = async () => {}) {
   const source = path.join(root, 'source');
   await fs.cp(path.resolve(__dirname, '../assets/planner-editor'), path.join(source, 'assets/planner-editor'), { recursive: true });
   await fs.mkdir(path.join(source, 'assets/fonts'));
-  await fs.copyFile(path.resolve(__dirname, '../assets/fonts/NotoSans-Variable.ttf'), path.join(source, 'assets/fonts/NotoSans-Variable.ttf'));
+  await fs.cp(path.resolve(__dirname, '../assets/fonts'), path.join(source, 'assets/fonts'), {recursive:true});
   await fs.mkdir(path.dirname(path.join(source, CORE_ENTRY)), { recursive: true });
   await fs.copyFile(path.resolve(__dirname, '..', CORE_ENTRY), path.join(source, CORE_ENTRY));
   await mutate(source);
@@ -54,6 +54,8 @@ async function provenanceFixture(t, mutate = async () => {}) {
   await write('assets/planner-editor/assets/editor.css', 'body { color: white; }');
   await write('assets/planner-editor/THIRD_PARTY_NOTICES.txt', 'Retained notices');
   await write('assets/fonts/NotoSans-Variable.ttf', 'fixture font bytes');
+  for (const face of ['Regular','Bold','Italic','BoldItalic']) await write(`assets/fonts/LiberationSans-${face}.ttf`, 'fixture fallback font');
+  await write('assets/fonts/OFL-LiberationSans.txt', 'fixture fallback license');
   const sourceSha256 = {};
   for (const [original, entry] of Object.entries(EDITOR_SOURCE_ENTRIES)) {
     const bytes = Buffer.from(`// ${original}\nexport const fixture = "original";\n`);

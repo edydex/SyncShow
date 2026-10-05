@@ -144,10 +144,8 @@ class ShowPackagePublisher {
     }
     this.projectStore = options.projectStore;
     this.rootPath = path.resolve(options.rootPath);
-    this.fontPath = options.fontPath
-      ? path.resolve(options.fontPath)
-      : path.join(__dirname, '../../../assets/fonts/NotoSans-Variable.ttf');
-    this.fontConfigPath = path.resolve(options.fontConfigPath || path.join(path.dirname(this.fontPath), 'fonts.conf'));
+    this.fontPath = path.resolve(require('./PresentationFont').fontForPath(options.fontPath).fontPath);
+    this.fontConfigPath = options.fontConfigPath ? path.resolve(options.fontConfigPath) : null;
     this.fontConfigCachePath = options.fontConfigCachePath
       ? path.resolve(options.fontConfigCachePath)
       : null;
@@ -457,7 +455,7 @@ class ShowPackagePublisher {
       || manifest.compilerVersion !== 3
       // Retain previously supported offline packages, including the last Mac
       // test build, while new preparation receives a fresh renderer identity.
-      || ![11, 15, 16, 17, 18, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
+      || ![11, 15, 16, 17, 18, 19, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
       || !Number.isSafeInteger(manifest.cueCount)
       || manifest.cueCount < 1
       || manifest.cueCount > MAX_PACKAGE_CUES

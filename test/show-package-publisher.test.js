@@ -119,7 +119,7 @@ test('a text-fit failure identifies the exact slide and channel and leaves no ac
 test('old renderer packages still open offline while fresh preparation uses a new identity', async t => {
   const fixture = await preparedProject(t);
   const current = await fixture.publisher.publish(fixture.publishOptions);
-  assert.equal(current.manifest.rendererVersion, 19);
+  assert.equal(current.manifest.rendererVersion, 20);
   const legacy = structuredClone(current.manifest);
   legacy.rendererVersion = 11;
   const identity = {};

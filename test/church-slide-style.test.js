@@ -36,7 +36,7 @@ test('church stacked compile, scene and raster preserve shared language order an
   assert.equal(scene.body,'Первая строка\nВторая строка\nEnglish one\nEnglish two');
   assert.equal(scene.body.slice(scene.bodySpans[0].start),'English one\nEnglish two');
   assert.equal(scene.bodySpans[0].foreground,'#ffc000');
-  assert.equal(scene.bodySpans[0].fontScale,0.96);
+  assert.equal(scene.bodySpans[0].fontScale,0.85);
   assert.equal(scene.style.bodyWidthPercent,98);
   const intro = compileNativeCueScene(title,'english',{width:1920,height:1080});
   assert.equal(intro.style.subtitleForeground,'#ffc000');
@@ -131,7 +131,7 @@ test('font scaling survives native/browser scene validation and rejects unsafe v
   const timeline = core.compileServiceProject(songProject());
   const scene = compileNativeCueScene(timeline.cues[timeline.cueIds[1]], 'english', {width:1920,height:1080});
   const valid = browser.window.SyncShowNativeCueRenderer.validateScene(scene);
-  assert.equal(valid.bodySpans[0].fontScale, 0.96);
+  assert.equal(valid.bodySpans[0].fontScale, 0.85);
   for (const invalid of [-1, 0, 10, '96%', NaN, Infinity]) {
     const candidate = {...scene, bodySpans: [{...scene.bodySpans[0], fontScale: invalid}]};
     assert.throws(() => browser.window.SyncShowNativeCueRenderer.validateScene(candidate));

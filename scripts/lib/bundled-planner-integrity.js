@@ -55,7 +55,7 @@ async function verifyBundledPlannerIntegrity(archivePath, root = sourceRoot) {
   if (!required.every(entry => expectedEntries.includes(entry))) invalid('The bundled planner source is incomplete.');
 
   const files = [];
-  for (const entry of [...expectedEntries, FONT_ENTRY]) {
+  for (const entry of [...expectedEntries, FONT_ENTRY, ...['Regular','Bold','Italic','BoldItalic'].map(face => `assets/fonts/LiberationSans-${face}.ttf`), 'assets/fonts/OFL-LiberationSans.txt']) {
     const packaged = bytesInArchive(archivePath, entry);
     const source = await fs.readFile(path.join(root, entry));
     if (!packaged.length || !packaged.equals(source)) {

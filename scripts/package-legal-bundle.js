@@ -655,6 +655,8 @@ async function buildLegalBundle(context, { sourceRoot } = {}) {
     fontLicense
   ));
 
+  notices.push(await copyBundleFile(stagingRoot, 'notices/fonts/LiberationSans-OFL.txt', path.join(unpackedRoot, 'assets', 'fonts', 'OFL-LiberationSans.txt')));
+
   const canvasSourceTargetRoot = path.join(
     projectDir,
     'node_modules',
