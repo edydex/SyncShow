@@ -456,6 +456,7 @@ class NativeSlideRenderer {
     const markup =
       `<span foreground="${foreground}" weight="${weight}" style="${fontStyle}">${contentMarkup}</span>`;
     const sizes = [];
+    let measuredHeight = null;
     for (let size = preferred; size > minimum; size -= 2) sizes.push(size);
     sizes.push(minimum);
     for (const size of sizes) {
@@ -482,11 +483,12 @@ class NativeSlideRenderer {
         error.details = { width, maxHeight, fontSize: size };
         throw error;
       }
-      if (rendered.info.height <= maxHeight + (options.exactBounds ? 0 : 2)) return { ...rendered, fontSize: size, fontWeight: weight };
+      measuredHeight = rendered.info.height;
+      if (measuredHeight <= maxHeight + (options.exactBounds ? 0 : 2)) return { ...rendered, fontSize: size, fontWeight: weight };
     }
     const error = new Error('This cue has more text than the selected preset can display safely.');
     error.code = 'TEXT_OVERFLOW';
-    error.details = { width, maxHeight, minimumFontSize: minimum };
+    error.details = { width, maxHeight, minimumFontSize: minimum, measuredHeight };
     throw error;
   }
 

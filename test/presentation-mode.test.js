@@ -110,6 +110,27 @@ test('choosing one language does not require unrelated loaded decks to have the 
   assert.equal(read().isReady, true);
 });
 
+test('SyncShow Load requires a loaded native service even when cached PowerPoints look ready', () => {
+  for (const cached of [{}, presentations]) {
+    const { read } = rendererFixture({ loadMode: 'syncshow', serviceHandoff: null, presentations: cached });
+    const readiness = read();
+    assert.equal(readiness.isReady, false);
+    assert.match(readiness.issues[0], /No SyncShow service is loaded/);
+    assert.equal(read(true).isReady, false, 'Test Output requires the selected service too');
+  }
+});
+
+test('a failed or unfinished selected service cannot start an older native package', () => {
+  const loaded = { loadMode: 'syncshow', serviceHandoff: { project: { id: 'old' } } };
+  assert.equal(rendererFixture(loaded).read().isReady, true);
+  for (const extra of [{ nativeLoadBusy: true }, { nativeLoadError: 'Today could not be rendered' },
+    { nativeRequestedServiceId: 'today' }]) {
+    assert.equal(rendererFixture({ ...loaded, ...extra }).read().isReady, false);
+  }
+  const legacy = rendererFixture({ ...loaded, loadMode: 'pptx', nativeLoadError: 'Today could not be rendered' });
+  assert.equal(legacy.read().isReady, true, 'an explicit legacy choice remains available');
+});
+
 function chooserFixture(roleId, connected = displays) {
   let launches = 0;
   const attempt = { snapshot: { singleScreen: true, outputs: [] }, decisions: {} };

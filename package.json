@@ -1,6 +1,6 @@
 {
   "name": "sync-show",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Synchronized configurable presentation outputs for church services",
   "main": "main.js",
   "scripts": {

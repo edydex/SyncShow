@@ -53,6 +53,8 @@
     const onLoaded = typeof options.onLoaded === 'function'
       ? options.onLoaded
       : async () => {};
+    const onLoadStarted = typeof options.onLoadStarted === 'function' ? options.onLoadStarted : () => {};
+    const onLoadFailed = typeof options.onLoadFailed === 'function' ? options.onLoadFailed : () => {};
     const elements = {
       card: byId('prepareSharedServices'),
       cardStatus: byId('prepareSharedServicesStatus'),
@@ -300,6 +302,7 @@
 
     async function openService(syncId, resolution = null, options = {}) {
       if (state.busy) return false;
+      onLoadStarted(syncId);
       setBusy(true);
       setNotice(
         resolution ? 'Applying the reviewed choice…' : 'Opening the exact shared service…'
@@ -311,7 +314,9 @@
           fresh: options.fresh === true || state.conflict?.fresh === true
         }));
         if (result.state === 'prepare-pending') {
-          onStatus('Prepare has local edits waiting to sync or be reviewed. Open in Prepare to continue; the loaded package has been kept.');
+          const message = 'Prepare has local edits waiting to sync or be reviewed. Open in Prepare to continue; the loaded package has been kept.';
+          onStatus(message);
+          onLoadFailed(message);
           return false;
         }
         if (result.state === 'conflict') {
@@ -319,13 +324,16 @@
           if (!elements.dialog.open) elements.dialog.showModal();
           renderConflict();
           setNotice('Nothing was overwritten. Review both versions and choose one.', 'warning');
+          onLoadFailed('The selected service has conflicting edits. Review the versions before starting.');
           return false;
         }
-        if (result.state === 'current') return true;
+        // "current" describes the local document, not the package installed
+        // in Load. Reuse/publish that exact package even when no fetch changed.
         return await showOpenedService(syncId, result, options);
       } catch (error) {
         setNotice(error.message, 'error');
         onStatus(error.message);
+        onLoadFailed(error.message);
         return false;
       } finally {
         setBusy(false);

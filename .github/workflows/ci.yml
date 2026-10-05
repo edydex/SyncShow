@@ -37,3 +37,14 @@ jobs:
 
       - name: Run syntax and regression checks
         run: npm run ci
+
+      - name: Rehearse native projection and PowerPoint fallback
+        if: runner.os != 'Linux'
+        run: node scripts/verify-native-raster.js
+
+      - name: Rehearse native projection and PowerPoint fallback (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+          xvfb-run -a node scripts/verify-native-raster.js

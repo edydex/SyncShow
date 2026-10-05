@@ -597,7 +597,7 @@ async function createAndPublishService(control) {
   let current = await rendererInvoke(control, `
     return window.api.createServiceProject({
       title: 'Acknowledged Navigation Electron Proof',
-      serviceDate: '2026-08-16',
+      serviceDate: serviceDateForProfile(),
       startTime: '10:30',
       teamNotes: 'Isolated automated proof only.'
     });
