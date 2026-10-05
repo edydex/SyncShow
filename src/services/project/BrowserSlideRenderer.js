@@ -56,10 +56,14 @@ class BrowserSlideRenderer {
   async _render(rawScene, fitOverflow) {
     const scene = normalizeNativeCueScene(rawScene);
     if (scene.canvas.width !== this.width || scene.canvas.height !== this.height) throw new Error('The slide canvas does not match the renderer.');
-    if (fitOverflow && scene.style) {
-      for (const key of ['bodyMinimumSize', 'titleMinimumSize', 'subtitleMinimumSize', 'creditMinimumSize']) {
-        if (scene.style[key] !== undefined) scene.style[key] = 14;
-      }
+    if (fitOverflow) {
+      const fit = node => {
+        for (const key of ['bodyMinimumSize', 'titleMinimumSize', 'subtitleMinimumSize', 'creditMinimumSize']) {
+          if (node.style?.[key] !== undefined) node.style[key] = 14;
+        }
+        if (node.current) fit(node.current);
+      };
+      fit(scene);
     }
     const urls = {};
     for (const assetId of sceneAssetIds(scene)) {

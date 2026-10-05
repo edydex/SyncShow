@@ -27,7 +27,8 @@ class LegacyServiceFallback {
         compileNativeCueScene(timeline.cues[cueId], channelId, { width: 1920, height: 1080, nextCue: timeline.cues[timeline.cueIds[index + 1]] || null }))
     }));
     for (const role of scenes) {
-      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(role.roleId)) throw new Error('Invalid fallback screen role.');
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(role.roleId)
+        || ['__proto__', 'constructor', 'prototype'].includes(role.roleId)) throw new Error('Invalid fallback screen role.');
       for (const scene of role.scenes) {
         for (const assetId of sceneAssetIds(scene)) {
           if (selected.project.assets[assetId]?.kind === 'video') throw new Error('This fallback cannot preserve video playback. Edit the affected native slide instead.');
@@ -50,11 +51,14 @@ class LegacyServiceFallback {
         const cacheDir = path.join(directory, roleId);
         await ensureConfinedDirectory(directory, cacheDir);
         const images = [], metadataSlides = [];
+        let imageBytes = 0;
         for (let index = 0; index < channelScenes.length; index += 1) {
           const cue = timeline.cues[timeline.cueIds[index]];
           const nextCue = timeline.cues[timeline.cueIds[index + 1]] || null;
           const rendered = await renderer.renderScene(channelScenes[index], { fitOverflow: true });
           const image = rendered.info.data;
+          imageBytes += image.length;
+          if (imageBytes > 512 * 1024 * 1024) throw new Error('This output is too large for PowerPoint fallback. Split the service before converting.');
           const number = String(index + 1).padStart(3, '0');
           await atomicWriteFile(path.join(cacheDir, `slide_${number}.jpg`), image, { rootPath: directory, mode: 0o600, maximumBytes: 20 * 1024 * 1024 });
           const thumb = await this.sharp(image).resize(300).jpeg({ quality: 85 }).toBuffer();

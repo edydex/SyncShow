@@ -1081,7 +1081,10 @@ class ShowPackagePublisher {
                       resolveAsset: assetId => this.projectStore.resolveAssetPath(projectRead.project.id, projectRead.revisionId, assetId)
                     });
                     try { rendered = await browserRenderer.renderScene(scene); }
-                    catch (browserError) { error = browserError; }
+                    catch (browserError) {
+                      browserError.details = { ...error.details, ...browserError.details, previewErrorCode: error.code };
+                      error = browserError;
+                    }
                   }
                   if (!rendered) throw new ShowPackageError(error.code,
                     `Slide ${cueIndex + 1} (${cue.title || 'Untitled'}) on ${channelId}: ${error.message}`,

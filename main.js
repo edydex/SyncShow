@@ -26556,14 +26556,29 @@ ipcMain.handle('prepare:projects:moveItem', async (event, request = {}) => {
 
 async function offerLegacyServiceFallback(error, selected, roleMapping, isCurrent) {
   if (!isCurrent()) throw error;
-  const answer = await dialog.showMessageBox(controlWindow, {
+  let answer, copied = false;
+  do {
+    answer = await dialog.showMessageBox(controlWindow, {
     type: 'warning',
     title: 'Use PowerPoint fallback?',
     message: 'This service could not be prepared in SyncShow format.',
-    detail: `${selected.project.title} · ${selected.project.serviceDate}\n\n${error.message}\n\nConvert this exact service into PowerPoints and load those instead? Slide text and images are preserved; long text may be smaller. Video playback cannot be converted. The service stays editable in Prepare.`,
-    buttons: ['Convert and Load PowerPoints', 'Cancel'],
-    defaultId: 0, cancelId: 1, noLink: true
-  });
+    detail: `${selected.project.title} · ${selected.project.serviceDate}\n\n${error.message}\n\nConvert this exact service into PowerPoints and load those instead? Slide text and images are preserved; long text may be smaller. Video playback cannot be converted. The service stays editable in Prepare.${copied ? '\n\nError details copied to the clipboard.' : ''}`,
+    buttons: ['Convert and Load PowerPoints', 'Copy error details', 'Cancel'],
+    defaultId: 0, cancelId: 2, noLink: true
+    });
+    if (answer.response === 1) {
+      const numericDetails = Object.fromEntries(Object.entries(error.details || {}).filter(([_key, value]) => typeof value === 'number' && Number.isFinite(value)));
+      clipboard.writeText(JSON.stringify({
+        version: app.getVersion(), platform: process.platform, arch: process.arch,
+        projectId: selected.project.id, revisionId: selected.revisionId,
+        serviceDate: selected.project.serviceDate, errorCode: error.code,
+        cueId: error.details?.cueId, channelId: error.details?.channelId,
+        previewErrorCode: error.details?.previewErrorCode, measurements: numericDetails,
+        font: 'Noto Sans (bundled)', sharpVersions: require('sharp').versions
+      }, null, 2));
+      copied = true;
+    }
+  } while (answer.response === 1 && isCurrent());
   if (answer.response !== 0 || !isCurrent()) throw error;
   const fallback = new LegacyServiceFallback({
     rootPath: path.join(app.getPath('userData'), 'service-powerpoint-fallbacks'),

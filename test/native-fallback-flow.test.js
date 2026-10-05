@@ -47,7 +47,7 @@ function mainFixture({ cancel = false, superseded = false } = {}) {
     async build(request) { calls.push(['build', request.projectId, request.revisionId]); return { presentations: { english: {} } }; }
     async activate() { calls.push(['activate']); }
   }
-  const sandbox = vm.createContext({ dialog: { showMessageBox: async () => { calls.push(['prompt']); return { response: cancel ? 1 : 0 }; } },
+  const sandbox = vm.createContext({ dialog: { showMessageBox: async () => { calls.push(['prompt']); return { response: cancel ? 2 : 0 }; } },
     controlWindow: {}, LegacyServiceFallback: Fallback, path: require('node:path'), app: { getPath: () => '/isolated' },
     CONFIG: { cacheDir: '/isolated/cache' }, browserSlideRenderer() {}, appState: { activeLaunchPlan: null },
     getPrepareServices: () => ({ serviceProjectStore: { read: async () => selected } }),
