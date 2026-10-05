@@ -404,6 +404,7 @@ async function verifyLegalBundle(manifestPath, { requireComplete = true, sourceP
     'notices/electron-43.2.0/LICENSE',
     'notices/electron-43.2.0/LICENSES.chromium.html',
     'notices/fonts/NotoSans-OFL.txt',
+    'notices/fonts/LiberationSans-OFL.txt',
     ...(materialsVerified ? ['notices/native-sources/THIRD_PARTY_NOTICES.txt'] : [])
   ];
   const expectedProvenancePaths = [

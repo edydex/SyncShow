@@ -349,6 +349,7 @@
         ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
         ...(raw.backgroundDimOpacity !== undefined ? ['backgroundDimOpacity'] : []),
         ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
+      ...(raw.songLanguageBreak !== undefined ? ['songLanguageBreak'] : []),
         'background',
         'body',
         'bodySpans',
@@ -371,6 +372,10 @@
         title: string(raw.title, 'scene.title', 500),
         body,
         bodySpans: spans(raw.bodySpans, body),
+      ...(raw.songLanguageBreak !== undefined ? {songLanguageBreak: (() => {
+        if (common.sourceKind !== 'song' || !Number.isSafeInteger(raw.songLanguageBreak) || raw.songLanguageBreak < 1 || raw.songLanguageBreak >= body.length - 1 || body[raw.songLanguageBreak] !== '\n') throw new TypeError('Invalid song language boundary');
+        return raw.songLanguageBreak;
+      })()} : {}),
         ...(raw.titleSpans !== undefined ? { titleSpans: spans(raw.titleSpans, raw.title) } : {}),
         ...(raw.backgroundAssetId !== undefined ? { backgroundAssetId: raw.backgroundAssetId } : {}),
         ...(raw.backgroundDimOpacity !== undefined ? { backgroundDimOpacity: raw.backgroundDimOpacity } : {}),
@@ -747,7 +752,16 @@
       body.style.color = style.bodyForeground;
       body.style.fontWeight = style.bodyWeight;
       body.style.textAlign = style.bodyAlign;
-      appendStyledText(body, scene.body, scene.bodySpans, style.paragraphGap);
+      if (scene.songLanguageBreak !== undefined) {
+        for (const [index, [start,end]] of [[0,scene.songLanguageBreak],[scene.songLanguageBreak+1,scene.body.length]].entries()) {
+          const section = document.createElement('div');
+          section.className = index ? 'native-song-secondary' : 'native-song-primary';
+          if (index) Object.assign(section.style,{marginTop:'.22em',lineHeight:`${(1 + style.lineSpacingPercent / 100) * .85}em`});
+          const sectionSpans = scene.bodySpans.filter(span => span.end > start && span.start < end).map(span => ({...span,start:Math.max(span.start,start)-start,end:Math.min(span.end,end)-start}));
+          appendStyledText(section, scene.body.slice(start,end), sectionSpans, false);
+          body.appendChild(section);
+        }
+      } else appendStyledText(body, scene.body, scene.bodySpans, style.paragraphGap);
       bodyRegion.appendChild(body);
       surface.appendChild(bodyRegion);
       let credit = null;

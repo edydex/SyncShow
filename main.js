@@ -2970,18 +2970,11 @@ function browserSlideRenderer(options) {
   return new BrowserSlideRenderer({ ...options, BrowserWindow, fontPath: getBundledPresentationFontPath() });
 }
 
-function getBundledPresentationFontPath() {
-  if (isPackaged) {
-    return path.join(
-      process.resourcesPath,
-      'app.asar.unpacked',
-      'assets',
-      'fonts',
-      'NotoSans-Variable.ttf'
-    );
-  }
-  return path.join(__dirname, 'assets', 'fonts', 'NotoSans-Variable.ttf');
+function getPresentationFont() {
+  const fontsRoot = isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked', 'assets', 'fonts') : path.join(__dirname, 'assets', 'fonts');
+  return require('./src/services/project/PresentationFont').presentationFont({fontsRoot});
 }
+function getBundledPresentationFontPath() { return getPresentationFont().fontPath; }
 
 function getPrepareServices() {
   if (!app.isReady()) throw new Error('Prepare storage is not available before SyncShow is ready.');
@@ -8687,7 +8680,7 @@ function createDisplayWindow(displayInfo, output, sessionId) {
       fadeDuration: appState.fadeDuration,
       syncMode: appState.syncMode,
       ...(output.renderer === 'native-cue'
-        ? { fontPath: getBundledPresentationFontPath() }
+        ? { fontPath: getBundledPresentationFontPath(), fontFaces: getPresentationFont().faces }
         : {})
     });
 

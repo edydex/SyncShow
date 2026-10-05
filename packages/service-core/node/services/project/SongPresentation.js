@@ -75,7 +75,7 @@ function presentationLyricBlocks(item, resolvedByChannel, channelId, sectionId, 
   // A single-language song must not repeat the same words in another color.
   if (secondary.trim() && secondary.trim() !== primary.trim()) {
     blocks.push({ type: 'text', role: 'lyrics', text: secondary,
-      spans: [{ start: 0, end: secondary.length, foreground: '#ffc000', fontScale: 0.96 }] });
+      spans: [{ start: 0, end: secondary.length, foreground: '#ffc000', fontScale: 0.85 }] });
   }
   return blocks;
 }

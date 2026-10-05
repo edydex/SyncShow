@@ -192,7 +192,7 @@ class CommunityPlannerCache {
     const url = new URL(request.url);
     let cachedResource = null;
     if (url.origin !== this.origin) return this.fetch(request);
-    if (url.pathname.startsWith('/syncshow-local/adjust/') || (this.activeServiceId && url.pathname==='/fonts/NotoSans-Variable.ttf')) return this.localRequest(request);
+    if (url.pathname.startsWith('/syncshow-local/adjust/') || (this.activeServiceId && /^\/fonts\/(?:NotoSans-Variable|LiberationSans-(?:Regular|Bold|Italic|BoldItalic))\.ttf$/.test(url.pathname))) return this.localRequest(request);
     if (this.activeServiceId) {
       if (request.method === 'GET' && url.pathname === ENDPOINT) return this.listResponse({schemaVersion:1,items:[]});
       if (request.method === 'GET' && url.pathname === `${ENDPOINT}/${this.activeServiceId}`) return json({schemaVersion:1,serviceDocument:this.envelope(this.activeServiceId)});

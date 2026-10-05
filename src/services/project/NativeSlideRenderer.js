@@ -407,11 +407,20 @@ class NativeSlideRenderer {
     if (this.width < 640 || this.height < 360 || this.width * this.height > MAX_RENDER_PIXELS) {
       throw new RangeError('Native renderer size must be between 640×360 and 3840×2160');
     }
-    this.fontPath = path.resolve(options.fontPath || path.join(__dirname, '../../../assets/fonts/NotoSans-Variable.ttf'));
+    const font = require('./PresentationFont').fontForPath(options.fontPath);
+    this.fontPath = path.resolve(font.fontPath);
+    this.fontFamily = font.family;
     if (!fs.existsSync(this.fontPath) || !fs.statSync(this.fontPath).isFile()) {
       throw new Error(`Bundled presentation font is unavailable: ${this.fontPath}`);
     }
-    const fontConfigPath = path.resolve(options.fontConfigPath || path.join(path.dirname(this.fontPath), 'fonts.conf'));
+    let fontConfigPath = path.resolve(options.fontConfigPath || path.join(path.dirname(this.fontPath), 'fonts.conf'));
+    if (!options.fontConfigPath && this.fontFamily === 'Arial') {
+      const root = path.resolve(options.fontConfigCachePath || path.join(os.tmpdir(), 'syncshow-font-cache'));
+      fs.mkdirSync(root, {recursive:true, mode:0o700});
+      fontConfigPath = path.join(root, 'arial-fonts.conf');
+      const directory = escapePango(path.dirname(this.fontPath));
+      fs.writeFileSync(fontConfigPath, `<?xml version="1.0"?><fontconfig><dir>${directory}</dir><cachedir prefix="xdg">fontconfig</cachedir></fontconfig>`);
+    }
     if (fs.existsSync(fontConfigPath) && fs.statSync(fontConfigPath).isFile()) {
       const cachePath = path.resolve(options.fontConfigCachePath || path.join(os.tmpdir(), 'syncshow-font-cache'));
       fs.mkdirSync(cachePath, { recursive: true, mode: 0o700 });
@@ -468,7 +477,7 @@ class NativeSlideRenderer {
         rendered = await this.sharp({
           text: {
             text: markup,
-            font: `Noto Sans ${size}`,
+            font: `${this.fontFamily} ${size}`,
             fontfile: this.fontPath,
             width,
             align: options.align || 'center',
@@ -500,7 +509,7 @@ class NativeSlideRenderer {
     const measure = async (displayText) => {
       const image = this.sharp({ text: {
         text: `<span foreground="${options.foreground || '#f8fafc'}" weight="${fontWeight}" style="${options.italic ? 'italic' : 'normal'}">${escapePango(displayText)}</span>`,
-        font: `Noto Sans ${fontSize}`,
+        font: `${this.fontFamily} ${fontSize}`,
         fontfile: this.fontPath,
         rgba: true,
         wrap: 'none'
@@ -536,11 +545,44 @@ class NativeSlideRenderer {
     });
   }
 
+  async _songLanguageLayer(body, split, options) {
+    const ranges = [[0, split], [split + 1, body.length]];
+    const pieces = ranges.map(([start, end]) => ({
+      text: body.slice(start, end),
+      spans: (options.spans || []).filter(span => span.end > start && span.start < end)
+        .map(span => ({ ...span, start: Math.max(span.start, start) - start, end: Math.min(span.end, end) - start }))
+    }));
+    const minimum = Math.min(options.fontSize, options.minimumFontSize);
+    const width = Math.floor(options.width);
+    for (let size = options.fontSize; size >= minimum; size = Math.max(minimum, size - 2)) {
+      const layers = await Promise.all(pieces.map(piece => this._textLayer(piece.text, {
+        ...options, spans: piece.spans, fontSize: size, minimumFontSize: size, maxHeight: this.height
+      })));
+      const gap = Math.round(size * .22);
+      const height = (layers[0]?.info.height || 0) + gap + (layers[1]?.info.height || 0);
+      if (height <= options.maxHeight + 2) {
+        const composites = layers.flatMap((layer, index) => layer ? [{
+          input: layer.data,
+          left: Math.round({ left: 0, center: (width - layer.info.width) / 2, right: width - layer.info.width }[options.align || 'center']),
+          top: index ? (layers[0]?.info.height || 0) + gap : 0
+        }] : []);
+        const data = await this.sharp({ create: { width, height: Math.max(1, height), channels: 4, background: '#00000000' } })
+          .composite(composites).png().toBuffer();
+        return { data, info: { width, height }, fontSize: size, fontWeight: options.weight };
+      }
+      if (size === minimum) break;
+    }
+    const error = new Error('This cue has more text than the selected preset can display safely.');
+    error.code = 'TEXT_OVERFLOW';
+    throw error;
+  }
+
   async _renderTextSlide({
     credit = '',
     title = '',
     body = '',
     bodySpans = [],
+    songLanguageBreak = null,
     titleSpans = [],
     backgroundAssetId = null,
     backgroundDimOpacity = 0.55,
@@ -607,7 +649,8 @@ class NativeSlideRenderer {
     if (credit) bodyMaximumHeight = Math.min(bodyMaximumHeight, Math.max(50, this.height * (quoteCredit ? .74 : .84) - availableTop));
     const bodyWidth = this.width * (preset.bodyWidthPercent || 82) / 100;
     const bodyAlign = preset.bodyAlign || 'center';
-    const bodyLayer = await this._textLayer(body, {
+    const renderBody = options => songLanguageBreak !== null ? this._songLanguageLayer(body, songLanguageBreak, options) : this._textLayer(body, options);
+    const bodyLayer = await renderBody({
       width: bodyWidth,
       maxHeight: bodyMaximumHeight,
       fontSize: churchLayout ? preset.bodySize * resolutionScale : preset.bodySize,
@@ -682,7 +725,7 @@ class NativeSlideRenderer {
     const subtitleLayer = await this._textLayer(subtitle, {
       width: this.width * 0.9,
       maxHeight: this.height * 0.25,
-      fontSize: Math.round((presetId === 'wotbc-song-title' ? 128 : 92) * logicalScale),
+      fontSize: Math.round((presetId === 'wotbc-song-title' ? 122 : 92) * logicalScale),
       minimumFontSize: Math.round(36 * logicalScale),
       foreground: presetId === 'wotbc-song-title' ? '#ffc000' : '#ffff00',
       weight: '500',
@@ -912,6 +955,7 @@ class NativeSlideRenderer {
                   : (localizedTitle || cue.title)),
             body: textValue || (cue.kind === 'sermon' || cue.kind === 'notice' ? '' : localizedTitle),
             bodySpans: textValue ? bodySpans : [],
+            ...(cue.presetId === 'wotbc-song-stacked' && bodyParts.length === 2 ? {songLanguageBreak:bodyParts[0].length} : {}),
             titleSpans: textBlocks.find(block => block.role === 'title')?.spans || [],
             backgroundAssetId: imageBlock?.role === 'background' ? imageBlock.assetId : null,
             backgroundDimOpacity: imageBlock?.dimOpacity ?? 0.55,

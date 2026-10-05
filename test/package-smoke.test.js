@@ -115,6 +115,7 @@ async function packageFixture(t, targetKey, {
   }
   await fs.cp(path.resolve(__dirname, '../assets/planner-editor'), path.join(asarSource, 'assets/planner-editor'), { recursive: true });
   await writeFile(asarSource, 'assets/fonts/NotoSans-Variable.ttf', await fs.readFile(path.resolve(__dirname, '../assets/fonts/NotoSans-Variable.ttf')));
+  for (const file of ['Regular','Bold','Italic','BoldItalic'].map(face => `LiberationSans-${face}.ttf`).concat('OFL-LiberationSans.txt')) await writeFile(asarSource, 'assets/fonts/'+file, await fs.readFile(path.resolve(__dirname, '../assets/fonts',file)));
   await fs.mkdir(resourcesRoot, { recursive: true });
   await finished(await asar.createPackage(asarSource, archivePath));
 

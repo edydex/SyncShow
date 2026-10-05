@@ -10,7 +10,9 @@ const { normalizeNativeCueScene, sceneAssetIds } = require('../show/NativeCueSce
 class BrowserSlideRenderer {
   constructor({ BrowserWindow, fontPath, resolveAsset, width = 1920, height = 1080, sharp, rendererDirectory }) {
     this.BrowserWindow = BrowserWindow;
-    this.fontPath = fontPath;
+    const font = require('./PresentationFont').fontForPath(fontPath);
+    this.fontPath = font.fontPath;
+    this.fontFaces = font.faces;
     this.resolveAsset = resolveAsset;
     this.width = width;
     this.height = height;
@@ -39,8 +41,10 @@ class BrowserSlideRenderer {
         const style = document.createElement('style');
         style.textContent = ${JSON.stringify(css)};
         document.head.appendChild(style);
-        const font = new FontFace('SyncShow Noto Sans', 'url(' + ${JSON.stringify(pathToFileURL(this.fontPath).href)} + ')', { weight: '100 900' });
-        document.fonts.add(await font.load());
+        for (const face of ${JSON.stringify(this.fontFaces.map(face => ({...face,url:pathToFileURL(face.path).href})) )}) {
+          const font = new FontFace('SyncShow Presentation', 'url(' + face.url + ')', {weight:face.weight,style:face.style});
+          document.fonts.add(await font.load());
+        }
         await document.fonts.ready;
       })()`);
     })();

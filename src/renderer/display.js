@@ -223,7 +223,7 @@ function handleInit(config) {
   displayState.displayId = config.displayId;
   displayState.isReady = true;
   displayState.fontReadiness = displayState.renderer === 'native-cue'
-    ? preparePresentationFont(config.fontPath)
+    ? preparePresentationFont(config.fontPath, config.fontFaces)
     : Promise.resolve({ ok: true });
   
   // Apply initial fade duration if provided
@@ -242,7 +242,7 @@ function handleInit(config) {
   console.log(`[Display] Configured as ${config.language} display on monitor ${config.displayId}`);
 }
 
-async function preparePresentationFont(fontPath) {
+async function preparePresentationFont(fontPath, fontFaces) {
   try {
     if (typeof fontPath !== 'string' || fontPath.length < 1 || fontPath.length > 4096) {
       throw new Error('The bundled presentation font path is invalid');
@@ -251,17 +251,16 @@ async function preparePresentationFont(fontPath) {
     if (typeof fontUrl !== 'string' || !fontUrl.startsWith('file:')) {
       throw new Error('The bundled presentation font URL is invalid');
     }
-    const face = new FontFace(
-      'SyncShow Noto Sans',
-      `url("${fontUrl}") format("truetype")`,
-      { display: 'block', style: 'normal', weight: '100 900' }
-    );
-    const loadedFace = await face.load();
-    document.fonts.add(loadedFace);
-    await document.fonts.ready;
-    if (!document.fonts.check('16px "SyncShow Noto Sans"')) {
-      throw new Error('The bundled presentation font did not become available');
+    const faces = fontFaces || [{path:fontPath,weight:'100 900',style:'normal'}];
+    if (!Array.isArray(faces) || faces.length < 1 || faces.length > 4) throw new Error('Invalid presentation font faces');
+    for (const face of faces) {
+      if (typeof face.path !== 'string' || face.path.length > 4096 || !['100 500','600 900','100 900'].includes(face.weight) || !['normal','italic'].includes(face.style)) throw new Error('Invalid presentation font face');
+      const url = window.pathUtils.toFileUrl(face.path);
+      if (!url.startsWith('file:')) throw new Error('Invalid presentation font URL');
+      document.fonts.add(await new FontFace('SyncShow Presentation', `url("${url}") format("truetype")`, {display:'block',style:face.style,weight:face.weight}).load());
     }
+    await document.fonts.ready;
+    if (!document.fonts.check('16px "SyncShow Presentation"')) throw new Error('The presentation font did not become available');
     return { ok: true };
   } catch (error) {
     console.error('[Display] Bundled presentation font failed to load:', error);

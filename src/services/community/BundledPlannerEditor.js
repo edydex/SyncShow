@@ -3,7 +3,7 @@ const fs=require('node:fs/promises'),path=require('node:path');
 const PREFIX='/syncshow-local/adjust/';
 async function bundledPlannerResponse(request,{rootPath,fontsRoot,language='en'}) {
   const url=new URL(request.url);
-  if(request.method==='GET' && fontsRoot && url.pathname==='/fonts/NotoSans-Variable.ttf')return new Response(await fs.readFile(path.join(fontsRoot,'NotoSans-Variable.ttf')),{headers:{'Content-Type':'font/ttf'}});
+  if(request.method==='GET' && fontsRoot && ['NotoSans-Variable.ttf','LiberationSans-Regular.ttf','LiberationSans-Bold.ttf','LiberationSans-Italic.ttf','LiberationSans-BoldItalic.ttf'].some(name=>url.pathname==='/fonts/'+name))return new Response(await fs.readFile(path.join(fontsRoot,path.basename(url.pathname))),{headers:{'Content-Type':'font/ttf'}});
   if(request.method!=='GET'||!url.pathname.startsWith(PREFIX))return null;
   const relative=decodeURIComponent(url.pathname.slice(PREFIX.length)),target=path.resolve(rootPath,relative);
   const confined=path.relative(path.resolve(rootPath),target);
