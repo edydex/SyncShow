@@ -92,8 +92,19 @@ class LegacyServiceFallback {
   // on filesystem failure, including roles whose previous cache was absent.
   async activate(built) {
     this.cacheRoot = await ensurePrivateDirectory(this.cacheRoot);
+    // Exports and caches can live on different drives. Copy and validate all
+    // new decks beside the active caches before using same-volume renames.
+    const staging = path.join(this.cacheRoot, `.fallback-stage-${crypto.randomUUID()}`);
+    await ensureConfinedDirectory(this.cacheRoot, staging);
     const backups = [], installed = [];
     try {
+      for (const [roleId, presentation] of Object.entries(built.presentations)) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(roleId)
+          || ['__proto__', 'constructor', 'prototype'].includes(roleId)) throw new Error('Invalid fallback screen role.');
+        const prepared = path.join(staging, roleId);
+        await fs.cp(presentation.cacheDir, prepared, { recursive: true, force: false, errorOnExist: true });
+        await this.converter.validateGeneration(prepared, presentation.slideCount);
+      }
       for (const [roleId, presentation] of Object.entries(built.presentations)) {
         const target = path.join(this.cacheRoot, roleId);
         const backup = path.join(this.cacheRoot, `.fallback-backup-${crypto.randomUUID()}`);
@@ -101,14 +112,17 @@ class LegacyServiceFallback {
         if (targetStats && (!targetStats.isDirectory() || targetStats.isSymbolicLink())) throw new Error('The active slideshow cache is unsafe.');
         try { await fs.rename(target, backup); backups.push({ target, backup }); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
-        await fs.rename(presentation.cacheDir, target);
-        installed.push({ presentation, target, original: presentation.cacheDir });
+        const prepared = path.join(staging, roleId);
+        await fs.rename(prepared, target);
+        installed.push({ presentation, target, original: prepared });
       }
       for (const { presentation, target } of installed) presentation.cacheDir = target;
     } catch (error) {
       for (const { target, original } of installed.reverse()) await fs.rename(target, original);
       for (const { target, backup } of backups.reverse()) await fs.rename(backup, target);
       throw error;
+    } finally {
+      await fs.rm(staging, { recursive: true, force: true });
     }
     for (const { backup } of backups) await fs.rm(backup, { recursive: true, force: true }).catch(() => {});
     return built;

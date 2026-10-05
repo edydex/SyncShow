@@ -44,7 +44,7 @@ if (typeof protocol?.registerSchemesAsPrivileged === 'function') {
 // Native UI smoke tests must never share the church's normal application
 // profile. This override is inert unless the caller supplies both its explicit
 // switch and a marked/empty directory confined beneath the OS temporary root.
-configureIsolatedTestUserData({ app });
+const isolatedTestUserData = configureIsolatedTestUserData({ app });
 
 // Node.js PPTX converter (replaces Python)
 const {
@@ -2945,7 +2945,7 @@ function getResourcePath(relativePath) {
 // Named 'slide-cache' to avoid collision with Electron/Chromium's 'Cache'
 // directory on case-insensitive filesystems (Windows, macOS).
 function getCacheDir() {
-  if (isPackaged) {
+  if (isPackaged || isolatedTestUserData.active) {
     // Use app's userData folder for cache in production
     return path.join(app.getPath('userData'), 'slide-cache');
   } else {
@@ -18212,13 +18212,31 @@ ipcMain.handle('prepare:projects:previewItem', async (event, request = {}) => {
   });
   const item = current.project.items[itemId];
   const channelVariant = item.kind === 'song' ? item.variants?.[channelId] : null;
-  const rendered = channelVariant?.mode === 'derive'
-    ? await renderer.renderSingerPreview(
+  let rendered;
+  try {
+    rendered = channelVariant?.mode === 'derive'
+      ? await renderer.renderSingerPreview(
         cues[boundedOffset],
         channelVariant.from,
         cues[boundedOffset + 1] || null
       )
-    : await renderer.renderCue(cues[boundedOffset], channelId);
+      : await renderer.renderCue(cues[boundedOffset], channelId);
+  } catch (error) {
+    if (!['TEXT_OVERFLOW', 'TEXT_RENDER_FAILED'].includes(error?.code)) throw error;
+    const browser = browserSlideRenderer({
+      width: CONFIG.displayWidth, height: CONFIG.displayHeight,
+      resolveAsset: assetId => current.services.serviceProjectStore.resolveAssetPath(current.projectId, current.expectedRevisionId, assetId)
+    });
+    try {
+      const scene = require('./src/services/show/NativeCueScene').compileNativeCueScene(cues[boundedOffset], channelId, {
+        width: CONFIG.displayWidth, height: CONFIG.displayHeight, nextCue: cues[boundedOffset + 1] || null
+      });
+      rendered = await browser.renderScene(scene);
+      rendered.metadata = channelVariant?.mode === 'derive'
+        ? require('./src/services/project/NativeSlideRenderer').singerCueMetadata(cues[boundedOffset], channelVariant.from, cues[boundedOffset + 1] || null)
+        : require('./src/services/project/NativeSlideRenderer').cueMetadataForChannel(cues[boundedOffset], channelId);
+    } finally { await browser.dispose(); }
+  }
   const previewBuffer = await require('sharp')(rendered.info.data)
     .resize(640, 360, { fit: 'fill' })
     .jpeg({ quality: 82, chromaSubsampling: '4:2:0' })

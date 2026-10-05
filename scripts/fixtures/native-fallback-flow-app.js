@@ -2,15 +2,21 @@
 const { app, BrowserWindow, dialog } = require('electron');
 const fs = require('node:fs/promises'), path = require('node:path'), assert = require('node:assert/strict');
 const { ShowPackagePublisher } = require('../../src/services/project/ShowPackagePublisher');
+const { NativeSlideRenderer } = require('../../src/services/project/NativeSlideRenderer');
 const root = process.env.SYNCSHOW_RASTER_TEST_ROOT;
 if (!root) throw new Error('An isolated test directory is required.');
 const originalPublish = ShowPackagePublisher.prototype.publish;
+const originalRender = NativeSlideRenderer.prototype.renderCue;
 let fault = false, prompts = 0;
 ShowPackagePublisher.prototype.publish = async function (...args) {
   if (!fault) return originalPublish.apply(this, args);
   const error = new Error('Slide 1 on english: synthetic rendering failure');
   error.code = 'TEXT_OVERFLOW';
   throw error;
+};
+NativeSlideRenderer.prototype.renderCue = async function (...args) {
+  if (!fault) return originalRender.apply(this, args);
+  throw Object.assign(new Error('Synthetic preview overflow'), { code: 'TEXT_OVERFLOW' });
 };
 dialog.showMessageBox = async (_win, options) => {
   assert.equal(options.title, 'Use PowerPoint fallback?');
@@ -37,6 +43,9 @@ app.whenReady().then(async () => {
   current = await invoke(`return window.api.setServicePlanningStatus({projectId:${JSON.stringify(current.project.id)}, expectedRevisionId:${JSON.stringify(current.revisionId)}, status:"ready", waivers:${JSON.stringify(waivers)}});`);
   assert.equal(current.readiness.ready, true);
   fault = true;
+  const preview = await invoke(`return window.api.previewServiceItem({projectId:${JSON.stringify(current.project.id)},expectedRevisionId:${JSON.stringify(current.revisionId)},itemId:${JSON.stringify(current.project.rootItemIds[0])},channelId:${JSON.stringify(Object.keys(current.project.channels)[0])}});`);
+  assert.equal(preview.cueCount, 1);
+  assert.match(preview.dataUrl, /^data:image\/jpeg;base64,/);
   const result = await invoke(`beginNativeServiceLoad(${JSON.stringify(current.project.id)}); const result=await window.api.publishServiceProject({projectId:${JSON.stringify(current.project.id)},revisionId:${JSON.stringify(current.revisionId)}});await refreshPublishedProject(result,{project:${JSON.stringify(current.project)},revisionId:${JSON.stringify(current.revisionId)}});state.nativeLoadBusy=false;checkReadyState();return {result,mode:state.loadMode,ready:getReadinessState().isReady,loaded:Object.values(state.presentations).filter(x=>x.loaded).map(x=>x.slideCount),error:state.nativeLoadError,caption:document.getElementById("loadActionMessage").textContent};`);
   assert.equal(prompts, 1);
   assert.equal(result.result.legacyFallback.projectId, current.project.id);

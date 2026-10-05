@@ -69,6 +69,23 @@ test('a partial cache activation rolls back previously replaced roles', async t 
   assert.equal(await fs.readFile(path.join(cache, 'russian'), 'utf8'), 'not a directory');
 });
 
+test('activation uses only cache-volume renames even when exports are on another drive', async t => {
+  const f = await fixture(t), built = await f.service.build(f.request);
+  const rename = fs.rename;
+  t.after(() => { fs.rename = rename; });
+  fs.rename = async (source, destination) => {
+    if (!source.startsWith(`${f.service.cacheRoot}${path.sep}`)) {
+      throw Object.assign(new Error('cross-device rename'), { code: 'EXDEV' });
+    }
+    return rename(source, destination);
+  };
+  await f.service.activate(built);
+  for (const role of ['english', 'russian']) {
+    await f.service.converter.validateGeneration(built.presentations[role].cacheDir, 1);
+  }
+  assert.equal((await fs.readdir(f.service.cacheRoot)).some(name => name.startsWith('.fallback-')), false);
+});
+
 test('PowerPoint export validates input and escapes its title XML', async t => {
   const f = await fixture(t);
   await assert.rejects(imagePowerPoint([]), /count/);
