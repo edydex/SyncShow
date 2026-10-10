@@ -243,6 +243,14 @@ function handleInit(config) {
 }
 
 async function preparePresentationFont(fontPath, fontFaces) {
+  const diagnostics = {
+    family: 'SyncShow Presentation',
+    documentProtocol: window.location.protocol,
+    fontSetStatus: document.fonts.status,
+    cssCheck: false,
+    available: false,
+    faces: []
+  };
   try {
     if (typeof fontPath !== 'string' || fontPath.length < 1 || fontPath.length > 4096) {
       throw new Error('The bundled presentation font path is invalid');
@@ -253,20 +261,61 @@ async function preparePresentationFont(fontPath, fontFaces) {
     }
     const faces = fontFaces || [{path:fontPath,weight:'100 900',style:'normal'}];
     if (!Array.isArray(faces) || faces.length < 1 || faces.length > 4) throw new Error('Invalid presentation font faces');
+    const loadedFaces = [];
     for (const face of faces) {
       if (typeof face.path !== 'string' || face.path.length > 4096 || !['100 500','600 900','100 900'].includes(face.weight) || !['normal','italic'].includes(face.style)) throw new Error('Invalid presentation font face');
       const url = window.pathUtils.toFileUrl(face.path);
       if (!url.startsWith('file:')) throw new Error('Invalid presentation font URL');
-      document.fonts.add(await new FontFace('SyncShow Presentation', `url("${url}") format("truetype")`, {display:'block',style:face.style,weight:face.weight}).load());
+      const faceDiagnostics = {
+        fileName: face.path.replace(/\\/g, '/').split('/').pop() || 'unknown',
+        weight: face.weight,
+        style: face.style,
+        status: 'pending'
+      };
+      diagnostics.faces.push(faceDiagnostics);
+      try {
+        const loaded = await new FontFace(
+          'SyncShow Presentation',
+          `url("${url}") format("truetype")`,
+          { display: 'block', style: face.style, weight: face.weight }
+        ).load();
+        document.fonts.add(loaded);
+        loadedFaces.push(loaded);
+        faceDiagnostics.status = 'loaded';
+      } catch (error) {
+        faceDiagnostics.status = 'failed';
+        faceDiagnostics.error = {
+          name: error instanceof Error ? error.name : 'Error',
+          message: error instanceof Error ? error.message : 'Font face failed to load'
+        };
+        throw error;
+      }
     }
     await document.fonts.ready;
-    if (!document.fonts.check('16px "SyncShow Presentation"')) throw new Error('The presentation font did not become available');
-    return { ok: true };
+    diagnostics.fontSetStatus = document.fonts.status;
+    // Chromium's FontFaceSet.check() can return false for a dynamically added
+    // variable/ranged face even after FontFace.load() resolved and the face is
+    // present in this document's set. That false negative blocked real venue
+    // startup in 2.0.3. Treat the loaded face objects as the readiness source
+    // of truth and retain the CSS query only as support evidence.
+    diagnostics.cssCheck = document.fonts.check('16px "SyncShow Presentation"');
+    diagnostics.available = loadedFaces.length === faces.length
+      && loadedFaces.every(face =>
+        face.status === 'loaded' && document.fonts.has(face));
+    if (!diagnostics.available) throw new Error('The presentation font did not finish loading');
+    return { ok: true, diagnostics };
   } catch (error) {
     console.error('[Display] Bundled presentation font failed to load:', error);
+    diagnostics.fontSetStatus = document.fonts.status;
+    diagnostics.cssCheck = document.fonts.check('16px "SyncShow Presentation"');
+    diagnostics.error = {
+      name: error instanceof Error ? error.name : 'Error',
+      message: error instanceof Error ? error.message : 'The bundled presentation font failed to load'
+    };
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'The bundled presentation font failed to load'
+      error: error instanceof Error ? error.message : 'The bundled presentation font failed to load',
+      diagnostics
     };
   }
 }
@@ -287,11 +336,13 @@ async function handleNativeCueGoto(data) {
   const nextLayer = elements.nativeLayers[nextLayerIndex];
   let candidate = null;
 
+  let fontDiagnostics = null;
   try {
     if (!Number.isSafeInteger(index) || index < 0) {
       throw new Error('Native cue index is invalid');
     }
     const font = await displayState.fontReadiness;
+    fontDiagnostics = font.diagnostics || null;
     if (!isCurrentNavigation(navigationVersion)) return;
     if (!font.ok) throw new Error(font.error || 'The bundled presentation font is unavailable');
 
@@ -372,7 +423,8 @@ async function handleNativeCueGoto(data) {
       kind: 'native-cue',
       index: Number.isSafeInteger(index) ? index : -1,
       ok: false,
-      error: message
+      error: message,
+      diagnostics: fontDiagnostics
     });
     showError(`Failed to prepare cue ${Number.isSafeInteger(index) ? index + 1 : ''}`.trim());
   }

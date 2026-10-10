@@ -28,6 +28,13 @@ const { TranslationOperatorWindow } = require('./src/services/translation/Transl
 const {
   configureIsolatedTestUserData
 } = require('./src/services/runtime/IsolatedTestUserData');
+const {
+  diagnosticFileName,
+  inspectFontFaces,
+  safeError,
+  sanitizeGpuInfo,
+  sanitizeRendererFontDiagnostics
+} = require('./src/services/runtime/SupportDiagnostics');
 
 const SERMON_RECORDING_PLAYBACK_SCHEME = 'syncshow-sermon-media';
 if (typeof protocol?.registerSchemesAsPrivileged === 'function') {
@@ -430,6 +437,8 @@ const slideTranslation = new SlideTranslationCues({
 let outputSessionId = 0;
 let outputLifecyclePhase = 'idle';
 let displayStartInProgress = false;
+let activeShowStartDiagnostics = null;
+let lastShowStartDiagnostics = null;
 let outputsShouldBeVisible = false;
 let activeShowControlMode = 'full';
 let activeVolunteerShowBinding = null;
@@ -2971,10 +2980,179 @@ function browserSlideRenderer(options) {
 }
 
 function getPresentationFont() {
-  const fontsRoot = isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked', 'assets', 'fonts') : path.join(__dirname, 'assets', 'fonts');
-  return require('./src/services/project/PresentationFont').presentationFont({fontsRoot});
+  return require('./src/services/project/PresentationFont').presentationFont({
+    fontsRoot: getBundledFontsRoot()
+  });
 }
 function getBundledPresentationFontPath() { return getPresentationFont().fontPath; }
+
+function getBundledFontsRoot() {
+  return isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'assets', 'fonts')
+    : path.join(__dirname, 'assets', 'fonts');
+}
+
+// Output windows use the complete app-owned family for their explicit
+// readiness barrier. CSS still prefers an installed Arial family, but the
+// sandbox no longer has to reopen protected operating-system font files in
+// order for Show to start on Windows.
+function getOutputWindowFallbackFont() {
+  return require('./src/services/project/PresentationFont').fontForPath(
+    path.join(getBundledFontsRoot(), 'LiberationSans-Regular.ttf')
+  );
+}
+
+function diagnosticBounds(value) {
+  if (!value || typeof value !== 'object') return null;
+  return Object.fromEntries(['x', 'y', 'width', 'height']
+    .map(key => [key, Number.isFinite(value[key]) ? value[key] : 0]));
+}
+
+function diagnosticOutputSummary(output) {
+  return {
+    id: rendererSafeText(output?.id || '', 160),
+    name: rendererSafeText(output?.name || '', 200),
+    kind: rendererSafeText(output?.kind || '', 80),
+    renderer: rendererSafeText(output?.renderer || '', 80),
+    sourceRoleId: rendererSafeText(output?.sourceRoleId || '', 160),
+    displayId: String(output?.displayId ?? '').slice(0, 160)
+  };
+}
+
+function beginShowStartDiagnostics(options) {
+  const attempt = {
+    startedAt: new Date().toISOString(),
+    status: 'starting',
+    testOutput: options?.testOutput === true,
+    sourceMode: ['syncshow', 'pptx'].includes(options?.sourceMode)
+      ? options.sourceMode
+      : 'unknown',
+    outputs: [],
+    outputFrames: []
+  };
+  activeShowStartDiagnostics = attempt;
+  lastShowStartDiagnostics = attempt;
+  return attempt;
+}
+
+function recordOutputStartupDiagnostics(output, payload) {
+  if (!activeShowStartDiagnostics) return;
+  const summary = diagnosticOutputSummary(output);
+  const existing = activeShowStartDiagnostics.outputFrames.find(
+    entry => entry.id === summary.id
+  );
+  const frame = {
+    ...summary,
+    cueIndex: Number.isSafeInteger(payload?.index) ? payload.index : null,
+    ok: payload?.ok === true,
+    ...(typeof payload?.error === 'string'
+      ? { error: safeError({ message: payload.error }).message }
+      : {}),
+    ...(payload?.diagnostics
+      ? { font: sanitizeRendererFontDiagnostics(payload.diagnostics) }
+      : {})
+  };
+  if (existing) Object.assign(existing, frame);
+  else activeShowStartDiagnostics.outputFrames.push(frame);
+}
+
+function finishShowStartDiagnostics(attempt, status, error = null) {
+  if (!attempt) return;
+  attempt.status = status;
+  attempt.finishedAt = new Date().toISOString();
+  if (error) attempt.error = safeError(error);
+  lastShowStartDiagnostics = attempt;
+  if (activeShowStartDiagnostics === attempt) activeShowStartDiagnostics = null;
+}
+
+async function buildSupportDiagnostics() {
+  updateDisplayList();
+  const selectedFont = getPresentationFont();
+  const outputFallbackFont = getOutputWindowFallbackFont();
+  const [selectedFontFiles, outputFallbackFiles, gpuInfo] = await Promise.all([
+    inspectFontFaces(
+      selectedFont,
+      selectedFont.family === 'Arial' ? 'system' : 'bundled'
+    ),
+    inspectFontFaces(outputFallbackFont, 'bundled'),
+    app.getGPUInfo('basic').catch(error => ({ diagnosticError: safeError(error) }))
+  ]);
+  const locale = (() => {
+    try { return app.getLocale(); } catch { return ''; }
+  })();
+  const timeZone = (() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
+  })();
+  return {
+    schemaVersion: 1,
+    kind: 'syncshow-support-diagnostics',
+    generatedAt: new Date().toISOString(),
+    privacy: {
+      excludes: [
+        'passwords and authorization tokens',
+        'account email addresses',
+        'full file-system paths',
+        'slide, sermon, song, and volunteer-note contents'
+      ]
+    },
+    app: {
+      name: app.getName(),
+      version: app.getVersion(),
+      packaged: app.isPackaged
+    },
+    runtime: {
+      platform: process.platform,
+      architecture: process.arch,
+      osRelease: os.release(),
+      osVersion: typeof os.version === 'function' ? os.version() : '',
+      locale,
+      timeZone,
+      electron: process.versions.electron || '',
+      chromium: process.versions.chrome || '',
+      node: process.versions.node || ''
+    },
+    gpu: {
+      featureStatus: app.getGPUFeatureStatus(),
+      ...sanitizeGpuInfo(gpuInfo),
+      ...(gpuInfo?.diagnosticError ? { error: gpuInfo.diagnosticError } : {})
+    },
+    displays: screen.getAllDisplays().map((display, index) => ({
+      index,
+      id: String(display.id),
+      internal: display.internal === true,
+      primary: display.id === screen.getPrimaryDisplay().id,
+      control: display.id === getControlDisplayId(),
+      bounds: diagnosticBounds(display.bounds),
+      workArea: diagnosticBounds(display.workArea),
+      scaleFactor: display.scaleFactor,
+      rotation: display.rotation,
+      colorDepth: display.colorDepth,
+      colorSpace: rendererSafeText(display.colorSpace || '', 160),
+      touchSupport: rendererSafeText(display.touchSupport || '', 80)
+    })),
+    fonts: {
+      selectedForLayout: selectedFontFiles,
+      outputWindowFallback: outputFallbackFiles
+    },
+    loadedPresentations: Object.entries(appState.presentations)
+      .filter(([, presentation]) => Boolean(presentation))
+      .map(([roleId, presentation]) => ({
+        roleId: rendererSafeText(roleId, 160),
+        renderer: rendererSafeText(presentation.renderer || 'slides', 80),
+        slideCount: Number.isSafeInteger(presentation.slideCount)
+          ? presentation.slideCount
+          : null,
+        source: ['manual', 'prepared', 'cache', 'service-set', 'community']
+          .includes(presentation.source)
+          ? presentation.source
+          : 'unknown'
+      })),
+    savedOutputs: (activeVenueProfile?.outputs || []).map(diagnosticOutputSummary),
+    lastShowStart: lastShowStartDiagnostics
+      ? JSON.parse(JSON.stringify(lastShowStartDiagnostics))
+      : null
+  };
+}
 
 function getPrepareServices() {
   if (!app.isReady()) throw new Error('Prepare storage is not available before SyncShow is ready.');
@@ -8667,6 +8845,7 @@ function createDisplayWindow(displayInfo, output, sessionId) {
     });
 
     // Send initial configuration
+    const outputWindowFont = getOutputWindowFallbackFont();
     win.webContents.send('display:init', {
       // display.js currently calls this field "language", but it is a window
       // routing identity. Keep the wire field for compatibility while using a
@@ -8680,7 +8859,7 @@ function createDisplayWindow(displayInfo, output, sessionId) {
       fadeDuration: appState.fadeDuration,
       syncMode: appState.syncMode,
       ...(output.renderer === 'native-cue'
-        ? { fontPath: getBundledPresentationFontPath(), fontFaces: getPresentationFont().faces }
+        ? { fontPath: outputWindowFont.fontPath, fontFaces: outputWindowFont.faces }
         : {})
     });
 
@@ -8874,6 +9053,7 @@ function waitForInitialOutputFrame(win, output, sessionId, slideIndex, timeoutMs
         finish(reject, new Error(`${label} output was replaced before its first frame was ready`));
         return;
       }
+      recordOutputStartupDiagnostics(output, payload);
       if (payload.ok !== true) {
         if (payload.ok !== false) return;
         finish(
@@ -27004,6 +27184,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     );
   }
   displayStartInProgress = true;
+  const supportAttempt = beginShowStartDiagnostics(options);
 
   try {
   // Fail quickly for an ordinary locked replacement, then authorize the exact
@@ -27038,6 +27219,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     decisions,
     preferredTimelineRoleId
   });
+  supportAttempt.outputs = launchPlan.outputs.map(diagnosticOutputSummary);
   assertSelectedShowSource(options, preparedService, launchPlan);
   const powerPointServiceCandidate =
     await capturePowerPointServiceSetCandidate(launchPlan);
@@ -27334,15 +27516,23 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   void slideTranslation.navigate(appState.presentations[appState.activeLaunchPlan?.timelineRoleId], appState.currentSlide);
   sealActivePowerPointShowReceipt(powerPointServiceCandidate, sessionId);
 
-  return {
+  const result = {
     success: true,
     totalSlides: appState.totalSlides,
     plan: launchPlan,
     outputSessionId: showState?.outputSessionId || null,
     showState
   };
+  finishShowStartDiagnostics(supportAttempt, 'started');
+  return result;
+  } catch (error) {
+    finishShowStartDiagnostics(supportAttempt, 'failed', error);
+    throw error;
   } finally {
     displayStartInProgress = false;
+    if (activeShowStartDiagnostics === supportAttempt) {
+      finishShowStartDiagnostics(supportAttempt, 'cancelled');
+    }
     notifyTranslationChanged();
   }
 });
@@ -27724,6 +27914,31 @@ ipcMain.handle('app:getState', async (event) => {
             } : {}) }
           : null
       ]))
+  };
+});
+
+ipcMain.handle('support:exportDiagnostics', async event => {
+  requireControlSender(event);
+  const diagnostics = await buildSupportDiagnostics();
+  const selected = await dialog.showSaveDialog(controlWindow, {
+    title: 'Save SyncShow diagnostics',
+    defaultPath: path.join(app.getPath('documents'), diagnosticFileName()),
+    filters: [{ name: 'SyncShow diagnostic JSON', extensions: ['json'] }]
+  });
+  if (selected.canceled || !selected.filePath) return { saved: false };
+  const serialized = `${JSON.stringify(diagnostics, null, 2)}\n`;
+  await fs.promises.writeFile(selected.filePath, serialized, {
+    encoding: 'utf8',
+    mode: 0o600
+  });
+  try {
+    await fs.promises.chmod(selected.filePath, 0o600);
+  } catch (error) {
+    if (process.platform !== 'win32') throw error;
+  }
+  return {
+    saved: true,
+    fileName: path.basename(selected.filePath)
   };
 });
 

@@ -46,6 +46,33 @@ function boundedUtf8Text(value, maximumBytes) {
   }
 }
 
+function outputFontDiagnosticsIntent(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return {
+    family: boundedUtf8Text(value.family, 200),
+    documentProtocol: boundedUtf8Text(value.documentProtocol, 40),
+    fontSetStatus: boundedUtf8Text(value.fontSetStatus, 40),
+    cssCheck: value.cssCheck === true,
+    available: value.available === true,
+    faces: Array.isArray(value.faces)
+      ? value.faces.slice(0, 8).map(face => ({
+          fileName: boundedUtf8Text(face?.fileName, 600),
+          weight: boundedUtf8Text(face?.weight, 90),
+          style: boundedUtf8Text(face?.style, 40),
+          status: boundedUtf8Text(face?.status, 40),
+          ...(face?.error ? { error: {
+            name: boundedUtf8Text(face.error.name, 240),
+            message: boundedUtf8Text(face.error.message, 3000)
+          } } : {})
+        }))
+      : [],
+    ...(value.error ? { error: {
+      name: boundedUtf8Text(value.error.name, 240),
+      message: boundedUtf8Text(value.error.message, 3000)
+    } } : {})
+  };
+}
+
 function boundedSermonCueText(value) {
   if (
     typeof value !== 'string'
@@ -657,6 +684,7 @@ contextBridge.exposeInMainWorld('api', {
   
   // Display operations
   startPresentation: (displays) => ipcRenderer.invoke('display:start', displays),
+  exportSupportDiagnostics: () => ipcRenderer.invoke('support:exportDiagnostics'),
   getTestOutputSettings: () => ipcRenderer.invoke('testOutput:settings'),
   saveTestOutputSettings: settings => ipcRenderer.invoke('testOutput:save', settings),
   stopPresentation: () => ipcRenderer.invoke('display:stop'),
@@ -1584,7 +1612,19 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   reportOutputFrameReady: (data) => {
-    ipcRenderer.send('output:frameReady', data);
+    ipcRenderer.send('output:frameReady', {
+      kind: ['native-cue', 'display', 'singer'].includes(data?.kind)
+        ? data.kind
+        : 'unknown',
+      index: Number.isSafeInteger(data?.index) ? data.index : -1,
+      ok: data?.ok === true,
+      ...(typeof data?.error === 'string'
+        ? { error: boundedUtf8Text(data.error, 3000) }
+        : {}),
+      ...(data?.diagnostics
+        ? { diagnostics: outputFontDiagnosticsIntent(data.diagnostics) }
+        : {})
+    });
   },
 
   reportOutputVideoState: (data) => {
