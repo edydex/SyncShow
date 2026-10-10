@@ -429,7 +429,9 @@ async function runResolutionMatrix(temporaryRoot, route, verify) {
   for (const resolution of RESOLUTION_MATRIX) {
     const profilePath = path.join(
       temporaryRoot,
-      `profile-${route}-${resolution.width}x${resolution.height}`
+      process.platform === 'win32'
+        ? `p-${route === 'direct' ? 'd' : 's'}-${resolution.width}`
+        : `profile-${route}-${resolution.width}x${resolution.height}`
     );
     const resultPath = path.join(profilePath, RESULT_FILE);
     await fs.mkdir(profilePath, { mode: 0o700 });
@@ -459,7 +461,9 @@ async function main() {
     ? process.env.RUNNER_TEMP
     : os.tmpdir();
   const temporaryRoot = await fs.mkdtemp(
-    path.join(await fs.realpath(temporaryParent), 'syncshow-native-electron-rehearsal-')
+    path.join(await fs.realpath(temporaryParent), process.platform === 'win32'
+      ? 'ssnr-'
+      : 'syncshow-native-electron-rehearsal-')
   );
   try {
     const results = await runResolutionMatrix(
