@@ -37,6 +37,7 @@ test('real Electron native rehearsal locks the supported-minimum and 1080p matri
       { width: 1920, height: 1080 }
     ]
   );
+  assert.match(verifierSource, /--screen-info=\{2560x1440\}/);
   assert.match(verifierSource, /assert\.equal\(acknowledgementCount, 54\)/);
   assert.match(verifierSource, /assert\.equal\(captureCount, 18\)/);
   assert.match(verifierSource, /new Set\(results\.map\(result => result\.packageId\)\)/);

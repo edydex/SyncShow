@@ -214,7 +214,12 @@ function runElectron({
     const child = spawn(electronPath, [
       entryPath,
       '--syncshow-test-user-data',
-      ...(process.env.SYNCSHOW_REHEARSAL_VISIBLE === '1' ? [] : ['--headless'])
+      ...(process.env.SYNCSHOW_REHEARSAL_VISIBLE === '1' ? [] : [
+        '--headless',
+        // Chromium's Windows headless desktop defaults to 800x600 and
+        // clamps BrowserWindow dimensions. Keep the full 1080p matrix.
+        ...(process.platform === 'win32' ? ['--screen-info={2560x1440}'] : [])
+      ])
     ], {
       cwd: path.resolve(__dirname, '..'),
       env: childEnvironment,
