@@ -48,3 +48,11 @@ jobs:
           sudo chown root:root node_modules/electron/dist/chrome-sandbox
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
           xvfb-run -a node scripts/verify-native-raster.js
+
+      - name: Rehearse native output font readiness
+        if: runner.os != 'Linux'
+        run: npm run test:native-electron-rehearsal
+
+      - name: Rehearse native output font readiness (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:native-electron-rehearsal

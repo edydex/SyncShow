@@ -152,6 +152,9 @@ jobs:
       - name: Run syntax and regression checks
         run: npm run ci
 
+      - name: Rehearse Windows native output font readiness
+        run: npm run test:native-electron-rehearsal
+
       - name: Download exact dependency source materials
         uses: actions/download-artifact@v4
         with:
