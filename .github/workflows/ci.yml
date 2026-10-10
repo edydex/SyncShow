@@ -56,3 +56,11 @@ jobs:
       - name: Rehearse native output font readiness (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a --server-args="-screen 0 2560x1440x24" npm run test:native-electron-rehearsal
+
+      - name: Rehearse Stage-Facing setup and live preview mouse controls
+        if: runner.os != 'Linux'
+        run: npm run test:live-cue-navigation-electron
+
+      - name: Rehearse Stage-Facing setup and live preview mouse controls (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 2560x1440x24" npm run test:live-cue-navigation-electron

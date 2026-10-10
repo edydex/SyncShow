@@ -137,6 +137,12 @@ async function main() {
     assert.equal(result.cueCount, 4);
     assert.equal(result.outputCount, 3);
     assert.equal(result.packagedInstrumentation, null);
+    assert.deepEqual(result.operatorFinish.liveOutputPicker, {
+      mouseOpens: true,
+      selected: [...OUTPUT_IDS],
+      escapeDoesNotClear: true,
+      cueUnchanged: true
+    });
     assert.deepEqual(result.outputRoutes, [
       {
         outputId: 'front-projector',

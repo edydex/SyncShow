@@ -1323,8 +1323,12 @@
 
         <aside class="controls-column" aria-label="Show controls">
           <section class="preview-box" id="previewBox" aria-label="Live output preview" hidden>
-            <label class="live-preview-label" for="outputPreviewSelect"><span class="live-preview-dot" aria-hidden="true"></span> LIVE OUTPUT</label>
-            <select id="outputPreviewSelect" aria-label="Preview screen"></select>
+            <span class="live-preview-label"><span class="live-preview-dot" aria-hidden="true"></span> LIVE OUTPUT</span>
+            <select id="outputPreviewSelect" aria-label="Preview screen" hidden></select>
+            <details id="outputPreviewPicker" class="output-preview-picker">
+              <summary id="outputPreviewToggle" aria-label="Choose live output">Choose live output</summary>
+              <div id="outputPreviewMenu" class="output-preview-menu" aria-label="Live outputs"></div>
+            </details>
             <div id="outputPreviewList" aria-label="Selected output previews"></div>
           </section>
 
