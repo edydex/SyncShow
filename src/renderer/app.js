@@ -465,6 +465,9 @@ const elements = {
   previewBox: document.getElementById('previewBox'),
   outputPreviewList: document.getElementById('outputPreviewList'),
   outputPreviewSelect: document.getElementById('outputPreviewSelect'),
+  outputPreviewPicker: document.getElementById('outputPreviewPicker'),
+  outputPreviewToggle: document.getElementById('outputPreviewToggle'),
+  outputPreviewMenu: document.getElementById('outputPreviewMenu'),
   showLanguageWarning: document.getElementById('showLanguageWarning'),
 
   // Singer font size
@@ -710,6 +713,18 @@ function setupEventListeners() {
     }
   });
   elements.outputPreviewSelect.addEventListener('change', selectOutputPreview);
+  elements.outputPreviewPicker.addEventListener('keydown', event => {
+    // The picker owns its keys; selecting a preview must never advance a cue.
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      elements.outputPreviewPicker.open = false;
+      elements.outputPreviewToggle.focus();
+    }
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!elements.outputPreviewPicker.contains(event.target)) elements.outputPreviewPicker.open = false;
+  });
   elements.btnTestOutput.addEventListener('click', () => startPresentation(true));
   elements.btnCancelLoadAction.addEventListener('click', () => cancelQueuedStart());
   [elements.testOutputEnabled, elements.testOutputDisplay, elements.testOutputLayout, elements.testOutputRotation]
@@ -5367,7 +5382,7 @@ function renderOutputEditor() {
     const item = createElement('li', 'profile-row output-profile-row');
     item.dataset.profileId = output.id;
     const fieldset = document.createElement('fieldset');
-    const legend = createElement('legend', '', `Output ${index + 1}: ${output.name}`);
+    const legend = createElement('legend', '', `Output ${index + 1}: ${output.name}${output.enabled ? '' : ' — Off'}`);
 
     const name = bindProfileControl(createElement('input', 'text-input'), 'output', output.id, 'name');
     name.type = 'text';
@@ -5425,7 +5440,8 @@ function renderOutputEditor() {
     const quickGrid = createElement('div', 'profile-row-grid output-quick-grid');
     quickGrid.append(
       createEditorField('Physical screen', display),
-      createEditorField('Slideshow shown here', roleSelect)
+      createEditorField('Slideshow shown here', roleSelect),
+      enabledLabel
     );
     const more = document.createElement('details');
     more.className = 'output-row-more';
@@ -5438,7 +5454,6 @@ function renderOutputEditor() {
     moreGrid.append(
       createEditorField('Output name', name),
       createEditorField('Screen behavior', kind),
-      enabledLabel,
       previewLabel
     );
     more.append(moreSummary, moreGrid, actions);
@@ -5655,6 +5670,18 @@ function handleProfileEditorInput(event) {
     const display = state.displays.find(item => String(item.id) === value);
     record.legacyDisplayId = display ? display.id : null;
     record.displayFingerprint = display?.fingerprint || null;
+    // Choosing a physical screen is an explicit request to use this output.
+    // Stage-Facing is off on first run; a hidden second checkbox must not
+    // silently discard the monitor the operator just assigned.
+    if (display && !display.isControl) {
+      record.enabled = true;
+      if (record.mode === 'disabled') {
+        record.mode = 'role';
+        record.renderer = 'slides';
+        record.sourceRoleId = record.expectedRoleId;
+        record.sourceOutputId = null;
+      }
+    }
   } else if (control.dataset.profileType === 'input' && field === 'filenameMatchers') {
     record.filenameMatchers = value
       .split(',')
@@ -5688,7 +5715,8 @@ function handleProfileEditorInput(event) {
       };
     }
   }
-  if (control.dataset.profileType === 'input' && field === 'enabled') renderProfileEditor();
+  if ((control.dataset.profileType === 'input' && field === 'enabled')
+    || (control.dataset.profileType === 'output' && ['enabled', 'display'].includes(field))) renderProfileEditor();
   markProfileDirty();
 }
 
@@ -6527,6 +6555,12 @@ function renderPresentationMode() {
     : mode === 'single'
       ? 'Start Show asks which language to present full-screen. Your saved screen setup stays unchanged.'
       : 'Use your saved audience and stage screens, or choose One screen for a simpler setup.';
+  if (state.serviceHandoff?.project && state.presentations.media?.loaded) {
+    const stageEnabled = (state.profile?.outputs || []).some(output => output.enabled
+      && (output.kind === 'singer' || output.expectedRoleId === 'media'));
+    if (mode === 'single') elements.presentationModeHelp.textContent += ' One screen shows one language only, not the saved Stage-Facing output.';
+    else if (!stageEnabled) elements.presentationModeHelp.textContent += ' Stage-Facing is loaded but turned off. Enable it in Screen Setup.';
+  }
 }
 
 function getReadinessState(testOutput = false) {
@@ -8970,6 +9004,8 @@ function renderOutputPreviews(plan = state.activeLaunchPlan) {
   outputPreviewElements.clear();
   elements.outputPreviewList.replaceChildren();
   elements.outputPreviewSelect.replaceChildren();
+  elements.outputPreviewMenu.replaceChildren();
+  elements.outputPreviewPicker.open = false;
   const outputs = plan?.outputs || [];
   elements.previewBox.hidden = outputs.length === 0;
   for (const output of outputs) {
@@ -8977,6 +9013,16 @@ function renderOutputPreviews(plan = state.activeLaunchPlan) {
     option.value = output.id;
     option.textContent = output.name;
     elements.outputPreviewSelect.append(option);
+    const choice = createElement('button', 'output-preview-choice', output.name);
+    choice.type = 'button';
+    choice.dataset.outputId = output.id;
+    choice.addEventListener('click', () => {
+      elements.outputPreviewSelect.value = output.id;
+      selectOutputPreview();
+      elements.outputPreviewPicker.open = false;
+      elements.outputPreviewToggle.focus({ preventScroll: true });
+    });
+    elements.outputPreviewMenu.append(choice);
     const body = createElement('button', 'mini-preview-img');
     body.type = 'button';
     body.title = 'Click to take the current slide again, including saved edits';
@@ -8996,6 +9042,11 @@ function renderOutputPreviews(plan = state.activeLaunchPlan) {
 }
 
 function selectOutputPreview() {
+  const selected = elements.outputPreviewSelect.selectedOptions[0];
+  elements.outputPreviewToggle.textContent = selected?.textContent || 'No live outputs';
+  for (const choice of elements.outputPreviewMenu.children) {
+    choice.setAttribute('aria-pressed', String(choice.dataset.outputId === elements.outputPreviewSelect.value));
+  }
   for (const [id, preview] of outputPreviewElements) preview.body.hidden = id !== elements.outputPreviewSelect.value;
   syncPreviewSubscriptions();
 }
