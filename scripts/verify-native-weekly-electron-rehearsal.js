@@ -202,6 +202,13 @@ function runElectron({
   childEnvironment.SYNCSHOW_ELECTRON_REHEARSAL_HEIGHT = String(height);
   childEnvironment.SYNCSHOW_ELECTRON_REHEARSAL_ROUTE = route;
   childEnvironment.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+  if (process.platform === 'win32') {
+    // GitHub's user TEMP may be a DOS alias and its canonical path makes
+    // project/hash asset paths exceed Sharp's Windows path limit. Confine
+    // the child to this disposable runner temp root instead.
+    childEnvironment.TEMP = path.dirname(profilePath);
+    childEnvironment.TMP = path.dirname(profilePath);
+  }
 
   return new Promise((resolve, reject) => {
     const child = spawn(electronPath, [
@@ -275,6 +282,9 @@ async function readElectronResult({
       child.stderr ? `stderr:\n${child.stderr}` : ''
     ].filter(Boolean).join('\n'));
   }
+  assert.equal(result.bundledFontReadiness?.available, true);
+  assert.equal(result.bundledFontReadiness.faces.length, 4);
+  assert.ok(result.bundledFontReadiness.faces.every(face => face.status === 'loaded'));
   return result;
 }
 
@@ -443,8 +453,13 @@ async function runResolutionMatrix(temporaryRoot, route, verify) {
 }
 
 async function main() {
+  const temporaryParent = process.platform === 'win32'
+    && process.env.GITHUB_ACTIONS === 'true'
+    && process.env.RUNNER_TEMP
+    ? process.env.RUNNER_TEMP
+    : os.tmpdir();
   const temporaryRoot = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'syncshow-native-electron-rehearsal-')
+    path.join(await fs.realpath(temporaryParent), 'syncshow-native-electron-rehearsal-')
   );
   try {
     const results = await runResolutionMatrix(
@@ -467,6 +482,7 @@ async function main() {
     assert.equal(captureCount, 18);
 
     console.log('Real Electron native weekly resolution matrix passed.');
+    console.log('Sandboxed output font readiness: all four bundled Liberation Sans faces loaded.');
     console.log(
       `Electron ${results[0].electronVersion} / Chromium `
       + `${results[0].chromeVersion}`

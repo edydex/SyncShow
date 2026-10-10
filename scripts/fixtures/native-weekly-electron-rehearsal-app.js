@@ -17,6 +17,9 @@ const {
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
+// The standalone font probe closes before the service-output windows exist.
+// Keep the isolated test alive until its explicit receipt and app.exit().
+app.on('window-all-closed', () => {});
 
 const {
   ShowPackagePublisher
@@ -378,6 +381,37 @@ function scenePayload(entry, cueIndex) {
     height: WINDOW_HEIGHT
   });
   return payload;
+}
+
+async function verifyBundledFontReadiness() {
+  const font = require('../../src/services/project/PresentationFont').fontForPath(
+    path.resolve(__dirname, '../../assets/fonts/LiberationSans-Regular.ttf')
+  );
+  const win = new BrowserWindow({
+    width: 640,
+    height: 360,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      preload: PRELOAD_PATH,
+      backgroundThrottling: false
+    }
+  });
+  try {
+    await win.loadFile(DISPLAY_PAGE);
+    const result = await win.webContents.executeJavaScript(
+      `preparePresentationFont(${JSON.stringify(font.fontPath)}, ${JSON.stringify(font.faces)})`
+    );
+    assert.equal(result.ok, true, result.error);
+    assert.equal(result.diagnostics.available, true);
+    assert.equal(result.diagnostics.faces.length, 4);
+    assert.ok(result.diagnostics.faces.every(face => face.status === 'loaded'));
+    return result.diagnostics;
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
 }
 
 async function createHiddenOutput(output, presentation) {
@@ -983,6 +1017,7 @@ async function runRehearsal() {
 
   if (!VISIBLE_REHEARSAL && process.platform === 'darwin' && app.dock) app.dock.hide();
 
+  const bundledFontReadiness = await verifyBundledFontReadiness();
   const profilePath = fs.realpathSync(app.getPath('userData'));
   const workspace = path.join(profilePath, 'native-weekly-workspace');
   const fixture = await createTrackedNativeWeeklyService(workspace);
@@ -1300,6 +1335,7 @@ async function runRehearsal() {
       browserWindowCount: entries.length,
       electronVersion: process.versions.electron,
       chromeVersion: process.versions.chrome,
+      bundledFontReadiness,
       width: WINDOW_WIDTH,
       height: WINDOW_HEIGHT,
       packageId: opened.manifest.id,
