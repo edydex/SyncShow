@@ -331,6 +331,8 @@ const elements = {
   preflightTitle: document.getElementById('preflightTitle'),
   preflightDescription: document.getElementById('preflightDescription'),
   preflightError: document.getElementById('preflightError'),
+  preflightDiagnostics: document.getElementById('preflightDiagnostics'),
+  preflightDiagnosticsStatus: document.getElementById('preflightDiagnosticsStatus'),
   preflightLoadNotice: document.getElementById('preflightLoadNotice'),
   loadActionStatus: document.getElementById('loadActionStatus'),
   loadActionMessage: document.getElementById('loadActionMessage'),
@@ -340,6 +342,7 @@ const elements = {
   btnCancelPreflight: document.getElementById('btnCancelPreflight'),
   btnPreflightBack: document.getElementById('btnPreflightBack'),
   btnPreflightContinue: document.getElementById('btnPreflightContinue'),
+  btnSaveDiagnostics: document.getElementById('btnSaveDiagnostics'),
   bibleDialog: document.getElementById('bibleDialog'),
   bibleForm: document.getElementById('bibleForm'),
   bibleReference: document.getElementById('bibleReference'),
@@ -859,6 +862,7 @@ function setupEventListeners() {
   elements.preflightForm.addEventListener('submit', handlePreflightSubmit);
   elements.btnCancelPreflight.addEventListener('click', cancelStartAttempt);
   elements.btnPreflightBack.addEventListener('click', goBackInPreflight);
+  elements.btnSaveDiagnostics.addEventListener('click', saveSupportDiagnostics);
   elements.startPreflightDialog.addEventListener('cancel', (event) => {
     event.preventDefault();
     cancelStartAttempt();
@@ -7006,6 +7010,34 @@ function updatePreflightSourceVisibility() {
   });
 }
 
+function renderPreflightDiagnostics(attempt) {
+  const visible = attempt?.diagnosticsAvailable === true;
+  elements.preflightDiagnostics.hidden = !visible;
+  if (!visible) return;
+  elements.btnSaveDiagnostics.disabled = false;
+  elements.btnSaveDiagnostics.textContent = 'Save diagnostics…';
+  elements.preflightDiagnosticsStatus.textContent =
+    'Includes display, font, package, and runtime details—never passwords or slide contents.';
+}
+
+async function saveSupportDiagnostics() {
+  elements.btnSaveDiagnostics.disabled = true;
+  elements.btnSaveDiagnostics.textContent = 'Saving…';
+  elements.preflightDiagnosticsStatus.textContent = 'Choose where to save the diagnostic file.';
+  try {
+    const result = await window.api.exportSupportDiagnostics();
+    elements.preflightDiagnosticsStatus.textContent = result?.saved
+      ? `Saved ${result.fileName || 'the diagnostic file'}. Send that file with the error screenshot.`
+      : 'Nothing was saved.';
+  } catch (error) {
+    elements.preflightDiagnosticsStatus.textContent =
+      `Could not save diagnostics: ${error.message || 'Unknown error'}`;
+  } finally {
+    elements.btnSaveDiagnostics.disabled = false;
+    elements.btnSaveDiagnostics.textContent = 'Save diagnostics…';
+  }
+}
+
 function renderSingleScreenPreflight(attempt) {
   const previousRole = elements.preflightChoices.querySelector('input[name="preflightAction"]:checked')?.value;
   const previousDisplay = document.getElementById('singleScreenDisplay')?.value;
@@ -7019,6 +7051,7 @@ function renderSingleScreenPreflight(attempt) {
   elements.preflightReview.hidden = true;
   elements.preflightError.hidden = !attempt.error;
   elements.preflightError.textContent = attempt.error || '';
+  renderPreflightDiagnostics(attempt);
   for (const role of roles) {
     createPreflightChoice({ value: role.id, title: getRoleLabel(role.id),
       description: `${state.presentations[role.id].slideCount} slides`,
@@ -7061,6 +7094,7 @@ function renderStartPreflight() {
   elements.preflightReview.hidden = !isReview;
   elements.preflightError.hidden = !attempt.error;
   elements.preflightError.textContent = attempt.error || '';
+  renderPreflightDiagnostics(attempt);
 
   if (isReview) {
     elements.preflightProgress.textContent = 'REVIEW';
@@ -7373,6 +7407,7 @@ async function launchStartAttempt() {
     if (state.startAttempt !== attempt) return;
     attempt.status = 'review';
     attempt.error = error.message;
+    attempt.diagnosticsAvailable = true;
     renderStartPreflight();
     if (!elements.startPreflightDialog.open) elements.startPreflightDialog.showModal();
     checkReadyState();

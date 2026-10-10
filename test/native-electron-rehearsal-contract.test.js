@@ -20,6 +20,15 @@ const verifierSource = fs.readFileSync(path.join(
 ), 'utf8');
 const mainSource = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
 
+test('real Electron rehearsal loads all four app-owned output font faces in a sandbox', () => {
+  assert.match(fixtureSource, /async function verifyBundledFontReadiness\(/);
+  assert.match(fixtureSource, /assets\/fonts\/LiberationSans-Regular\.ttf/);
+  assert.match(fixtureSource, /preparePresentationFont\(/);
+  assert.match(fixtureSource, /result\.diagnostics\.faces\.length, 4/);
+  assert.match(fixtureSource, /face\.status === 'loaded'/);
+  assert.match(fixtureSource, /await verifyBundledFontReadiness\(\)/);
+});
+
 test('real Electron native rehearsal locks the supported-minimum and 1080p matrix', () => {
   assert.deepEqual(
     RESOLUTION_MATRIX.map(({ width, height }) => ({ width, height })),
@@ -28,6 +37,7 @@ test('real Electron native rehearsal locks the supported-minimum and 1080p matri
       { width: 1920, height: 1080 }
     ]
   );
+  assert.match(verifierSource, /--screen-info=\{2560x1440\}/);
   assert.match(verifierSource, /assert\.equal\(acknowledgementCount, 54\)/);
   assert.match(verifierSource, /assert\.equal\(captureCount, 18\)/);
   assert.match(verifierSource, /new Set\(results\.map\(result => result\.packageId\)\)/);
