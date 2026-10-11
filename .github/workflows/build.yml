@@ -155,6 +155,9 @@ jobs:
       - name: Rehearse Windows native output font readiness
         run: npm run test:native-electron-rehearsal
 
+      - name: Rehearse Windows Stage-Facing setup and live preview mouse controls
+        run: npm run test:live-cue-navigation-electron
+
       - name: Download exact dependency source materials
         uses: actions/download-artifact@v4
         with:

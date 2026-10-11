@@ -372,6 +372,43 @@ async function rendererInvoke(control, expression) {
   return control.webContents.executeJavaScript(`(async () => {${expression}})()`);
 }
 
+async function clickControlElement(control, selector) {
+  const point = await rendererInvoke(control, `
+    const node = document.querySelector(${JSON.stringify(selector)});
+    node.scrollIntoView({ block: 'nearest' });
+    const rect = node.getBoundingClientRect();
+    const x = Math.round(rect.x + rect.width / 2), y = Math.round(rect.y + rect.height / 2);
+    const hit = document.elementFromPoint(x, y);
+    if (!node.contains(hit)) throw new Error('Preview control is covered: ' + JSON.stringify({selector:${JSON.stringify(selector)},x,y,width:rect.width,height:rect.height,hit:hit?.id || hit?.className,body:document.body.className,dialogs:[...document.querySelectorAll('dialog[open]')].map(d=>d.id)}));
+    return { x, y };
+  `);
+  control.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point });
+  control.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point });
+}
+
+async function verifyLiveOutputPicker(control) {
+  const before = await readShowState(control);
+  const selected = [];
+  for (const outputId of OUTPUT_IDS) {
+    await clickControlElement(control, '#outputPreviewToggle');
+    await waitFor(() => rendererInvoke(control, 'return elements.outputPreviewPicker.open;'), 'live output picker to open on a real mouse click');
+    await clickControlElement(control, `.output-preview-choice[data-output-id="${outputId}"]`);
+    await waitFor(() => rendererInvoke(control, `return !elements.outputPreviewPicker.open
+      && elements.outputPreviewSelect.value === '${outputId}'
+      && Boolean(outputPreviewElements.get('${outputId}')?.image.getAttribute('src'));`), 'selected live output capture');
+    selected.push(outputId);
+  }
+  await clickControlElement(control, '#outputPreviewToggle');
+  await waitFor(() => rendererInvoke(control, 'return elements.outputPreviewPicker.open;'), 'keyboard dismissal picker');
+  control.webContents.sendInputEvent({type:'keyDown', keyCode:'Escape'});
+  control.webContents.sendInputEvent({type:'keyUp', keyCode:'Escape'});
+  await waitFor(() => rendererInvoke(control, 'return !elements.outputPreviewPicker.open;'), 'Escape to close only the picker');
+  const after = await readShowState(control);
+  assert.equal(after.currentCue.index, before.currentCue.index);
+  assert.equal(after.phase, 'live');
+  return { mouseOpens: true, selected, escapeDoesNotClear: true, cueUnchanged: true };
+}
+
 async function readShowState(control) {
   return rendererInvoke(control, 'return window.api.getShowState();');
 }
@@ -923,7 +960,24 @@ async function run() {
     const candidate = controlWindow();
     return candidate?.webContents?.isLoading() ? null : candidate;
   }, 'the real SyncShow control window');
+  await waitFor(() => rendererInvoke(control, 'return Boolean(state.profileDraft);'), 'initial screen profile');
 
+  // First-run stage output is off. Assigning its monitor must enable it, and
+  // the quick controls must expose Enabled without opening More options.
+  await rendererInvoke(control, `
+    openSettings('screens');
+    if (elements.advancedWarningDialog.open) elements.btnConfirmAdvanced.click();
+    const display = document.querySelector('[data-profile-type="output"][data-profile-id="singer"][data-field="display"]');
+    const stage = state.profileDraft.outputs.find(output => output.id === 'singer');
+    if (!display || !stage || stage.enabled) throw new Error('Expected first-run disabled stage output');
+    display.value = '880003';
+    display.dispatchEvent(new Event('change', { bubbles: true }));
+    const enabled = document.querySelector('[data-profile-type="output"][data-profile-id="singer"][data-field="enabled"]');
+    if (!stage.enabled || !enabled.checked || enabled.closest('details')) throw new Error('Stage monitor assignment remained disabled or hidden');
+    elements.btnCancelProfileChanges.click();
+    elements.advancedSetupDetails.close();
+    return true;
+  `);
   await configureThreeOutputProfile(control);
   const published = await createAndPublishService(control);
   assert.equal(published.success, true);
@@ -1490,6 +1544,7 @@ async function run() {
       && everyShowOutput(state, output => output?.status === 'healthy'),
     'the operator-UI Finish session initial cue'
   );
+  const liveOutputPicker = await verifyLiveOutputPicker(control);
   const operatorAdvances = [];
   let operatorFinalState = null;
   for (const targetIndex of [1, 2, 3]) {
@@ -1557,6 +1612,7 @@ async function run() {
         }
       : null,
     operatorFinish: {
+      liveOutputPicker,
       start: operatorStart,
       routes: operatorRoutes,
       advances: operatorAdvances,

@@ -11122,6 +11122,11 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
 .controls-column .preview-box[hidden], .show-output-state[hidden], .mini-preview-img[hidden] { display: none; }
 .live-preview-label { font-size: .72rem; color: var(--text-secondary); font-weight: 700; }
 #outputPreviewSelect { width: 100%; min-width: 0; padding: 8px; color: var(--text); background: #1b2841; border: 1px solid var(--border); border-radius: 6px; }
+.output-preview-picker { position: relative; min-width: 0; }
+.output-preview-picker > summary { padding: 7px 9px; color: var(--text); background: #333539; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 12px; }
+.output-preview-menu { position: absolute; inset: 100% 0 auto; z-index: 20; display: grid; gap: 3px; padding: 5px; background: #292a2d; border: 1px solid var(--border-strong); border-radius: 4px; box-shadow: var(--shadow); max-height: 260px; overflow: auto; }
+.output-preview-choice { width: 100%; padding: 9px; background: transparent; color: var(--text); border: 0; border-radius: 3px; text-align: left; cursor: pointer; }
+.output-preview-choice:hover, .output-preview-choice[aria-pressed="true"] { background: #465564; }
 #outputPreviewList .mini-preview-img { aspect-ratio: 16/9; min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; }
 #outputPreviewList .mini-preview-img img { width: 100%; height: 100%; max-height: none; object-fit: contain; }
 

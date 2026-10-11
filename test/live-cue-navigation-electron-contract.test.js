@@ -42,6 +42,14 @@ test('real Electron navigation proof is isolated and runs the production app', (
   assert.match(fixture, /\/src\/renderer\/display\.html/u);
 });
 
+test('Windows mouse rehearsal uses short CI temp paths and an explicit virtual screen', () => {
+  assert.match(runner, /process\.platform === 'win32' && process\.env\.RUNNER_TEMP/);
+  assert.match(runner, /'sslcn-'/);
+  assert.match(runner, /environment\.TEMP = path\.dirname\(profilePath\)/);
+  assert.match(runner, /environment\.TMP = path\.dirname\(profilePath\)/);
+  assert.match(runner, /--screen-info=\{2560x1440\}/);
+});
+
 test('packaged instrumentation is browser-process-only and imports no source product code', () => {
   assert.match(packagedPreload, /process\.type === 'browser'/u);
   assert.match(
