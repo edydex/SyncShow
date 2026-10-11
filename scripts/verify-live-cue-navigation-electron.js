@@ -51,12 +51,18 @@ function runElectron({ profilePath, resultPath }) {
   environment.SYNCSHOW_TEST_USER_DATA_DIR = profilePath;
   environment.SYNCSHOW_LIVE_CUE_NAVIGATION_RESULT = resultPath;
   environment.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+  if (process.platform === 'win32') {
+    // Avoid DOS aliases and the long expanded user-temp path in Windows CI.
+    environment.TEMP = path.dirname(profilePath);
+    environment.TMP = path.dirname(profilePath);
+  }
 
   return new Promise((resolve, reject) => {
     const child = spawn(electronPath, [
       entryPath,
       '--syncshow-test-user-data',
-      '--headless'
+      '--headless',
+      ...(process.platform === 'win32' ? ['--screen-info={2560x1440}'] : [])
     ], {
       cwd: path.resolve(__dirname, '..'),
       env: environment,
@@ -92,9 +98,12 @@ function runElectron({ profilePath, resultPath }) {
 }
 
 async function main() {
+  const tempBase = process.platform === 'win32' && process.env.RUNNER_TEMP
+    ? process.env.RUNNER_TEMP
+    : os.tmpdir();
   const root = await fs.mkdtemp(path.join(
-    os.tmpdir(),
-    'syncshow-live-cue-navigation-'
+    tempBase,
+    'sslcn-'
   ));
   const profilePath = path.join(root, 'profile');
   const resultPath = path.join(profilePath, RESULT_FILE);
