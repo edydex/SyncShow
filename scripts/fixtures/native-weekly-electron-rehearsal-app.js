@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const fsPromises = require('node:fs/promises');
 const path = require('node:path');
+const {captureFreshFrame} = require('../lib/capture-fresh-frame');
 const {
   app,
   BrowserWindow,
@@ -504,8 +505,17 @@ async function captureRenderedFrame(entry, cueIndex) {
   assert.equal(surface.childCount, 1);
   assert.equal(surface.noSlideVisible, false);
 
-  const image = await entry.win.webContents.capturePage();
-  const png = image.toPNG();
+  // Every derived-singer cue has distinct visible lyrics. Direct outputs can
+  // legitimately repeat (for example, a hidden singer output on sermon cues).
+  entry.capturedFrameDigests ||= new Set();
+  const imageResult = ROUTE === 'derived-singer'
+    ? await captureFreshFrame(
+      () => entry.win.webContents.capturePage(), entry.capturedFrameDigests
+    )
+    : {image: await entry.win.webContents.capturePage()};
+  const {image} = imageResult;
+  const png = imageResult.png || image.toPNG();
+  const digest = imageResult.digest || crypto.createHash('sha256').update(png).digest('hex');
   const size = image.getSize();
   assert.equal(Buffer.isBuffer(png), true);
   assert.equal(png.subarray(1, 4).toString('ascii'), 'PNG');
@@ -517,7 +527,7 @@ async function captureRenderedFrame(entry, cueIndex) {
     outputId: entry.output.id,
     cueIndex,
     pngBytes: png.length,
-    pngSha256: sha256Buffer(png),
+    pngSha256: digest,
     width: size.width,
     height: size.height,
     textLength: surface.textLength

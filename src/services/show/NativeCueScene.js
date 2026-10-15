@@ -1,4 +1,5 @@
 'use strict';
+const {outlineParagraphs} = require('../../../packages/service-core/node/services/project/PresentationText');
 const {reservation} = require('../project/TranslationCueSettings');
 const {textPreset} = require('../project/SlideTypography');
 const { normalizeCanvasObjects, canvasText } = require('../project/CanvasLayout');
@@ -113,6 +114,23 @@ function normalizeCanvas(raw) {
     fail('INVALID_NATIVE_SCENE', 'scene.canvas exceeds the native output pixel limit.');
   }
   return { width, height };
+}
+
+function normalizeBodyOutline(rows, body) {
+  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 240) throw new TypeError('Invalid outline paragraphs');
+  let expected = 0;
+  return rows.map(row => {
+    if (!row || typeof row !== 'object' || Object.keys(row).sort().join(',') !== 'end,prefixEnd,start'
+      || ![row.start,row.end,row.prefixEnd].every(Number.isSafeInteger)
+      || row.start !== expected || row.end < row.start || row.end > body.length
+      || row.prefixEnd < row.start || row.prefixEnd > row.end) throw new TypeError('Invalid outline boundaries');
+    const prefix = body.slice(row.start,row.prefixEnd);
+    if (prefix && !/^(?:[IVXLCDM]+|\d+|[A-Za-zА-Яа-яЁё]+)[.)][ \t]+$/u.test(prefix.trimStart())) throw new TypeError('Invalid outline prefix');
+    expected = row.end + 1;
+    if (row.end < body.length && body[row.end] !== '\n') throw new TypeError('Invalid outline paragraph end');
+    if (row === rows[rows.length-1] && row.end !== body.length) throw new TypeError('Incomplete outline');
+    return {start:row.start,end:row.end,prefixEnd:row.prefixEnd};
+  });
 }
 
 function normalizeSceneSpans(raw, text, field = 'scene.bodySpans') {
@@ -407,6 +425,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
       ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
       ...(raw.backgroundDimOpacity !== undefined ? ['backgroundDimOpacity'] : []),
       ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
+      ...(raw.bodyOutline !== undefined ? ['bodyOutline'] : []),
       ...(raw.songLanguageBreak !== undefined ? ['songLanguageBreak'] : []),
       'background',
       'body',
@@ -430,6 +449,7 @@ function normalizeNativeCueScene(raw, expected = {}) {
       title,
       body,
       bodySpans: normalizeSceneSpans(raw.bodySpans, body),
+      ...(raw.bodyOutline !== undefined ? {bodyOutline: normalizeBodyOutline(raw.bodyOutline,body)} : {}),
       ...(raw.songLanguageBreak !== undefined ? {songLanguageBreak: (() => {
         if (common.sourceKind !== 'song' || !Number.isSafeInteger(raw.songLanguageBreak) || raw.songLanguageBreak < 1 || raw.songLanguageBreak >= body.length - 1 || body[raw.songLanguageBreak] !== '\n') throw new TypeError('Invalid song language boundary');
         return raw.songLanguageBreak;
@@ -665,6 +685,7 @@ function textScene(cue, channel, canvas, options = {}) {
     title,
     body,
     bodySpans,
+    ...(!(options.rendererVersion < 21) && cue.kind === 'sermon' && cue.presetId === 'wotbc-sermon' && outlineParagraphs(body).some(row=>row.prefixEnd>row.start) ? {bodyOutline:outlineParagraphs(body)} : {}),
     ...(!(options.rendererVersion < 20) && cue.presetId === 'wotbc-song-stacked' && textBlocks.filter(block => block.role === 'lyrics' && block.text).length === 2 ? {songLanguageBreak: textBlocks.find(block => block.role === 'lyrics' && block.text).text.length} : {}),
     ...(textBlocks.find(block => block.role === 'title')?.spans ? { titleSpans: textBlocks.find(block => block.role === 'title').spans } : {}),
     ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId, ...(!legacy ? {backgroundDimOpacity: channel.blocks.find(block => block.type === 'image' && block.role === 'background').dimOpacity ?? 0.55} : {}) } : {}),

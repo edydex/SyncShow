@@ -2418,6 +2418,17 @@ function normalizeProjectItem(raw, channelIds, now) {
     updatedAt: timestamp(raw.updatedAt, `Item ${itemId} updatedAt`, now.toISOString()),
     operatorNotes: text(raw.operatorNotes, `Item ${itemId} operatorNotes`, 4000, { trim: false })
   };
+  if (raw.sermonHeading !== undefined) {
+    const choice = raw.sermonHeading;
+    if (!['sermon','bible'].includes(raw.kind) || !isRecord(choice)
+      || !['title','point'].includes(choice.source)
+      || Object.keys(choice).some(key => !['source','key'].includes(key))
+      || (choice.source === 'title' && choice.key !== undefined)
+      || (choice.source === 'point' && (typeof choice.key !== 'string' || !/^[A-Za-zА-Яа-я0-9/-]{1,80}$/.test(choice.key)))) {
+      fail('INVALID_SERMON_HEADING', 'Choose the sermon title or a point from this sermon.');
+    }
+    common.sermonHeading = {source: choice.source, ...(choice.source === 'point' ? {key: choice.key} : {})};
+  }
   if (raw.textStyle !== undefined) common.textStyle = normalizeTextStyle(raw.textStyle);
   if (raw.translationCues !== undefined) common.translationCues = normalizeTranslationCues(raw.translationCues);
   if (raw.translationCueSettings !== undefined) common.translationCueSettings = normalizeTranslationSettingsMap(raw.translationCueSettings, common.translationCues);
@@ -4410,7 +4421,7 @@ function compileServiceProject(rawProject, options = {}) {
       for (const channelId of project.channelIds) {
         const passage = item.passagesByChannel[channelId];
         channels[channelId] = passage
-          ? { mode: 'content', blocks: [...(item.presetId === 'wotbc-sermon-scripture' && context?.headings[channelId] ? [{ type: 'text', role: 'title', text: context.headings[channelId] }] : []), passage] }
+          ? { mode: 'content', blocks: [...(item.presetId === 'wotbc-sermon-scripture' && context?.displayHeadings[channelId] ? [{ type: 'text', role: 'title', text: context.displayHeadings[channelId], ...(context.displayHeadingSpans[channelId]?.length ? {spans:context.displayHeadingSpans[channelId]} : {}) }] : []), passage] }
           : { mode: 'hide', blocks: [] };
       }
       addCue(item, 'self', {

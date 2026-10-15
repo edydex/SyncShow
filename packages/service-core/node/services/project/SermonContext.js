@@ -1,5 +1,7 @@
 'use strict';
 
+const {sliceSpans} = require('./PresentationText');
+
 const isTitle = item => item.kind === 'sermon' && (item.sermonTemplate === 'title' || item.presetId === 'wotbc-sermon-title');
 const isPoint = item => item.kind === 'sermon' && (item.sermonTemplate === 'point' || (!item.sermonTemplate && item.presetId === 'wotbc-sermon'));
 
@@ -32,7 +34,7 @@ function joinRows(rows) {
  */
 function resolveSermonContext(project) {
   const entries = {}; let state = fresh();
-  function fresh() { return {titles:{}, titleSpans:{}, outlines:{}, headings:{}, rawOutlines:{},showNextSlideHints:true}; }
+  function fresh() { return {titles:{}, titleSpans:{}, outlines:{}, headings:{}, rawOutlines:{},pointChoices:{},showNextSlideHints:true}; }
   function visit(id) {
     const item = project.items[id];
     if (item.kind === 'group') {
@@ -82,8 +84,28 @@ function resolveSermonContext(project) {
         state.headings[channel]=rows.at(-1)?.text.trim() || state.headings[channel] || state.titles[channel] || '';
       } else if (item.sermonTemplate==='quote') complete[channel]=Boolean(item.textByChannel?.[channel]?.trim());
     }
+    if (point) for (const channel of project.channelIds) for (const row of state.outlines[channel] || []) {
+      state.pointChoices[row.key] ||= {key:row.key,textByChannel:{},spansByChannel:{}};
+      state.pointChoices[row.key].textByChannel[channel] = row.text.trim();
+      const trim = row.text.length - row.text.trimStart().length;
+      state.pointChoices[row.key].spansByChannel[channel] = sliceSpans(row.spans,trim,trim+row.text.trim().length);
+    }
+    const headingOptions = Object.values(state.titles).some(Boolean) && !isTitle(item)
+      && (item.kind === 'sermon' && item.sermonTemplate !== 'other' || item.kind === 'bible' && item.presetId === 'wotbc-sermon-scripture')
+      ? [{value:'title',textByChannel:{...state.titles},spansByChannel:{...state.titleSpans}},
+          ...Object.values(state.pointChoices).map(choice=>({value:'point:'+choice.key,textByChannel:{...choice.textByChannel},spansByChannel:{...choice.spansByChannel}}))] : [];
+    const choice = item.sermonHeading && headingOptions.find(option=>option.value === (item.sermonHeading.source === 'title' ? 'title' : 'point:'+item.sermonHeading.key));
+    const displayHeadings = {}, displayHeadingSpans = {};
+    for (const channel of project.channelIds) {
+      displayHeadings[channel] = choice?.textByChannel[channel] || (point ? state.titles[channel] : state.headings[channel]) || state.titles[channel] || '';
+      displayHeadingSpans[channel] = choice?.spansByChannel[channel] || (point ? state.titleSpans[channel] : []) || [];
+      if (choice && item.kind === 'sermon') {
+        resolved.titlesByChannel[channel] = displayHeadings[channel];
+        resolved.titleSpansByChannel[channel] = displayHeadingSpans[channel];
+      }
+    }
     for (const field of ['titlesByChannel','titleSpansByChannel']) if (!Object.keys(resolved[field]).length) delete resolved[field];
-    entries[id]={item:resolved, inheritance, complete, headings:{...state.headings}, showNextSlideHints:state.showNextSlideHints};
+    entries[id]={item:resolved, inheritance, complete, headings:{...state.headings}, displayHeadings, displayHeadingSpans, headingOptions, showNextSlideHints:state.showNextSlideHints};
   }
   project.rootItemIds.forEach(visit);
   return entries;
