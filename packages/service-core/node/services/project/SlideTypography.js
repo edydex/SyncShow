@@ -23,7 +23,7 @@ function textWidth(text, size, weight = '500') {
 function wrappedLines(text, size, width, weight = '500') {
   return String(text).split('\n').reduce((total, paragraph) => {
     let lines = 1, used = 0;
-    for (const word of paragraph.split(/\s+/u).filter(Boolean)) {
+    for (const word of paragraph.split(/[ \t]+/u).filter(Boolean)) {
       const length = textWidth(word, size, weight), gap = used ? textWidth(' ', size, weight) : 0;
       if (used && used + gap + length > width) { lines++; used = 0; }
       used += (used ? gap : 0) + length;

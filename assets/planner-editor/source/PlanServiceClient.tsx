@@ -44,6 +44,8 @@ import DeleteSlidesDialog from './DeleteSlidesDialog'
 import ScriptureEditionDialog from './ScriptureEditionDialog'
 import SlideSettingsDialog from './SlideSettingsDialog'
 import SlideText from './SlideText'
+import OutlineSlidePreview from './OutlineSlidePreview'
+import SermonHeadingChoice from './SermonHeadingChoice'
 import PreviewCanvas from './PreviewCanvas'
 import PalettePresetPreview from './PalettePresetPreview'
 import ServicePreview from './ServicePreview'
@@ -513,7 +515,9 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
   const activePreviewCue = activeSlide?.cue
   const preview = plannerPreview(slideList.rows, activeSlide, previewChannel)
   const activePreviewOutput = preview.output
-  const authoredSermon = useMemo(() => draft && selected?.sermonTemplate ? sermonContext.resolveSermonContext(draft)[selected.id]?.item : null, [draft, selected])
+  const selectedSermonContext = useMemo(() => draft && selected ? sermonContext.resolveSermonContext(draft)[selected.id] : null, [draft, selected])
+  const authoredSermon = selectedSermonContext?.item
+  const headingChoice = draft && selected && selectedSermonContext?.headingOptions?.length ? <SermonHeadingChoice item={selected} options={selectedSermonContext.headingOptions} channelId={previewChannel} onChange={choice=>change(project=>{ if(choice) project.items[selected.id].sermonHeading=choice; else delete project.items[selected.id].sermonHeading })} /> : null
   const selectionIds = selectedRowIds.filter(id => slideList.rows.some(row => row.id === id))
   if (!selectionIds.length && (activeSlide || selected?.kind === 'group')) selectionIds.push(activeSlide?.id || selected!.id)
   const batchSlides = selectedPlannerSlides(slideList.rows, selectionIds)
@@ -1623,6 +1627,7 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
             }}>
             <small>{selectedPlannerSlides(slideList.rows, menu.ids).length > 1 ? t('{count} selected slides', { count: selectedPlannerSlides(slideList.rows, menu.ids).length }) : menu.row.kind === 'group' ? t("Section") : t('Slide {number}', { number: menu.row.number || 0 })}</small>
             <button type="button" role="menuitem" onClick={() => { selectSlide(menu.row); setMenu(null); chooseWorkspaceView('edit'); setSettingsOpen(true) }}>{t("Slide settings…")}</button>
+            {draft && sermonContext.resolveSermonContext(draft)[menu.row.itemId]?.headingOptions?.length ? <button type="button" role="menuitem" onClick={()=>{selectSlide(menu.row);setMenu(null);chooseWorkspaceView('edit');setSettingsOpen(true)}}>{t("Choose sermon heading…")}</button> : null}
             {menu.row.kind === 'bible' && draft && draft.items[menu.row.itemId]?.passagesByChannel?.[previewChannel]?.displayText !== undefined ? <button type="button" role="menuitem" onClick={() => {
               const next = cloneProject(draft), item = next.items[menu.row.itemId]
               for (const output of previewChannel === 'russian' && item.passagesByChannel.media ? ['russian','media'] : [previewChannel]) { delete item.passagesByChannel[output].displayText; delete item.passagesByChannel[output].displaySpans }
@@ -1723,6 +1728,7 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
                             onCommit={(text, spans) => activeSlide && slideMutation(() => editPlannerSlide(draft!, activeSlide, previewChannel, index, text, spans))} />
                           {formatting.scriptureCredit(block) ? <p className="heritage-scripture-credit">{formatting.scriptureCredit(block)}</p> : null}
                         </div>
+                        if (block.type==='text' && block.role==='body' && preview.presetId==='wotbc-sermon' && preview.singer) return <OutlineSlidePreview key={index} text={block.text} spans={block.spans} />
                         return activeSlide && block.type === 'text'
                           ? <SlideText key={`${activeSlide.id}:${previewChannel}:${index}`} text={previewBlockText(block)} role={block.role}
                               readOnly={preview.singer || !editablePreviewBlock(draft!, activeSlide, previewChannel, block)}
@@ -1736,6 +1742,7 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
               </PreviewCanvas>
               {!preview.singer && selected.sermonTemplate !== 'other' && ['song','bible','sermon','notice'].includes(selected.kind) && <aside className="heritage-text-inspector" aria-label={t("Text layout")}>
                 <h3>{t("Text layout")}</h3>
+                {headingChoice}
                 {scriptureTranslationControls}
                 {selected.presetId==='wotbc-reading-title' && <label>{t("Reading template")}<select value="centered" onChange={event=>slideMutation(()=>setReadingTemplate(draft,selected.id,event.target.value))}><option value="centered">{t("Centered title")}</option><option value="pre-sermon">{t("Pre-sermon")}</option></select></label>}
                 <label>{t("Apply alignment to")}<select aria-label={t("Alignment field")} value={alignmentRole} onChange={event=>setAlignmentRole(event.target.value)}><option value="bodyAlign">{t("Text")}</option><option value="titleAlign">{t("Heading")}</option><option value="creditAlign">{t("Author / source")}</option></select></label>
@@ -1775,6 +1782,7 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
             {settingsOpen && <SlideSettingsDialog onClose={() => { setSettingsOpen(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`.heritage-service-planner__rows [data-slide-id="${CSS.escape(activeSlide?.id || selected.id)}"]`)?.focus()) }}>
                 <label><span>{t("Item name")}</span><input value={selected.title} maxLength={200} onChange={event => updateSelected({ title: event.target.value })} /></label>
                 <label><span>{t("Notes for the operator")}</span><input value={selected.operatorNotes || ''} onChange={event => updateSelected({ operatorNotes: event.target.value })} /></label>
+                {headingChoice}
                 {selected.kind === 'sermon' && (selected.sermonTemplate === 'title' || selected.presetId === 'wotbc-sermon-title') ? <label className="heritage-service-planner__check"><input type="checkbox" aria-label={t("Show next-slide hints for this sermon")} checked={selected.sermonPresentation?.showNextSlideHints ?? true}
                   onChange={event=>updateSelected({sermonPresentation:{showText:true,darkenBackground:true,...selected.sermonPresentation,showNextSlideHints:event.target.checked}})} /><span>{t("Show next-slide hints for this sermon")}</span><small>{t("Applies to the title, points, quotations, and passages in this sermon.")}</small></label> : null}
                 {selected.kind === 'song' && selected.songPresentation ? <label><span>{t("Song credit · bottom right of title slide")}</span><input aria-label={t("Song credit")} value={selected.songPresentation.credits} maxLength={500}

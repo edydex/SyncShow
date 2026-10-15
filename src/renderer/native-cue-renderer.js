@@ -349,6 +349,7 @@
         ...(raw.backgroundAssetId !== undefined ? ['backgroundAssetId'] : []),
         ...(raw.backgroundDimOpacity !== undefined ? ['backgroundDimOpacity'] : []),
         ...(raw.titleSpans !== undefined ? ['titleSpans'] : []),
+      ...(raw.bodyOutline !== undefined ? ['bodyOutline'] : []),
       ...(raw.songLanguageBreak !== undefined ? ['songLanguageBreak'] : []),
         'background',
         'body',
@@ -372,6 +373,7 @@
         title: string(raw.title, 'scene.title', 500),
         body,
         bodySpans: spans(raw.bodySpans, body),
+        ...(raw.bodyOutline !== undefined ? {bodyOutline: normalizeBodyOutline(raw.bodyOutline,body)} : {}),
       ...(raw.songLanguageBreak !== undefined ? {songLanguageBreak: (() => {
         if (common.sourceKind !== 'song' || !Number.isSafeInteger(raw.songLanguageBreak) || raw.songLanguageBreak < 1 || raw.songLanguageBreak >= body.length - 1 || body[raw.songLanguageBreak] !== '\n') throw new TypeError('Invalid song language boundary');
         return raw.songLanguageBreak;
@@ -492,30 +494,60 @@
     };
   }
 
+function normalizeBodyOutline(rows, body) {
+  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 240) throw new TypeError('Invalid outline paragraphs');
+  let expected = 0;
+  return rows.map(row => {
+    if (!row || typeof row !== 'object' || Object.keys(row).sort().join(',') !== 'end,prefixEnd,start'
+      || ![row.start,row.end,row.prefixEnd].every(Number.isSafeInteger)
+      || row.start !== expected || row.end < row.start || row.end > body.length
+      || row.prefixEnd < row.start || row.prefixEnd > row.end) throw new TypeError('Invalid outline boundaries');
+    const prefix = body.slice(row.start,row.prefixEnd);
+    if (prefix && !/^(?:[IVXLCDM]+|\d+|[A-Za-zА-Яа-яЁё]+)[.)][ \t]+$/u.test(prefix.trimStart())) throw new TypeError('Invalid outline prefix');
+    expected = row.end + 1;
+    if (row.end < body.length && body[row.end] !== '\n') throw new TypeError('Invalid outline paragraph end');
+    if (row === rows[rows.length-1] && row.end !== body.length) throw new TypeError('Incomplete outline');
+    return {start:row.start,end:row.end,prefixEnd:row.prefixEnd};
+  });
+}
+
   function appendStyledText(target, text, textSpans, paragraphGap) {
-    let offset = 0;
-    const append = (value, span = null) => {
-      const rendered = paragraphGap ? value.replace(/\r\n|\r|\n/g, '\n\n') : value;
-      if (!span) {
-        target.appendChild(document.createTextNode(rendered));
-        return;
+    // Keep Scripture starts together even across emphasis boundaries.
+    const atoms=[...text.matchAll(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+[ \t\u00a0]+[^\s⁰¹²³⁴⁵⁶⁷⁸⁹]+/gu)].map(m=>({start:m.index,end:m.index+m[0].length}));
+    const boundaries=[...new Set([0,text.length,...textSpans.flatMap(s=>[s.start,s.end]),...atoms.flatMap(a=>[a.start,a.end])])].sort((a,b)=>a-b);
+    let parent=target;
+    for(let index=0;index<boundaries.length-1;index++) {
+      const start=boundaries[index],end=boundaries[index+1];
+      if(atoms.some(atom=>atom.start===start)) {parent=document.createElement('span');parent.className='native-verse-start';Object.assign(parent.style,{whiteSpace:'nowrap',overflowWrap:'normal',wordBreak:'normal'});target.appendChild(parent)}
+      const span=textSpans.find(s=>s.start<=start&&s.end>=end);
+      const value=text.slice(start,end), rendered=paragraphGap ? value.replace(/\r\n|\r|\n/g,'\n\n') : value;
+      if(!span) parent.appendChild(document.createTextNode(rendered));
+      else {
+        const element=document.createElement('span');
+        if(span.foreground)element.style.color=span.foreground;
+        if(span.background)element.style.backgroundColor=span.background;
+        if(span.weight)element.style.fontWeight=span.weight;
+        if(span.italic!==undefined)element.style.fontStyle=span.italic?'italic':'normal';
+        if(span.underline!==undefined)element.style.textDecoration=span.underline?'underline':'none';
+        if(span.fontScale)element.style.fontSize=`${span.fontScale}em`;
+        element.appendChild(document.createTextNode(rendered));parent.appendChild(element);
       }
-      const element = document.createElement('span');
-      if (span.foreground) element.style.color = span.foreground;
-      if (span.background) element.style.backgroundColor = span.background;
-      if (span.weight) element.style.fontWeight = span.weight;
-      if (span.italic !== undefined) element.style.fontStyle = span.italic ? 'italic' : 'normal';
-      if (span.underline !== undefined) element.style.textDecoration = span.underline ? 'underline' : 'none';
-      if (span.fontScale) element.style.fontSize = `${span.fontScale}em`;
-      element.appendChild(document.createTextNode(rendered));
-      target.appendChild(element);
-    };
-    for (const span of textSpans) {
-      if (span.start > offset) append(text.slice(offset, span.start));
-      append(text.slice(span.start, span.end), span);
-      offset = span.end;
+      if(atoms.some(atom=>atom.end===end))parent=target;
     }
-    if (offset < text.length) append(text.slice(offset));
+  }
+
+  function appendOutline(target, scene) {
+    for(const row of scene.bodyOutline) {
+      const element=document.createElement('div');element.className='native-outline-row';
+      Object.assign(element.style,{display:'grid',gridTemplateColumns:'max-content minmax(0,1fr)',alignItems:'start',textAlign:'left'});
+      for(const [start,end,marker] of [[row.start,row.prefixEnd,true],[row.prefixEnd,row.end,false]]) {
+        const part=document.createElement('div');part.className=marker?'native-outline-marker':'native-outline-text';
+        Object.assign(part.style,{minWidth:'0',whiteSpace:marker?'pre':'pre-wrap',overflowWrap:marker?'normal':'anywhere'});
+        const styles=scene.bodySpans.filter(s=>s.start<end&&s.end>start).map(s=>({...s,start:Math.max(start,s.start)-start,end:Math.min(end,s.end)-start}));
+        appendStyledText(part,scene.body.slice(start,end),styles,false);element.appendChild(part);
+      }
+      target.appendChild(element);
+    }
   }
 
   function fitSurface(host, surface, logicalCanvas, reservation = 0) {
@@ -761,7 +793,8 @@
           appendStyledText(section, scene.body.slice(start,end), sectionSpans, false);
           body.appendChild(section);
         }
-      } else appendStyledText(body, scene.body, scene.bodySpans, style.paragraphGap);
+      } else if(scene.bodyOutline) appendOutline(body,scene);
+      else appendStyledText(body, scene.body, scene.bodySpans, style.paragraphGap);
       bodyRegion.appendChild(body);
       surface.appendChild(bodyRegion);
       let credit = null;

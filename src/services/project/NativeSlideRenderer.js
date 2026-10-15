@@ -1,4 +1,6 @@
 'use strict';
+const {outlineParagraphs, sliceSpans, verseWordRanges} = require('../../../packages/service-core/node/services/project/PresentationText');
+const {textWidth} = require('./SlideTypography');
 const {reservation} = require('./TranslationCueSettings');
 const {textPreset} = require('./SlideTypography');
 const { normalizeCanvasObjects, canvasText, BRACE_PATH } = require('./CanvasLayout');
@@ -274,6 +276,8 @@ function markupTextSpans(value, rawSpans = [], options = {}) {
       })
     : [];
   const boundaries = new Set([0, text.length]);
+  const atoms = verseWordRanges(text);
+  for (const atom of atoms) {boundaries.add(atom.start);boundaries.add(atom.end);}
   for (const span of [...referenceSpans, ...explicitSpans]) {
     boundaries.add(span.start);
     boundaries.add(span.end);
@@ -303,6 +307,8 @@ function markupTextSpans(value, rawSpans = [], options = {}) {
       ].filter(Boolean).join(' ');
       escaped = `<span ${attributes}>${escaped}</span>`;
     }
+    if(atoms.some(atom=>atom.start===start)) escaped='<span allow_breaks="false">'+escaped;
+    if(atoms.some(atom=>atom.end===end)) escaped+='</span>';
     fragments.push(escaped);
   }
   return fragments.join('');
@@ -451,7 +457,7 @@ class NativeSlideRenderer {
       throw error;
     }
     const contentMarkup = options.leadingReferenceStyle === 'scripture'
-      || options.spans !== undefined
+      || options.spans !== undefined || verseWordRanges(text).length > 0
       ? markupTextSpans(text, options.spans || [], {
           paragraphGap: options.paragraphGap,
           leadingReferenceStyle: options.leadingReferenceStyle,
@@ -499,6 +505,36 @@ class NativeSlideRenderer {
     error.code = 'TEXT_OVERFLOW';
     error.details = { width, maxHeight, minimumFontSize: minimum, measuredHeight };
     throw error;
+  }
+
+  async _outlineLayer(body, options) {
+    const rows=outlineParagraphs(body), width=Math.floor(options.width), preferred=Math.floor(options.fontSize), minimum=Math.floor(options.minimumFontSize);
+    let lastError;
+    for(let size=preferred;size>=minimum;size=Math.max(minimum,size-2)) {
+      const composites=[];let top=0;
+      try {
+        for(const row of rows) {
+          const prefix=body.slice(row.start,row.prefixEnd), prefixSpans=sliceSpans(options.spans,row.start,row.prefixEnd);
+          const markerStyle=prefixSpans.find(span=>span.start===0&&span.end===prefix.length);
+          const indent=Math.ceil(textWidth(prefix,size*(markerStyle?.fontScale||1),markerStyle?.weight||options.weight)/1.02);
+          if(indent>=width) throw Object.assign(new Error('Outline marker is too wide.'),{code:'TEXT_OVERFLOW'});
+          const leading=prefix.match(/^\s*/u)[0].length;
+          const markerLeft=Math.round(textWidth(prefix.slice(0,leading),size,options.weight)/1.02);
+          const marker=prefix ? await this._textLayer(prefix.slice(leading),{...options,spans:sliceSpans(prefixSpans,leading,prefix.length),width:Math.max(1,width-markerLeft),maxHeight:options.maxHeight,fontSize:size,minimumFontSize:size,align:'left',exactBounds:true}) : null;
+          const content=await this._textLayer(body.slice(row.prefixEnd,row.end),{...options,spans:sliceSpans(options.spans,row.prefixEnd,row.end),width:width-indent,maxHeight:options.maxHeight,fontSize:size,minimumFontSize:size,align:'left',exactBounds:true});
+          const height=Math.max(marker?.info.height||0,content?.info.height||0,size);
+          if(marker)composites.push({input:marker.data,left:markerLeft,top});
+          if(content)composites.push({input:content.data,left:indent,top});
+          top+=height+Math.round(size*(options.lineSpacingPercent??13)/100);
+        }
+        top-=Math.round(size*(options.lineSpacingPercent??13)/100);
+        if(top>options.maxHeight+2)throw Object.assign(new Error('Outline text does not fit.'),{code:'TEXT_OVERFLOW'});
+        const rendered=await this.sharp({create:{width,height:Math.max(1,top),channels:4,background:{r:0,g:0,b:0,alpha:0}}}).composite(composites).png().toBuffer({resolveWithObject:true});
+        return {...rendered,fontSize:size,fontWeight:options.weight};
+      } catch(error) {lastError=error;if(error.code!=='TEXT_OVERFLOW')throw error;}
+      if(size===minimum)break;
+    }
+    throw lastError;
   }
 
   async _singleLineLayer(value, options) {
@@ -583,6 +619,7 @@ class NativeSlideRenderer {
     body = '',
     bodySpans = [],
     songLanguageBreak = null,
+    outline = false,
     titleSpans = [],
     backgroundAssetId = null,
     backgroundDimOpacity = 0.55,
@@ -649,7 +686,7 @@ class NativeSlideRenderer {
     if (credit) bodyMaximumHeight = Math.min(bodyMaximumHeight, Math.max(50, this.height * (quoteCredit ? .74 : .84) - availableTop));
     const bodyWidth = this.width * (preset.bodyWidthPercent || 82) / 100;
     const bodyAlign = preset.bodyAlign || 'center';
-    const renderBody = options => songLanguageBreak !== null ? this._songLanguageLayer(body, songLanguageBreak, options) : this._textLayer(body, options);
+    const renderBody = options => songLanguageBreak !== null ? this._songLanguageLayer(body, songLanguageBreak, options) : outline ? this._outlineLayer(body,options) : this._textLayer(body, options);
     const bodyLayer = await renderBody({
       width: bodyWidth,
       maxHeight: bodyMaximumHeight,
@@ -903,6 +940,7 @@ class NativeSlideRenderer {
           textStyle: cue.textStyle,
           credit: scriptureCredit(bibleBlock),
           body: textValue,
+          titleSpans: textBlocks.find(block => block.role === 'title')?.spans || [],
           bodySpans: display.spans,
           onTypography,
           presetId: cue.presetId || 'scripture-text'
@@ -956,6 +994,7 @@ class NativeSlideRenderer {
             body: textValue || (cue.kind === 'sermon' || cue.kind === 'notice' ? '' : localizedTitle),
             bodySpans: textValue ? bodySpans : [],
             ...(cue.presetId === 'wotbc-song-stacked' && bodyParts.length === 2 ? {songLanguageBreak:bodyParts[0].length} : {}),
+            outline: cue.kind === 'sermon' && cue.presetId === 'wotbc-sermon' && outlineParagraphs(textValue).some(row=>row.prefixEnd>row.start),
             titleSpans: textBlocks.find(block => block.role === 'title')?.spans || [],
             backgroundAssetId: imageBlock?.role === 'background' ? imageBlock.assetId : null,
             backgroundDimOpacity: imageBlock?.dimOpacity ?? 0.55,
