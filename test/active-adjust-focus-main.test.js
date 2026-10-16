@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync(require.resolve('../main.js'),'utf8');
 const start=source.indexOf("ipcMain.handle('community:planner:openActiveAdjust'");
-const end=source.indexOf("ipcMain.handle('community:planner:openService'",start);
+const end=source.indexOf("ipcMain.handle('community:planner:openLocalService'",start);
 async function openFixture({replaceDuringOpen=false}={}) {
   const project={id:'service',assets:{},items:{},updatedAt:'2026-10-04T00:00:00.000Z'};
   let handoff={project:{id:'service'},cueIds:['a','b']},handler,focused;

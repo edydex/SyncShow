@@ -70,7 +70,7 @@ function rendererFixture(extra = {}) {
     presentationMode: 'auto', testOutput: { enabled: true, displayId: '2' },
     serviceFolder: { staleRoleIds: [] }, ...extra };
   const source = fs.readFileSync(require.resolve('../src/renderer/app.js'), 'utf8');
-  const scope = vm.createContext({ state, window: { SyncShowPresentationMode: modes }, elements: {},
+  const scope = vm.createContext({ state, window: { SyncShowPresentationMode: modes, SyncShowScreenRouting: require('../src/renderer/service-screen-routing') }, elements: {},
     presentationElements: Object.fromEntries(roles.map(role => [role.id, {}])),
     resolveOutputDisplay: () => null, isEditableOutputRoute: () => true,
     getServiceOutputDecision: () => ({ mode: 'disabled' }),

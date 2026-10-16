@@ -5,6 +5,9 @@
 // Application State
 const state = {
   workflowStage: 'load',
+  presentationScreens: null,
+  interfacePreferences: {showStartBlank: true},
+  quickStartBusy: false,
   presentations: {},
   presentationConversionRecovery: {},
   profile: null,
@@ -400,6 +403,15 @@ const elements = {
   // Control buttons
   btnRefreshDisplays: document.getElementById('btnRefreshDisplays'),
   btnIdentifyDisplays: document.getElementById('btnIdentifyDisplays'),
+  btnStartBlank: document.getElementById('btnStartBlank'),
+  startBlankDialog: document.getElementById('startBlankDialog'),
+  startBlankForm: document.getElementById('startBlankForm'),
+  startBlankName: document.getElementById('startBlankName'),
+  startBlankError: document.getElementById('startBlankError'),
+  btnConfirmStartBlank: document.getElementById('btnConfirmStartBlank'),
+  btnCancelStartBlank: document.getElementById('btnCancelStartBlank'),
+  showStartBlankPreference: document.getElementById('showStartBlankPreference'),
+  interfacePreferenceStatus: document.getElementById('interfacePreferenceStatus'),
   btnOpenSettings: document.getElementById('btnOpenSettings'),
   btnStartPresentation: document.getElementById('btnStartPresentation'),
   btnRestorePrevious: document.getElementById('btnRestorePrevious'),
@@ -507,6 +519,8 @@ let communityPlannerStateUnsubscribe = null;
 let communityPlannerLayoutFrame = null;
 let loadFreshnessPromise = null;
 const loadWorkWaiters = new Set();
+let quickStartPicker = null;
+let quickAdjustAfterStartId = null;
 let showAdjustOpen = false;
 let showAdjustBusy = false;
 let showAdjustGeneration = 0;
@@ -718,6 +732,15 @@ function setupEventListeners() {
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
   elements.btnIdentifyDisplays.addEventListener('click', identifyDisplays);
+  quickStartPicker = window.SyncShowScreenPicker.createPicker(document.getElementById('startBlankScreens'), {
+    value: {screenIds: ['english'], hintScreenIds: []},
+    onChange: value => { elements.btnConfirmStartBlank.disabled = !value.screenIds.length; }
+  });
+  elements.btnStartBlank.addEventListener('click', openStartBlank);
+  elements.btnCancelStartBlank.addEventListener('click', () => elements.startBlankDialog.close());
+  elements.startBlankForm.addEventListener('submit', createBlankPresentation);
+  elements.startBlankDialog.addEventListener('close', scheduleCommunityPlannerLayout);
+  elements.showStartBlankPreference.addEventListener('change', saveInterfacePreferences);
   elements.btnOpenSettings.addEventListener('click', () => openSettings());
   elements.btnCloseAdminSettings.addEventListener('click', closeSettings);
   elements.adminSettingsTabs.forEach(tab => {
@@ -1482,6 +1505,8 @@ async function saveTestOutputSettings() {
 }
 
 async function openLocalServiceInPrepare(projectId) {
+  const local = await window.api.openServiceProject({projectId});
+  if (local.project?.presentation?.localOnly) return setWorkflowStage('prepare', {localProjectId: projectId});
   await setWorkflowStage('prepare');
   if (state.community.plannerOpen) communityCheckedResult(await window.api.openPlannerService(projectId));
 }
@@ -1533,6 +1558,78 @@ async function openLoadedServiceInPrepare() {
   await openLocalServiceInPrepare(projectId);
 }
 
+function renderInterfacePreferences() {
+  elements.btnStartBlank.hidden = state.interfacePreferences.showStartBlank === false;
+  elements.showStartBlankPreference.checked = state.interfacePreferences.showStartBlank !== false;
+}
+
+async function saveInterfacePreferences() {
+  elements.showStartBlankPreference.disabled = true;
+  try {
+    state.interfacePreferences = await window.api.saveInterfacePreferences({showStartBlank: elements.showStartBlankPreference.checked});
+    renderInterfacePreferences();
+    elements.interfacePreferenceStatus.textContent = 'Saved on this computer.';
+  } catch (error) {
+    renderInterfacePreferences(); elements.interfacePreferenceStatus.textContent = error.message;
+  } finally { elements.showStartBlankPreference.disabled = false; }
+}
+
+async function openStartBlank() {
+  if (state.isPresenting || state.activeLaunchPlan || state.isStarting || state.startAttempt || state.quickStartBusy) return;
+  await window.api.layoutCommunityPlanner?.({visible: false});
+  elements.startBlankName.value = '';
+  elements.startBlankError.hidden = true;
+  elements.btnConfirmStartBlank.disabled = !quickStartPicker.getValue().screenIds.length;
+  elements.startBlankDialog.showModal();
+  elements.startBlankName.focus();
+}
+
+async function createBlankPresentation(event) {
+  event.preventDefault();
+  if (state.quickStartBusy || !quickStartPicker.getValue().screenIds.length) return;
+  state.quickStartBusy = true;
+  elements.btnConfirmStartBlank.disabled = true;
+  elements.btnConfirmStartBlank.setAttribute('aria-busy', 'true');
+  elements.btnConfirmStartBlank.textContent = 'Starting…';
+  elements.btnCancelStartBlank.disabled = true;
+  updateWorkflowNavigationAvailability();
+  try {
+    if (state.community.plannerOpen) {
+      communityCheckedResult(await window.api.flushCommunityPlanner());
+    }
+    const created = await window.api.createQuickPresentation({
+      title: elements.startBlankName.value.trim() || 'Untitled presentation',
+      presentation: quickStartPicker.getValue()
+    });
+    if (!created?.project?.id || !created.revisionId) throw new Error(created?.error || 'The local presentation could not be created.');
+    beginNativeServiceLoad(created.project.id);
+    const published = await window.api.publishServiceProject({projectId: created.project.id, revisionId: created.revisionId});
+    await refreshPublishedProject(published, created);
+    elements.startBlankDialog.close();
+    state.nativeLoadBusy = false;
+    state.loadFreshness.lastResult = {state: 'unshared'};
+    checkReadyState();
+    if (getReadinessState().isReady) {
+      quickAdjustAfterStartId = created.project.id;
+      await startPresentation(false);
+    } else {
+      await setWorkflowStage('prepare', {localProjectId: created.project.id});
+      setStatus('Local presentation ready. Add slides here; click Load and Start Show when your screens are connected.');
+    }
+  } catch (error) {
+    elements.startBlankError.textContent = operatorErrorMessage(error, 'The presentation could not start.');
+    elements.startBlankError.hidden = false;
+    if (!elements.startBlankDialog.open) elements.startBlankDialog.showModal();
+  } finally {
+    state.nativeLoadBusy = false; state.quickStartBusy = false;
+    elements.btnConfirmStartBlank.textContent = 'Start blank';
+    elements.btnConfirmStartBlank.removeAttribute('aria-busy');
+    elements.btnConfirmStartBlank.disabled = !quickStartPicker.getValue().screenIds.length;
+    elements.btnCancelStartBlank.disabled = false;
+    updateWorkflowNavigationAvailability(); checkReadyState();
+  }
+}
+
 function activateSettingsTab(tabId, { focusTab = false } = {}) {
   const requestedTab = typeof tabId === 'string' ? tabId : '';
   const activeTab = elements.adminSettingsTabs.find(
@@ -1542,6 +1639,7 @@ function activateSettingsTab(tabId, { focusTab = false } = {}) {
 
   const activeTabId = activeTab.dataset.settingsTab;
   state.settingsTab = activeTabId;
+  scheduleCommunityPlannerLayout();
   elements.adminSettingsTabs.forEach(tab => {
     const selected = tab === activeTab;
     tab.setAttribute('aria-selected', String(selected));
@@ -1571,6 +1669,7 @@ function handleSettingsTabKeydown(event) {
 
 function openSettings(tabId = state.settingsTab) {
   activateSettingsTab(tabId);
+  window.api.layoutCommunityPlanner?.({visible: false}).catch(() => {});
   refreshCommunityStatus();
   if (elements.advancedSetupDetails.open) return;
   if (!state.advancedWarningAcknowledged) {
@@ -1592,6 +1691,7 @@ function closeSettings() {
     return;
   }
   elements.advancedSetupDetails.close();
+  scheduleCommunityPlannerLayout();
 }
 
 function applyFriendlyMode() {
@@ -1667,6 +1767,8 @@ function confirmAdvancedMode() {
 function updateWorkflowNavigationAvailability() {
   const liveShowSession = state.workflowStage === 'show'
     && Boolean(state.isPresenting || state.activeLaunchPlan);
+  elements.btnStartBlank.disabled = liveShowSession || state.quickStartBusy;
+  elements.btnStartBlank.title = liveShowSession ? 'End the current Show before starting a new presentation' : 'Start a local presentation';
   elements.btnStagePrepare.disabled = liveShowSession;
   elements.btnStageLoad.disabled = liveShowSession;
   elements.btnStageShow.disabled = state.workflowStage !== 'show'
@@ -1736,7 +1838,7 @@ function cancelPendingPrepareLoad() {
 async function navigateWorkflowStage(stage) {
   if (stage === state.workflowStage) {
     if (stage === 'prepare' && state.prepareMode === 'community') {
-      await openCommunityPrepare();
+      await activatePrepareMode('community');
     } else if (stage === 'load') {
       await refreshLoadedService();
     }
@@ -1787,7 +1889,10 @@ async function navigateWorkflowStage(stage) {
       ]));
       if (!current()) return;
       setPrepareLoadWarning('');
-      if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId, { isCurrent: current, fresh: false });
+      if (handoff?.localProject) {
+        const local = handoff.localProject;
+        await refreshPublishedProject(await window.api.publishServiceProject({projectId: local.project.id, revisionId: local.revisionId}), local);
+      } else if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId, { isCurrent: current, fresh: false });
     } catch (error) {
       if (current()) {
         const warning = `Load is available, but Prepare’s latest edits have not been loaded. ${operatorErrorMessage(error, 'Save in Prepare before loading that service.')}`;
@@ -1817,6 +1922,7 @@ async function loadAppState() {
     state.totalSlides = appState.totalSlides;
     state.activeLaunchPlan = appState.activeLaunchPlan;
     state.displays = appState.displays;
+    state.presentationScreens = appState.presentationScreens || null;
     applyServiceHandoff(appState.serviceHandoff);
     state.preparedServiceRestore = appState.preparedServiceRestore || {
       status: 'none'
@@ -1872,6 +1978,7 @@ function applyRuntimePresentationState(presentations = {}, options = {}) {
     state.presentations[role.id] = {
       ...previous,
       loaded: true,
+      presentationScreenId: summary.presentationScreenId || null,
       pending: false,
       path: previous.path || null,
       displayPath: previous.displayPath
@@ -1934,6 +2041,7 @@ function renderLoadFreshness() {
 async function refreshLoadedService({ reuseRecent = false } = {}) {
   if (loadFreshnessPromise) return loadFreshnessPromise;
   const loaded = state.serviceHandoff;
+  if (state.presentationScreens?.localOnly) return {state: 'unshared'};
   if (!loaded || !sharedServiceController?.refreshLoaded || state.workflowStage !== 'load'
     || state.loadMode !== 'syncshow' || state.community.handoffBusy
     || state.isPresenting || state.activeLaunchPlan || state.isStarting || state.startAttempt) return;
@@ -2349,6 +2457,7 @@ async function refreshPublishedProject(publishResult, context = {}) {
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
     state.displays = appState.displays;
+    state.presentationScreens = appState.presentationScreens || null;
     applyServiceHandoff(appState.serviceHandoff);
     state.nativeRequestedServiceId = appState.serviceHandoff.project.id;
     state.nativeLoadError = null;
@@ -2384,6 +2493,8 @@ async function loadSavedSettings() {
   state.isApplyingSettings = true;
   try {
     const settings = await window.api.loadSettings();
+    state.interfacePreferences = settings.interfacePreferences || {showStartBlank: true};
+    renderInterfacePreferences();
     state.testOutput = await window.api.getTestOutputSettings();
     renderTestOutputSettings();
     applyCommittedProfile(settings.venueProfile);
@@ -3154,6 +3265,7 @@ async function refreshTakenBackstageDraft() {
     const current = await window.api.getAppState();
     state.currentSlide = current.currentSlide; state.totalSlides = current.totalSlides;
     state.activeLaunchPlan = current.activeLaunchPlan;
+    state.presentationScreens = current.presentationScreens || null;
     applyServiceHandoff(current.serviceHandoff);
     applyRuntimePresentationState(current.presentations, { replaceSource: true });
     if (current.showState) handleShowStateChanged(current.showState);
@@ -3177,6 +3289,8 @@ function renderCommunityPrepare() {
     elements.communityPrepareStatus.dataset.kind = 'error';
     elements.communityPrepareStatus.textContent =
       'This SyncShow build cannot open the shared Community planner.';
+  } else if (state.community.plannerLocalOnly && state.community.plannerOpen) {
+    elements.communityPrepareStatus.textContent = 'Local presentation · saved on this computer';
   } else if (!connected) {
     elements.communityPrepareStatus.dataset.kind = 'warning';
     elements.communityPrepareStatus.textContent =
@@ -3203,7 +3317,8 @@ function renderCommunityPrepare() {
 function communityPlannerShouldBeVisible() {
   return ((state.workflowStage === 'show' && showAdjustOpen)
     || (state.workflowStage === 'prepare' && state.prepareMode === 'community'))
-    && (showAdjustOpen || communityIsConnected())
+    && (showAdjustOpen || state.community.plannerLocalOnly || communityIsConnected())
+    && !elements.advancedSetupDetails.open && !elements.startBlankDialog.open
     && !document.getElementById('plannerConflictDialog').open
     && state.community.plannerOpen
     && (showAdjustOpen || !elements.communityPrepareShell.hidden);
@@ -3274,12 +3389,18 @@ async function activatePrepareMode(mode, options = {}) {
     return activated;
   }
   window.setTimeout(() => elements.communityPrepareHeading.focus(), 0);
+  const localProjectId = options.localProjectId || (state.presentationScreens?.localOnly ? state.serviceHandoff?.project?.id : null);
+  if (localProjectId) {
+    const result = communityCheckedResult(await window.api.openLocalPlannerService(localProjectId));
+    await refreshCommunityPlannerState(); scheduleCommunityPlannerLayout(); return result.opened;
+  }
   return openCommunityPrepare();
 }
 
 function handleCommunityPlannerStateChanged(payload = {}) {
   const wasOpen = state.community.plannerOpen;
   state.community.plannerOffline = payload.offline === true;
+  state.community.plannerLocalOnly = payload.localOnly === true;
   state.community.plannerPending = payload.pending || 0;
   state.community.plannerConflicts = payload.conflicts || [];
   state.community.plannerShowDraft = payload.showDraft === true;
@@ -3291,8 +3412,8 @@ function handleCommunityPlannerStateChanged(payload = {}) {
   renderBackstagePreviewStatus();
   if (showAdjustOpen) renderShowAdjustStatus();
   const hasConflicts = state.community.plannerConflicts.length > 0;
-  document.getElementById('plannerSyncStrip').hidden = !hasConflicts && !payload.offline && !payload.pending;
-  document.getElementById('plannerSyncStatus').textContent = hasConflicts ? 'Both versions changed. Your local edits are preserved.' : payload.pending ? 'Saved on this computer. Waiting to sync.' : 'Working offline with your downloaded library.';
+  document.getElementById('plannerSyncStrip').hidden = !payload.localOnly && !hasConflicts && !payload.offline && !payload.pending;
+  document.getElementById('plannerSyncStatus').textContent = payload.localOnly ? 'Local presentation · saved on this computer' : hasConflicts ? 'Both versions changed. Your local edits are preserved.' : payload.pending ? 'Saved on this computer. Waiting to sync.' : 'Working offline with your downloaded library.';
   document.getElementById('btnReviewPlannerConflict').hidden = !hasConflicts;
   document.getElementById('btnReviewAdjustConflict').hidden = !hasConflicts;
   state.community.plannerOpen = payload?.open === true;
@@ -6472,8 +6593,8 @@ async function identifyDisplays() {
 
 // Presentation Control
 function getConfiguredOutputs() {
-  return (state.profile?.outputs || [])
-    .filter(output => output.enabled)
+  const outputs = window.SyncShowScreenRouting.enabledOutputs(state.profile?.outputs || [], state.presentations,
+    state.loadMode === 'syncshow' ? state.presentationScreens : null)
     .map(output => {
       const display = resolveOutputDisplay(output);
       return {
@@ -6488,6 +6609,9 @@ function getConfiguredOutputs() {
         operatorPreview: output.operatorPreview
       };
     });
+  return window.SyncShowScreenRouting.presentationOutputs(outputs, state.presentations,
+    state.loadMode === 'syncshow' ? state.presentationScreens : null,
+    state.displays, state.presentationMode === 'auto');
 }
 
 function getLoadedRoles({ requireExtractedText = false } = {}) {
@@ -6501,14 +6625,17 @@ function getLoadedRoles({ requireExtractedText = false } = {}) {
 
 function getSingleScreenRoles() {
   return window.SyncShowPresentationMode.singleScreenRoles(
-    state.profile?.inputRoles, state.presentations, state.profile?.outputs
+    window.SyncShowScreenRouting.selectedRoles(state.profile?.inputRoles || [], state.presentations,
+      state.loadMode === 'syncshow' ? state.presentationScreens : null), state.presentations, state.profile?.outputs,
+    {allowStage: Boolean(state.loadMode === 'syncshow' && state.presentationScreens)}
   ).filter(role => state.presentations[role.id]?.loaded);
 }
 
 function buildSingleScreenOutput(roleId, displayId) {
   return window.SyncShowPresentationMode.singleScreenOutput({
     roleId, displayId, displays: state.displays,
-    roles: state.profile?.inputRoles, presentations: state.presentations,
+    roles: window.SyncShowScreenRouting.selectedRoles(state.profile?.inputRoles || [], state.presentations, state.loadMode === 'syncshow' ? state.presentationScreens : null), presentations: state.presentations,
+    allowStage: Boolean(state.loadMode === 'syncshow' && state.presentationScreens),
     outputs: state.profile?.outputs
   });
 }
@@ -6516,20 +6643,25 @@ function buildSingleScreenOutput(roleId, displayId) {
 function renderPresentationMode() {
   const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
   const mode = window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode);
+  const selection = state.loadMode === 'syncshow' ? state.presentationScreens : null;
+  const names = selection?.screenIds.map(id => ({english:'English',russian:'Russian',media:'Stage-Facing'})[id]).join(' + ');
   elements.presentationMode.value = state.presentationMode;
   elements.presentationMode.disabled = state.isPresenting || state.isStarting || !!state.startAttempt;
-  elements.presentationMode.options[0].textContent = `Automatic · ${external.length <= 1 ? 'one screen' : 'saved screen setup'}`;
+  elements.presentationMode.options[0].textContent = selection ? `Automatic · ${names}` : `Automatic · ${external.length <= 1 ? 'one screen' : 'saved screen setup'}`;
   elements.presentationScreenSummary.textContent = external.length === 0
     ? 'Connect a presentation screen'
     : `${external.length} external ${external.length === 1 ? 'screen' : 'screens'} connected`;
   elements.presentationModeHelp.textContent = external.length === 0
     ? 'Connect a TV or projector in extended-display mode. Your controls stay on this screen.'
+    : selection ? `Using ${names}. Change screens and next-slide hints in Prepare → Screens.`
     : mode === 'single'
       ? 'Start Show asks which language to present full-screen. Your saved screen setup stays unchanged.'
       : 'Use your saved audience and stage screens, or choose One screen for a simpler setup.';
 }
 
 function getReadinessState(testOutput = false) {
+  const presentationScreens = state.loadMode === 'syncshow' ? state.presentationScreens : null;
+  const missingSelectedRoles = (presentationScreens?.screenIds || []).filter(id => !Object.values(state.presentations).some(presentation => presentation.loaded && presentation.presentationScreenId === id));
   const singleScreen = !testOutput && window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode) === 'single';
   const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
   const singleRoles = getSingleScreenRoles();
@@ -6566,10 +6698,12 @@ function getReadinessState(testOutput = false) {
           ? 'The selected service has not been loaded. Try loading it again.' : '')
     : '';
   if (nativeSourceIssue) issues.push(nativeSourceIssue);
+  for (const id of missingSelectedRoles) issues.push(`The selected ${id === 'media' ? 'Stage-Facing' : id} screen is unavailable. Enable its presentation input in Admin Settings → Screen Setup, or change Screens in Prepare.`);
   const demoTarget = state.displays.find(display => String(display.id) === state.testOutput.displayId && !display.isControl);
   const demoReady = !testOutput || (state.testOutput.enabled && !!demoTarget && !state.testOutputSaving);
   if (!demoReady) issues.push('Choose a connected external demo screen in Admin Settings → Screen Setup');
 
+  if (!testOutput && presentationScreens && external.length > 0 && external.length < presentationScreens.screenIds.length) issues.push(`This presentation uses ${presentationScreens.screenIds.length} screens. Connect that many, or change Screens in Prepare.`);
   if (singleScreen && external.length === 0) issues.push('Connect an external presentation screen');
   if (singleScreen && singleRoles.length === 0) issues.push('Load a service or a language slideshow');
   if (!singleScreen && outputs.length === 0) issues.push('Choose at least one output screen in Admin Settings');
@@ -6603,6 +6737,8 @@ function getReadinessState(testOutput = false) {
   if (state.startAttempt && !state.isStarting) issues.push('Finish or cancel the current Start Show choices');
 
   const isReady = demoReady && activeOutputs.length > 0
+    && (testOutput || !presentationScreens || external.length >= presentationScreens.screenIds.length)
+    && missingSelectedRoles.length === 0
     && !nativeSourceIssue
     && !conversionPending
     && !state.loadFreshness?.busy
@@ -6620,6 +6756,7 @@ function getReadinessState(testOutput = false) {
   return {
     isReady,
     singleScreen,
+    singleRoles,
     issues,
     outputs,
     activeOutputs,
@@ -6716,6 +6853,7 @@ function notifyLoadWork() {
 }
 
 function offlineLaunchNotice() {
+  if (state.presentationScreens?.localOnly) return '';
   if (state.loadFreshness.lastResult?.state !== 'unavailable') return '';
   if (state.loadFreshness.lastResult.phase === 'prepare') return 'The update could not be prepared. Using the previously saved local copy.';
   return `${state.loadFreshness.lastResult.offline ? 'No internet connection.' : 'Community is unavailable.'} Using the saved local copy; the latest version could not be checked.`;
@@ -6901,6 +7039,16 @@ async function beginStartPresentation(testOutput = false) {
       } }
     };
     checkReadyState();
+    if (state.presentationScreens?.screenIds.length === 1 && readiness.singleRoles.length === 1
+      && window.SyncShowPresentationMode.externalDisplays(state.displays).length === 1) {
+      const roleId = readiness.singleRoles[0].id;
+      const displayId = window.SyncShowPresentationMode.externalDisplays(state.displays)[0].id;
+      const output = buildSingleScreenOutput(roleId, displayId);
+      state.startAttempt.snapshot.outputs = [output];
+      state.startAttempt.snapshot.preferredTimelineRoleId = roleId;
+      state.startAttempt.decisions = {[output.id]: {mode: 'direct', explicit: true}};
+      await launchStartAttempt(); return;
+    }
     renderStartPreflight();
     elements.startPreflightDialog.showModal();
     return;
@@ -7395,6 +7543,11 @@ async function launchStartAttempt() {
     window.api.requestOutputPreviews();
     setStatus(attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor'
       : attempt.snapshot.singleScreen ? `${getRoleLabel(attempt.snapshot.preferredTimelineRoleId)} — presenting on one screen` : 'Presentation started');
+    if (quickAdjustAfterStartId === state.serviceHandoff?.project?.id) {
+      quickAdjustAfterStartId = null;
+      await toggleShowAdjust();
+      return;
+    }
     window.setTimeout(() => {
       const target = !elements.btnNextSlide.disabled
         ? elements.btnNextSlide

@@ -24867,6 +24867,10 @@
     function openNewProjectDialog() {
       if (!state.available || state.mutationBusy) return;
       elements.newProjectForm.reset();
+      state.newProjectScreens = window.SyncShowScreenPicker.createPicker(document.getElementById('newServiceProjectScreens'), {
+        value: {screenIds: ['english', 'russian', 'media'], hintScreenIds: ['media']},
+        onChange: value => { elements.btnCreateProject.disabled = !value.screenIds.length; }
+      });
       setDialogError(elements.newProjectError, '');
       elements.newProjectDate.value = localIsoDate();
       if (!elements.newProjectName.value.trim()) elements.newProjectName.value = 'Sunday Service';
@@ -24895,6 +24899,7 @@
       setNotice('busy', 'Creating the service project…');
       try {
         const rawPlanned = checkedResult(await api.createServiceProject({
+          presentation: state.newProjectScreens.getValue(),
           title,
           serviceDate,
           startTime,
