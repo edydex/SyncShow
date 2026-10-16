@@ -119,7 +119,7 @@ test('a text-fit failure identifies the exact slide and channel and leaves no ac
 test('old renderer packages still open offline while fresh preparation uses a new identity', async t => {
   const fixture = await preparedProject(t);
   const current = await fixture.publisher.publish(fixture.publishOptions);
-  assert.equal(current.manifest.rendererVersion, 21);
+  assert.equal(current.manifest.rendererVersion, 22);
   const legacy = structuredClone(current.manifest);
   legacy.rendererVersion = 11;
   const identity = {};
@@ -209,6 +209,8 @@ test('publishes an immutable equal-length package, returns the exact presentatio
       'assetPaths',
       'cacheDir',
       'metadata',
+      'presentationScreenId',
+      'presentationScreens',
       'projectId',
       'projectRevisionId',
       'renderer',
@@ -830,4 +832,22 @@ test('artifact reuse rejects bytes changed after prior-package verification', as
   const target=path.join(staging,'channel','thumb.jpg');
   assert.equal(await f.publisher._reuseArtifact(target,bytes,reusable,staging),false);
   await assert.rejects(fs.lstat(target),{code:'ENOENT'});
+});
+
+test('per-presentation hints survive offline reopen and changing them never reuses the old thumbnail', async t => {
+  const fixture = await preparedProject(t);
+  const before = await fixture.publisher.publish(fixture.publishOptions);
+  const project = {...fixture.saved.project, presentation:{screenIds:['russian'],hintScreenIds:['russian'],localOnly:true}};
+  const saved = await fixture.store.save(project,{expectedRevisionId:fixture.saved.revisionId,reason:'enable-audience-hint'});
+  const published = await fixture.publisher.publish({...fixture.publishOptions,revisionId:saved.revisionId,
+    reusePackageId:before.manifest.id,reusePackageManifestSha256:before.manifestSha256});
+  const opened = await fixture.publisher.open(published.manifest.id);
+  assert.equal(opened.presentations.main.scenes[0].layout,'singer-current-next');
+  assert.deepEqual(opened.presentations.main.presentationScreens,project.presentation);
+  assert.equal(opened.presentations.main.presentationScreenId,'russian');
+  const firstThumb = before.manifest.artifacts.find(item=>item.path.endsWith('slide_001_thumb.jpg'));
+  const nextThumb = opened.manifest.artifacts.find(item=>item.path===firstThumb.path);
+  assert.notEqual(nextThumb.sha256,firstThumb.sha256);
+  const restored = await fixture.store.read(saved.project.id,{revisionId:saved.revisionId});
+  assert.deepEqual(restored.project.presentation,project.presentation);
 });

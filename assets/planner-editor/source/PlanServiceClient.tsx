@@ -1,4 +1,5 @@
 'use client'
+import PresentationScreenPicker, {DEFAULT_PRESENTATION_SCREENS, PresentationScreensDialog, type PresentationScreens} from './PresentationScreenPicker'
 import { useWorkspaceText } from './useWorkspaceText'
 import type { WorkspaceTextVariables } from '../lib/workspaceText'
 import { applyDeviceWorkspaceLanguage } from '../lib/deviceWorkspaceLanguage'
@@ -281,6 +282,7 @@ function today() {
 function NewService({ onCreated, onCopy }: { onCreated: (value: ServiceEnvelopeInput) => void; onCopy?: () => void }) {
   const t = useWorkspaceText()
   const [title, setTitle] = useState('Sunday Morning Service')
+  const [presentation, setPresentation] = useState<PresentationScreens>(DEFAULT_PRESENTATION_SCREENS)
   const [serviceDate, setServiceDate] = useState(today)
   const newServiceDetails = useRef<HTMLDetailsElement>(null)
   const titleInput = useRef<HTMLInputElement>(null)
@@ -306,7 +308,8 @@ function NewService({ onCreated, onCopy }: { onCreated: (value: ServiceEnvelopeI
         body: JSON.stringify({
           schemaVersion: 1,
           requestId: uuid(),
-          syncId: `service-${visibleServiceDate}`,
+          syncId: `service-${visibleServiceDate}-${uuid().slice(0,8)}`,
+          presentation,
           title: visibleTitle,
           serviceDate: visibleServiceDate,
         }),
@@ -332,7 +335,8 @@ function NewService({ onCreated, onCopy }: { onCreated: (value: ServiceEnvelopeI
           <span>{t("Service date")}</span>
           <input ref={serviceDateInput} type="date" value={serviceDate} onChange={event => setServiceDate(event.target.value)} />
         </label>
-        <button className="btn btn--style-primary" type="button" disabled={busy || !title.trim() || !serviceDate} onClick={create}>
+        <PresentationScreenPicker value={presentation} onChange={setPresentation} />
+        <button className="btn btn--style-primary" type="button" disabled={busy || !title.trim() || !serviceDate || !presentation.screenIds.length} onClick={create}>
           {busy ? t("Creating…") : t("Create service")}
         </button>
         {onCopy ? <button type="button" onClick={onCopy}>{t("Make a copy of the current service")}</button> : null}
@@ -424,6 +428,7 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
   useEffect(() => () => localUrls.current.forEach(url => URL.revokeObjectURL(url)), [])
   const [translationCueSlide,setTranslationCueSlide]=useState<PlannerSlide | null>(null)
   const [previewChannel, setPreviewChannel] = useState<ChannelId>('english')
+  const [screenSettingsOpen,setScreenSettingsOpen]=useState(false)
   const [servicePreviewOpen, setServicePreviewOpen] = useState(false)
   const [workspaceView, setWorkspaceView] = useState<'slides' | 'edit'>('slides')
   const [showDocumentId, setShowDocumentId] = useState<string | null>(null)
@@ -513,7 +518,7 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
   const navigatorRows = draft ? plannerNavigator(draft, slideList.rows, activeSlide?.id || selectedId) : []
   const activeSongPrimary = selected?.kind === 'song' ? songPresentation.presentationPrimaryChannelId(selected, activeSlide?.cue?.sourceLeafKey) : null
   const activePreviewCue = activeSlide?.cue
-  const preview = plannerPreview(slideList.rows, activeSlide, previewChannel)
+  const preview = plannerPreview(slideList.rows, activeSlide, previewChannel, draft?.presentation)
   const activePreviewOutput = preview.output
   const selectedSermonContext = useMemo(() => draft && selected ? sermonContext.resolveSermonContext(draft)[selected.id] : null, [draft, selected])
   const authoredSermon = selectedSermonContext?.item
@@ -592,12 +597,14 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
 
   async function loadLibraries() {
     try {
-      const [songs, bible, sermons, slides] = await Promise.all([
+      const results = await Promise.allSettled([
         jsonRequest(`${ENDPOINT}/library/songs`),
         jsonRequest(`${ENDPOINT}/library/bible-passage`),
         jsonRequest('/api/community/sermon-presentations'),
         jsonRequest(`${ENDPOINT}/library/slides`),
       ])
+      const [songs, bible, sermons, slides] = results.map(result => result.status === 'fulfilled' ? result.value : {})
+      if (results.every(result => result.status === 'rejected')) throw (results[0] as PromiseRejectedResult).reason
       const nextSongs = songs.items || []
       setSongLibrary(nextSongs)
       setSongChoice(current => current || nextSongs[0]?.syncId || '')
@@ -645,6 +652,9 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
     latestDraft.current = opened; dirtyRef.current = Boolean(recovered) || prepared.changed
     setEnvelope(normalized)
     setDraft(opened)
+    if (opened.presentation && !opened.presentation.screenIds.includes(previewChannel)) {
+      setPreviewChannel(opened.presentation.screenIds[0] as ChannelId)
+    }
     try { if (!sermonSyncId) rememberWorkspaceService(localStorage,workspaceIdentity.current,normalized.syncId) } catch { /* Browser storage can be disabled. */ }
     const retained = keepSelection && selectedId && prepared.project.items[selectedId]
     const liveRow = showDocumentRef.current === next.syncId && liveCueRef.current
@@ -1503,6 +1513,7 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
         onResolve={resolveSaveConflict} onHistory={() => { setSaveConflictOpen(false); setHistoryOpen(true) }} onClose={() => setSaveConflictOpen(false)} /> : null}
       {historyOpen && envelope ? <VersionHistoryDialog readOnly={saveConflict}  syncId={envelope.syncId} currentVersion={envelope.syncVersion} request={jsonRequest} onClose={() => setHistoryOpen(false)} onRestore={restoreVersion} /> : null}
       {translationCueSlide && draft ? <TranslationCueDialog slide={translationCueSlide} onClose={()=>setTranslationCueSlide(null)} onSave={settings=>{slideMutation(()=>setSlideTranslationCue(draft,translationCueSlide,'start',settings),translationCueSlide.index);setTranslationCueSlide(null)}}/> : null}
+      {screenSettingsOpen && draft ? <PresentationScreensDialog value={draft.presentation || DEFAULT_PRESENTATION_SCREENS} onApply={value=>change(project=>{project.presentation=value})} onClose={()=>setScreenSettingsOpen(false)} /> : null}
       {servicePreviewOpen && draft ? <ServicePreview project={draft} rows={slideList.rows} initialSlideId={activeSlide?.id} initialChannel={previewChannel} dirty={dirty}
         mediaUrl={assetId=>mediaPreviews[assetId] || (envelope?.project.assets?.[assetId] ? `${ENDPOINT}/${encodeURIComponent(envelope.syncId)}/assets/${encodeURIComponent(assetId)}` : undefined)}
         onClose={row=>{setServicePreviewOpen(false);if(row) selectSlide(row)}} /> : null}
@@ -1533,19 +1544,20 @@ export default function PlanServiceClient({ sermonSyncId, activeServiceId, onDir
           <button type="button" aria-pressed={workspaceView === 'edit'} disabled={!draft} onClick={() => chooseWorkspaceView('edit')}>{t('Edit')}</button>
         </div>
           <div className="heritage-service-planner__toolbar">
+            <button type="button" className="heritage-service-planner__screens-button" disabled={!draft || Boolean(showDocumentId)} aria-haspopup="dialog" onClick={()=>setScreenSettingsOpen(true)}>{t('Screens')} · {draft?.presentation?.screenIds.length || 3}</button>
             <button type="button" className="heritage-service-planner__service-preview-button" aria-haspopup="dialog" disabled={!draft || !slideList.rows.some(row=>row.cue) || Boolean(slideList.error)} onClick={()=>setServicePreviewOpen(true)}>▦ {sermonSyncId ? t("Sermon preview") : t("Service Preview")}</button>
-            <label htmlFor="service-status">{t("Status")}</label>
+            {!draft?.presentation?.localOnly ? <><label htmlFor="service-status">{t("Status")}</label>
             <select id="service-status" value={desiredStatus} disabled={!draft || busy} onChange={event => setDesiredStatus(event.target.value as ServiceEnvelope['status'])}>
               <option value="planning">{t("Planning")}</option><option value="ready">{t("Ready")}</option>
               <option value="archived">{t("Archived")}</option><option value="cancelled">{t("Cancelled")}</option>
-            </select>
+            </select></> : <span>{t('Local presentation')}</span>}
             <button type="button" aria-label={sermonSyncId ? t("Save sermon slides") : t("Save service")} title={!draft ? t("Open a service to save") : saving ? t("Saving…") : t("Save checkpoint · Ctrl/Cmd+S · Right-click for version history")}
               disabled={!draft || busy || saving} onClick={() => void flushEditor('manual')} onContextMenu={event => { event.preventDefault(); if (draft) setHistoryOpen(true) }} onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); setHistoryOpen(true) } }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2zm2 0v7h10V3M7 21v-7h10v7" /></svg>
             </button>
             <button type="button" className="heritage-service-planner__history-button" disabled={!envelope || busy} aria-haspopup="dialog" onClick={() => setHistoryOpen(true)}>{t('Version history')}</button>
           </div>
-          <p className="heritage-service-planner__save-state" aria-live="polite" title={noticeText}>{draft ? `${t('{count} slides', { count: slideList.rows.filter(row => row.cue).length })} · ${saving ? t("Saving…") : busy ? t("Working…") : saveConflict ? t("Draft kept locally · review conflict") : autosaveBlocked ? localRecoveryAvailable ? t("Draft kept locally · retry Save") : t("Unsaved · retry Save") : dirty || desiredStatus !== envelope?.status ? t("Waiting to save…") : (envelope as any)?.conflict ? t("Saved on this computer · sync conflict") : (envelope as any)?.savedLocally && (envelope as any)?.pending ? t("Saved on this computer · waiting to sync") : typeof envelope?.syncVersion === 'number' ? t('All changes saved · v{version}', { version: envelope.syncVersion }) : t('Saved on this computer')} ` : noticeText}</p>
+          <p className="heritage-service-planner__save-state" aria-live="polite" title={noticeText}>{draft ? `${t('{count} slides', { count: slideList.rows.filter(row => row.cue).length })} · ${saving ? t("Saving…") : busy ? t("Working…") : saveConflict ? t("Draft kept locally · review conflict") : autosaveBlocked ? localRecoveryAvailable ? t("Draft kept locally · retry Save") : t("Unsaved · retry Save") : dirty || desiredStatus !== envelope?.status ? t("Waiting to save…") : (envelope as any)?.conflict ? t("Saved on this computer · sync conflict") : draft.presentation?.localOnly ? t('Saved on this computer') : (envelope as any)?.savedLocally && (envelope as any)?.pending ? t("Saved on this computer · waiting to sync") : typeof envelope?.syncVersion === 'number' ? t('All changes saved · v{version}', { version: envelope.syncVersion }) : t('Saved on this computer')} ` : noticeText}</p>
       </header>
       <div className="heritage-service-planner__shell">
         <aside className="heritage-service-planner__navigation">

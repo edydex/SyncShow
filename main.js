@@ -379,6 +379,8 @@ let outputWindows = new Map();
 let testOutputBackground = null;
 let activeOutputTargets = null;
 let activeTestOutputSettings = null;
+let activePreviewOnly = false;
+const {previewDisplayMap, outputIsPresented} = require('./src/services/show/PreviewShow');
 let outputRecovery = null;
 let translationPreferencesVenue = null;
 let translationSettingsQueue = Promise.resolve();
@@ -2440,8 +2442,8 @@ function readShowRuntimeState() {
           if (available && health?.status === 'unavailable') status = 'unavailable';
           else if (outputLifecyclePhase === 'starting') status = 'starting';
           else if (available && health?.status !== 'healthy') status = 'starting';
-          else if (available && outputLifecyclePhase === 'cleared' && visible) status = 'cleared';
-          else if (available && !visible) status = 'hidden';
+          else if (available && outputLifecyclePhase === 'cleared' && outputIsPresented(entry.win, outputsShouldBeVisible)) status = 'cleared';
+          else if (available && !outputIsPresented(entry.win, outputsShouldBeVisible)) status = 'hidden';
           else if (available && outputLifecyclePhase === 'locally-stopped') status = 'unavailable';
           else if (available) status = 'healthy';
           return {
@@ -7724,8 +7726,22 @@ function guardControlWindowClose(event) {
 }
 
 let offlinePlannerBible = null;
+let localPlannerSongs = null;
 async function resolveOfflinePlannerRequest(request) {
   const url = new URL(request.url);
+  if (url.pathname === '/syncshow-local/songs' || /^\/api\/community\/service-documents\/library\/songs\/local-song-[a-f0-9-]{36}$/.test(url.pathname)) {
+    if (!localPlannerSongs) localPlannerSongs = new (require('./src/services/community/LocalPlannerSongs').LocalPlannerSongs)({rootPath: path.join(app.getPath('userData'), 'local-presentation-songs')});
+    return localPlannerSongs.request(request);
+  }
+  if (request.method === 'GET' && url.pathname === '/api/community/service-documents/library/bible-passage') {
+    const {bibleBooks} = require('./src/services/bible/BibleBooks');
+    const {resolveBookId} = require('./packages/service-core/node/services/sermon/BibleRange');
+    const {translations} = require('./src/services/bible/BibleTranslations');
+    return new Response(JSON.stringify({schemaVersion: 1,
+      books: bibleBooks.map(book => ({id: resolveBookId(book.name), name: book.name, chapters: book.chapters})),
+      translations: translations.map(edition => ({...edition, language: edition.language === 'Russian' ? 'ru' : 'en'}))
+    }), {headers: {'Content-Type': 'application/json'}});
+  }
   if (request.method === 'POST' && url.pathname === '/api/community/service-documents/library/bible-passage') {
     if (!offlinePlannerBible) offlinePlannerBible = require('./src/services/community/OfflinePlannerBible').createOfflinePlannerBible({ installedLibrary: installedBibleSource });
     try {
@@ -7839,24 +7855,25 @@ function communityPlannerRequestHeaders(details, plannerOrigin, accessToken) {
   return requestHeaders;
 }
 
-async function openCommunityPlannerWindow({ adjust = null } = {}) {
+async function openCommunityPlannerWindow({ adjust = null, local = null } = {}) {
+  const workspace = adjust || local;
   const approved = await currentCommunityConnectionSummary({
     refreshCapabilities: false
   });
-  const connection = approved || (adjust && {id:'local-show',baseUrl:'https://syncshow.local/',serverName:'This computer'});
-  if (!adjust && (!connection || communityConnectionExpired(connection))) {
+  const connection = approved || (workspace && {id:'local-show',baseUrl:'https://syncshow.local/',serverName:'This computer'});
+  if (!workspace && (!connection || communityConnectionExpired(connection))) {
     failMainOperation(
       'COMMUNITY_RECONNECT_REQUIRED',
       'Connect Heritage Community in Admin Settings before opening Prepare.'
     );
   }
-  if (!adjust && communityReconnectRequired) {
+  if (!workspace && communityReconnectRequired) {
     failMainOperation(
       'COMMUNITY_RECONNECT_REQUIRED',
       communityReconnectRequired.message
     );
   }
-  if (!adjust && (connection.canReadServiceDocuments !== true
+  if (!workspace && (connection.canReadServiceDocuments !== true
     || connection.canWriteServiceDocuments !== true)) {
     failMainOperation(
       'COMMUNITY_PLANNER_PERMISSION_REQUIRED',
@@ -7868,7 +7885,7 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
 
   const plannerUrl = safeCommunityPlannerUrl(connection.baseUrl);
   const plannerOrigin = plannerUrl.origin;
-  const mode=adjust ? `adjust-${adjust.sessionId}` : 'prepare';
+  const mode=workspace ? `${local ? 'local' : 'adjust'}-${workspace.sessionId}` : 'prepare';
   if (communityPlannerView && !communityPlannerView.webContents.isDestroyed()) {
     if (communityPlannerOrigin === plannerOrigin && communityPlannerMode === mode) {
       if(!adjust){communityPlannerView.setVisible(true);communityPlannerView.webContents.focus();}
@@ -7898,7 +7915,7 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
       sandbox: true,
       backgroundThrottling: false,
       preload: path.join(__dirname, 'src', 'community-planner-preload.js'),
-      partition: `persist:syncshow-community-planner-${connection.id}${adjust ? '-adjust' : ''}`
+      partition: `persist:syncshow-community-planner-${connection.id}${local ? '-local' : workspace ? '-adjust' : ''}`
     }
   });
   planner.setBackgroundColor('#0b1220');
@@ -7910,16 +7927,17 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
   communityPlannerMode = mode;
   const plannerSession = planner.webContents.session;
   const { CommunityPlannerCache } = require('./src/services/community/CommunityPlannerCache');
-  const cacheRoot=adjust
-    ? path.join(app.getPath('userData'),'community','planner-adjust',connection.id,adjust.workspaceId)
+  const cacheRoot=workspace
+    ? path.join(app.getPath('userData'),'community',local ? 'planner-local' : 'planner-adjust',connection.id,workspace.workspaceId)
     : path.join(app.getPath('userData'), 'community', 'planner', connection.id);
   const cacheOptions={
     backgroundSync: true,
+    localOnly: workspace?.envelope?.project?.presentation?.localOnly === true,
     rootPath: cacheRoot,
     origin: plannerOrigin,
     inspectImage: bytes => require('sharp')(bytes).metadata(),
     fetch: request => {
-      if (!authenticatedConnection || (adjust && (communityConnectionExpired(connection)
+      if (!authenticatedConnection || (workspace && (communityConnectionExpired(connection)
         || (['PUT','POST','DELETE'].includes(request.method) ? connection.canWriteServiceDocuments : connection.canReadServiceDocuments)!==true))) {
         return Promise.resolve(new Response(JSON.stringify({error:'Saved locally. Reconnect Heritage to sync or fetch resources.'}),{status:503,headers:{'Content-Type':'application/json'}}));
       }
@@ -7947,10 +7965,11 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
   };
   const cache = communityPlannerBackgroundCaches.get(cacheRoot) || new CommunityPlannerCache(cacheOptions);
   communityPlannerCache = cache;
+  cache.localPrepare = Boolean(local);
   await cache.loaded;
-  if(adjust){
-    await cache.pinActiveShow(adjust.envelope,adjust.remoteBase,adjust.assetLoader);
-    communityActiveAdjust={cache,sessionId:adjust.sessionId,projectId:adjust.envelope.syncId};
+  if(workspace){
+    await cache.pinActiveShow(workspace.envelope,workspace.remoteBase,workspace.assetLoader,{refreshCommitted:Boolean(local)});
+    communityActiveAdjust=adjust ? {cache,sessionId:workspace.sessionId,projectId:workspace.envelope.syncId} : null;
     const resourcesRoot=path.join(app.getPath('userData'),'community','planner',connection.id);
     cache.resourceCache=communityPlannerBackgroundCaches.get(resourcesRoot) || new CommunityPlannerCache({...cacheOptions,rootPath:resourcesRoot});
     await cache.resourceCache.loaded;
@@ -8048,7 +8067,7 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
   });
 
   try {
-    if(adjust){plannerUrl.pathname='/syncshow-local/adjust/index.html';plannerUrl.searchParams.set('service',adjust.envelope.syncId);}
+    if(workspace){plannerUrl.pathname='/syncshow-local/adjust/index.html';plannerUrl.searchParams.set('service',workspace.envelope.syncId);}
     await planner.webContents.loadURL(plannerUrl.href);
   } catch (_error) {
     if (!planner.webContents.isDestroyed()) planner.webContents.close();
@@ -8573,7 +8592,9 @@ async function recoverOutputWindows(recovery) {
     const controlId = getControlDisplayId();
     const resolved = new Map();
     for (const [id, saved] of activeOutputTargets) {
-      let target = displays.find(display => String(display.id) === String(saved.id));
+      let target = activePreviewOnly
+        ? previewDisplayMap(recovery.plan.outputs).get(String(saved.id))
+        : displays.find(display => String(display.id) === String(saved.id));
       if (!target) {
         const candidates = appState.displays.filter(display => display.fingerprint === saved.fingerprint && !display.isControl);
         if (candidates.length === 1) target = displays.find(display => display.id === candidates[0].id);
@@ -8693,7 +8714,7 @@ async function createTestOutputBackground(layout, sessionId) {
 }
 
 function showOutputWindow(win) {
-  if (!win || win.isDestroyed()) return;
+  if (!win || win.isDestroyed() || win.syncShowPreviewOnly) return;
 
   // Presentation windows never need keyboard or pointer input. Keeping them
   // inactive prevents Start/Show from taking navigation away from the control
@@ -8713,6 +8734,7 @@ function destroyOutputWindows() {
   cancelOutputRecovery();
   activeOutputTargets = null;
   activeTestOutputSettings = null;
+  activePreviewOnly = false;
   const background = testOutputBackground;
   testOutputBackground = null;
   if (background && !background.isDestroyed()) background.destroy();
@@ -8812,11 +8834,14 @@ function createDisplayWindow(displayInfo, output, sessionId) {
       contextIsolation: true,
       sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      ...(displayInfo.previewOnly ? {offscreen: true} : {})
     },
     show: false
   });
 
+  win.syncShowPreviewOnly = displayInfo.previewOnly === true;
+  if (win.syncShowPreviewOnly) win.webContents.setFrameRate(30);
   if (displayInfo.testOutput) {
     win.syncShowTestOutputBounds = { ...bounds };
     win.syncShowTestOutputRotation = displayInfo.testOutputRotation || 0;
@@ -8912,11 +8937,14 @@ function createSingerWindow(displayInfo, output, sessionId) {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      ...(displayInfo.previewOnly ? {offscreen: true} : {})
     },
     show: false
   });
 
+  win.syncShowPreviewOnly = displayInfo.previewOnly === true;
+  if (win.syncShowPreviewOnly) win.webContents.setFrameRate(30);
   if (displayInfo.testOutput) {
     win.syncShowTestOutputBounds = { ...bounds };
     win.syncShowTestOutputRotation = displayInfo.testOutputRotation || 0;
@@ -10256,7 +10284,7 @@ function sameVisibleLiveCueTransitionOutputs(expectedOutputs, sessionId) {
       const entry = outputWindows.get(output.outputId);
         return entry?.sessionId === sessionId
         && entry.win?.webContents === output.sender
-        && entry.win.isVisible() === true;
+        && outputIsPresented(entry.win, outputsShouldBeVisible);
     });
 }
 
@@ -10314,7 +10342,7 @@ async function showAllDisplays() {
     const entry = outputWindows.get(output.outputId);
     return entry?.sessionId === sessionId
       && entry.win?.webContents === output.sender
-      && entry.win.isVisible() === true;
+      && outputIsPresented(entry.win, outputsShouldBeVisible);
   }));
   if (
     (initialPhase === 'cleared' && initiallyVisible.some(visible => !visible))
@@ -13994,8 +14022,8 @@ function nativeProjectRoleMapping(project) {
     const searchable = `${channelId} ${channel?.label || ''} ${channel?.language || ''}`.toLowerCase();
     return patterns.some(pattern => pattern.test(searchable));
   });
-  const primary = channelIds.includes('primary') ? 'primary' : channelIds[0];
-  const secondary = channelIds.includes('secondary') ? 'secondary' : channelIds[1] || primary;
+  const primary = channelIds.includes('primary') ? 'primary' : findChannel([/^russian\b/, /\bru\b/]) || channelIds[0];
+  const secondary = channelIds.includes('secondary') ? 'secondary' : findChannel([/^english\b/, /\ben\b/]) || channelIds[1] || primary;
   const media = channelIds.includes('media')
     ? 'media'
     : findChannel([/singer/, /stage/, /media/]) || primary;
@@ -18003,6 +18031,30 @@ ipcMain.handle('prepare:projects:list', async (event, request = {}) => {
   };
 });
 
+ipcMain.handle('prepare:projects:quickStart', async (event, request = {}) => {
+  requireControlSender(event);
+  requireNoActiveShowForPresentationMutation();
+  requirePrepareRequest(request, 4096);
+  requireExactPrepareKeys(request, ['title', 'presentation'], 'Start blank');
+  const {normalizePresentationScreens} = require('./packages/service-core/node/services/project/PresentationScreens');
+  const presentation = normalizePresentationScreens({...request.presentation, localOnly: true});
+  const created = await getPrepareServices().serviceProjectStore.create({
+    id: projectItemId('presentation'),
+    title: prepareText(request.title || 'Untitled presentation', 'Presentation name', 200, {required: true}),
+    serviceDate: serviceDateForTimeZone(new Date(), activeVenueProfile?.timeZone || null),
+    profileId: activeVenueProfile?.id || 'default', presentation,
+    channels: [
+      {id: 'english', label: 'English', language: 'en'},
+      {id: 'russian', label: 'Russian', language: 'ru'},
+      {id: 'media', label: 'Stage-Facing', language: 'und'}
+    ]
+  }, {prepareProject: project => addProjectItem(project, {
+    id: projectItemId('blank'), kind: 'blank', title: 'Blank',
+    channelIds: project.channelIds, presetId: 'blank-black'
+  })});
+  return projectResult(created);
+});
+
 ipcMain.handle('prepare:projects:create', async (event, request = {}) => {
   requireControlSender(event);
   requirePrepareRequest(request, 16 * 1024);
@@ -18010,7 +18062,7 @@ ipcMain.handle('prepare:projects:create', async (event, request = {}) => {
     'title',
     'serviceDate',
     'startTime',
-    'teamNotes'
+    'teamNotes', 'presentation'
   ], 'Create service request');
   const serviceDate = request.serviceDate
     ? prepareText(request.serviceDate, 'Service date', 10, { required: true })
@@ -18031,7 +18083,8 @@ ipcMain.handle('prepare:projects:create', async (event, request = {}) => {
     startTime,
     ...(teamNotes !== undefined ? { teamNotes } : {}),
     profileId: activeVenueProfile?.id || 'default',
-    channels: nativeProjectChannels()
+    channels: request.presentation ? [{id:'english',label:'English',language:'en'},{id:'russian',label:'Russian',language:'ru'},{id:'media',label:'Stage-Facing',language:'und'}] : nativeProjectChannels(),
+    ...(request.presentation ? {presentation: request.presentation} : {})
   });
   return projectResult(created);
 });
@@ -18613,7 +18666,8 @@ ipcMain.handle('community:planner:openActiveAdjust', async (event, request = {})
   requireControlSender(event);
   return communityIpcResult(async () => {
     requirePrepareRequest(request, 1024);
-    requireExactPrepareKeys(request, ['bounds'], 'Adjust');
+    requireExactPrepareKeys(request, ['bounds', 'addCategory'], 'Adjust');
+    if (request.addCategory !== undefined && !['templates','songs','scripture','media'].includes(request.addCategory)) throw new Error('Choose a supported slide category.');
     const bounds=request.bounds ? communityPlannerBounds(request.bounds) : null;
     const handoff=installedServiceHandoff(),pointer=currentPreparedServicePointer;
     if(!appState.activeLaunchPlan || !handoff?.project || !pointer)throw new Error('Start a native service before opening Adjust.');
@@ -18657,8 +18711,37 @@ ipcMain.handle('community:planner:openActiveAdjust', async (event, request = {})
     const {focusPlannerCue}=require('./src/services/community/PlannerCueFocus');
     const focused=await communityPlannerView.webContents.executeJavaScript(`(${focusPlannerCue.toString()})(${JSON.stringify({syncId:project.id,cueId,number,sectionIds})})`);
     if(!focused.focused)throw new Error('The current slide could not be selected. Your local service is safe.');
+    if (request.addCategory) {
+      const {openPlannerAdd} = require('./src/services/community/PlannerAddFocus');
+      const added = await communityPlannerView.webContents.executeJavaScript(`(${openPlannerAdd.toString()})(${JSON.stringify(request.addCategory)})`);
+      if (!added.opened) throw new Error('The add-slide library could not open. Use Add slide in Adjust.');
+    }
     return {opened:true,syncId:project.id,local:true};
   });
+});
+
+ipcMain.handle('community:planner:openLocalService', async (event, request = {}) => {
+  requireControlSender(event);
+  requirePrepareRequest(request, 1024);
+  requireExactPrepareKeys(request, ['projectId'], 'Local presentation');
+  requireNoActiveShowForPresentationMutation();
+  const projectId = prepareId(request.projectId, 'Presentation');
+  const read = await getPrepareServices().serviceProjectStore.read(projectId);
+  if (!read.project.presentation?.localOnly) throw new Error('Open shared services through Heritage Community.');
+  const {validateHeritageServiceDocumentSource} = require('./src/services/community/HeritageServiceDocument');
+  const validated = validateHeritageServiceDocumentSource(serviceDocumentSourceForProject(read.project));
+  const envelope = {...validated, schemaVersion: 1, syncId: projectId, syncVersion: 1, status: 'planning', changedAt: read.project.updatedAt};
+  const assetLoader = async request => {
+    const match = /\/assets\/(sha256(?::|%3A)[a-f0-9]{64})$/i.exec(new URL(request.url).pathname);
+    if (!match) return null;
+    const assetId = decodeURIComponent(match[1]), asset = read.project.assets[assetId];
+    if (!asset) return null;
+    const resolved = await getPrepareServices().serviceProjectStore.resolveAssetPath(projectId, read.revisionId, assetId);
+    const {buffer} = await readFileNoFollow(resolved.assetPath, asset.kind === 'video' ? 250*1024*1024 : 75*1024*1024);
+    return new Response(buffer, {headers: {'Content-Type': asset.mediaType}});
+  };
+  await openCommunityPlannerWindow({local: {sessionId: projectId, workspaceId: projectId, envelope, remoteBase: null, assetLoader}});
+  return {opened: true, projectId, localOnly: true};
 });
 
 ipcMain.handle('community:planner:openService', async (event, request = {}) => {
@@ -18995,6 +19078,13 @@ ipcMain.handle('community:planner:prepareLoad', async event => {
     // The editor's acknowledgement is authoritative: a recovered local save
     // may succeed without another PUT, so an old network error cannot veto it.
     const confirmedId = flushed.serviceDocument?.syncId || null;
+    if (confirmedId && communityPlannerCache?.localPrepare) {
+      const confirmed = communityPlannerCache.envelope(confirmedId);
+      const installed = await installBackstageServiceDocument(confirmed, communityPlannerCache);
+      (communityPlannerCache.state.localInstalledRevisions ||= {})[confirmedId] = confirmed.revision;
+      await communityPlannerCache.persist();
+      return {serviceId: confirmedId, localProject: installed};
+    }
     if (confirmedId) communityPlannerHandoff?.confirmSaved(confirmedId);
     const handoff = confirmedId ? { serviceId: confirmedId }
       : communityPlannerHandoff ? await communityPlannerHandoff.ready() : { serviceId: null };
@@ -27172,6 +27262,8 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     preferredTimelineRoleId,
     settings = {}
   } = options;
+  if (options.previewOnly !== undefined && typeof options.previewOnly !== 'boolean') throw new TypeError('Preview only must be true or false.');
+  if (options.previewOnly && (options.testOutput || options.sourceMode !== 'syncshow')) throw new Error('Preview only requires a native presentation.');
   if (options.testOutput !== undefined && typeof options.testOutput !== 'boolean') throw new TypeError('Test Output must be true or false.');
 
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
@@ -27210,8 +27302,10 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   // output session. A malformed or incomplete Start therefore leaves the
   // currently running show intact.
   const testing = options.testOutput === true;
-  const launchOutputs = testing && Array.isArray(outputs)
-    ? outputs.map(output => ({ ...output, displayId: `test-output:${output.id}` }))
+  const previewOnly = options.previewOnly === true;
+  if (previewOnly && !preparedService) throw new Error('Load a verified native presentation before previewing Show.');
+  const launchOutputs = (testing || previewOnly) && Array.isArray(outputs)
+    ? outputs.map(output => ({ ...output, displayId: `${previewOnly ? 'preview-output' : 'test-output'}:${output.id}` }))
     : outputs;
   const launchPlan = resolveLaunchPlan({
     presentations: appState.presentations,
@@ -27243,7 +27337,8 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   const displays = screen.getAllDisplays();
   const controlDisplayId = getControlDisplayId();
   const testLayout = testing ? buildTestOutputDisplayMap({ settings: readTestOutputSettings(), outputs: launchPlan.outputs, displays, controlDisplayId }) : null;
-  const displayById = testLayout?.displays || new Map(displays.map(display => [String(display.id), display]));
+  const displayById = previewOnly ? previewDisplayMap(launchPlan.outputs)
+    : testLayout?.displays || new Map(displays.map(display => [String(display.id), display]));
   for (const output of launchPlan.outputs) {
     if (!displayById.has(String(output.displayId))) {
       throw new Error(`${output.name} is assigned to a display that is no longer connected`);
@@ -27322,6 +27417,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     return [output.id, {id:display.id, fingerprint:appState.displays.find(item => item.id === display.id)?.fingerprint}];
   }));
   activeTestOutputSettings = testing ? readTestOutputSettings() : null;
+  activePreviewOnly = previewOnly;
   appState.activeLaunchPlan = launchPlan;
   appState.currentSlide = 0;
   appState.totalSlides = launchPlan.totalSlides;
@@ -27518,6 +27614,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
 
   const result = {
     success: true,
+    previewOnly: activePreviewOnly,
     totalSlides: appState.totalSlides,
     plan: launchPlan,
     outputSessionId: showState?.outputSessionId || null,
@@ -27899,9 +27996,11 @@ ipcMain.handle('app:getState', async (event) => {
     currentSlide: appState.currentSlide,
     totalSlides: appState.totalSlides,
     activeLaunchPlan: appState.activeLaunchPlan,
+    previewOnly: activePreviewOnly,
     showState: showGateway.getState(),
     displays: appState.displays,
     serviceHandoff: installedServiceHandoff(),
+    presentationScreens: Object.values(appState.presentations).find(p => p?.renderer === 'native-cue')?.presentationScreens || null,
     preparedServiceRestore: currentPreparedServiceRestore,
     presentations: Object.fromEntries((activeVenueProfile?.inputRoles || [])
       .filter(role => role.kind === 'deck')
@@ -27909,6 +28008,7 @@ ipcMain.handle('app:getState', async (event) => {
         role.id,
         appState.presentations[role.id]
           ? { loaded: true, slideCount: appState.presentations[role.id].slideCount,
+            presentationScreenId: appState.presentations[role.id].presentationScreenId || null,
             ...(appState.presentations[role.id].metadata?.nativeFallback ? {
               nativeFallback: appState.presentations[role.id].metadata.nativeFallback
             } : {}) }
@@ -27942,12 +28042,30 @@ ipcMain.handle('support:exportDiagnostics', async event => {
   };
 });
 
+function readInterfacePreferences() {
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'interface-preferences.json'), 'utf8'));
+    return {showStartBlank: value.showStartBlank !== false};
+  } catch { return {showStartBlank: true}; }
+}
+
+ipcMain.handle('interface:save', async (event, request = {}) => {
+  requireControlSender(event);
+  requireExactPrepareKeys(request, ['showStartBlank'], 'Interface preference');
+  if (typeof request.showStartBlank !== 'boolean') throw new TypeError('Start Blank visibility must be true or false.');
+  const {atomicWriteFile} = require('./src/services/project/StorageSafety');
+  await atomicWriteFile(path.join(app.getPath('userData'), 'interface-preferences.json'),
+    JSON.stringify({showStartBlank: request.showStartBlank})+'\n', {maximumBytes: 1024, mode: 0o600, rootPath: app.getPath('userData')});
+  return {showStartBlank: request.showStartBlank};
+});
+
 // User settings handlers
 ipcMain.handle('settings:load', async (event) => {
   requireControlSender(event);
   const settings = loadAndApplyUserSettings();
   return {
     ...settings,
+    interfacePreferences: readInterfacePreferences(),
     recoveryWarning: settingsRecoveryWarning
   };
 });

@@ -1,4 +1,5 @@
 'use strict';
+const {normalizePresentationScreens} = require('./PresentationScreens');
 const translationCueSettings = require('./TranslationCueSettings');
 const { resolveSermonContext } = require('./SermonContext');
 const {normalizeTextStyle, applyTimelineTypography} = require('./SlideTypography');
@@ -800,6 +801,7 @@ function normalizeServiceProject(raw, options = {}) {
     libraryReferences: raw.libraryReferences.map(normalizeLibraryReference),
     presetPackVersion: text(raw.presetPackVersion || `${raw.profileId}@1`, 'Project presetPackVersion', 160, { required: true })
   };
+  if (raw.presentation !== undefined) normalizedProject.presentation = normalizePresentationScreens(raw.presentation);
   if (Buffer.byteLength(JSON.stringify(normalizedProject), 'utf8') > MAX_PROJECT_JSON_BYTES) {
     fail('PROJECT_TOO_LARGE', `A project can use at most ${MAX_PROJECT_JSON_BYTES / (1024 * 1024)} MB of structured data.`);
   }
@@ -850,7 +852,8 @@ function serializeServiceProject(project) {
     cues: Object.fromEntries(normalized.cueIds.map(cueId => [cueId, stableObject(normalized.cues[cueId])])),
     assets: stableObject(normalized.assets),
     libraryReferences: normalized.libraryReferences.map(stableObject),
-    presetPackVersion: normalized.presetPackVersion
+    presetPackVersion: normalized.presetPackVersion,
+    ...(normalized.presentation ? {presentation: stableObject(normalized.presentation)} : {})
   };
   return `${JSON.stringify(ordered, null, 2)}\n`;
 }
@@ -3281,6 +3284,7 @@ function normalizeEditableServiceProject(raw, options = {}) {
       sha256: presetPack.sha256 && SHA256_PATTERN.test(presetPack.sha256) ? presetPack.sha256 : null
     }
   };
+  if (raw.presentation !== undefined) normalized.presentation = normalizePresentationScreens(raw.presentation);
   if (workflowMode) normalized.workflowMode = workflowMode;
   if (sourceServiceSet) normalized.sourceServiceSet = sourceServiceSet;
   if (planning) normalized.planning = planning;
@@ -3510,6 +3514,7 @@ function createEditableServiceProject(options = {}) {
     id: projectId,
     title: options.title || 'Sunday Service',
     serviceDate,
+    ...(options.presentation !== undefined ? {presentation: options.presentation} : {}),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
     revision: 0,
@@ -3548,6 +3553,7 @@ function serializeEditableServiceProject(project) {
     assets: stableObject(normalized.assets),
     presetPack: stableObject(normalized.presetPack)
   };
+  if (normalized.presentation) serializable.presentation = stableObject(normalized.presentation);
   if (normalized.workflowMode) {
     serializable.workflowMode = normalized.workflowMode;
   }
@@ -4624,6 +4630,7 @@ function compileServiceProject(rawProject, options = {}) {
     cueIds,
     cues,
     assets: project.assets,
+    ...(project.presentation ? {presentation: project.presentation} : {}),
     libraryReferences: Object.values(project.resources).map(resource => ({
       id: resource.document.id,
       kind: resource.kind,
@@ -6473,6 +6480,7 @@ function moveProjectItem(rawProject, options = {}) {
 }
 
 module.exports = {
+  normalizePresentationScreens,
   configureCommunityServicePlanBaselineNormalizer,
   ASSET_ID_PATTERN,
   CUE_KINDS,

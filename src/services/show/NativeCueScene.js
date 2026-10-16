@@ -1,4 +1,5 @@
 'use strict';
+const {screenIdForChannel} = require('../../../packages/service-core/node/services/project/PresentationScreens');
 const {outlineParagraphs} = require('../../../packages/service-core/node/services/project/PresentationText');
 const {reservation} = require('../project/TranslationCueSettings');
 const {textPreset} = require('../project/SlideTypography');
@@ -696,6 +697,15 @@ function textScene(cue, channel, canvas, options = {}) {
 }
 
 function compileNativeCueScene(cue, channelId, options = {}) {
+  const current = compileNativeCueSceneBase(cue, channelId, options);
+  const screenId = screenIdForChannel(channelId);
+  if (options.rendererVersion < 22 || !options.presentation?.hintScreenIds.includes(screenId)
+    || cue.showNextSlideHints === false || current.layout === 'singer-current-next'
+    || (current.layout === 'blank' && screenId !== 'media')) return current;
+  return deriveNativeSingerScene(current, nativeCueSingerNext(options.nextCue, channelId));
+}
+
+function compileNativeCueSceneBase(cue, channelId, options = {}) {
   if (!cue || typeof cue !== 'object') throw new TypeError('A compiled cue is required.');
   const reserved = reservation(cue.translationSettings, channelId);
   if (reserved > 0 && !(options.rendererVersion < 18)) {
@@ -726,8 +736,8 @@ function compileNativeCueScene(cue, channelId, options = {}) {
     );
   }
   if (channel.mode === 'condensed' && channel.sourceChannelId) {
-    const current = compileNativeCueScene({...singerSourceCue(cue, channel.sourceChannelId), translationSettings: undefined}, channel.sourceChannelId, options);
-    if (cue.showNextSlideHints === false) return current;
+    const current = compileNativeCueScene({...singerSourceCue(cue, channel.sourceChannelId), translationSettings: undefined}, channel.sourceChannelId, {...options, presentation: undefined});
+    if (cue.showNextSlideHints === false || (options.presentation && screenIdForChannel(channelId) === 'media' && !options.presentation.hintScreenIds.includes('media'))) return current;
     return deriveNativeSingerScene(
       current,
       cue.showNextSlideHints === false ? {state: 'blank', text: ''} : nativeCueSingerNext(options.nextCue, channel.sourceChannelId)

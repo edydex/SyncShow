@@ -729,7 +729,11 @@ contextBridge.exposeInMainWorld('api', {
     pageSize: request?.pageSize,
     offset: request?.offset
   }),
+  createQuickPresentation: (request = {}) => ipcRenderer.invoke('prepare:projects:quickStart', {title: request.title, presentation: request.presentation}),
+  saveInterfacePreferences: request => ipcRenderer.invoke('interface:save', {showStartBlank: request.showStartBlank}),
+  openLocalPlannerService: projectId => ipcRenderer.invoke('community:planner:openLocalService', {projectId}),
   createServiceProject: (request = {}) => ipcRenderer.invoke('prepare:projects:create', {
+    presentation: request?.presentation,
     title: request?.title,
     serviceDate: request?.serviceDate,
     startTime: request?.startTime,

@@ -48,7 +48,7 @@ async function responseBytes(response) {
  * Pending writes retain their first remote base; reconnect cannot silently
  * replace a newer server revision. No presentation state is changed here. */
 class CommunityPlannerCache {
-  constructor({ rootPath, origin, fetch, onState = () => {}, localRequest = async () => null, inspectImage, backgroundSync = false }) {
+  constructor({ rootPath, origin, fetch, onState = () => {}, localRequest = async () => null, inspectImage, backgroundSync = false, localOnly = false }) {
     this.rootPath = rootPath;
     this.origin = new URL(origin).origin;
     this.responseGenerations = new Map();
@@ -70,6 +70,7 @@ class CommunityPlannerCache {
     this.localRequest = localRequest;
     this.inspectImage = inspectImage;
     this.backgroundSync = backgroundSync;
+    this.localOnly = localOnly === true;
     this.syncQueue = Promise.resolve();
     this.state = { schemaVersion: 1, documents: {}, remoteBases: {}, pending: {}, conflicts: {}, assets: {}, history: {} };
     this.offline = false;
@@ -102,7 +103,7 @@ class CommunityPlannerCache {
   }
 
   summary() {
-    return { offline: this.offline, pending: Object.keys(this.state.pending).length,
+    return { offline: this.offline, localOnly: this.localOnly, pending: this.localOnly ? 0 : Object.keys(this.state.pending).length,
       conflicts: Object.keys(this.state.conflicts), availableOffline: Boolean(this.state.editorReady), workspaceLanguage: this.state.workspaceLanguage || null };
   }
 
@@ -188,6 +189,28 @@ class CommunityPlannerCache {
   }
 
   async request(request) {
+    const url = new URL(request.url);
+    // Only the bundled editor can create desktop songs. Merge them into its
+    // normal library list so there is still one Add-song workflow.
+    if (this.activeServiceId && url.origin === this.origin) {
+      if (url.pathname === '/syncshow-local/songs' || /^\/api\/community\/service-documents\/library\/songs\/local-song-[a-f0-9-]{36}$/.test(url.pathname)) {
+        return await this.localRequest(request) || json({error: 'Local songs are unavailable.'}, 503);
+      }
+      if (request.method === 'GET' && url.pathname === `${ENDPOINT}/library/songs`) {
+        const local = await this.localRequest(new Request(`${this.origin}/syncshow-local/songs`));
+        const response = await this.requestResource(request);
+        if (local?.ok) {
+          const saved = await local.json();
+          const remote = response.ok ? await response.json() : {items: []};
+          return json({...remote, schemaVersion: 1, items: [...(remote.items || []), ...(saved.items || [])]});
+        }
+        return response;
+      }
+    }
+    return this.requestResource(request);
+  }
+
+  async requestResource(request) {
     await this.loaded;
     const url = new URL(request.url);
     let cachedResource = null;
@@ -380,19 +403,24 @@ class CommunityPlannerCache {
   envelope(id) {
     const saved = this.state.documents[id];
     if (!saved) return null;
-    return { ...saved, savedLocally: true, pending: Boolean(this.state.pending[id]), conflict: Boolean(this.state.conflicts[id]), desktop: { savedLocally: true, pending: Boolean(this.state.pending[id]),
+    return { ...saved, savedLocally: true, pending: !this.localOnly && Boolean(this.state.pending[id]), conflict: Boolean(this.state.conflicts[id]), desktop: { savedLocally: true, pending: !this.localOnly && Boolean(this.state.pending[id]),
       conflict: Boolean(this.state.conflicts[id]) } };
   }
 
-  async pinActiveShow(envelope, remoteBase, assetLoader) {
+  async pinActiveShow(envelope, remoteBase, assetLoader, {refreshCommitted = false} = {}) {
     await this.loaded;
     this.activeServiceId=envelope.syncId;
     this.localAssetLoader=assetLoader;
     // Each exact Show starts with its own journal, separate from Prepare.
     // Reopening Adjust retains any later local edits in that same journal.
-    if (!this.state.documents[envelope.syncId]) {
+    const installed = this.state.localInstalledRevisions?.[envelope.syncId];
+    const current = this.state.documents[envelope.syncId];
+    const refresh = refreshCommitted && current && installed === current.revision && current.revision !== envelope.revision;
+    if (!current || refresh) {
       this.state.documents[envelope.syncId]=serviceEnvelope(envelope);
       if(remoteBase)this.state.remoteBases[envelope.syncId]=remoteBase;
+      if (refreshCommitted) (this.state.localInstalledRevisions ||= {})[envelope.syncId] = envelope.revision;
+      if (refresh) delete this.state.pending[envelope.syncId];
       await this.persist();
     }
   }
@@ -410,7 +438,7 @@ class CommunityPlannerCache {
       if (!project || (!this.state.pending[id] && items.has(id))) continue;
       items.set(id, { syncId: id, syncVersion: saved.syncVersion, revision: saved.revision,
         title: project.title, serviceDate: project.serviceDate, status: saved.status, changedAt: saved.changedAt,
-        desktop: { pending: Boolean(this.state.pending[id]), conflict: Boolean(this.state.conflicts[id]) } });
+        desktop: { pending: !this.localOnly && Boolean(this.state.pending[id]), conflict: Boolean(this.state.conflicts[id]) } });
     }
     return json({ ...payload, ...locale, items: [...items.values()].sort((a, b) => b.serviceDate.localeCompare(a.serviceDate)) });
   }
@@ -432,6 +460,7 @@ class CommunityPlannerCache {
         const now = new Date().toISOString();
         const project = { schemaVersion: 1, kind: 'syncshow-service-project', id,
           title: String(raw.title || '').trim(), serviceDate: raw.serviceDate,
+          ...(raw.presentation ? {presentation: raw.presentation} : {}),
           createdAt: now, updatedAt: now, revision: 1, preferredProfileId: 'main-sanctuary',
           channelIds: ['english', 'russian', 'media'],
           channels: { english: { id: 'english', label: 'English', language: 'en' }, russian: { id: 'russian', label: 'Russian', language: 'ru' }, media: { id: 'media', label: 'Media', language: 'und' } },
@@ -508,6 +537,7 @@ class CommunityPlannerCache {
   }
 
   async flushAssets() {
+    if (this.localOnly) return false;
     for (const [id, asset] of Object.entries(this.state.assets)) {
       if (!asset.pending) continue;
       try {
@@ -523,6 +553,7 @@ class CommunityPlannerCache {
   }
 
   async flushOne(id) {
+    if (this.localOnly) return;
     // A response can disappear after Community commits. Retry that exact
     // persisted request before rebasing any newer local changes.
     const attempt = this.backgroundSync && this.state.pending[id]?.attempt;

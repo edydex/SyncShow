@@ -13,6 +13,10 @@
   <div class="app-container">
     <header class="header" id="setupHeader">
       <div class="header-left">
+        <div class="header-start-actions">
+          <button id="btnOpenSettings" type="button" class="btn btn-secondary" aria-controls="advancedSetupDetails">Admin Settings</button>
+          <button id="btnStartBlank" type="button" class="btn btn-secondary" aria-haspopup="dialog" aria-controls="startBlankDialog">Start Blank</button>
+        </div>
         <div class="app-mark" aria-hidden="true">S</div>
         <div>
           <div class="app-title-row">
@@ -38,11 +42,7 @@
       </nav>
 
       <div class="header-right header-load-actions">
-        <button type="button" class="btn btn-secondary" data-open-translation aria-haspopup="dialog" aria-controls="translationDialog">Translation setup</button>
         <button id="btnTestOutput" class="btn btn-secondary" type="button" hidden>Test Output</button>
-        <button id="btnOpenSettings" class="btn btn-secondary" aria-controls="advancedSetupDetails">
-          Admin Settings
-        </button>
         <button id="btnStartPresentation" class="btn btn-primary btn-start">
           Start Show
         </button>
@@ -869,9 +869,14 @@
                 <span>Screen Setup</span>
                 <small>Venue screens and Show behavior</small>
               </button>
+              <button type="button" class="admin-settings-tab" role="tab" aria-selected="false" id="settingsTranslationTab" aria-controls="settingsTranslationPanel" data-settings-tab="translation" tabindex="-1"><span>Translation</span><small>Live captions and translation screens</small></button>
             </nav>
 
             <div class="admin-settings-scroll">
+              <section id="settingsTranslationPanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTranslationTab" data-settings-panel="translation" tabindex="0" hidden>
+                <h3>Translation setup</h3><p>Configure live translation, captions, and translation-only screens.</p>
+                <button type="button" class="btn btn-secondary" data-open-translation aria-haspopup="dialog" aria-controls="translationDialog">Open Translation setup</button>
+              </section>
               <section id="settingsGoogleDrivePanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabGoogleDrive" data-settings-panel="google-drive" tabindex="0" hidden>
               <section id="serviceFolderCard" class="service-folder-card" aria-labelledby="serviceFolderHeading">
                 <div class="service-folder-heading">
@@ -1115,6 +1120,11 @@
 
               <div class="settings-body">
             <input type="checkbox" id="friendlyMode" checked hidden>
+            <section class="settings-section quick-start-preference"><h3>Quick presentations</h3>
+              <label><input type="checkbox" id="showStartBlankPreference" checked> Show Start Blank in the top bar</label>
+              <p class="settings-note">Start a local presentation for a small group or an unplanned service.</p>
+              <p id="interfacePreferenceStatus" class="settings-note" role="status"></p>
+            </section>
 
             <section class="settings-section" id="outputSettingsSection" aria-labelledby="outputSettingsHeading">
               <div class="settings-section-heading">
@@ -1306,6 +1316,7 @@
           <div class="thumbnails-header">
             <div>
               <h2 id="allSlidesHeading">Service slides</h2>
+              <small id="showPreviewOnly" class="show-preview-only" role="status" hidden>Preview only · no audience screens. End Show to connect screens.</small>
               <small id="backstagePreviewStatus" role="status" hidden></small>
             </div>
             <div class="thumbnails-header-controls">
@@ -1315,6 +1326,9 @@
                 <span class="zoom-level" id="zoomLevel">100%</span>
                 <button class="zoom-btn" id="zoomIn" aria-label="Larger thumbnails">+</button>
               </div>
+              <button class="btn btn-secondary" type="button" data-show-add="songs">＋ Song</button>
+              <button class="btn btn-secondary" type="button" data-show-add="scripture">＋ Passage</button>
+              <button class="btn btn-secondary" type="button" data-show-add="media">＋ Media</button>
               <button id="btnShowAdjust" class="btn btn-secondary" type="button" aria-pressed="false" aria-controls="showAdjustPanel">Adjust</button>
             </div>
           </div>
@@ -2129,11 +2143,23 @@
     </form>
   </dialog>
 
+  <dialog id="startBlankDialog" class="prepare-dialog quick-start-dialog" aria-labelledby="startBlankTitle">
+    <form id="startBlankForm">
+      <h2 id="startBlankTitle">Start a blank presentation</h2>
+      <p class="prepare-dialog-description">Choose the screens for this gathering. Add songs, Scripture, and slides as you go. Everything saves on this computer.</p>
+      <label class="field-group"><span>Presentation name <small>(optional)</small></span><input id="startBlankName" class="text-input" maxlength="200" placeholder="Small group"></label>
+      <div id="startBlankScreens" aria-label="Presentation screens"></div>
+      <p id="startBlankError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="btnCancelStartBlank" type="button" class="btn btn-secondary">Cancel</button><button id="btnConfirmStartBlank" type="submit" class="btn btn-primary">Start blank</button></div>
+    </form>
+  </dialog>
+
   <dialog id="newServiceProjectDialog" class="prepare-dialog" aria-labelledby="newServiceProjectTitle">
     <form id="newServiceProjectForm">
       <p class="section-kicker">NEW SERVICE</p>
       <h2 id="newServiceProjectTitle">Create a service project</h2>
       <p class="prepare-dialog-description">Give volunteers a clear name, date, and local start time. The new service opens in Planning so its order and weekly checks can be reviewed before Ready.</p>
+      <div id="newServiceProjectScreens" aria-label="Presentation screens"></div>
       <label class="field-group">
         <span>Service name</span>
         <input id="newServiceProjectName" class="text-input" type="text" maxlength="200" autocomplete="off" required value="Sunday Service">
@@ -3136,6 +3162,8 @@
   <script src="google-drive-oauth-state.js"></script>
   <script src="service-output-plan.js"></script>
   <script src="presentation-mode.js"></script>
+  <script src="presentation-screen-picker.js"></script>
+  <script src="service-screen-routing.js"></script>
   <script src="show-accessibility.js"></script>
   <script src="service-handoff.js"></script>
   <script src="prepared-service-guard.js"></script>
