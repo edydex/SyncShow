@@ -18,7 +18,7 @@ function fixture({ opening, saving } = {}) {
     async syncCommunityPlannerLayout(){calls.push(['visible-layout']);},updateThumbnailHighlight(options){calls.push(['scroll-current',options.behavior]);},
     scheduleCommunityPlannerLayout(){calls.push(['schedule']);},setStatus:message=>calls.push(['status',message])
   });
-  vm.runInContext(`let showAdjustOpen=false,showAdjustBusy=false,showAdjustGeneration=0;\n${adjust}\nthis.isOpen=()=>showAdjustOpen;`, context);
+  vm.runInContext(`let showAdjustOpen=false,showAdjustBusy=false,showAdjustOpening=false,showAdjustGeneration=0;\n${adjust}\nthis.isOpen=()=>showAdjustOpen;`, context);
   return {context,state,elements,calls};
 }
 

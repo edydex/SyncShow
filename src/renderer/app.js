@@ -19,6 +19,7 @@ const state = {
   totalSlides: 0,
   displays: [],
   isPresenting: false,
+  previewOnly: false,
   activeLaunchPlan: null,
   showState: null,
   showActionRequest: 0,
@@ -420,6 +421,8 @@ const elements = {
   btnStopDisplays: document.getElementById('btnStopDisplays'),
   btnBackToSetup: document.getElementById('btnBackToSetup'),
   btnShowAdjust: document.getElementById('btnShowAdjust'),
+  showPreviewOnly: document.getElementById('showPreviewOnly'),
+  showAddButtons: [...document.querySelectorAll('[data-show-add]')],
   btnCloseShowAdjust: document.getElementById('btnCloseShowAdjust'),
   showAdjustPanel: document.getElementById('showAdjustPanel'),
   showAdjustViewport: document.getElementById('showAdjustViewport'),
@@ -520,9 +523,9 @@ let communityPlannerLayoutFrame = null;
 let loadFreshnessPromise = null;
 const loadWorkWaiters = new Set();
 let quickStartPicker = null;
-let quickAdjustAfterStartId = null;
 let showAdjustOpen = false;
 let showAdjustBusy = false;
+let showAdjustOpening = false;
 let showAdjustGeneration = 0;
 let plannerConflictReview = null;
 
@@ -815,7 +818,8 @@ function setupEventListeners() {
   document.getElementById('btnReviewAdjustConflict').addEventListener('click', reviewPlannerConflict);
   document.getElementById('btnPlannerUseCommunity').addEventListener('click', () => resolvePlannerConflict('use-community'));
   document.getElementById('btnPlannerKeepLocal').addEventListener('click', () => resolvePlannerConflict('keep-local'));
-  elements.btnShowAdjust.addEventListener('click', toggleShowAdjust);
+  elements.btnShowAdjust.addEventListener('click', () => toggleShowAdjust());
+  for (const button of elements.showAddButtons) button.addEventListener('click', () => toggleShowAdjust(button.dataset.showAdd));
   elements.btnCloseShowAdjust.addEventListener('click', closeShowAdjust);
   elements.btnShowHandoffCompleted.addEventListener(
     'click',
@@ -1610,11 +1614,9 @@ async function createBlankPresentation(event) {
     state.loadFreshness.lastResult = {state: 'unshared'};
     checkReadyState();
     if (getReadinessState().isReady) {
-      quickAdjustAfterStartId = created.project.id;
       await startPresentation(false);
     } else {
-      await setWorkflowStage('prepare', {localProjectId: created.project.id});
-      setStatus('Local presentation ready. Add slides here; click Load and Start Show when your screens are connected.');
+      await beginPreviewPresentation();
     }
   } catch (error) {
     elements.startBlankError.textContent = operatorErrorMessage(error, 'The presentation could not start.');
@@ -1921,6 +1923,7 @@ async function loadAppState() {
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
     state.activeLaunchPlan = appState.activeLaunchPlan;
+    setShowPreviewMode(appState.previewOnly === true);
     state.displays = appState.displays;
     state.presentationScreens = appState.presentationScreens || null;
     applyServiceHandoff(appState.serviceHandoff);
@@ -3144,12 +3147,14 @@ function renderShowAdjustStatus() {
       : 'Changes are saved backstage. Click a slide or Next to show them.';
 }
 
-async function toggleShowAdjust() {
-  if (showAdjustOpen) return closeShowAdjust();
-  if (showAdjustBusy) return;
+async function toggleShowAdjust(addCategory) {
+  if (showAdjustOpen && !addCategory) return closeShowAdjust();
+  if (showAdjustBusy || showAdjustOpening) return;
   if (!state.serviceHandoff?.project?.id) {
     setStatus('Adjust is available for a prepared native service. Prepare a service before using Adjust.'); return;
   }
+  showAdjustOpening = true;
+  renderVolunteerShowControls();
   showAdjustOpen = true;
   const generation = ++showAdjustGeneration;
   const current = () => generation === showAdjustGeneration && showAdjustOpen && state.workflowStage === 'show';
@@ -3161,7 +3166,7 @@ async function toggleShowAdjust() {
     // Main selects the active local Show and its current cue. No service picker,
     // server page, or remote document read participates in this path.
     const rect=elements.showAdjustViewport.getBoundingClientRect();
-    const result=communityCheckedResult(await window.api.openActiveShowAdjust({bounds:{
+    const result=communityCheckedResult(await window.api.openActiveShowAdjust({...(addCategory ? {addCategory} : {}), bounds:{
       x:Math.max(0,Math.round(rect.left)),y:Math.max(0,Math.round(rect.top)),
       width:Math.round(rect.width),height:Math.round(rect.height)
     }}));
@@ -3169,6 +3174,7 @@ async function toggleShowAdjust() {
     state.community.plannerOpen=result.opened===true;
     await syncCommunityPlannerLayout();
   } catch (error) { if (current()) elements.showAdjustStatus.textContent = error.message; }
+  finally { showAdjustOpening = false; renderVolunteerShowControls(); }
 }
 
 async function closeShowAdjust() {
@@ -3265,6 +3271,7 @@ async function refreshTakenBackstageDraft() {
     const current = await window.api.getAppState();
     state.currentSlide = current.currentSlide; state.totalSlides = current.totalSlides;
     state.activeLaunchPlan = current.activeLaunchPlan;
+    setShowPreviewMode(current.previewOnly === true);
     state.presentationScreens = current.presentationScreens || null;
     applyServiceHandoff(current.serviceHandoff);
     applyRuntimePresentationState(current.presentations, { replaceSource: true });
@@ -7023,6 +7030,32 @@ function confirmPreparedServiceDate() {
   return false;
 }
 
+function setShowPreviewMode(previewOnly) {
+  state.previewOnly = previewOnly;
+  elements.showPreviewOnly.hidden = !previewOnly;
+  const label = document.querySelector('.live-preview-label');
+  label.lastChild.textContent = previewOnly ? ' OUTPUT PREVIEW' : ' LIVE OUTPUT';
+  label.classList.toggle('is-preview-only', previewOnly);
+}
+
+async function beginPreviewPresentation() {
+  const roles = getSingleScreenRoles();
+  if (!roles.length) throw new Error('No presentation screens are available to preview.');
+  const outputs = roles.map(role => ({
+    id: `preview-${role.id}`, name: role.name || role.label || role.id,
+    kind: 'normal', enabled: true, expectedRole: role.id,
+    displayId: `preview-output:preview-${role.id}`, operatorPreview: true
+  }));
+  state.startAttempt = {
+    id: Date.now(), status: 'launching', error: null, questionIds: [], cursor: 0,
+    decisions: Object.fromEntries(outputs.map(output => [output.id, {mode: 'direct'}])),
+    snapshot: {previewOnly: true, testOutput: false, outputs,
+      preferredTimelineRoleId: roles[0].id, settings: {fadeDuration: 0, syncMode: false,
+        singerFontSize: state.singerFontSize, singerCharLimit: state.singerCharLimit, singerTextPadding: state.singerTextPadding}}
+  };
+  await launchStartAttempt();
+}
+
 async function beginStartPresentation(testOutput = false) {
   testOutput = testOutput === true;
   recheckLoadedPresentationDates();
@@ -7512,6 +7545,7 @@ async function launchStartAttempt() {
         expectedRevisionId: state.serviceHandoff?.project?.revisionId
       } : {}),
       testOutput: attempt.snapshot.testOutput === true,
+      previewOnly: attempt.snapshot.previewOnly === true,
       outputs: attempt.snapshot.outputs,
       decisions,
       preferredTimelineRoleId: attempt.snapshot.preferredTimelineRoleId,
@@ -7526,6 +7560,7 @@ async function launchStartAttempt() {
     state.isStarting = false;
     state.isPresenting = true;
     state.activeLaunchPlan = result.plan || null;
+    setShowPreviewMode(result.previewOnly === true);
     if (result.showState) handleShowStateChanged(result.showState);
     state.bible.isLive = false;
     state.bible.liveOutputIds = [];
@@ -7541,13 +7576,8 @@ async function launchStartAttempt() {
     renderThumbnails();
     updateSlideCounter();
     window.api.requestOutputPreviews();
-    setStatus(attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor'
+    setStatus(state.previewOnly ? 'Preview only — no audience screens. Add songs and passages here, then click a slide to preview it.' : attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor'
       : attempt.snapshot.singleScreen ? `${getRoleLabel(attempt.snapshot.preferredTimelineRoleId)} — presenting on one screen` : 'Presentation started');
-    if (quickAdjustAfterStartId === state.serviceHandoff?.project?.id) {
-      quickAdjustAfterStartId = null;
-      await toggleShowAdjust();
-      return;
-    }
     window.setTimeout(() => {
       const target = !elements.btnNextSlide.disabled
         ? elements.btnNextSlide
@@ -8864,6 +8894,7 @@ function renderVolunteerShowControls(showState = state.showState) {
 
   document.body.classList.toggle('volunteer-show-locked', locked);
   elements.btnShowAdjust.disabled = locked || showAdjustBusy;
+  for (const button of elements.showAddButtons) button.disabled = locked || showAdjustBusy || showAdjustOpening || !state.serviceHandoff?.project?.id;
   elements.volunteerControlBar.hidden = !volunteer;
   elements.btnUnlockVolunteerControls.hidden = !volunteer || !locked;
   elements.btnLockVolunteerControls.hidden = !volunteer || locked;

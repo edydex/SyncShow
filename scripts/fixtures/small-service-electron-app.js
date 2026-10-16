@@ -53,22 +53,27 @@ async function run(){
   await fs.writeFile(path.join(screenshots,'01-screen-chooser.png'),(await control.capturePage()).toPNG());
   console.log('Create blank');
   await renderer("document.getElementById('btnConfirmStartBlank').click();true");
+  await waitFor(()=>renderer("state.workflowStage==='show' && !state.isStarting && !showAdjustOpen"),'blank Show');
+  await renderer("document.querySelector('[data-show-add=songs]').click();true");
   const planner=await waitFor(()=>electron.webContents.getAllWebContents().find(contents=>contents.getURL().includes('/syncshow-local/adjust/index.html?service=')&&!contents.isLoading()),'local editor');
   await waitFor(()=>planner.executeJavaScript("document.body.innerText.includes('Thursday homegroup')"),'presentation rendered');
   const appState=await renderer('window.api.getAppState()');
   assert.equal(appState.presentationScreens.localOnly,true);
   assert.deepEqual(appState.presentationScreens.screenIds,chosen.split(','));
   assert.equal(await renderer('JSON.stringify(state.profile)'),profileBefore,'saved venue setup stays intact');
-  if(count>=chosen.split(',').length){
-    await waitFor(()=>renderer('state.workflowStage===\'show\' && showAdjustOpen'),'quick Adjust');
-    assert.equal(appState.activeLaunchPlan.outputs.length,chosen.split(',').length);
-    assert.ok(appState.activeLaunchPlan.outputs.every(output=>output.displayId!==1));
-  }else await waitFor(()=>renderer("state.workflowStage==='prepare'"),'offline Prepare');
+  const previewOnly=count<chosen.split(',').length;
+  assert.equal(appState.previewOnly,previewOnly);
+  await waitFor(()=>renderer("showAdjustOpen"),'direct add-song Adjust');
+  assert.equal(appState.activeLaunchPlan.outputs.length,chosen.split(',').length);
+  assert.ok(appState.activeLaunchPlan.outputs.every(output=>output.displayId!==1));
+  if(previewOnly) {
+    assert.ok(BrowserWindow.getAllWindows().filter(win=>win.syncShowPreviewOnly).every(win=>!win.isVisible()&&!win.isFullScreen()&&win.webContents.isOffscreen()));
+    assert.equal(await renderer('elements.showPreviewOnly.hidden'),false);
+  }
   await waitFor(()=>renderer("!document.getElementById('showAdjustStatus')?.textContent.includes('Opening')"),'Adjust ready');
   await delay(350);
   await fs.writeFile(path.join(screenshots,'02-local-editor.png'),(await control.capturePage()).toPNG());
   // Add-song opens the same library; the desktop creator needs no online form.
-  await planner.executeJavaScript("document.querySelector('.heritage-add-slide')?.click();true");
   await waitFor(()=>planner.executeJavaScript("Boolean(document.querySelector('.heritage-add-create-song > button'))"),'local song action');
   await planner.executeJavaScript("document.querySelector('.heritage-add-create-song > button').click();true");
   await waitFor(()=>planner.executeJavaScript("Boolean(document.querySelector('.local-song-editor form'))"),'local song form');
@@ -92,20 +97,70 @@ async function run(){
   console.log('Flushed song');
   assert.equal(flushed.success,true,JSON.stringify(flushed));
   const finalState=await renderer('window.api.getAppState()');
-  if(count>=chosen.split(',').length) {
+  {
     assert.equal(finalState.currentSlide,0,'adding a song backstage keeps the audience blank');
     await renderer('toggleShowAdjust()');
     await waitFor(()=>renderer('state.community.plannerShowDraftReady'),'draft package ready');
     await renderer("document.querySelector('.thumbnail-item[data-index=\"1\"]').click();true");
     await waitFor(()=>renderer('state.currentSlide===1 && state.totalSlides>1 && !state.cueNavigationBusy'),'take local song');
-  } else {
-    console.log('Go to Load');
-    await renderer("document.getElementById('btnStageLoad').click();true");
-    console.log('Clicked Load');
-    await waitFor(()=>renderer("!state.community.handoffBusy && state.serviceHandoff?.cueIds.length>1"),'local Prepare save to Load');
+  }
+  // The temporary Bible tool must render the same style on every output and
+  // return to the exact song cue. It also exercises hidden preview renderers.
+  await renderer("elements.btnOpenBible.click();elements.bibleReference.value='John 3:16';elements.bibleTranslation.value='BSB';elements.btnLookupBible.click();true");
+  await waitFor(()=>renderer('Boolean(state.bible.passage) && !state.bible.busy'),'Bible passage lookup');
+  await renderer("[...elements.bibleTargetList.querySelectorAll('input[type=checkbox]')].forEach(input=>{input.checked=true;input.dispatchEvent(new Event('change',{bubbles:true}));});elements.btnSendBibleLive.click();true");
+  await waitFor(()=>renderer('state.bible.isLive && !state.bible.sending'),'Bible overlay live');
+  const displayWindows=BrowserWindow.getAllWindows().filter(win=>win.webContents.getURL().endsWith('/display.html')||win.webContents.getURL().endsWith('/singer.html'));
+  for(const win of displayWindows) {
+    const colors=await win.webContents.executeJavaScript(`(() => {const overlay=[...document.querySelectorAll('.bible-overlay')].find(node=>!node.hidden&&!node.classList.contains('staging'));return overlay ? {background:getComputedStyle(overlay).backgroundColor,reference:getComputedStyle(overlay.querySelector('.bible-reference')).color,words:getComputedStyle(overlay.querySelector('.bible-verses')).color,text:overlay.innerText}:null;})()`);
+    assert.ok(colors,'overlay present');assert.equal(colors.background,'rgb(0, 0, 0)');assert.equal(colors.reference,'rgb(255, 192, 0)');assert.equal(colors.words,'rgb(255, 255, 255)');
+    assert.match(colors.text,/God/);
+    await fs.writeFile(path.join(screenshots,`04-bible-${win.id}.png`),(await win.webContents.capturePage()).toPNG());
+  }
+  await renderer('elements.btnReturnFromBible.click();true');
+  await waitFor(()=>renderer('!state.bible.isLive && !state.bible.sending'),'Bible return');
+  assert.equal(await renderer('state.currentSlide'),1);
+  await renderer("elements.bibleDialog.close();true");
+  await renderer('window.api.clearDisplays()');
+  await waitFor(()=>renderer("state.showState?.phase==='cleared'"),'Clear');
+  const restored=await renderer('window.api.showDisplays()');
+  assert.equal(restored.success,true,JSON.stringify(restored));
+  await waitFor(()=>renderer("state.showState?.phase==='live'"),'Restore');
+  if(previewOnly) assert.ok(displayWindows.every(win=>!win.isVisible()&&!win.isFullScreen()),'preview never projects during Restore');
+  await renderer('window.api.stopPresentation()');
+  await waitFor(()=>renderer("state.showState?.phase==='hidden'"),'Stop');
+  assert.equal((await renderer('window.api.showDisplays()')).success,true);
+  await waitFor(()=>renderer("state.showState?.phase==='live'"),'Restore after Stop');
+  // Direct Add Passage must reopen the active Show and select Scripture.
+  await renderer("document.querySelector('[data-show-add=scripture]').click();true");
+  await waitFor(()=>planner.executeJavaScript("Boolean(document.querySelector('.heritage-add-workbench[data-category=scripture]'))"),'direct Add Passage');
+  await planner.executeJavaScript(`(() => {
+    const field=document.querySelector('.heritage-add-scripture input[type=text]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'John 3:16');
+    field.dispatchEvent(new Event('input',{bubbles:true}));
+  })();true`);
+  await waitFor(()=>planner.executeJavaScript("!document.querySelector('.heritage-add-scripture .heritage-add-primary').disabled"),'valid passage reference');
+  await planner.executeJavaScript("document.querySelector('.heritage-add-scripture .heritage-add-primary').click();true");
+  await waitFor(()=>planner.executeJavaScript("!document.querySelector('.heritage-add-dialog[open]')"),'passage inserted backstage');
+  assert.equal((await renderer('window.api.flushCommunityPlanner()')).success,true);
+  assert.equal(await renderer('state.currentSlide'),1,'adding a passage preserves the current song cue');
+  await renderer('closeShowAdjust()');
+  await waitFor(()=>renderer('state.community.plannerShowDraftReady'),'passage draft ready');
+  if(previewOnly) {
+    const first=displayWindows[0];
+    first.webContents.forcefullyCrashRenderer();
+    await waitFor(()=>renderer("state.showState?.recovery"),'preview recovery begins');
+    await waitFor(()=>renderer("state.showState?.phase==='live' && !state.showState?.recovery && state.showState.outputs.every(output=>output.status==='healthy')"),'preview recovery ready');
+    assert.equal(await renderer('state.currentSlide'),1);
+    assert.ok(BrowserWindow.getAllWindows().filter(win=>win.syncShowPreviewOnly).every(win=>!win.isVisible()&&!win.isFullScreen()),'recovery never projects preview renderers');
+  }
+  await fs.writeFile(path.join(screenshots,'05-show.png'),(await control.capturePage()).toPNG());
+  if (process.env.SYNCSHOW_SMALL_SERVICE_HOLD_SHOW === '1') {
+    await fs.writeFile(resultPath,JSON.stringify({phase:'review-show'}));
+    while (!(await fs.stat('/private/tmp/small-service-show-reviewed').catch(()=>null))) await delay(200);
   }
   await renderer("elements.showStartBlankPreference.checked=false;elements.showStartBlankPreference.dispatchEvent(new Event('change'));true");
   await waitFor(()=>renderer('elements.btnStartBlank.hidden'),'Start Blank hide preference');
-  await fs.writeFile(resultPath,JSON.stringify({ok:true,chosen,count,localOnly:true,profilePreserved:true,autoAdjust:count>=chosen.split(',').length,createdSongOffline:true,body:await planner.executeJavaScript('document.body.innerText'),appState:await renderer('window.api.getAppState()')},null,2));
+  await fs.writeFile(resultPath,JSON.stringify({ok:true,chosen,count,localOnly:true,profilePreserved:true,previewOnly,quickAdd:true,bibleOverlayVerified:true,createdSongOffline:true,body:await planner.executeJavaScript('document.body.innerText'),appState:await renderer('window.api.getAppState()')},null,2));
 }
 run().then(()=>app.exit(0)).catch(async error=>{await fs.writeFile(resultPath,JSON.stringify({ok:false,error:error.stack,windows:await Promise.all(electron.webContents.getAllWebContents().map(async w=>({url:w.getURL(),type:w.getType(),body:await w.executeJavaScript('document.body.innerText').catch(()=>''),state:w.getURL().includes('/src/renderer/index.html')?await w.executeJavaScript('({stage:state.workflowStage,busy:state.community.handoffBusy,warning:state.prepareLoadWarning,error:state.nativeLoadError})').catch(()=>null):null})))},null,2));app.exit(1);});

@@ -1,0 +1,91 @@
+.bible-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: calc(4 * var(--output-vh, 1vh));
+  padding: calc(7 * var(--output-vh, 1vh)) calc(8 * var(--output-vw, 1vw)) calc(5 * var(--output-vh, 1vh));
+  color: #fff;
+  background: #000;
+  font-family: Arial, "SyncShow Presentation", sans-serif;
+}
+
+.bible-overlay[hidden] {
+  display: none;
+}
+
+.bible-overlay.staging {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.bible-reference {
+  color: #ffc000;
+  font-size: clamp(30px, calc(3.2 * var(--output-vw, 1vw)), 62px);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.bible-verses {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.34em;
+  max-width: 1500px;
+  overflow: hidden;
+  font-family: Arial, "SyncShow Presentation", sans-serif;
+  font-size: clamp(38px, calc(4.15 * var(--output-vw, 1vw)), 78px);
+  line-height: 1.28;
+  text-wrap: balance;
+}
+
+.bible-overlay.medium .bible-verses {
+  font-size: clamp(34px, calc(3.45 * var(--output-vw, 1vw)), 64px);
+}
+
+.bible-overlay.long .bible-verses {
+  font-size: clamp(28px, calc(2.75 * var(--output-vw, 1vw)), 52px);
+}
+
+.bible-overlay.compact {
+  gap: calc(2.5 * var(--output-vh, 1vh));
+  padding-top: calc(5 * var(--output-vh, 1vh));
+  padding-bottom: calc(4 * var(--output-vh, 1vh));
+}
+
+.bible-overlay.compact .bible-verses {
+  gap: 0.22em;
+  font-size: clamp(24px, calc(2.25 * var(--output-vw, 1vw)), 42px);
+  line-height: 1.2;
+}
+
+.bible-verse-number {
+  margin-right: 0.32em;
+  color: #fff;
+  font-family: Arial, "SyncShow Presentation", sans-serif;
+  font-size: 0.48em;
+  font-weight: 800;
+  vertical-align: super;
+}
+
+.bible-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: calc(3 * var(--output-vw, 1vw));
+  color: #aaa;
+  font-size: clamp(14px, calc(1.15 * var(--output-vw, 1vw)), 23px);
+}
+
+.bible-translation {
+  flex: 0 0 auto;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.bible-attribution {
+  max-width: 70%;
+  text-align: right;
+}

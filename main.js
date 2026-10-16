@@ -379,6 +379,8 @@ let outputWindows = new Map();
 let testOutputBackground = null;
 let activeOutputTargets = null;
 let activeTestOutputSettings = null;
+let activePreviewOnly = false;
+const {previewDisplayMap, outputIsPresented} = require('./src/services/show/PreviewShow');
 let outputRecovery = null;
 let translationPreferencesVenue = null;
 let translationSettingsQueue = Promise.resolve();
@@ -2440,8 +2442,8 @@ function readShowRuntimeState() {
           if (available && health?.status === 'unavailable') status = 'unavailable';
           else if (outputLifecyclePhase === 'starting') status = 'starting';
           else if (available && health?.status !== 'healthy') status = 'starting';
-          else if (available && outputLifecyclePhase === 'cleared' && visible) status = 'cleared';
-          else if (available && !visible) status = 'hidden';
+          else if (available && outputLifecyclePhase === 'cleared' && outputIsPresented(entry.win, outputsShouldBeVisible)) status = 'cleared';
+          else if (available && !outputIsPresented(entry.win, outputsShouldBeVisible)) status = 'hidden';
           else if (available && outputLifecyclePhase === 'locally-stopped') status = 'unavailable';
           else if (available) status = 'healthy';
           return {
@@ -8590,7 +8592,9 @@ async function recoverOutputWindows(recovery) {
     const controlId = getControlDisplayId();
     const resolved = new Map();
     for (const [id, saved] of activeOutputTargets) {
-      let target = displays.find(display => String(display.id) === String(saved.id));
+      let target = activePreviewOnly
+        ? previewDisplayMap(recovery.plan.outputs).get(String(saved.id))
+        : displays.find(display => String(display.id) === String(saved.id));
       if (!target) {
         const candidates = appState.displays.filter(display => display.fingerprint === saved.fingerprint && !display.isControl);
         if (candidates.length === 1) target = displays.find(display => display.id === candidates[0].id);
@@ -8710,7 +8714,7 @@ async function createTestOutputBackground(layout, sessionId) {
 }
 
 function showOutputWindow(win) {
-  if (!win || win.isDestroyed()) return;
+  if (!win || win.isDestroyed() || win.syncShowPreviewOnly) return;
 
   // Presentation windows never need keyboard or pointer input. Keeping them
   // inactive prevents Start/Show from taking navigation away from the control
@@ -8730,6 +8734,7 @@ function destroyOutputWindows() {
   cancelOutputRecovery();
   activeOutputTargets = null;
   activeTestOutputSettings = null;
+  activePreviewOnly = false;
   const background = testOutputBackground;
   testOutputBackground = null;
   if (background && !background.isDestroyed()) background.destroy();
@@ -8829,11 +8834,14 @@ function createDisplayWindow(displayInfo, output, sessionId) {
       contextIsolation: true,
       sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      ...(displayInfo.previewOnly ? {offscreen: true} : {})
     },
     show: false
   });
 
+  win.syncShowPreviewOnly = displayInfo.previewOnly === true;
+  if (win.syncShowPreviewOnly) win.webContents.setFrameRate(30);
   if (displayInfo.testOutput) {
     win.syncShowTestOutputBounds = { ...bounds };
     win.syncShowTestOutputRotation = displayInfo.testOutputRotation || 0;
@@ -8929,11 +8937,14 @@ function createSingerWindow(displayInfo, output, sessionId) {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      ...(displayInfo.previewOnly ? {offscreen: true} : {})
     },
     show: false
   });
 
+  win.syncShowPreviewOnly = displayInfo.previewOnly === true;
+  if (win.syncShowPreviewOnly) win.webContents.setFrameRate(30);
   if (displayInfo.testOutput) {
     win.syncShowTestOutputBounds = { ...bounds };
     win.syncShowTestOutputRotation = displayInfo.testOutputRotation || 0;
@@ -10273,7 +10284,7 @@ function sameVisibleLiveCueTransitionOutputs(expectedOutputs, sessionId) {
       const entry = outputWindows.get(output.outputId);
         return entry?.sessionId === sessionId
         && entry.win?.webContents === output.sender
-        && entry.win.isVisible() === true;
+        && outputIsPresented(entry.win, outputsShouldBeVisible);
     });
 }
 
@@ -10331,7 +10342,7 @@ async function showAllDisplays() {
     const entry = outputWindows.get(output.outputId);
     return entry?.sessionId === sessionId
       && entry.win?.webContents === output.sender
-      && entry.win.isVisible() === true;
+      && outputIsPresented(entry.win, outputsShouldBeVisible);
   }));
   if (
     (initialPhase === 'cleared' && initiallyVisible.some(visible => !visible))
@@ -18655,7 +18666,8 @@ ipcMain.handle('community:planner:openActiveAdjust', async (event, request = {})
   requireControlSender(event);
   return communityIpcResult(async () => {
     requirePrepareRequest(request, 1024);
-    requireExactPrepareKeys(request, ['bounds'], 'Adjust');
+    requireExactPrepareKeys(request, ['bounds', 'addCategory'], 'Adjust');
+    if (request.addCategory !== undefined && !['templates','songs','scripture','media'].includes(request.addCategory)) throw new Error('Choose a supported slide category.');
     const bounds=request.bounds ? communityPlannerBounds(request.bounds) : null;
     const handoff=installedServiceHandoff(),pointer=currentPreparedServicePointer;
     if(!appState.activeLaunchPlan || !handoff?.project || !pointer)throw new Error('Start a native service before opening Adjust.');
@@ -18699,6 +18711,11 @@ ipcMain.handle('community:planner:openActiveAdjust', async (event, request = {})
     const {focusPlannerCue}=require('./src/services/community/PlannerCueFocus');
     const focused=await communityPlannerView.webContents.executeJavaScript(`(${focusPlannerCue.toString()})(${JSON.stringify({syncId:project.id,cueId,number,sectionIds})})`);
     if(!focused.focused)throw new Error('The current slide could not be selected. Your local service is safe.');
+    if (request.addCategory) {
+      const {openPlannerAdd} = require('./src/services/community/PlannerAddFocus');
+      const added = await communityPlannerView.webContents.executeJavaScript(`(${openPlannerAdd.toString()})(${JSON.stringify(request.addCategory)})`);
+      if (!added.opened) throw new Error('The add-slide library could not open. Use Add slide in Adjust.');
+    }
     return {opened:true,syncId:project.id,local:true};
   });
 });
@@ -27245,6 +27262,8 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     preferredTimelineRoleId,
     settings = {}
   } = options;
+  if (options.previewOnly !== undefined && typeof options.previewOnly !== 'boolean') throw new TypeError('Preview only must be true or false.');
+  if (options.previewOnly && (options.testOutput || options.sourceMode !== 'syncshow')) throw new Error('Preview only requires a native presentation.');
   if (options.testOutput !== undefined && typeof options.testOutput !== 'boolean') throw new TypeError('Test Output must be true or false.');
 
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
@@ -27283,8 +27302,10 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   // output session. A malformed or incomplete Start therefore leaves the
   // currently running show intact.
   const testing = options.testOutput === true;
-  const launchOutputs = testing && Array.isArray(outputs)
-    ? outputs.map(output => ({ ...output, displayId: `test-output:${output.id}` }))
+  const previewOnly = options.previewOnly === true;
+  if (previewOnly && !preparedService) throw new Error('Load a verified native presentation before previewing Show.');
+  const launchOutputs = (testing || previewOnly) && Array.isArray(outputs)
+    ? outputs.map(output => ({ ...output, displayId: `${previewOnly ? 'preview-output' : 'test-output'}:${output.id}` }))
     : outputs;
   const launchPlan = resolveLaunchPlan({
     presentations: appState.presentations,
@@ -27316,7 +27337,8 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   const displays = screen.getAllDisplays();
   const controlDisplayId = getControlDisplayId();
   const testLayout = testing ? buildTestOutputDisplayMap({ settings: readTestOutputSettings(), outputs: launchPlan.outputs, displays, controlDisplayId }) : null;
-  const displayById = testLayout?.displays || new Map(displays.map(display => [String(display.id), display]));
+  const displayById = previewOnly ? previewDisplayMap(launchPlan.outputs)
+    : testLayout?.displays || new Map(displays.map(display => [String(display.id), display]));
   for (const output of launchPlan.outputs) {
     if (!displayById.has(String(output.displayId))) {
       throw new Error(`${output.name} is assigned to a display that is no longer connected`);
@@ -27395,6 +27417,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     return [output.id, {id:display.id, fingerprint:appState.displays.find(item => item.id === display.id)?.fingerprint}];
   }));
   activeTestOutputSettings = testing ? readTestOutputSettings() : null;
+  activePreviewOnly = previewOnly;
   appState.activeLaunchPlan = launchPlan;
   appState.currentSlide = 0;
   appState.totalSlides = launchPlan.totalSlides;
@@ -27591,6 +27614,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
 
   const result = {
     success: true,
+    previewOnly: activePreviewOnly,
     totalSlides: appState.totalSlides,
     plan: launchPlan,
     outputSessionId: showState?.outputSessionId || null,
@@ -27972,6 +27996,7 @@ ipcMain.handle('app:getState', async (event) => {
     currentSlide: appState.currentSlide,
     totalSlides: appState.totalSlides,
     activeLaunchPlan: appState.activeLaunchPlan,
+    previewOnly: activePreviewOnly,
     showState: showGateway.getState(),
     displays: appState.displays,
     serviceHandoff: installedServiceHandoff(),
