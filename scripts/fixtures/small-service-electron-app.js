@@ -4,6 +4,16 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const electron = require('electron');
 const {app, BrowserWindow} = electron;
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('console-message', details => {
+    if (['warning', 'error'].includes(details.level)) console.log('Renderer diagnostic:', String(details.message).slice(0, 600));
+  });
+  const execute = contents.executeJavaScript.bind(contents);
+  contents.executeJavaScript = async (source, ...args) => {
+    try { return await execute(source, ...args); }
+    catch (error) { error.stack += `\nFixture script: ${String(source).slice(0, 180)}`; throw error; }
+  };
+});
 const resultPath = process.env.SYNCSHOW_SMALL_SERVICE_RESULT;
 const screenshots = process.env.SYNCSHOW_SMALL_SERVICE_SCREENSHOTS;
 const count = Number(process.env.SYNCSHOW_SMALL_SERVICE_DISPLAYS ?? 1);
@@ -101,6 +111,7 @@ async function run(){
     assert.equal(finalState.currentSlide,0,'adding a song backstage keeps the audience blank');
     await renderer('toggleShowAdjust()');
     await waitFor(()=>renderer('state.community.plannerShowDraftReady'),'draft package ready');
+    await waitFor(()=>renderer("Boolean(document.querySelector('.thumbnail-item[data-index=\"1\"]'))"),'new song thumbnail is rendered');
     await renderer("document.querySelector('.thumbnail-item[data-index=\"1\"]').click();true");
     await waitFor(()=>renderer('state.currentSlide===1 && state.totalSlides>1 && !state.cueNavigationBusy'),'take local song');
   }
@@ -112,6 +123,7 @@ async function run(){
   await waitFor(()=>renderer('state.bible.isLive && !state.bible.sending'),'Bible overlay live');
   const displayWindows=BrowserWindow.getAllWindows().filter(win=>win.webContents.getURL().endsWith('/display.html')||win.webContents.getURL().endsWith('/singer.html'));
   for(const win of displayWindows) {
+    console.log('Verify Bible output', win.id);
     const colors=await win.webContents.executeJavaScript(`(() => {const overlay=[...document.querySelectorAll('.bible-overlay')].find(node=>!node.hidden&&!node.classList.contains('staging'));return overlay ? {background:getComputedStyle(overlay).backgroundColor,reference:getComputedStyle(overlay.querySelector('.bible-reference')).color,words:getComputedStyle(overlay.querySelector('.bible-verses')).color,text:overlay.innerText}:null;})()`);
     assert.ok(colors,'overlay present');assert.equal(colors.background,'rgb(0, 0, 0)');assert.equal(colors.reference,'rgb(255, 192, 0)');assert.equal(colors.words,'rgb(255, 255, 255)');
     assert.match(colors.text,/God/);
@@ -148,6 +160,7 @@ async function run(){
   // Check actual hit coordinates and the native child-view boundary, not just
   // DOM .click() on the toolbar hidden underneath the editor.
   for (const category of ['songs', 'media']) {
+    console.log('Verify repeated backstage Add', category);
     await waitFor(()=>renderer('!showAdjustOpening && !showAdjustBusy'),'backstage toolbar ready');
     const point = await renderer(`(() => {
       const button=document.querySelector('#showAdjustPanel [data-show-add=${category}]');
@@ -175,6 +188,7 @@ async function run(){
     assert.ok(BrowserWindow.getAllWindows().filter(win=>win.syncShowPreviewOnly).every(win=>!win.isVisible()&&!win.isFullScreen()),'recovery never projects preview renderers');
   }
   if (process.env.SYNCSHOW_SMALL_SERVICE_SCREEN_REGRESSION === '1') {
+    console.log('Verify changed monitor ID and mode');
     assert.ok(count >= 3 && !previewOnly, 'screen regression requires three simulated external monitors');
     const removed={...fakeDisplays[1]};
     fakeDisplays[1]={...removed,id:202,scaleFactor:1.5,rotation:90};
@@ -185,6 +199,7 @@ async function run(){
     assert.equal(await renderer('state.currentSlide'),1,'screen recovery retains the current cue');
     electron.powerMonitor.emit('suspend');
     electron.powerMonitor.emit('resume');
+    console.log('Verify Start-time rescan');
     await renderer('backToSetup()');
     await waitFor(()=>renderer("state.workflowStage==='load' && !state.showEndSessionBusy"),'Load before rechecking screens');
     // OS knows the monitors are back, but Load deliberately has a stale empty
@@ -193,6 +208,7 @@ async function run(){
     await waitFor(()=>renderer('state.displays.length===4 && !state.queuedStart'),'Start uses a fresh OS screen snapshot');
     await waitFor(()=>renderer('Boolean(state.startAttempt) || state.isPresenting'),'Start reaches review after re-scan');
     const diagnosticFile=path.join(screenshots,'screen-diagnostics.json');
+    console.log('Verify diagnostic export');
     electron.dialog.showSaveDialog=async()=>({canceled:false,filePath:diagnosticFile});
     assert.equal((await renderer('window.api.exportSupportDiagnostics()')).saved,true);
     const diagnostics=JSON.parse(await fs.readFile(diagnosticFile,'utf8'));
