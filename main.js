@@ -35,6 +35,27 @@ const {
   sanitizeGpuInfo,
   sanitizeRendererFontDiagnostics
 } = require('./src/services/runtime/SupportDiagnostics');
+const { describeDisplay } = require('./src/services/runtime/DisplayDescriptor');
+const { DisplayDiagnosticsJournal } = require('./src/services/runtime/DisplayDiagnosticsJournal');
+const { matchOutputDisplay } = require('./src/renderer/service-output-plan');
+let displayDiagnosticsJournal = null;
+let lastDisplayDiagnosticSnapshot = null;
+
+function recordScreenDiagnostics(reason, details = {}) {
+  displayDiagnosticsJournal?.record(reason, {
+    displays: appState.displays,
+    outputs: activeVenueProfile?.outputs || [],
+    activeOutputs: (appState.activeLaunchPlan?.outputs || []).map(output => ({
+      id: output.id, displayId: appState.displayAssignments.get(output.id) ?? output.displayId,
+      renderer: output.renderer
+    })),
+    phase: outputLifecyclePhase,
+    cleared: appState.isCleared,
+    previewOnly: activePreviewOnly,
+    osUptimeSeconds: Math.round(os.uptime()),
+    ...details
+  });
+}
 
 const SERMON_RECORDING_PLAYBACK_SCHEME = 'syncshow-sermon-media';
 if (typeof protocol?.registerSchemesAsPrivileged === 'function') {
@@ -1228,6 +1249,7 @@ function applyVenueProfile(profile) {
     translationProjection.manual.clear();
   }
   activeVenueProfile = profile;
+  recordScreenDiagnostics('saved-screen-setup-applied');
   if (previousSignature !== null && previousSignature !== nextSignature) {
     clearServiceScanProposals();
     stopServiceFolderWatchers();
@@ -2767,17 +2789,19 @@ function diagnosticBounds(value) {
 }
 
 function diagnosticOutputSummary(output) {
+  const safeText = (value, maximum) => safeError({ message: String(value || '') }).message.slice(0, maximum);
   return {
-    id: rendererSafeText(output?.id || '', 160),
-    name: rendererSafeText(output?.name || '', 200),
-    kind: rendererSafeText(output?.kind || '', 80),
-    renderer: rendererSafeText(output?.renderer || '', 80),
-    sourceRoleId: rendererSafeText(output?.sourceRoleId || '', 160),
-    displayId: String(output?.displayId ?? '').slice(0, 160)
+    id: safeText(output?.id, 160),
+    name: safeText(output?.name, 200),
+    kind: safeText(output?.kind, 80),
+    renderer: safeText(output?.renderer, 80),
+    sourceRoleId: safeText(output?.sourceRoleId, 160),
+    displayId: safeText(output?.displayId, 160)
   };
 }
 
 function beginShowStartDiagnostics(options) {
+  recordScreenDiagnostics('start-requested');
   const attempt = {
     startedAt: new Date().toISOString(),
     status: 'starting',
@@ -2821,10 +2845,11 @@ function finishShowStartDiagnostics(attempt, status, error = null) {
   if (error) attempt.error = safeError(error);
   lastShowStartDiagnostics = attempt;
   if (activeShowStartDiagnostics === attempt) activeShowStartDiagnostics = null;
+  recordScreenDiagnostics(`start-${status}`, error ? { error } : {});
 }
 
 async function buildSupportDiagnostics() {
-  updateDisplayList();
+  updateDisplayList('diagnostics-export');
   const selectedFont = getPresentationFont();
   const outputFallbackFont = getOutputWindowFallbackFont();
   const [selectedFontFiles, outputFallbackFiles, gpuInfo] = await Promise.all([
@@ -2842,7 +2867,7 @@ async function buildSupportDiagnostics() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
   })();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'syncshow-support-diagnostics',
     generatedAt: new Date().toISOString(),
     privacy: {
@@ -2869,6 +2894,7 @@ async function buildSupportDiagnostics() {
       chromium: process.versions.chrome || '',
       node: process.versions.node || ''
     },
+    screenHistory: displayDiagnosticsJournal?.snapshot() || null,
     gpu: {
       featureStatus: app.getGPUFeatureStatus(),
       ...sanitizeGpuInfo(gpuInfo),
@@ -2880,6 +2906,8 @@ async function buildSupportDiagnostics() {
       internal: display.internal === true,
       primary: display.id === screen.getPrimaryDisplay().id,
       control: display.id === getControlDisplayId(),
+      fingerprint: appState.displays.find(item => String(item.id) === String(display.id))?.fingerprint,
+      legacyFingerprint: appState.displays.find(item => String(item.id) === String(display.id))?.legacyFingerprint,
       bounds: diagnosticBounds(display.bounds),
       workArea: diagnosticBounds(display.workArea),
       scaleFactor: display.scaleFactor,
@@ -8208,7 +8236,7 @@ function scheduleControlDisplayRefresh() {
   if (controlDisplayRefreshTimer) clearTimeout(controlDisplayRefreshTimer);
   controlDisplayRefreshTimer = setTimeout(() => {
     controlDisplayRefreshTimer = null;
-    updateDisplayList();
+    updateDisplayList('control-window-moved');
   }, 180);
 }
 
@@ -8241,6 +8269,7 @@ function trackOutputWindowHealth(win, output, sessionId) {
   });
   sender.on('render-process-gone', (_event, details) => {
     if (!isCurrentOutputWindow(win, sessionId, output.id)) return;
+    recordScreenDiagnostics('output-renderer-gone', { error: { message: `${output.id}: ${details.reason} (${details.exitCode})` } });
     translationDiagnostics.outputEvent(output.id, 'process-gone');
     console.error(`[Display] ${output.name} renderer process exited:`, details);
     outputHealthTracker.markProcessGone(identity);
@@ -8270,6 +8299,9 @@ function handleOutputFrameHealth(event, payload = {}) {
     error: payload?.error
   });
   outputHealthTracker.acknowledge(acknowledgement);
+  if (payload.ok === false && [...outputWindows.values()].some(entry => entry.win?.webContents === event.sender)) {
+    recordScreenDiagnostics('output-frame-failed', { error: { message: payload.error || 'Output did not acknowledge its frame' } });
+  }
 }
 
 // This permanent listener records every current-frame result. Startup also
@@ -8321,6 +8353,7 @@ function requestOutputRecovery(reason, { resumeVisible, resumeCleared, force = f
     cleared: resumeCleared ?? appState.isCleared, reason, attempt: 0, phase: 'waiting', timer: null
   };
   console.warn(`[Output recovery] ${reason}; retaining cue ${recovery.cue + 1}`);
+  recordScreenDiagnostics(`recovery-${reason}`);
   try {
     const file = path.join(app.getPath('userData'), 'output-recovery.json');
     let entries = [];
@@ -8348,14 +8381,14 @@ async function recoverOutputWindows(recovery) {
     const controlId = getControlDisplayId();
     const resolved = new Map();
     for (const [id, saved] of activeOutputTargets) {
-      let target = activePreviewOnly
+      const matched = matchOutputDisplay({ legacyDisplayId: saved.id, displayFingerprint: saved.fingerprint }, appState.displays);
+      const target = activePreviewOnly
         ? previewDisplayMap(recovery.plan.outputs).get(String(saved.id))
-        : displays.find(display => String(display.id) === String(saved.id));
-      if (!target) {
-        const candidates = appState.displays.filter(display => display.fingerprint === saved.fingerprint && !display.isControl);
-        if (candidates.length === 1) target = displays.find(display => display.id === candidates[0].id);
-      }
-      if (!target || String(target.id) === String(controlId)) {
+        : displays.find(display => String(display.id) === String(matched.display?.id));
+      if (!target || String(target.id) === String(controlId)
+        || (!activeTestOutputSettings && [...resolved.values()].some(display => String(display.id) === String(target.id)))) {
+        if (!recovery.waitingForScreenLogged) recordScreenDiagnostics('recovery-waiting-for-screen');
+        recovery.waitingForScreenLogged = true;
         recovery.phase = 'waiting';
         publishShowState('outputs-waiting-for-screen');
         recovery.timer = setTimeout(() => void recoverOutputWindows(recovery), 2000);
@@ -8415,11 +8448,16 @@ async function recoverOutputWindows(recovery) {
     if (recovery.visible) for (const {win} of outputWindows.values()) showOutputWindow(win);
     outputLifecyclePhase = !recovery.visible ? 'locally-stopped' : recovery.cleared ? 'cleared' : 'live';
     outputRecovery = null;
+    for (const [id, target] of resolved) activeOutputTargets.set(id, {
+      id: target.id, fingerprint: appState.displays.find(item => String(item.id) === String(target.id))?.fingerprint
+    });
+    recordScreenDiagnostics('recovery-succeeded');
     publishShowState('outputs-reconnected');
     captureOutputPreviews();
   } catch (error) {
     if (!recoveryIsCurrent(recovery)) return;
     console.warn('[Output recovery] Frame recovery failed:', error.message);
+    recordScreenDiagnostics('recovery-failed', { error });
     for (const {win} of outputWindows.values()) if (!win.isDestroyed()) win.hide();
     recovery.phase = recovery.attempt >= 3 ? 'failed' : 'reconnecting';
     publishShowState('outputs-recovery-retry');
@@ -8942,30 +8980,17 @@ async function rehearseHiddenShowCues({
   return acknowledgements;
 }
 
-function updateDisplayList() {
+function updateDisplayList(reason = 'screen-snapshot', details = {}) {
   const primaryDisplayId = screen.getPrimaryDisplay().id;
   const controlDisplayId = getControlDisplayId();
-  appState.displays = screen.getAllDisplays().map((display, index) => ({
-    id: display.id,
-    index: index,
-    // Electron does not expose a portable monitor serial on every OS. This
-    // conservative fingerprint omits desktop position so a cable rearrangement
-    // can still reconnect a unique monitor. Duplicate fingerprints are treated
-    // as ambiguous by the renderer rather than guessed.
-    fingerprint: [
-      'display-v1',
-      process.platform,
-      display.internal ? 'internal' : 'external',
-      `${display.size?.width || display.bounds.width}x${display.size?.height || display.bounds.height}`,
-      `scale-${display.scaleFactor || 1}`,
-      `rotation-${display.rotation || 0}`,
-      `touch-${display.touchSupport || 'unknown'}`
-    ].join(':'),
-    label: `Display ${index + 1}${display.internal ? ' (Built-in)' : ''} - ${display.bounds.width}x${display.bounds.height}`,
-    bounds: display.bounds,
-    isPrimary: display.id === primaryDisplayId,
-    isControl: display.id === controlDisplayId
+  appState.displays = screen.getAllDisplays().map((display, index) => describeDisplay(display, index, {
+    platform: process.platform, primaryId: primaryDisplayId, controlId: controlDisplayId
   }));
+  const snapshot = JSON.stringify({ displays: appState.displays, outputs: activeVenueProfile?.outputs });
+  if (reason !== 'screen-snapshot' || snapshot !== lastDisplayDiagnosticSnapshot) {
+    recordScreenDiagnostics(reason, details);
+    lastDisplayDiagnosticSnapshot = snapshot;
+  }
 
   if (controlWindow && !controlWindow.isDestroyed()) {
     controlWindow.webContents.send('displays:updated', appState.displays);
@@ -8987,7 +9012,7 @@ function closeIdentifyWindows() {
 
 async function identifyAllDisplays() {
   closeIdentifyWindows();
-  updateDisplayList();
+  updateDisplayList('identify-screens');
   const electronDisplays = screen.getAllDisplays();
 
   for (const [index, display] of electronDisplays.entries()) {
@@ -9031,7 +9056,7 @@ function handleDisplayRemoved(removedDisplay) {
   if (removedDisplay && [...appState.displayAssignments.values()].some(id => id === removedDisplay.id)) {
     requestOutputRecovery('display-removed');
   }
-  updateDisplayList();
+  updateDisplayList('display-removed', { changedDisplayId: removedDisplay?.id });
 }
 
 // DEPRECATED: Global keyboard shortcuts were disabled because Electron's globalShortcut
@@ -28129,9 +28154,11 @@ ipcMain.handle('cache:load', async (event, request) => {
   return result;
 });
 
-ipcMain.handle('displays:refresh', async (event) => {
+ipcMain.handle('displays:refresh', async (event, options = {}) => {
   requireControlSender(event);
-  updateDisplayList();
+  requireExactPrepareKeys(options, ['reason'], 'Screen rescan');
+  if (options.reason !== undefined && !['start', 'operator'].includes(options.reason)) throw new Error('Choose a supported screen rescan.');
+  updateDisplayList(options.reason === 'start' ? 'start-rescan' : 'operator-rescan');
   return appState.displays;
 });
 
@@ -28156,6 +28183,11 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    displayDiagnosticsJournal = new DisplayDiagnosticsJournal({
+      filePath: path.join(app.getPath('userData'), 'screen-diagnostics.json'),
+      version: app.getVersion()
+    });
+    updateDisplayList('app-startup');
     const translationHealthTimer = setInterval(() => {
       const previousWarning = translationDiagnostics.warning;
       const state = translationStatePayload();
@@ -28177,10 +28209,11 @@ if (!hasSingleInstanceLock) {
     // Don't register shortcuts on startup - only when presentation starts
 
     // Handle display changes
-    screen.on('display-added', () => updateDisplayList());
+    screen.on('display-added', (event, display) => updateDisplayList('display-added', { changedDisplayId: display?.id }));
     screen.on('display-removed', (event, display) => handleDisplayRemoved(display));
-    screen.on('display-metrics-changed', () => updateDisplayList());
+    screen.on('display-metrics-changed', (event, display, changedMetrics) => updateDisplayList('display-metrics-changed', { changedDisplayId: display?.id, changedMetrics }));
     powerMonitor.on('suspend', () => {
+      updateDisplayList('computer-suspend');
       closeSermonRecordingPlayer().catch(error => {
         console.error('[Sermon] Could not finish recording playback cleanup:', error);
       });
@@ -28192,6 +28225,7 @@ if (!hasSingleInstanceLock) {
       });
     });
     powerMonitor.on('resume', () => {
+      updateDisplayList('computer-resume');
       scheduleCommunitySongSync('computer resumed', 1500);
       scheduleCommunityPeriodicSync({ resetBackoff: true });
     });
@@ -28219,6 +28253,7 @@ app.on('before-quit', event => {
 });
 
 app.on('will-quit', () => {
+  if (app.isReady()) recordScreenDiagnostics('app-quit');
   translationScreens.closeAll();
   closeSermonRecordingPlayer().catch(() => {});
   cancelCommunityTransientOperations().catch(() => {});

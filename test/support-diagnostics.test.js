@@ -86,6 +86,10 @@ test('diagnostic export is reachable from a failed Start without broad renderer 
   const mainSource = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 
   assert.match(html, /id="btnSaveDiagnostics"/u);
+  assert.match(html, /id="btnSaveScreenDiagnostics"/u);
+  assert.match(mainSource, /screenHistory: displayDiagnosticsJournal\?\.snapshot\(\)/u);
+  assert.match(mainSource, /updateDisplayList\('computer-resume'\)/u);
+  assert.match(mainSource, /changedMetrics \}\)/u);
   assert.match(html, /never passwords or slide contents/u);
   assert.match(appSource, /attempt\.diagnosticsAvailable = true/u);
   assert.match(appSource, /window\.api\.exportSupportDiagnostics\(\)/u);

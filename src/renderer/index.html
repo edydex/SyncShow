@@ -1090,7 +1090,9 @@
                   <button id="btnIdentifyDisplays" class="btn btn-outline" title="Show a large number and name on each connected screen">
                     Identify screens
                   </button>
+                  <button id="btnSaveScreenDiagnostics" class="btn btn-quiet" type="button">Save diagnostics…</button>
                 </div>
+                <p id="screenDiagnosticsStatus" class="settings-note" role="status">Screen history is saved automatically across restarts. Export it after a screen problem—even if reassigning the screen fixed it. No passwords or slide contents.</p>
               </section>
 
               <div class="settings-body">
@@ -1409,6 +1411,11 @@
 
     <section id="showAdjustPanel" class="show-adjust-panel" aria-label="Adjust the service backstage" hidden>
       <header class="show-adjust-header"><div><strong id="showAdjustDraft">Backstage draft · changes are not on screen yet</strong><small id="showAdjustStatus" role="status">Changes are saved backstage. Click a slide or Next to show them.</small></div>
+        <nav class="show-adjust-add" aria-label="Add content backstage">
+          <button type="button" class="btn btn-secondary" data-show-add="songs">+ Song</button>
+          <button type="button" class="btn btn-secondary" data-show-add="scripture">+ Passage</button>
+          <button type="button" class="btn btn-secondary" data-show-add="media">+ Media</button>
+        </nav>
         <button id="btnReviewAdjustConflict" type="button" class="btn btn-secondary" hidden>Review versions</button>
         <button id="btnCloseShowAdjust" type="button" class="btn btn-secondary">Close</button>
       </header>

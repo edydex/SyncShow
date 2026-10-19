@@ -286,7 +286,8 @@ test('display bindings are explicit and never auto-assigned after a rescan', () 
 
 test('operator display and closed previews are protected in both renderer and main', () => {
   assert.match(mainSource, /function getControlDisplayId\(\)/);
-  assert.match(mainSource, /isControl: display\.id === controlDisplayId/);
+  assert.match(mainSource, /describeDisplay\(display, index, \{/);
+  assert.match(mainSource, /controlId: controlDisplayId/);
   assert.match(mainSource, /assigned to the operator screen; choose a presentation screen/);
   assert.match(mainSource, /outputPreviewSubscriptions\.has\(output\.id\)/);
   assert.match(mainSource, /output:setPreviewSubscriptions/);

@@ -327,6 +327,8 @@ const elements = {
   btnPreflightBack: document.getElementById('btnPreflightBack'),
   btnPreflightContinue: document.getElementById('btnPreflightContinue'),
   btnSaveDiagnostics: document.getElementById('btnSaveDiagnostics'),
+  btnSaveScreenDiagnostics: document.getElementById('btnSaveScreenDiagnostics'),
+  screenDiagnosticsStatus: document.getElementById('screenDiagnosticsStatus'),
   bibleDialog: document.getElementById('bibleDialog'),
   bibleForm: document.getElementById('bibleForm'),
   bibleReference: document.getElementById('bibleReference'),
@@ -842,7 +844,8 @@ function setupEventListeners() {
   elements.preflightForm.addEventListener('submit', handlePreflightSubmit);
   elements.btnCancelPreflight.addEventListener('click', cancelStartAttempt);
   elements.btnPreflightBack.addEventListener('click', goBackInPreflight);
-  elements.btnSaveDiagnostics.addEventListener('click', saveSupportDiagnostics);
+  elements.btnSaveDiagnostics.addEventListener('click', () => saveSupportDiagnostics());
+  elements.btnSaveScreenDiagnostics.addEventListener('click', () => saveSupportDiagnostics(true));
   elements.startPreflightDialog.addEventListener('cancel', (event) => {
     event.preventDefault();
     cancelStartAttempt();
@@ -6546,6 +6549,12 @@ function startPresentation(testOutput = false) {
       state.loadActionNotice = { message: state.loadFreshness.message || 'Review the service in Prepare before starting.', kind: 'warning' };
       return;
     }
+    // A monitor may have powered on since Load opened. Always ask the OS again
+    // before readiness; never require the operator to reassign a known screen.
+    action.message = 'Checking connected screens…';
+    renderLoadActionStatus();
+    handleDisplaysUpdated(await window.api.refreshDisplays({ reason: 'start' }));
+    if (!queuedStartIsCurrent(action)) return;
     const readiness = getReadinessState(action.testOutput);
     if (!readiness.isReady) {
       state.loadActionNotice = { message: readiness.issues[0] || 'Load a service before starting.', kind: 'warning' };
@@ -6804,21 +6813,23 @@ function renderPreflightDiagnostics(attempt) {
     'Includes display, font, package, and runtime details—never passwords or slide contents.';
 }
 
-async function saveSupportDiagnostics() {
-  elements.btnSaveDiagnostics.disabled = true;
-  elements.btnSaveDiagnostics.textContent = 'Saving…';
-  elements.preflightDiagnosticsStatus.textContent = 'Choose where to save the diagnostic file.';
+async function saveSupportDiagnostics(fromScreenSetup = false) {
+  const button = fromScreenSetup ? elements.btnSaveScreenDiagnostics : elements.btnSaveDiagnostics;
+  const status = fromScreenSetup ? elements.screenDiagnosticsStatus : elements.preflightDiagnosticsStatus;
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  status.textContent = 'Choose where to save the diagnostic file.';
   try {
     const result = await window.api.exportSupportDiagnostics();
-    elements.preflightDiagnosticsStatus.textContent = result?.saved
+    status.textContent = result?.saved
       ? `Saved ${result.fileName || 'the diagnostic file'}. Send that file with the error screenshot.`
       : 'Nothing was saved.';
   } catch (error) {
-    elements.preflightDiagnosticsStatus.textContent =
+    status.textContent =
       `Could not save diagnostics: ${error.message || 'Unknown error'}`;
   } finally {
-    elements.btnSaveDiagnostics.disabled = false;
-    elements.btnSaveDiagnostics.textContent = 'Save diagnostics…';
+    button.disabled = false;
+    button.textContent = 'Save diagnostics…';
   }
 }
 

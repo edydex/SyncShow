@@ -11134,6 +11134,9 @@ body { background:var(--bg); }
 .show-adjust-header { padding:9px 12px; gap:9px; background:#2d2c28; }
 .show-adjust-header small { font-size:11px; }
 .show-adjust-header .btn { font-size:11px; min-height:30px; padding:5px 10px; }
+.show-adjust-header { flex-wrap:wrap; }
+.show-adjust-header > div { min-width:180px; }
+.show-adjust-add { display:flex; gap:6px; flex-wrap:wrap; }
 #showAdjustDraft { font-size:12px; }
 @media(max-width:1100px) { .show-service-sidebar { flex-basis:145px; } .controls-column { flex-basis:260px; padding:9px; } .show-adjust-panel { right:260px; } .thumbnails-header h2 { display:none; } }
 

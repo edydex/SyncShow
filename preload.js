@@ -674,7 +674,7 @@ contextBridge.exposeInMainWorld('api', {
   showDisplays: () => ipcRenderer.invoke('display:show'),
   clearDisplays: () => ipcRenderer.invoke('display:clear'),
   hideDisplays: () => ipcRenderer.invoke('display:hide'),
-  refreshDisplays: () => ipcRenderer.invoke('displays:refresh'),
+  refreshDisplays: (options) => ipcRenderer.invoke('displays:refresh', options),
   identifyDisplays: () => ipcRenderer.invoke('displays:identify'),
   setFadeDuration: (duration) => ipcRenderer.invoke('display:setFade', duration),
   setSyncMode: (enabled) => ipcRenderer.invoke('display:setSyncMode', enabled),

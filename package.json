@@ -1,6 +1,6 @@
 {
   "name": "sync-show",
-  "version": "2.1.0-preview.2",
+  "version": "2.1.0",
   "description": "Synchronized configurable presentation outputs for church services",
   "main": "main.js",
   "scripts": {
@@ -12,6 +12,7 @@
     "test": "node --test",
     "test:live-cue-navigation-electron": "node scripts/verify-live-cue-navigation-electron.js",
     "test:native-electron-rehearsal": "node scripts/verify-native-weekly-electron-rehearsal.js",
+    "test:screen-recognition-electron": "node scripts/verify-screen-recognition-electron.js",
     "test:community-service-electron": "node scripts/verify-community-service-electron.js",
     "test:operational-planning-electron": "node scripts/verify-operational-planning-electron.js",
     "ci": "npm run check && npm test",
@@ -74,7 +75,7 @@
   "build": {
     "appId": "com.church.syncshow",
     "productName": "SyncShow",
-    "buildVersion": "201002",
+    "buildVersion": "201003",
     "beforePack": "scripts/beforePack.js",
     "afterPack": "scripts/afterPack.js",
     "copyright": "Copyright \u00a9 2026 Church Media Team",

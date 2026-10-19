@@ -95,25 +95,44 @@
     return normalized.mode;
   }
 
-  function resolveOutputDisplay(output, displays) {
-    if (!output) return null;
+  function matchOutputDisplay(output, displays = []) {
+    const result = (display, reason, candidates = []) => ({ display: display || null, reason, candidateIds: candidates.map(item => String(item.id)) });
+    if (!output) return result(null, 'unassigned');
+    // Electron reserves -1 for an unknown ID and -10 for a virtual unified
+    // desktop. Neither is a safely remembered physical presentation output.
+    displays = displays.filter(display => !['-1', '-10'].includes(String(display.id)));
     const hasLegacyId = output.legacyDisplayId !== null && output.legacyDisplayId !== undefined;
     const byId = hasLegacyId
       ? displays.find(display => String(display.id) === String(output.legacyDisplayId))
       : null;
     if (output.displayFingerprint) {
-      const matches = displays.filter(display => display.fingerprint === output.displayFingerprint);
-      if (byId && byId.fingerprint === output.displayFingerprint) return byId;
-      if (matches.length === 1) return matches[0];
-      return null;
+      const saved = output.displayFingerprint;
+      const matches = displays.filter(display => display.fingerprint === saved || display.legacyFingerprint === saved);
+      if (byId && matches.includes(byId)) return result(byId, 'saved-id-and-fingerprint', matches);
+      // Older releases stored only mode information. The same OS ID is
+      // stronger evidence than resolution/scaling/rotation; allow that old
+      // mode to change, but never cross platform or built-in/external class.
+      const legacyClass = /^display-v1:([^:]+):(internal|external):\d+x\d+:scale-[^:]+:rotation-[^:]+:touch-[^:]+$/u.exec(saved);
+      const currentLegacy = byId?.legacyFingerprint || byId?.fingerprint;
+      if (byId && legacyClass && typeof currentLegacy === 'string'
+        && currentLegacy.startsWith(`display-v1:${legacyClass[1]}:${legacyClass[2]}:`)) {
+        return result(byId, 'saved-id-mode-changed', [byId]);
+      }
+      if (matches.length === 1) return result(matches[0], 'unique-fingerprint', matches);
+      return result(null, matches.length > 1 ? 'ambiguous-fingerprint' : byId ? 'identity-changed' : 'not-connected', matches);
     }
-    return byId;
+    return result(byId, byId ? 'saved-id' : hasLegacyId ? 'not-connected' : 'unassigned', byId ? [byId] : []);
+  }
+
+  function resolveOutputDisplay(output, displays) {
+    return matchOutputDisplay(output, displays).display;
   }
 
   return Object.freeze({
     createOnlyRoleDecisions,
     decisionToRouteValue,
     filterDecisionsForOutputs,
+    matchOutputDisplay,
     resolveDecision,
     resolveOutputDisplay,
     routeValueToDecision

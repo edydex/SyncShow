@@ -8,7 +8,7 @@ const resultPath = process.env.SYNCSHOW_SMALL_SERVICE_RESULT;
 const screenshots = process.env.SYNCSHOW_SMALL_SERVICE_SCREENSHOTS;
 const count = Number(process.env.SYNCSHOW_SMALL_SERVICE_DISPLAYS ?? 1);
 const chosen = process.env.SYNCSHOW_SMALL_SERVICE_SCREEN || 'english';
-const fakeDisplays = Array.from({length:count+1}, (_,i) => ({id:i+1,internal:i===0,bounds:{x:i*1400,y:0,width:1400,height:900},workArea:{x:i*1400,y:0,width:1400,height:900},size:{width:1400,height:900},workAreaSize:{width:1400,height:900},scaleFactor:1,rotation:0,touchSupport:'unknown',monochrome:false,colorDepth:24,depthPerComponent:8,displayFrequency:60}));
+const fakeDisplays = Array.from({length:count+1}, (_,i) => ({id:i+1,label:`Rehearsal monitor ${i}`,internal:i===0,bounds:{x:i*1400,y:0,width:1400,height:900},workArea:{x:i*1400,y:0,width:1400,height:900},size:{width:1400,height:900},workAreaSize:{width:1400,height:900},scaleFactor:1,rotation:0,touchSupport:'unknown',monochrome:false,colorDepth:24,depthPerComponent:8,displayFrequency:60}));
 app.once('ready',()=>{
   electron.screen.getPrimaryDisplay=()=>fakeDisplays[0];
   electron.screen.getAllDisplays=()=>fakeDisplays;
@@ -144,6 +144,26 @@ async function run(){
   await waitFor(()=>planner.executeJavaScript("!document.querySelector('.heritage-add-dialog[open]')"),'passage inserted backstage');
   assert.equal((await renderer('window.api.flushCommunityPlanner()')).success,true);
   assert.equal(await renderer('state.currentSlide'),1,'adding a passage preserves the current song cue');
+  // A second and third addition must be reachable without closing Adjust.
+  // Check actual hit coordinates and the native child-view boundary, not just
+  // DOM .click() on the toolbar hidden underneath the editor.
+  for (const category of ['songs', 'media']) {
+    await waitFor(()=>renderer('!showAdjustOpening && !showAdjustBusy'),'backstage toolbar ready');
+    const point = await renderer(`(() => {
+      const button=document.querySelector('#showAdjustPanel [data-show-add=${category}]');
+      const rect=button.getBoundingClientRect(), viewport=elements.showAdjustViewport.getBoundingClientRect();
+      const x=Math.round(rect.left+rect.width/2),y=Math.round(rect.top+rect.height/2);
+      return {x,y,disabled:button.disabled,hit:document.elementFromPoint(x,y)===button,aboveEditor:rect.bottom<=viewport.top};
+    })()`);
+    assert.deepEqual({disabled:point.disabled,hit:point.hit,aboveEditor:point.aboveEditor}, {disabled:false,hit:true,aboveEditor:true});
+    const nativeEditor=control.contentView.children.find(view=>view.webContents===planner);
+    assert.ok(nativeEditor && point.y<nativeEditor.getBounds().y,'native editor cannot intercept the add toolbar');
+    control.webContents.sendInputEvent({type:'mouseDown',x:point.x,y:point.y,button:'left',clickCount:1});
+    control.webContents.sendInputEvent({type:'mouseUp',x:point.x,y:point.y,button:'left',clickCount:1});
+    await waitFor(()=>planner.executeJavaScript(`Boolean(document.querySelector('.heritage-add-workbench[data-category=${category}]'))`),`repeated add ${category}`);
+    assert.equal(await renderer('state.currentSlide'),1,'reopening Add remains backstage');
+  }
+  await fs.writeFile(path.join(screenshots,'05-repeated-add-toolbar.png'),(await control.capturePage()).toPNG());
   await renderer('closeShowAdjust()');
   await waitFor(()=>renderer('state.community.plannerShowDraftReady'),'passage draft ready');
   if(previewOnly) {
@@ -153,6 +173,34 @@ async function run(){
     await waitFor(()=>renderer("state.showState?.phase==='live' && !state.showState?.recovery && state.showState.outputs.every(output=>output.status==='healthy')"),'preview recovery ready');
     assert.equal(await renderer('state.currentSlide'),1);
     assert.ok(BrowserWindow.getAllWindows().filter(win=>win.syncShowPreviewOnly).every(win=>!win.isVisible()&&!win.isFullScreen()),'recovery never projects preview renderers');
+  }
+  if (process.env.SYNCSHOW_SMALL_SERVICE_SCREEN_REGRESSION === '1') {
+    assert.ok(count >= 3 && !previewOnly, 'screen regression requires three simulated external monitors');
+    const removed={...fakeDisplays[1]};
+    fakeDisplays[1]={...removed,id:202,scaleFactor:1.5,rotation:90};
+    electron.screen.emit('display-removed',{},removed);
+    electron.screen.emit('display-added',{},fakeDisplays[1]);
+    await waitFor(()=>renderer('Boolean(state.showState?.recovery)'),'unplug recovery begins');
+    await waitFor(()=>renderer("state.showState?.phase==='live' && !state.showState?.recovery && state.showState.outputs.every(output=>output.status==='healthy')"),'renumbered and rotated monitor recovers');
+    assert.equal(await renderer('state.currentSlide'),1,'screen recovery retains the current cue');
+    electron.powerMonitor.emit('suspend');
+    electron.powerMonitor.emit('resume');
+    await renderer('backToSetup()');
+    await waitFor(()=>renderer("state.workflowStage==='load' && !state.showEndSessionBusy"),'Load before rechecking screens');
+    // OS knows the monitors are back, but Load deliberately has a stale empty
+    // snapshot. Clicking Start must rescan before deciding anything is missing.
+    await renderer('state.displays=[];startPresentation();true');
+    await waitFor(()=>renderer('state.displays.length===4 && !state.queuedStart'),'Start uses a fresh OS screen snapshot');
+    await waitFor(()=>renderer('Boolean(state.startAttempt) || state.isPresenting'),'Start reaches review after re-scan');
+    const diagnosticFile=path.join(screenshots,'screen-diagnostics.json');
+    electron.dialog.showSaveDialog=async()=>({canceled:false,filePath:diagnosticFile});
+    assert.equal((await renderer('window.api.exportSupportDiagnostics()')).saved,true);
+    const diagnostics=JSON.parse(await fs.readFile(diagnosticFile,'utf8'));
+    assert.equal(diagnostics.schemaVersion,2);
+    const reasons=diagnostics.screenHistory.events.map(event=>event.reason);
+    for (const reason of ['app-startup','display-removed','display-added','recovery-succeeded','computer-suspend','computer-resume','start-rescan','diagnostics-export']) assert.ok(reasons.includes(reason),`diagnostics include ${reason}`);
+    assert.ok(diagnostics.screenHistory.events.some(event=>event.activeOutputs.some(output=>output.displayId==='202')),'journal records the reconnected output target');
+    assert.equal(diagnostics.screenHistory.persistenceError,null);
   }
   await fs.writeFile(path.join(screenshots,'05-show.png'),(await control.capturePage()).toPNG());
   if (process.env.SYNCSHOW_SMALL_SERVICE_HOLD_SHOW === '1') {

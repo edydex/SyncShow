@@ -56,3 +56,11 @@ jobs:
       - name: Rehearse native output font readiness (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a --server-args="-screen 0 2560x1440x24" npm run test:native-electron-rehearsal
+
+      - name: Rehearse screen reconnection and repeated backstage additions
+        if: runner.os != 'Linux'
+        run: npm run test:screen-recognition-electron
+
+      - name: Rehearse screen reconnection and repeated backstage additions (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 2560x1440x24" npm run test:screen-recognition-electron

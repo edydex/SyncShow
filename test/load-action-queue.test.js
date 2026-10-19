@@ -15,7 +15,7 @@ function deferred() {
 
 function fixture(options = {}) {
   const check = deferred();
-  const starts = [], checks = [], statuses = [];
+  const starts = [], checks = [], statuses = [], rescans = [];
   const node = () => ({ hidden: false, dataset: {}, attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } });
   const spinner = node();
   const elements = { btnStartPresentation: node(), btnTestOutput: node(), loadActionStatus: node(),
@@ -26,6 +26,12 @@ function fixture(options = {}) {
     community: { handoffBusy: false }, presentations: {}, serviceFolder: { loading: false },
     loadFreshness: { busy: false }, initializingLoad: false };
   const sandbox = vm.createContext({ state, elements,
+    window: { api: { async refreshDisplays(request) {
+      rescans.push(request);
+      if (options.rescanError) throw new Error('Cannot query connected screens');
+      return options.displays || [];
+    } } },
+    handleDisplaysUpdated(displays) { state.displays = displays; },
     sharedServiceController: { isBusy: () => false },
     renderPresentationMode() {}, renderTestOutputSettings() {}, renderReadiness() {},
     setStatus(message) { statuses.push(message); },
@@ -47,10 +53,27 @@ function fixture(options = {}) {
   });
   vm.runInContext('const loadWorkWaiters = new Set();\n' + queueSource, sandbox);
   sandbox.checkReadyState();
-  return { state, elements, spinner, starts, checks, statuses, check,
+  return { state, elements, spinner, starts, checks, statuses, check, rescans,
     start: value => sandbox.startPresentation(value), cancel: () => sandbox.cancelQueuedStart(),
     changed: () => sandbox.checkReadyState() };
 }
+
+test('Start rescans after loading and uses the returned screens before readiness', async () => {
+  const displays = [{ id: 3, fingerprint: 'reconnected' }];
+  const f = fixture({ immediate: { state: 'current' }, displays });
+  await f.start(false);
+  assert.deepEqual(f.state.displays, displays);
+  assert.equal(f.rescans.length, 1);
+  assert.equal(f.rescans[0].reason, 'start');
+  assert.equal(f.starts.length, 1);
+});
+
+test('a failed Start rescan is visible and never launches against stale screens', async () => {
+  const f = fixture({ immediate: { state: 'current' }, rescanError: true });
+  await f.start(false);
+  assert.equal(f.starts.length, 0);
+  assert.match(f.elements.loadActionMessage.textContent, /Cannot query connected screens/u);
+});
 
 test('a click is accepted immediately, shows progress and starts once when ready', async () => {
   const f = fixture();
