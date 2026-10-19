@@ -229,13 +229,20 @@ async function run(){
     assert.ok(diagnostics.screenHistory.events.some(event=>event.activeOutputs.some(output=>output.displayId==='202')),'journal records the reconnected output target');
     assert.equal(diagnostics.screenHistory.persistenceError,null);
   }
-  await fs.writeFile(path.join(screenshots,'05-show.png'),(await control.capturePage()).toPNG());
+  // The reconnection case ends in Load's native Start review, not Show.
+  // Reading back a hidden Mac window with that modal open can stall the
+  // compositor; it is neither useful Show evidence nor a functional check.
+  if (process.env.SYNCSHOW_SMALL_SERVICE_SCREEN_REGRESSION !== '1') {
+    await fs.writeFile(path.join(screenshots,'05-show.png'),(await control.capturePage()).toPNG());
+  }
   if (process.env.SYNCSHOW_SMALL_SERVICE_HOLD_SHOW === '1') {
     await fs.writeFile(resultPath,JSON.stringify({phase:'review-show'}));
     while (!(await fs.stat('/private/tmp/small-service-show-reviewed').catch(()=>null))) await delay(200);
   }
+  console.log('Verify interface preference persistence');
   await renderer("elements.showStartBlankPreference.checked=false;elements.showStartBlankPreference.dispatchEvent(new Event('change'));true");
   await waitFor(()=>renderer('elements.btnStartBlank.hidden'),'Start Blank hide preference');
+  console.log('Write final rehearsal evidence');
   await fs.writeFile(resultPath,JSON.stringify({ok:true,chosen,count,localOnly:true,profilePreserved:true,previewOnly,quickAdd:true,bibleOverlayVerified:true,createdSongOffline:true,body:await planner.executeJavaScript('document.body.innerText'),appState:await renderer('window.api.getAppState()')},null,2));
 }
 run().then(()=>app.exit(0)).catch(async error=>{await fs.writeFile(resultPath,JSON.stringify({ok:false,error:error.stack,windows:await Promise.all(electron.webContents.getAllWebContents().map(async w=>({url:w.getURL(),type:w.getType(),body:await w.executeJavaScript('document.body.innerText').catch(()=>''),state:w.getURL().includes('/src/renderer/index.html')?await w.executeJavaScript('({stage:state.workflowStage,busy:state.community.handoffBusy,warning:state.prepareLoadWarning,error:state.nativeLoadError})').catch(()=>null):null})))},null,2));app.exit(1);});
