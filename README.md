@@ -18,7 +18,7 @@ A cross-platform desktop application for planning and running synchronized churc
 - **Recoverable, portable services**: Every Prepare change is autosaved to revision history for Undo/Redo; duplicate individual cues or complete nested sections, and move a service with its pictures in a verified `.syncshow-service` file
 - **Load-first workflow**: Opens on a focused service-readiness screen and explains exactly why Start is unavailable
 - **Normal Person Friendly Mode**: Keeps venue defaults while hiding timing, preview, and typography controls volunteers do not need
-- **One-click weekly service loading**: Finds a coherent same-date set in a private Google Drive folder, public view-only Drive link, or local/synced folder; pins an integrity-checked offline copy; and never silently mixes Sundays
+- **One-click weekly service loading**: Finds a coherent same-date set in a local folder; pins an integrity-checked offline copy; and never silently mixes Sundays
 - **Calm Show screen**: Grid view, large navigation/output controls, visible live/cleared/interrupted/error state, keyboard-accessible thumbnails, and Singer preview by default
 - **Flexible venue profiles**: Persist custom input/output names, counts, ordering, routes, preview preferences, and conservative monitor bindings
 - **Missing-Media preflight**: Upload Media, derive a next-text view, mirror an existing deck as-is, or turn the output off for one service
@@ -140,14 +140,12 @@ npm run build:mac:adhoc -- --arm64
 open -n "$PWD/dist/mac-arm64/SyncShow.app"
 ```
 
-Confirm that the printed version matches `package.json` before testing. This launches the local bundle without replacing the installed copy; it does not by itself prove packaged UI, converter, Drive, or multi-monitor behavior.
+Confirm that the printed version matches `package.json` before testing. This launches the local bundle without replacing the installed copy; it does not by itself prove packaged UI, converter, or multi-monitor behavior.
 
-Ordinary local packages deliberately omit
-`assets/google-drive-config.json`, even when a maintainer has an ignored local
-copy. The protected release workflow is the only path that may include a
-generated configuration, and it verifies the packaged bytes before removing
-the temporary file. Do not weaken the file exclusion to make a local OAuth
-setup portable.
+Built-in Google Drive integration is retired. The package manifest still excludes
+`assets/google-drive-config.json` so an old maintainer-local credential file can
+never be accidentally bundled. No cloud-drive credentials or build injection are
+required.
 
 The non-publishing **Package Smoke** workflow builds ordinary credential-free
 QA packages on Windows x64, Linux x64, Apple Silicon, and Intel macOS. Each job
@@ -199,7 +197,7 @@ and remaining gates.
 
 1. **Launch the application** - SyncShow opens on **Load**. A published native service is the normal weekly handoff; use **Prepare** when planning or editing it.
 2. **For a legacy or emergency PowerPoint service, look at the configured slideshow cards**. The default profile shows Russian, English, and Singers Screen; an administrator can rename, add, remove, or reorder these roles. Volunteers can use this fallback without entering the editor.
-3. **If an administrator connected an automatic loading source**, SyncShow checks it at startup and fills the cards from matching files for the church’s service date. Admin Settings offers private Google Drive sign-in, a public view-only Drive folder link, or an ordinary local/synced folder.
+3. **If an administrator connected an automatic loading source**, SyncShow checks it at startup and fills the cards from matching files for the church’s service date. Admin Settings offers an ordinary local folder. Files managed by an OS sync client can be used once they are available locally.
 4. **Choose a slideshow on any empty card**. One-deck services are supported, and every automatically loaded file can still be replaced manually.
 5. **Use Admin Settings only for setup work**. Folder paths, date matching, screen detection, input/output names, physical-screen routing, timing, previews, and Singer behavior live in the modal Admin Settings surface instead of the volunteer Load screen.
 6. **Click Start Show**. A compact message appears only when loading or venue setup needs attention. If an enabled output has no matching file, Start offers to upload it, mirror another loaded slideshow, create the Singer next-text view, or turn that output off for this service. If a previous cache exists, **Use last service** can restore any valid subset of inputs.
@@ -315,9 +313,8 @@ connection survives an app restart without a computer-password prompt. This is
 an intentional convenience tradeoff: another process already running as the
 same computer user and able to read SyncShow's application data could obtain
 both the encrypted token and its key. Existing Keychain-backed Community
-connections require one Community-admin reapproval after this update. Google
-Drive remains separate and continues to use the operating system's protected
-credential storage.
+connections require one Community-admin reapproval after this update. Built-in
+Google Drive sign-in and its protected-storage integration are retired.
 
 Separately, the current source completed the successful data path against a
 real disposable Heritage Community server backed by Payload and PostgreSQL.
@@ -344,25 +341,11 @@ SyncShow compiles the exact saved revision into deterministic cues and publishes
 
 The default profile keeps the familiar Russian, English, and Singers labels, but those are no longer hard-coded product limits. **Admin Settings** contains the venue’s input/output names, count, order, physical-screen mapping, direct slideshow route, and operator-preview choices. Friendly Mode controls the default volunteer surface; it does not prevent an administrator from reaching the complete settings modal. Start-time mirror/derive/disable choices apply only to that service and never silently rewrite the saved venue profile.
 
-When a build has the required Google configuration, private Drive folders use Google’s system-browser OAuth/Picker flow and store the refresh token with the operating system’s protected credential storage. They load only by default; an administrator may separately allow future explicit Publish actions when Google reports write capability. Public links require no sign-in and are always pull-only, but the build still needs its restricted Drive API key. Background loading never changes or deletes Drive files. Once a ServiceSet is pinned, losing internet or Drive does not affect Show.
-
-The supplied public example folder was successfully listed anonymously during the Preview 11 live check. Private OAuth, secure-storage preflight, and token exchange have focused coverage, but a complete current packaged Picker selection plus refresh-after-restart has not yet passed the release gate. Local or Google Drive Desktop-synced folders remain the no-credential fallback.
-
-### Google Drive build configuration
-
-Direct Drive access needs credentials created for this open-source desktop app:
-
-- `SYNCSHOW_GOOGLE_CLIENT_ID`: a Google **Desktop app** OAuth client ID for private-folder Picker access.
-- `SYNCSHOW_GOOGLE_CLIENT_SECRET`: the companion credential from that same Desktop app client, used only when exchanging and refreshing OAuth tokens.
-- `SYNCSHOW_GOOGLE_API_KEY`: an API key restricted to the Google Drive API for anonymous public-link access.
-
-Enable both the **Google Drive API** and the **Google Picker API** in the same Google Cloud project. The Picker API is required for the private folder-selection screen; the public API key should still be restricted to the Drive API only.
-
-For a local packaged build, copy `assets/google-drive-config.example.json` to the ignored `assets/google-drive-config.json` and set `clientId`, optional `clientSecret`, and/or `apiKey`. [Google documents the secret as optional for native clients](https://developers.google.com/identity/protocols/oauth2/native-app), so secretless Desktop clients remain supported. The build workflow can inject all three values for a Desktop client that requires the companion credential at the token endpoint, but the workflow’s support does not prove that a particular local or GitHub build was provisioned. The release cleanup command refuses to remove a developer-maintained file.
-
-The GitHub workflow is designed to read those values from secrets in the `release-build` GitHub Environment. Configure that environment to permit deployments only from the protected `main` branch, and keep these values out of repository-level secrets so a workflow on another branch cannot request them. A required reviewer can be added for an additional release gate. Immediately before each platform is packaged, the workflow creates the ignored config with restrictive permissions where the runner supports Unix file modes. The credential environment variables exist only during that preparation step; the generated file then exists only for packaging and a non-secret-printing verification that every packaged app contains it. The workflow removes that generated copy even if packaging or verification fails. Values are never printed or committed, so GitHub's generated source archives remain credential-free. Any installer built with direct Drive enabled necessarily contains its Desktop client ID, any companion credential required by that client, and the restricted API key needed by end users.
-
-The release workflow never runs for pull requests and its build jobs receive a read-only GitHub token. Keep `main` branch protection and required review enabled: packaging code necessarily has access to the generated file while producing an installer. [Google explicitly does not treat an installed-app client secret as confidential](https://developers.google.com/identity/protocols/oauth2#installed); anyone can extract it from a public SyncShow installer, so it must never be treated as proof that a request came from an authentic SyncShow binary. PKCE, state validation, the loopback-only callback, narrow scope, protected refresh-token storage, release controls, monitoring, and rotation are the meaningful safeguards. Restrict the API key to the Google Drive API, apply conservative quotas and monitoring, and rotate credentials if abuse is detected. If a future Google integration requires a genuinely confidential client, it needs a separately reviewed backend token broker rather than an embedded desktop credential.
+Built-in Google Drive sign-in, public Drive links and cloud publishing have been removed.
+Use Heritage Community, portable SyncShow files, individual PowerPoints, or a local
+PowerPoint folder. Previously downloaded, integrity-checked offline service copies
+remain readable without contacting Google. Existing credential records and files
+in the Google account are not deleted or revoked by this code cleanup.
 
 ### Reviewing an existing PowerPoint service
 

@@ -159,18 +159,15 @@ SyncShow advances either imported presentations or a native ServiceProject throu
 5. `requestAnimationFrame` applies each window's reveal after its image is ready
 
 ### 5. ServiceSet Discovery and Offline Pinning
-**Purpose:** Load one coherent weekly service from a local folder, a desktop-synced folder, a private Google Drive folder, or a public view-only Drive link without making Show depend on the network
+**Purpose:** Load one coherent weekly service from a local PowerPoint folder without making Show depend on the original files.
 
 **Boundary:**
-- The renderer can request a scan, but cannot submit arbitrary filesystem paths, Drive IDs, API keys, OAuth tokens, or download URLs. The main process scans only the source committed in the validated venue Profile.
-- Native picker grants, opaque Drive connection IDs, and profile-bound scan tokens authorize source changes and snapshot publication.
-- Private Drive selection uses Google’s system-browser Picker with PKCE, state validation, a loopback-only callback, and the narrow `drive.file` scope. Refresh tokens are stored only through operating-system protected storage; short-lived access tokens remain in main-process memory.
-- Public Drive links are parsed as pull-only folder identifiers and enumerated with the build’s Drive-API-restricted key. They never gain private-account or write authority.
-- Resolver candidates are grouped by semantic filename/folder date before roles are selected, so files from different dates are never silently combined.
-- Local PowerPoints are copied through no-follow handles and checked for source replacement. Remote files are downloaded into staging, checked against the selected Drive metadata/version, and never trusted by filename alone. Both paths are hashed and atomically published under the Electron user-data `service-sets` directory.
-- Pinned files are integrity-verified before their paths are granted to the converter. Folder watcher events are only debounced rescan hints and never mutate an active Show.
-
-Once a ServiceSet is pinned, conversion and Show use only its verified local snapshot. Drive availability, account state, and network latency are therefore outside the live presentation path.
+- Native folder-picker grants and profile-bound scan tokens authorize local source changes and snapshot publication.
+- Resolver candidates are grouped by semantic filename/folder date before roles are selected; files from different Sundays are never silently combined.
+- PowerPoints are copied through no-follow handles, checked for source replacement, hashed and atomically published under the user-data service-sets directory.
+- Pinned files are integrity-verified before their paths are granted to the converter. Folder watchers are rescan hints and never mutate an active Show.
+- Built-in Google Drive OAuth, public links, downloads and publishing are retired. Legacy Drive-origin snapshot metadata remains accepted only for verified offline reads; no provider calls are made.
+- Existing legacy profile link IDs and credential files are not read as cloud access authority. Choosing a local folder clears the obsolete profile link ID without deleting user data.
 
 ### 6. Heritage Community Libraries
 
@@ -326,7 +323,6 @@ SyncShow/
 │       ├── bible/               # Parser, translations, and lazy per-book data
 │       ├── profile/             # Venue Profile schema and migration
 │       ├── service-set/         # Coherent folder discovery and offline snapshots
-│       ├── google-drive/        # OAuth/Picker, public links, Drive client, protected connections
 │       ├── project/             # SongDocuments, ServiceProjects, stores, renderer, ShowPackages
 │       ├── remote/              # LAN server, authority, protocol, rate limits, and SSE
 │       ├── show/                # Per-service launch-plan resolver
@@ -386,8 +382,8 @@ These are historical goals, not guarantees. Record hardware, converter, slide de
 - Context isolation enabled
 - IPC communication uses validated channels
 - Presentation conversion paths require a native-picker or verified-snapshot grant
-- Service-source scans use committed Profile sources, opaque Drive connection IDs, and expiring proposal tokens
-- Google authorization URLs, client configuration, access/refresh tokens, Drive IDs, and download URLs remain outside renderer IPC and Profile exports
+- Service-source scans use committed local Profile sources, native picker grants, and expiring proposal tokens
+- Retired cloud credentials are excluded from packages and never exposed through renderer IPC
 - Local files only (no network dependencies during presentation)
 
 ---
@@ -404,4 +400,4 @@ These are historical goals, not guarantees. Record hardware, converter, slide de
 
 ## Planned Architecture
 
-See `docs/ROADMAP.md` for the audited Prepare → Load → Show workflow, flexible input/output model, Google Drive stages, native editor, Bible palette, Remote Control, and Heritage integration boundaries.
+See `docs/ROADMAP.md` for the audited Prepare → Load → Show workflow, flexible input/output model, retired Google Drive history, native editor, Bible palette, Remote Control, and Heritage integration boundaries.

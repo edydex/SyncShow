@@ -54,7 +54,7 @@ function handlerBlock(channel, nextChannel) {
   assert.ok(start >= 0, `expected ${channel} handler`);
   const end = nextChannel
     ? mainSource.indexOf(`'${nextChannel}'`, start + channel.length)
-    : mainSource.indexOf("\nipcMain.handle('drive:status'", start);
+    : mainSource.indexOf("\nipcMain.handle('dialog:openServiceFolder'", start);
   assert.ok(end > start, `expected end of ${channel} handler`);
   return mainSource.slice(start, end);
 }
@@ -107,7 +107,7 @@ test('retention construction binds the canonical private stores and all main cal
   );
   const schedule = handlerBlock(
     'maintenance:sermonSources:scheduleCleanup',
-    'drive:status'
+    'dialog:openServiceFolder'
   );
   assert.ok(
     audit.indexOf('recoverSermonTransactionsForRetention(services)')
@@ -163,7 +163,7 @@ test('maintenance IPC is trusted, bounded, explicitly confirmed, and path-free',
   );
   const schedule = handlerBlock(
     'maintenance:sermonSources:scheduleCleanup',
-    'drive:status'
+    'dialog:openServiceFolder'
   );
   assert.match(audit, /requireControlSender\(event\)/);
   assert.match(schedule, /requireControlSender\(event\)/);

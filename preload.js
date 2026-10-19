@@ -401,24 +401,6 @@ contextBridge.exposeInMainWorld('api', {
   openPptxDialog: (language) => ipcRenderer.invoke('dialog:openPptx', language),
   chooseServiceFolder: () => ipcRenderer.invoke('dialog:openServiceFolder'),
 
-  // Google Drive connections are established and used entirely in the main
-  // process. The renderer sees only a sanitized folder/account summary and an
-  // opaque connection ID that can be saved in the venue profile.
-  getDriveStatus: () => ipcRenderer.invoke('drive:status'),
-  connectPrivateDrive: () => ipcRenderer.invoke('drive:connectPrivate'),
-  getPrivateDriveOAuthState: () => ipcRenderer.invoke('drive:privateOAuthState'),
-  copyPrivateDriveOAuthLink: () => ipcRenderer.invoke('drive:copyPrivateOAuthUrl'),
-  cancelPrivateDriveOAuth: () => ipcRenderer.invoke('drive:cancelPrivateOAuth'),
-  linkPublicDrive: (request = {}) => ipcRenderer.invoke('drive:linkPublic', {
-    url: request?.url
-  }),
-  setDrivePublishingEnabled: (enabled) => ipcRenderer.invoke('drive:setPublishingEnabled', {
-    enabled: enabled === true
-  }),
-  disconnectDrive: (request = {}) => ipcRenderer.invoke('drive:disconnect', {
-    connectionId: request?.connectionId
-  }),
-
   // Heritage Community library integration. Approval credentials and
   // network requests stay in the main process; this bridge exposes only
   // connection summaries, sync results, and narrow song/sermon state.
@@ -652,7 +634,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Coherent service-folder discovery and offline snapshots. Folder paths are
   // never accepted here: the main process scans only the committed venue
-  // source, whether that is local or an approved Google Drive connection.
+  // local folder source. Earlier cloud-origin offline copies remain readable.
   scanServiceFolder: (request = {}) => ipcRenderer.invoke('service-folder:scan', {
     requestedDate: request?.requestedDate
   }),
@@ -1541,15 +1523,6 @@ contextBridge.exposeInMainWorld('api', {
     const listener = (event, data) => callback(data);
     ipcRenderer.on('service-folder:changed', listener);
     return () => ipcRenderer.removeListener('service-folder:changed', listener);
-  },
-
-  onPrivateDriveOAuthStateChanged: (callback) => {
-    const listener = (_event, data) => callback({
-      active: data?.active === true,
-      revision: Number.isSafeInteger(data?.revision) ? data.revision : 0
-    });
-    ipcRenderer.on('drive:privateOAuthStateChanged', listener);
-    return () => ipcRenderer.removeListener('drive:privateOAuthStateChanged', listener);
   },
 
   onCommunityStatus: (callback) => {

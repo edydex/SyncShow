@@ -111,24 +111,11 @@ const {
 } = require('./src/services/remote');
 const {
   checkSourceChanges,
-  pinRemoteServiceSet,
   pinServiceSet,
   readCurrentServiceSet,
-  scanDriveServiceFiles,
   scanServiceFolder,
   serviceDateForTimeZone
 } = require('./src/services/service-set');
-const {
-  DRIVE_FOLDER_MIME_TYPE,
-  GOOGLE_SLIDES_MIME_TYPE,
-  DriveConnectionStore,
-  GoogleDriveClient,
-  GoogleOAuthFlow,
-  loadGoogleDriveConfig,
-  parseGoogleDriveFolderLink,
-  refreshGoogleAccessToken,
-  sanitizeGoogleDriveConfig
-} = require('./src/services/google-drive');
 const {
   MAX_BUNDLE_BYTES,
   MAX_IMAGE_BYTES,
@@ -328,7 +315,6 @@ const COMMUNITY_SERVICE_PLAN_STALE_PIN_TTL_MS = 60 * 60 * 1000;
 const SERVICE_WATCH_DIRECTORY_LIMIT = 128;
 const SERVICE_WATCH_DEBOUNCE_MS = 750;
 const APPROVED_SERVICE_FOLDER_LIMIT = 8;
-const APPROVED_DRIVE_CONNECTION_LIMIT = 16;
 const APPROVED_PRESENTATION_PATH_LIMIT = 256;
 const REMOTE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const SHOW_REHEARSAL_RENDERED_SLIDE_MAX_BYTES = 128 * 1024 * 1024;
@@ -501,12 +487,7 @@ const communityServicePlanPreparations = new Map();
 const communityServicePlanStalePins = new Map();
 const communitySermonPublicationVersions = new Map();
 const approvedServiceFolders = new Map();
-const approvedDriveConnections = new Map();
 const approvedPresentationPaths = new Map();
-const googleDriveAccessTokens = new Map();
-let googleDriveServicesPromise = null;
-let googleDriveOperationEpoch = 0;
-let privateDriveOAuthPublicState = Object.freeze({ active: false, revision: 0 });
 let showGateway = null;
 let outputHealthTracker = null;
 let deferredShowStatePublish = null;
@@ -729,224 +710,6 @@ function authorizeServiceFolderChange(previousFolder, nextFolder) {
   }
 }
 
-function rememberApprovedDriveConnection(connectionId) {
-  if (typeof connectionId !== 'string'
-    || !/^[A-Za-z0-9][A-Za-z0-9_-]{7,99}$/.test(connectionId)) {
-    failMainOperation('INVALID_DRIVE_CONNECTION', 'The Google Drive connection is invalid.');
-  }
-  rememberBounded(
-    approvedDriveConnections,
-    connectionId,
-    { grantedAt: Date.now() },
-    APPROVED_DRIVE_CONNECTION_LIMIT
-  );
-  return connectionId;
-}
-
-function authorizeDriveConnectionChange(previousConnectionId, nextConnectionId) {
-  const previous = previousConnectionId || null;
-  const next = nextConnectionId || null;
-  if (previous === next) return;
-  // Keep the former ID briefly authorized so the renderer can save a new
-  // profile first and then securely delete the detached credential record.
-  if (previous) rememberApprovedDriveConnection(previous);
-  if (next && !approvedDriveConnections.has(next)) {
-    failMainOperation(
-      'UNAPPROVED_DRIVE_CONNECTION',
-      'Connect Google Drive through SyncShow before saving it as the automatic loading source.'
-    );
-  }
-}
-
-function publicDriveConnectionSummary(summary) {
-  if (!summary) return null;
-  return {
-    id: summary.id,
-    mode: summary.kind,
-    folderName: summary.folderName,
-    accountEmail: summary.accountEmail || null,
-    accountName: summary.accountName || null,
-    canWrite: summary.canWrite === true,
-    publishingEnabled: summary.writeEnabled === true,
-    access: summary.access,
-    createdAt: summary.createdAt,
-    updatedAt: summary.updatedAt
-  };
-}
-
-function updatePrivateDriveOAuthPublicState(nextState) {
-  const active = nextState?.active === true;
-  if (privateDriveOAuthPublicState.active === active) return privateDriveOAuthPublicState;
-  privateDriveOAuthPublicState = Object.freeze({
-    active,
-    revision: privateDriveOAuthPublicState.revision + 1
-  });
-  if (controlWindow && !controlWindow.isDestroyed()) {
-    controlWindow.webContents.send('drive:privateOAuthStateChanged', privateDriveOAuthPublicState);
-  }
-  return privateDriveOAuthPublicState;
-}
-
-function privateDriveOAuthStatePayload() {
-  return {
-    active: privateDriveOAuthPublicState.active,
-    revision: privateDriveOAuthPublicState.revision
-  };
-}
-
-async function revokeGoogleToken(refreshToken) {
-  try {
-    const response = await fetch('https://oauth2.googleapis.com/revoke', {
-      method: 'POST',
-      redirect: 'error',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: new URLSearchParams({ token: refreshToken })
-    });
-    return response.ok;
-  } catch (_error) {
-    return false;
-  }
-}
-
-async function getGoogleDriveServices() {
-  if (!googleDriveServicesPromise) {
-    googleDriveServicesPromise = (async () => {
-      let config;
-      let configError = null;
-      try {
-        config = await loadGoogleDriveConfig();
-      } catch (error) {
-        console.error('[GoogleDrive] Configuration could not be loaded:', error.message);
-        configError = error.message;
-        config = {
-          clientId: null,
-          clientSecret: null,
-          apiKey: null,
-          oauthConfigured: false,
-          publicAccessConfigured: false
-        };
-      }
-      const store = new DriveConnectionStore({
-        storageRoot: path.join(app.getPath('userData'), 'google-drive'),
-        safeStorage,
-        revokeToken: revokeGoogleToken,
-        onDisconnect: summary => {
-          googleDriveAccessTokens.delete(summary.id);
-          googleDriveOperationEpoch += 1;
-          clearServiceScanProposals();
-        }
-      });
-      const oauthFlow = config.clientId
-        ? new GoogleOAuthFlow({
-          clientId: config.clientId,
-          clientSecret: config.clientSecret,
-          openExternal: url => shell.openExternal(url),
-          onAuthorizationStateChanged: updatePrivateDriveOAuthPublicState
-        })
-        : null;
-      return { config, configError, store, oauthFlow };
-    })();
-  }
-  return googleDriveServicesPromise;
-}
-
-async function driveStatusPayload() {
-  const services = await getGoogleDriveServices();
-  const sanitizedConfig = sanitizeGoogleDriveConfig(services.config);
-  let connection = null;
-  if (activeVenueProfile?.driveConnectionId) {
-    connection = await services.store.getConnectionSummary(activeVenueProfile.driveConnectionId);
-  }
-  return {
-    configuration: {
-      privateOAuthConfigured: sanitizedConfig.oauthConfigured,
-      publicApiKeyConfigured: sanitizedConfig.publicAccessConfigured
-    },
-    connection: publicDriveConnectionSummary(connection),
-    configurationError: services.configError
-  };
-}
-
-async function getDriveConnectionOrFail(connectionId = activeVenueProfile?.driveConnectionId) {
-  if (!connectionId) {
-    failMainOperation('NO_DRIVE_CONNECTION', 'Connect a Google Drive folder first.');
-  }
-  const services = await getGoogleDriveServices();
-  const connection = await services.store.getConnection(connectionId);
-  if (!connection) {
-    failMainOperation(
-      'DRIVE_RECONNECT_REQUIRED',
-      'This Google Drive connection is no longer available. Connect the folder again.'
-    );
-  }
-  return { services, connection };
-}
-
-async function driveClientForConnection(connection, services, { forceRefresh = false } = {}) {
-  if (connection.kind === 'public') {
-    if (!services.config.apiKey) {
-      failMainOperation(
-        'PUBLIC_DRIVE_NOT_CONFIGURED',
-        'This SyncShow build needs a Drive-API-restricted Google API key before it can use public folder links.'
-      );
-    }
-    return new GoogleDriveClient({ apiKey: services.config.apiKey });
-  }
-  if (!services.config.clientId) {
-    failMainOperation(
-      'PRIVATE_DRIVE_NOT_CONFIGURED',
-      'This SyncShow build needs a Google Desktop OAuth client ID before it can open private folders.'
-    );
-  }
-  const cached = googleDriveAccessTokens.get(connection.id);
-  const now = Date.now();
-  let accessToken = !forceRefresh
-    && cached
-    && cached.expiresAt > now + 60 * 1000
-    ? cached.accessToken
-    : null;
-  if (!accessToken) {
-    const refreshed = await refreshGoogleAccessToken({
-      clientId: services.config.clientId,
-      clientSecret: services.config.clientSecret,
-      refreshToken: connection.refreshToken
-    });
-    accessToken = refreshed.accessToken;
-    googleDriveAccessTokens.set(connection.id, {
-      accessToken,
-      expiresAt: now + refreshed.expiresIn * 1000
-    });
-  }
-  return new GoogleDriveClient({ accessToken });
-}
-
-function driveMetadataMatchesCandidate(metadata, candidate) {
-  if (!metadata || !candidate) return false;
-  return metadata.id === candidate.fileId
-    && metadata.mimeType === candidate.sourceMimeType
-    && metadata.modifiedTime === candidate.modifiedTime
-    && (candidate.version === null || metadata.version === candidate.version)
-    && (candidate.size === null || metadata.size === candidate.size)
-    && (!candidate.driveChecksum
-      || candidate.driveChecksumAlgorithm !== 'md5'
-      || metadata.md5Checksum === candidate.driveChecksum);
-}
-
-async function cancelGoogleDriveOperations() {
-  googleDriveOperationEpoch += 1;
-  googleDriveAccessTokens.clear();
-  if (!googleDriveServicesPromise) return;
-  try {
-    const services = await googleDriveServicesPromise;
-    await services.oauthFlow?.cancel();
-  } catch (_error) {
-    // App shutdown/suspend cancellation is best effort.
-  }
-}
-
 function isPathInside(parentPath, childPath) {
   const relative = path.relative(parentPath, childPath);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
@@ -963,7 +726,6 @@ function serviceProfileSignature(profile) {
     timeZone: profile.timeZone,
     serviceDateOrder: profile.serviceDateOrder,
     localServiceFolder: profile.localServiceFolder,
-    driveConnectionId: profile.driveConnectionId,
     inputRoles: profile.inputRoles.map(role => ({
       id: role.id,
       label: role.label,
@@ -1137,16 +899,14 @@ function captureServiceScanContext(requestedDateValue) {
   const profile = activeVenueProfile;
   const profileSignature = serviceProfileSignature(profile);
   const folderPath = canonicalServiceFolderPath(profile?.localServiceFolder);
-  const driveConnectionId = profile?.driveConnectionId || null;
-  if (!folderPath && !driveConnectionId) {
-    failMainOperation('NO_SERVICE_SOURCE', 'Connect Google Drive or choose a local service folder first.');
+  if (!folderPath) {
+    failMainOperation('NO_SERVICE_SOURCE', 'Choose a local service folder first.');
   }
   const { inputRoles, requiredRoleIds } = deriveServiceScanContext(profile);
   return {
     profileSignature,
-    sourceKind: driveConnectionId ? 'google-drive' : 'local-folder',
+    sourceKind: 'local-folder',
     folderPath,
-    driveConnectionId,
     inputRoles,
     requiredRoleIds,
     requestedDate: requestedServiceDate(requestedDateValue, profile?.timeZone),
@@ -1508,10 +1268,6 @@ function saveUserSettings(settings) {
     authorizeServiceFolderChange(
       activeVenueProfile?.localServiceFolder || null,
       normalizedSettings.venueProfile.localServiceFolder
-    );
-    authorizeDriveConnectionChange(
-      activeVenueProfile?.driveConnectionId || null,
-      normalizedSettings.venueProfile.driveConnectionId
     );
     const serialized = `${JSON.stringify(normalizedSettings, null, 2)}\n`;
     if (Buffer.byteLength(serialized, 'utf8') > 256 * 1024) {
@@ -28171,175 +27927,6 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle('drive:status', async (event) => {
-  requireControlSender(event);
-  return driveStatusPayload();
-});
-
-ipcMain.handle('drive:privateOAuthState', async (event) => {
-  requireControlSender(event);
-  return privateDriveOAuthStatePayload();
-});
-
-ipcMain.handle('drive:copyPrivateOAuthUrl', async (event) => {
-  requireControlSender(event);
-  const services = await getGoogleDriveServices();
-  const authorizationUrl = services.oauthFlow?.getActiveAuthorizationUrl();
-  if (!authorizationUrl) {
-    failMainOperation(
-      'NO_ACTIVE_PRIVATE_DRIVE_SIGN_IN',
-      'Google sign-in is no longer waiting. Start it again to copy a new link.'
-    );
-  }
-  try {
-    clipboard.writeText(authorizationUrl);
-  } catch (_error) {
-    failMainOperation(
-      'PRIVATE_DRIVE_LINK_COPY_FAILED',
-      'SyncShow could not copy the Google sign-in link.'
-    );
-  }
-  return { copied: true };
-});
-
-ipcMain.handle('drive:cancelPrivateOAuth', async (event) => {
-  requireControlSender(event);
-  const services = await getGoogleDriveServices();
-  return {
-    cancelled: await services.oauthFlow?.cancel() === true
-  };
-});
-
-ipcMain.handle('drive:connectPrivate', async (event) => {
-  requireControlSender(event);
-  const services = await getGoogleDriveServices();
-  if (!services.oauthFlow || !services.config.clientId) {
-    failMainOperation(
-      'PRIVATE_DRIVE_NOT_CONFIGURED',
-      'This SyncShow build needs a Google Desktop OAuth client ID before it can connect a private folder.'
-    );
-  }
-  // Prove the OS credential store works before opening Google sign-in. This
-  // avoids issuing a refresh token that the app cannot persist securely.
-  await services.store.assertSecureStorageAvailable();
-  const operationEpoch = googleDriveOperationEpoch;
-  const authorization = await services.oauthFlow.start();
-  try {
-    if (operationEpoch !== googleDriveOperationEpoch) {
-      failMainOperation('DRIVE_OPERATION_CANCELLED', 'Google Drive connection was cancelled.');
-    }
-    const grantedScopes = String(authorization.scope || '').split(/\s+/).filter(Boolean);
-    if (!grantedScopes.includes('https://www.googleapis.com/auth/drive.file')) {
-      failMainOperation(
-        'DRIVE_SCOPE_NOT_GRANTED',
-        'Google did not grant access to the selected Drive folder.'
-      );
-    }
-    const client = new GoogleDriveClient({ accessToken: authorization.accessToken });
-    const folder = await client.getFileMetadata({ fileId: authorization.folderId });
-    if (folder.mimeType !== DRIVE_FOLDER_MIME_TYPE) {
-      failMainOperation('NOT_A_DRIVE_FOLDER', 'Choose a Google Drive folder, not an individual file.');
-    }
-    if (!folder.capabilities.canListChildren) {
-      failMainOperation(
-        'DRIVE_FOLDER_NOT_READABLE',
-        'Google did not allow SyncShow to read files inside that folder.'
-      );
-    }
-    const summary = await services.store.savePrivateConnection({
-      folderId: folder.id,
-      folderName: folder.name,
-      resourceKey: folder.resourceKey,
-      capabilities: folder.capabilities,
-      refreshToken: authorization.refreshToken,
-      writeEnabled: false
-    });
-    googleDriveAccessTokens.set(summary.id, {
-      accessToken: authorization.accessToken,
-      expiresAt: Date.now() + authorization.expiresIn * 1000
-    });
-    rememberApprovedDriveConnection(summary.id);
-    return { connection: publicDriveConnectionSummary(summary) };
-  } catch (error) {
-    await revokeGoogleToken(authorization.refreshToken);
-    throw error;
-  }
-});
-
-ipcMain.handle('drive:linkPublic', async (event, request = {}) => {
-  requireControlSender(event);
-  if (!request || typeof request !== 'object' || Array.isArray(request)
-    || Object.keys(request).some(key => key !== 'url')) {
-    failMainOperation('INVALID_PUBLIC_DRIVE_LINK', 'Paste a public Google Drive folder link.');
-  }
-  const services = await getGoogleDriveServices();
-  if (!services.config.apiKey) {
-    failMainOperation(
-      'PUBLIC_DRIVE_NOT_CONFIGURED',
-      'This SyncShow build needs a Drive-API-restricted Google API key before it can use public folder links.'
-    );
-  }
-  const parsed = parseGoogleDriveFolderLink(request.url);
-  const client = new GoogleDriveClient({ apiKey: services.config.apiKey });
-  const folder = await client.getFileMetadata({
-    fileId: parsed.folderId,
-    resourceKey: parsed.resourceKey
-  });
-  if (folder.mimeType !== DRIVE_FOLDER_MIME_TYPE) {
-    failMainOperation('NOT_A_DRIVE_FOLDER', 'That link does not point to a Google Drive folder.');
-  }
-  const summary = await services.store.savePublicConnection({
-    folderId: folder.id,
-    folderName: folder.name,
-    resourceKey: folder.resourceKey || parsed.resourceKey,
-    capabilities: folder.capabilities
-  });
-  rememberApprovedDriveConnection(summary.id);
-  return { connection: publicDriveConnectionSummary(summary) };
-});
-
-ipcMain.handle('drive:setPublishingEnabled', async (event, request = {}) => {
-  requireControlSender(event);
-  if (!request || typeof request !== 'object' || Array.isArray(request)
-    || Object.keys(request).some(key => key !== 'enabled')
-    || typeof request.enabled !== 'boolean') {
-    failMainOperation('INVALID_DRIVE_WRITE_SETTING', 'Drive publishing must be on or off.');
-  }
-  const { services, connection } = await getDriveConnectionOrFail();
-  const summary = await services.store.setWriteEnabled(connection.id, request.enabled);
-  return {
-    ...(await driveStatusPayload()),
-    connection: publicDriveConnectionSummary(summary)
-  };
-});
-
-ipcMain.handle('drive:disconnect', async (event, request = {}) => {
-  requireControlSender(event);
-  if (!request || typeof request !== 'object' || Array.isArray(request)
-    || Object.keys(request).some(key => key !== 'connectionId')
-    || (request.connectionId !== undefined
-      && request.connectionId !== null
-      && request.connectionId !== ''
-      && typeof request.connectionId !== 'string')) {
-    failMainOperation('INVALID_DRIVE_CONNECTION', 'The Google Drive connection is invalid.');
-  }
-  const connectionId = request.connectionId || activeVenueProfile?.driveConnectionId || null;
-  if (!connectionId
-    || (connectionId !== activeVenueProfile?.driveConnectionId
-      && !approvedDriveConnections.has(connectionId))) {
-    failMainOperation('UNAPPROVED_DRIVE_CONNECTION', 'That Google Drive connection cannot be removed here.');
-  }
-  const services = await getGoogleDriveServices();
-  const result = await services.store.disconnect(connectionId);
-  approvedDriveConnections.delete(connectionId);
-  googleDriveAccessTokens.delete(connectionId);
-  clearServiceScanProposals();
-  return {
-    ...result,
-    status: await driveStatusPayload()
-  };
-});
-
 ipcMain.handle('dialog:openServiceFolder', async (event) => {
   requireControlSender(event);
   const configuredFolder = activeVenueProfile?.localServiceFolder || null;
@@ -28363,53 +27950,19 @@ ipcMain.handle('service-folder:scan', async (event, request = {}) => {
   // Capture every profile-derived value before the first await. Another IPC
   // request can save a different venue profile while this folder is scanning.
   const scanContext = captureServiceScanContext(request.requestedDate);
-  let scan;
-  let canonicalFolder = null;
-  let directories = [];
-  if (scanContext.sourceKind === 'local-folder') {
-    const preflight = await preflightServiceFolderScan(scanContext.folderPath);
-    canonicalFolder = preflight.canonicalFolder;
-    directories = preflight.directories;
-    scan = await scanServiceFolder({
-      folderPath: canonicalFolder,
-      inputRoles: scanContext.inputRoles,
-      requiredRoleIds: scanContext.requiredRoleIds,
-      requestedDate: scanContext.requestedDate,
-      dateOrder: scanContext.dateOrder,
-      maxDepth: SERVICE_SCAN_MAX_DEPTH,
-      maxFiles: SERVICE_SCAN_MAX_FILES,
-      maxEntries: SERVICE_SCAN_MAX_ENTRIES
-    });
-  } else {
-    const operationEpoch = googleDriveOperationEpoch;
-    const { services, connection } = await getDriveConnectionOrFail(scanContext.driveConnectionId);
-    const client = await driveClientForConnection(connection, services);
-    const listing = await client.listFolder({
-      folderId: connection.folderId,
-      resourceKey: connection.resourceKey,
-      maximumDepth: SERVICE_SCAN_MAX_DEPTH,
-      maximumFiles: SERVICE_SCAN_MAX_ENTRIES,
-      maximumPages: 100
-    });
-    if (operationEpoch !== googleDriveOperationEpoch) {
-      failMainOperation('DRIVE_OPERATION_CANCELLED', 'The Google Drive scan was cancelled.');
-    }
-    scan = scanDriveServiceFiles({
-      sourceType: `google-drive-${connection.kind}`,
-      folderId: connection.folderId,
-      folderResourceKey: connection.resourceKey,
-      files: listing.files,
-      inputRoles: scanContext.inputRoles,
-      requiredRoleIds: scanContext.requiredRoleIds,
-      requestedDate: scanContext.requestedDate,
-      dateOrder: scanContext.dateOrder,
-      maxFiles: SERVICE_SCAN_MAX_ENTRIES
-    });
-    // These stay only in the main-held proposal. The renderer receives neither
-    // folder/file IDs nor resource keys.
-    scan.source.connectionId = connection.id;
-    scan.source.connectionRevision = connection.updatedAt;
-  }
+  const preflight = await preflightServiceFolderScan(scanContext.folderPath);
+  const canonicalFolder = preflight.canonicalFolder;
+  const directories = preflight.directories;
+  const scan = await scanServiceFolder({
+    folderPath: canonicalFolder,
+    inputRoles: scanContext.inputRoles,
+    requiredRoleIds: scanContext.requiredRoleIds,
+    requestedDate: scanContext.requestedDate,
+    dateOrder: scanContext.dateOrder,
+    maxDepth: SERVICE_SCAN_MAX_DEPTH,
+    maxFiles: SERVICE_SCAN_MAX_FILES,
+    maxEntries: SERVICE_SCAN_MAX_ENTRIES
+  });
   if (scan.files.length > SERVICE_SCAN_MAX_FILES) {
     failMainOperation(
       'TOO_MANY_SERVICE_FILES',
@@ -28425,88 +27978,14 @@ ipcMain.handle('service-folder:scan', async (event, request = {}) => {
 ipcMain.handle('service-set:pin', async (event, request = {}) => {
   requireControlSender(event);
   const { proposal, setId } = requireServiceScanProposal(request);
-  let manifest;
-  if (proposal.scan.source?.type === 'local-folder') {
-    manifest = await pinServiceSet({
-      scan: proposal.scan,
-      setId,
-      destinationRoot: getServiceSetRoot(),
-      profileId: activeVenueProfile.id,
-      profileName: activeVenueProfile.name,
-      timeZone: activeVenueProfile.timeZone
-    });
-  } else {
-    const connectionId = proposal.scan.source?.connectionId;
-    if (!connectionId || connectionId !== activeVenueProfile.driveConnectionId) {
-      failMainOperation(
-        'DRIVE_CONNECTION_CHANGED',
-        'The Google Drive connection changed. Refresh the service files and try again.'
-      );
-    }
-    const operationEpoch = googleDriveOperationEpoch;
-    const { services, connection } = await getDriveConnectionOrFail(connectionId);
-    if (`google-drive-${connection.kind}` !== proposal.scan.source.type
-      || connection.folderId !== proposal.scan.source.folderId
-      || (connection.resourceKey || null) !== (proposal.scan.source.resourceKey || null)) {
-      failMainOperation(
-        'DRIVE_CONNECTION_CHANGED',
-        'The Google Drive folder changed. Refresh the service files and try again.'
-      );
-    }
-    let client = await driveClientForConnection(connection, services);
-    const withPrivateRefresh = async operation => {
-      try {
-        return await operation(client);
-      } catch (error) {
-        if (connection.kind !== 'private' || error?.status !== 401) throw error;
-        client = await driveClientForConnection(connection, services, { forceRefresh: true });
-        return operation(client);
-      }
-    };
-    const assertOperationCurrent = () => {
-      if (operationEpoch !== googleDriveOperationEpoch
-        || activeVenueProfile.driveConnectionId !== connectionId) {
-        failMainOperation('DRIVE_OPERATION_CANCELLED', 'The Google Drive download was cancelled.');
-      }
-    };
-    manifest = await pinRemoteServiceSet({
-      scan: proposal.scan,
-      setId,
-      destinationRoot: getServiceSetRoot(),
-      profileId: activeVenueProfile.id,
-      profileName: activeVenueProfile.name,
-      timeZone: activeVenueProfile.timeZone,
-      checkCandidateUnchanged: async candidate => {
-        assertOperationCurrent();
-        const metadata = await withPrivateRefresh(currentClient =>
-          currentClient.getFileMetadata({
-            fileId: candidate.fileId,
-            resourceKey: candidate.resourceKey
-          })
-        );
-        assertOperationCurrent();
-        return driveMetadataMatchesCandidate(metadata, candidate);
-      },
-      materialize: async ({ candidate, destinationPath, maximumBytes }) => {
-        assertOperationCurrent();
-        const buffer = await withPrivateRefresh(currentClient => (
-          candidate.nativeGoogleSlides
-            ? currentClient.exportGoogleSlides({
-              fileId: candidate.fileId,
-              resourceKey: candidate.resourceKey,
-              maximumBytes
-            })
-            : currentClient.downloadFile({
-              fileId: candidate.fileId,
-              resourceKey: candidate.resourceKey,
-              maximumBytes
-            })
-        ));
-        assertOperationCurrent();
-        await fs.promises.writeFile(destinationPath, buffer, { flag: 'wx', mode: 0o600 });
-      }
-    });
-  }
+  const manifest = await pinServiceSet({
+    scan: proposal.scan,
+    setId,
+    destinationRoot: getServiceSetRoot(),
+    profileId: activeVenueProfile.id,
+    profileName: activeVenueProfile.name,
+    timeZone: activeVenueProfile.timeZone
+  });
   grantPinnedPresentationPaths(manifest);
   return sanitizePinnedServiceSet(manifest);
 });
@@ -28705,9 +28184,6 @@ if (!hasSingleInstanceLock) {
       closeSermonRecordingPlayer().catch(error => {
         console.error('[Sermon] Could not finish recording playback cleanup:', error);
       });
-      cancelGoogleDriveOperations().catch(error => {
-        console.error('[GoogleDrive] Could not finish suspend cleanup:', error);
-      });
       cancelCommunityTransientOperations().catch(error => {
         console.error('[Community] Could not finish suspend cleanup:', error);
       });
@@ -28745,7 +28221,6 @@ app.on('before-quit', event => {
 app.on('will-quit', () => {
   translationScreens.closeAll();
   closeSermonRecordingPlayer().catch(() => {});
-  cancelGoogleDriveOperations().catch(() => {});
   cancelCommunityTransientOperations().catch(() => {});
   clearRemotePairingTimer();
   try {
@@ -28764,7 +28239,5 @@ app.on('will-quit', () => {
   clearCanonicalSermonBodyProjectionProposals();
   clearServiceSermonPacketProposals();
   approvedServiceFolders.clear();
-  approvedDriveConnections.clear();
-  googleDriveAccessTokens.clear();
   approvedPresentationPaths.clear();
 });

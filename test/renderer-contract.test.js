@@ -83,7 +83,7 @@ test('Load is the friendly startup surface and Start blockers have visible reaso
 test('Load discovers one coherent offline service set while preserving manual fallback', () => {
   assert.match(html, /id="serviceFolderCard"/);
   assert.match(html, /Matching slideshows will populate the Load cards automatically/);
-  assert.match(html, /Google Drive Desktop/);
+  assert.match(html, /Folder on this computer/);
   assert.match(html, /id="serviceFolderDate"[^>]+type="date"/);
   assert.match(html, /id="btnChooseServiceFolder"/);
   assert.match(html, /id="btnRefreshServiceFolder"/);
@@ -155,7 +155,7 @@ test('renderer never mixes an omitted or superseded role into a loaded service',
   assert.match(loadSource, /choose manually or decide at Start/);
 });
 
-test('renderer uses fresh scan epochs and an offline fallback for unavailable Drive files', () => {
+test('renderer uses fresh scan epochs and an offline fallback for unavailable folder files', () => {
   assert.match(appSource, /scanEpoch: null/);
   assert.match(appSource, /changeEpoch: 0/);
   assert.match(appSource, /state\.serviceFolder\.changeEpoch \+= 1/);

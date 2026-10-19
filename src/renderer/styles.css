@@ -6687,28 +6687,9 @@ details[open] > summary .prepare-detail-state::after {
   font-weight: 850;
 }
 
-.service-source-public {
-  cursor: default;
-}
 
-.service-source-public-copy,
-.service-public-link-row {
-  min-width: 0;
-}
 
-.service-public-link-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-  margin-top: 8px;
-}
 
-.service-public-link-row .text-input {
-  width: 100%;
-  min-width: 0;
-  height: 30px;
-  font-size: 0.61rem;
-}
 
 .service-source-notice {
   margin-top: 9px;
@@ -6771,41 +6752,10 @@ details[open] > summary .prepare-detail-state::after {
   gap: 7px;
 }
 
-.drive-publishing-control {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 9px;
-  margin-top: 11px;
-  padding: 9px 10px;
-  color: var(--text-secondary);
-  background: rgba(57, 200, 137, 0.055);
-  border: 1px solid rgba(57, 200, 137, 0.2);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
 
-.drive-publishing-control input {
-  margin-top: 2px;
-  accent-color: var(--accent);
-}
 
-.drive-publishing-control strong,
-.drive-publishing-control small {
-  display: block;
-}
 
-.drive-publishing-control strong {
-  color: var(--text);
-  font-size: 0.69rem;
-}
 
-.drive-publishing-control small {
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 0.62rem;
-  line-height: 1.4;
-}
 
 .service-scan-status {
   display: flex;
@@ -9254,45 +9204,12 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
   font-size: 0.8rem;
 }
 
-.drive-oauth-dialog {
-  width: min(520px, calc(100vw - 32px));
-}
 
-.drive-oauth-icon {
-  color: #eef3ff;
-  background: var(--primary);
-}
 
-.drive-oauth-dialog .section-kicker {
-  margin-top: 0;
-  color: #a9bfff;
-  font-size: 0.62rem;
-}
 
-.drive-oauth-recovery {
-  margin-top: 17px;
-  padding: 12px 13px;
-  background: rgba(79, 124, 255, 0.09);
-  border: 1px solid rgba(104, 144, 255, 0.3);
-  border-radius: var(--radius-sm);
-}
 
-.drive-oauth-recovery strong {
-  font-size: 0.76rem;
-}
 
-.drive-oauth-recovery p {
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  line-height: 1.48;
-}
 
-.drive-oauth-action-status {
-  min-height: 18px;
-  color: #bfcdf4 !important;
-  font-size: 0.69rem !important;
-}
 
 .dialog-actions {
   display: flex;
@@ -10083,9 +10000,6 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .service-source-public {
-    grid-column: 1 / -1;
-  }
 
   .service-folder-toolbar {
     grid-template-columns: minmax(220px, 1fr) minmax(150px, 180px);
@@ -10485,9 +10399,6 @@ body.volunteer-show-locked .live-tools-box.volunteer-cleanup-visible #btnOpenRem
     flex: 1 1 220px;
   }
 
-  .service-source-public {
-    grid-column: auto;
-  }
 
   .service-folder-card {
     padding: 16px;
@@ -11278,3 +11189,6 @@ button.mini-preview-img:focus-visible { outline:2px solid #84a8d0; outline-offse
 .show-preview-only {display:block; max-width:32ch; margin-top:3px; font-size:11px;}
 .show-preview-only[hidden] {display:none;}
 .live-preview-label.is-preview-only .live-preview-dot {background:#f3ce82;}
+
+/* The retired cloud choices leave one straightforward local-folder action. */
+#serviceFolderCard .service-source-options { grid-template-columns: minmax(0, 1fr); }

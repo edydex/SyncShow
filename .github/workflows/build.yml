@@ -46,7 +46,7 @@ jobs:
 
           This run builds Windows, Mac (Apple silicon and Intel), and Linux installers through **Package Smoke**. Each successful platform job provides a download link after its packaged-app checks pass. A green run means the preview packages were checked; it does not publish a public release.
 
-          [Current permanent owner downloads and installation instructions](https://github.com/edydex/SyncShow/blob/main/docs/COMMUNITY_PREVIEW.md#download-and-install) are separate from the seven-day artifacts attached to this run. Google Drive release credentials are not required for Community and local presentation testing.
+          [Current permanent owner downloads and installation instructions](https://github.com/edydex/SyncShow/blob/main/docs/COMMUNITY_PREVIEW.md#download-and-install) are separate from the seven-day artifacts attached to this run. Community and local presentation testing require no cloud-drive credentials.
           SUMMARY
             exit 0
           fi
@@ -460,7 +460,7 @@ jobs:
             ### Getting ready for church
             - Native Heritage Community services work without Office or LibreOffice.
             - For legacy slide-deck conversion, Windows prefers PowerPoint and falls back to LibreOffice; macOS/Linux use LibreOffice.
-            - Direct Google Drive integration is optional and is not configured in these installers. Community and local service files work independently.
+            - Use Heritage Community, local service files, or local PowerPoint folders. Built-in Google Drive integration has been removed.
             - macOS installers are ad-hoc signed, not Developer ID signed or notarized. Windows installers are not Authenticode signed.
             - All four native targets passed packaged launch, image/PDF, service-core, artifact-integrity, and dependency-source checks. Physical Windows venue rehearsal remains required.
             - SHA256SUMS and exact corresponding-source materials are attached to this release.

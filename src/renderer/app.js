@@ -87,12 +87,6 @@ const state = {
     changeEpoch: 0,
     changeTimer: null
   },
-  drive: {
-    status: null,
-    busy: false,
-    error: null,
-    oauth: window.SyncShowGoogleDriveOAuthState.createInitialState()
-  },
   community: {
     status: null,
     plannerOpen: false,
@@ -204,21 +198,7 @@ const elements = {
   serviceFolderLocation: document.getElementById('serviceFolderLocation'),
   serviceFolderName: document.getElementById('serviceFolderName'),
   serviceFolderPath: document.getElementById('serviceFolderPath'),
-  driveSetupNotice: document.getElementById('driveSetupNotice'),
-  driveOAuthDialog: document.getElementById('driveOAuthDialog'),
-  driveOAuthActionStatus: document.getElementById('driveOAuthActionStatus'),
-  btnCopyDriveOAuthLink: document.getElementById('btnCopyDriveOAuthLink'),
-  btnCancelDriveOAuth: document.getElementById('btnCancelDriveOAuth'),
-  btnConnectPrivateDrive: document.getElementById('btnConnectPrivateDrive'),
-  privateDriveSourceHelp: document.getElementById('privateDriveSourceHelp'),
-  publicDriveSourceOption: document.getElementById('publicDriveSourceOption'),
-  publicDriveSourceHelp: document.getElementById('publicDriveSourceHelp'),
-  publicDriveFolderUrl: document.getElementById('publicDriveFolderUrl'),
-  btnLinkPublicDrive: document.getElementById('btnLinkPublicDrive'),
   btnDisconnectServiceSource: document.getElementById('btnDisconnectServiceSource'),
-  drivePublishingControl: document.getElementById('drivePublishingControl'),
-  drivePublishingEnabled: document.getElementById('drivePublishingEnabled'),
-  drivePublishingHelp: document.getElementById('drivePublishingHelp'),
   serviceFolderDate: document.getElementById('serviceFolderDate'),
   serviceFolderScanStatus: document.getElementById('serviceFolderScanStatus'),
   serviceSetResults: document.getElementById('serviceSetResults'),
@@ -624,9 +604,6 @@ async function init() {
   if (typeof window.api.onServiceFolderChanged === 'function') {
     window.api.onServiceFolderChanged(handleServiceFolderChanged);
   }
-  if (typeof window.api.onPrivateDriveOAuthStateChanged === 'function') {
-    window.api.onPrivateDriveOAuthStateChanged(handlePrivateDriveOAuthStateChanged);
-  }
   if (typeof window.api.onCommunityStatus === 'function') {
     const unsubscribe = window.api.onCommunityStatus(handleCommunityStatusChanged);
     if (typeof unsubscribe === 'function') communityStatusUnsubscribe = unsubscribe;
@@ -649,7 +626,6 @@ async function init() {
   // Connection/capability discovery can be slow when offline. Restore the
   // verified local package and finish the bounded revision check first, so
   // these background settings cannot hold a queued start hostage.
-  await refreshPrivateDriveOAuthState();
   await refreshCommunityStatus();
   await refreshCommunityPlannerState();
   await refreshRemoteControl({ refreshBindings: true });
@@ -695,7 +671,7 @@ function setupEventListeners() {
     finally { button.disabled = false; }
   });
   elements.btnOpenPptxImportFromLoad.addEventListener('click', () => {
-    openSettings('google-drive');
+    openSettings('pptx');
   });
   elements.loadModeTabs.forEach(tab => {
     tab.addEventListener('click', () => activateLoadMode(tab.dataset.loadTab));
@@ -761,30 +737,7 @@ function setupEventListeners() {
   });
   elements.btnRestorePrevious.addEventListener('click', restoreCachedPresentations);
   elements.btnChooseServiceFolder.addEventListener('click', chooseAndLinkServiceFolder);
-  elements.btnConnectPrivateDrive.addEventListener('click', connectPrivateDrive);
-  elements.btnCopyDriveOAuthLink.addEventListener('click', copyPrivateDriveOAuthLink);
-  elements.btnCancelDriveOAuth.addEventListener('click', cancelPrivateDriveOAuth);
-  elements.driveOAuthDialog.addEventListener('cancel', event => {
-    event.preventDefault();
-    cancelPrivateDriveOAuth();
-  });
-  elements.driveOAuthDialog.addEventListener('close', () => {
-    if (!state.drive.oauth.active) return;
-    window.setTimeout(() => {
-      if (state.drive.oauth.active && !elements.driveOAuthDialog.open) {
-        elements.driveOAuthDialog.showModal();
-      }
-    }, 0);
-  });
-  elements.btnLinkPublicDrive.addEventListener('click', linkPublicDrive);
-  elements.publicDriveFolderUrl.addEventListener('keydown', event => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    if (elements.publicDriveFolderUrl.disabled || elements.btnLinkPublicDrive.disabled) return;
-    linkPublicDrive();
-  });
   elements.btnDisconnectServiceSource.addEventListener('click', disconnectServiceSource);
-  elements.drivePublishingEnabled.addEventListener('change', updateDrivePublishingPreference);
   elements.btnRefreshServiceFolder.addEventListener('click', () => scanLinkedServiceFolder({ reason: 'manual' }));
   elements.btnLoadServiceSet.addEventListener('click', loadSelectedServiceSet);
   elements.communityConnectionForm.addEventListener('submit', startCommunityConnection);
@@ -865,7 +818,7 @@ function setupEventListeners() {
     );
   });
   elements.btnChooseProfileServiceFolder.addEventListener('click', () => {
-    activateSettingsTab('google-drive', { focusTab: true });
+    activateSettingsTab('pptx', { focusTab: true });
   });
   elements.btnAddInputRole.addEventListener('click', addInputRoleDraft);
   elements.btnAddOutput.addEventListener('click', addOutputDraft);
@@ -2619,19 +2572,6 @@ function serviceFolderApiAvailable() {
     .every(method => typeof window.api?.[method] === 'function');
 }
 
-function driveApiAvailable() {
-  return [
-    'getDriveStatus',
-    'connectPrivateDrive',
-    'getPrivateDriveOAuthState',
-    'copyPrivateDriveOAuthLink',
-    'cancelPrivateDriveOAuth',
-    'linkPublicDrive',
-    'setDrivePublishingEnabled',
-    'disconnectDrive'
-  ].every(method => typeof window.api?.[method] === 'function');
-}
-
 const COMMUNITY_POLL_INTERVAL_MS = 2000;
 const COMMUNITY_POLL_TIMEOUT_MS = 15 * 60 * 1000;
 const COMMUNITY_MAX_POLL_BACKOFF_MS = 30 * 1000;
@@ -3897,102 +3837,12 @@ function disposeCommunityConnectionUi() {
   communityPlannerStateUnsubscribe = null;
 }
 
-function renderPrivateDriveOAuthDialog() {
-  const oauth = state.drive.oauth;
-  elements.btnCopyDriveOAuthLink.disabled = !oauth.active || oauth.actionBusy;
-  elements.btnCancelDriveOAuth.disabled = !oauth.active || oauth.actionBusy;
-  elements.driveOAuthActionStatus.textContent = oauth.actionMessage
-    || (oauth.active ? 'Waiting for Google sign-in…' : 'Google sign-in has finished.');
-
-  if (oauth.active) {
-    if (!elements.driveOAuthDialog.open) elements.driveOAuthDialog.showModal();
-  } else if (elements.driveOAuthDialog.open) {
-    elements.driveOAuthDialog.close();
-  }
-}
-
-function handlePrivateDriveOAuthStateChanged(payload) {
-  const transition = window.SyncShowGoogleDriveOAuthState.applyLifecycleState(
-    state.drive.oauth,
-    payload
-  );
-  if (!transition.accepted) return;
-  state.drive.oauth = transition.state;
-  state.drive.oauth.actionMessage = transition.becameActive
-    ? 'Waiting for Google sign-in…'
-    : '';
-  renderPrivateDriveOAuthDialog();
-}
-
-async function refreshPrivateDriveOAuthState() {
-  if (typeof window.api?.getPrivateDriveOAuthState !== 'function') return;
-  try {
-    handlePrivateDriveOAuthStateChanged(await window.api.getPrivateDriveOAuthState());
-  } catch (_error) {
-    // The lifecycle event remains authoritative; never log an authorization URL.
-  }
-}
-
-async function copyPrivateDriveOAuthLink() {
-  if (!state.drive.oauth.active || state.drive.oauth.actionBusy) return;
-  state.drive.oauth.actionBusy = true;
-  state.drive.oauth.actionMessage = 'Copying the one-time sign-in link…';
-  renderPrivateDriveOAuthDialog();
-  try {
-    const result = await window.api.copyPrivateDriveOAuthLink();
-    state.drive.oauth.actionMessage = result?.copied === true
-      ? 'Copied. Paste the link into another browser on this computer.'
-      : 'The sign-in link was no longer available.';
-  } catch (error) {
-    state.drive.oauth.actionMessage = driveErrorMessage(
-      error,
-      'The sign-in link could not be copied.'
-    );
-  } finally {
-    state.drive.oauth.actionBusy = false;
-    renderPrivateDriveOAuthDialog();
-  }
-}
-
-async function cancelPrivateDriveOAuth() {
-  if (!state.drive.oauth.active || state.drive.oauth.actionBusy) return;
-  state.drive.oauth.actionBusy = true;
-  state.drive.oauth.actionMessage = 'Cancelling Google sign-in…';
-  renderPrivateDriveOAuthDialog();
-  try {
-    await window.api.cancelPrivateDriveOAuth();
-  } catch (error) {
-    state.drive.oauth.actionMessage = driveErrorMessage(
-      error,
-      'Google sign-in could not be cancelled.'
-    );
-  } finally {
-    state.drive.oauth.actionBusy = false;
-    await refreshPrivateDriveOAuthState();
-    renderPrivateDriveOAuthDialog();
-  }
-}
-
-function privateDriveIsConfigured() {
-  return state.drive.status?.configuration?.privateOAuthConfigured === true;
-}
-
-function publicDriveIsConfigured() {
-  return state.drive.status?.configuration?.publicApiKeyConfigured === true;
-}
-
-function driveErrorMessage(error, fallback) {
+function serviceFolderErrorText(error, fallback) {
   return window.SyncShowErrorMessages?.humanizeIpcError(error, fallback) || fallback;
 }
 
 function hasConfiguredServiceSource(profile = state.profile) {
-  return Boolean(profile?.localServiceFolder || profile?.driveConnectionId);
-}
-
-function activeDriveConnection() {
-  const connection = state.drive.status?.connection || null;
-  if (!connection || connection.id !== state.profile?.driveConnectionId) return null;
-  return connection;
+  return Boolean(profile?.localServiceFolder);
 }
 
 // Keep this projection aligned with the main process's scan-token signature.
@@ -4005,7 +3855,6 @@ function serviceFolderScanProfileSignature(profile) {
     timeZone: profile.timeZone,
     serviceDateOrder: profile.serviceDateOrder,
     localServiceFolder: profile.localServiceFolder,
-    driveConnectionId: profile.driveConnectionId,
     inputRoles: (profile.inputRoles || []).map(role => ({
       id: role.id,
       label: role.label,
@@ -4079,29 +3928,6 @@ function isLoadStage() {
   return document.body.classList.contains('load-stage');
 }
 
-async function refreshDriveStatus() {
-  if (!driveApiAvailable()) {
-    state.drive.status = {
-      configured: false,
-      connection: null,
-      message: 'This build does not include direct Google Drive connections.'
-    };
-    return state.drive.status;
-  }
-  try {
-    const status = await window.api.getDriveStatus();
-    state.drive.status = status && typeof status === 'object'
-      ? status
-      : { configured: false, connection: null };
-    state.drive.error = null;
-  } catch (error) {
-    console.warn('[GoogleDrive] Could not read connection status:', error);
-    state.drive.status = { configured: false, connection: null };
-    state.drive.error = driveErrorMessage(error, 'Google Drive status is unavailable.');
-  }
-  return state.drive.status;
-}
-
 function requireCleanProfileForSourceChange() {
   if (!state.profileDirty) return true;
   openSettings('screens');
@@ -4110,10 +3936,11 @@ function requireCleanProfileForSourceChange() {
   return false;
 }
 
-async function saveAutomaticLoadingSource({ localServiceFolder = null, driveConnectionId = null }) {
+async function saveAutomaticLoadingSource({ localServiceFolder = null }) {
   const profileToSave = cloneValue(state.profile);
   profileToSave.localServiceFolder = localServiceFolder;
-  profileToSave.driveConnectionId = driveConnectionId;
+  // Clear only the obsolete link ID when an operator changes the folder.
+  profileToSave.driveConnectionId = null;
   const result = await window.api.saveSettings({ venueProfile: profileToSave });
   if (!result?.success || !result.venueProfile) {
     throw new Error('The automatic loading source could not be saved');
@@ -4125,148 +3952,23 @@ async function saveAutomaticLoadingSource({ localServiceFolder = null, driveConn
   return result.venueProfile;
 }
 
-async function activateDriveConnection(result, label) {
-  const connection = result?.connection || result;
-  if (!connection || typeof connection.id !== 'string') {
-    throw new Error('Google Drive did not return a usable folder connection.');
-  }
-  const previousDriveId = state.profile?.driveConnectionId || null;
-  try {
-    await saveAutomaticLoadingSource({ driveConnectionId: connection.id });
-  } catch (error) {
-    await window.api.disconnectDrive({ connectionId: connection.id }).catch(() => {});
-    throw error;
-  }
-  if (previousDriveId && previousDriveId !== connection.id) {
-    await window.api.disconnectDrive({ connectionId: previousDriveId }).catch(error => {
-      console.warn('[GoogleDrive] The previous connection could not be removed:', error);
-    });
-  }
-  await refreshDriveStatus();
-  setStatus(`${label} connected for automatic loading`);
-  await scanLinkedServiceFolder({ reason: 'linked' });
-}
-
-async function connectPrivateDrive() {
-  if (!driveApiAvailable() || state.drive.busy || state.serviceFolder.loading) return;
-  if (!privateDriveIsConfigured()) {
-    state.drive.error = 'Private Google Drive sign-in is not enabled in this copy of SyncShow.';
-    renderServiceFolder();
-    return;
-  }
-  if (!requireCleanProfileForSourceChange()) return;
-  state.drive.busy = true;
-  state.drive.error = null;
-  renderServiceFolder();
-  setStatus('Opening Google sign-in in your browser…');
-  try {
-    const result = await window.api.connectPrivateDrive();
-    if (!result) {
-      setStatus('Google Drive connection cancelled');
-      return;
-    }
-    await activateDriveConnection(result, 'Private Google Drive folder');
-  } catch (error) {
-    const message = driveErrorMessage(error, 'Google Drive could not be connected.');
-    if (/cancel(?:led|ed)/i.test(message)) {
-      state.drive.error = null;
-      setStatus('Google Drive connection cancelled');
-    } else {
-      console.error('[GoogleDrive] Private connection failed:', message);
-      state.drive.error = message;
-      setStatus(`Could not connect Google Drive: ${state.drive.error}`);
-    }
-  } finally {
-    await refreshPrivateDriveOAuthState();
-    state.drive.busy = false;
-    renderServiceFolder();
-  }
-}
-
-async function linkPublicDrive() {
-  if (!driveApiAvailable() || state.drive.busy || state.serviceFolder.loading) return;
-  if (!publicDriveIsConfigured()) {
-    state.drive.error = 'Public Google Drive links are not enabled in this copy of SyncShow.';
-    renderServiceFolder();
-    return;
-  }
-  if (!requireCleanProfileForSourceChange()) return;
-  const url = elements.publicDriveFolderUrl.value.trim();
-  if (!url) {
-    state.drive.error = 'Paste a public Google Drive folder link first.';
-    renderServiceFolder();
-    elements.publicDriveFolderUrl.focus();
-    return;
-  }
-  state.drive.busy = true;
-  state.drive.error = null;
-  renderServiceFolder();
-  setStatus('Checking the public Google Drive folder…');
-  try {
-    const result = await window.api.linkPublicDrive({ url });
-    await activateDriveConnection(result, 'Public Google Drive folder');
-    elements.publicDriveFolderUrl.value = '';
-  } catch (error) {
-    console.error('[GoogleDrive] Public link failed:', error);
-    state.drive.error = driveErrorMessage(
-      error,
-      'That public Google Drive folder could not be connected.'
-    );
-    setStatus(`Could not use the public Drive folder: ${state.drive.error}`);
-  } finally {
-    state.drive.busy = false;
-    renderServiceFolder();
-  }
-}
-
 async function disconnectServiceSource() {
-  if (state.drive.busy || state.serviceFolder.loading || !hasConfiguredServiceSource()) return;
+  if (state.serviceFolder.sourceBusy || state.serviceFolder.loading || !hasConfiguredServiceSource()) return;
   if (!requireCleanProfileForSourceChange()) return;
-  const driveConnectionId = state.profile?.driveConnectionId || null;
-  state.drive.busy = true;
+  state.serviceFolder.sourceBusy = true;
   renderServiceFolder();
   try {
     await saveAutomaticLoadingSource({});
-    if (driveConnectionId) {
-      await window.api.disconnectDrive({ connectionId: driveConnectionId });
-      await refreshDriveStatus();
-    }
     setStatus('Automatic loading disconnected; the verified offline service copy was kept');
   } catch (error) {
     console.error('[ServiceSource] Disconnect failed:', error);
-    state.drive.error = driveErrorMessage(
+    state.serviceFolder.error = serviceFolderErrorText(
       error,
       'The automatic loading source could not be disconnected.'
     );
-    setStatus(`Could not disconnect automatic loading: ${state.drive.error}`);
+    setStatus(`Could not disconnect automatic loading: ${state.serviceFolder.error}`);
   } finally {
-    state.drive.busy = false;
-    renderServiceFolder();
-  }
-}
-
-async function updateDrivePublishingPreference() {
-  const connection = activeDriveConnection();
-  if (!connection || connection.mode !== 'private' || state.drive.busy) return;
-  const requested = elements.drivePublishingEnabled.checked;
-  state.drive.busy = true;
-  renderServiceFolder();
-  try {
-    const status = await window.api.setDrivePublishingEnabled(requested);
-    state.drive.status = status && typeof status === 'object' ? status : state.drive.status;
-    state.drive.error = null;
-    setStatus(requested
-      ? 'Drive publishing allowed; SyncShow will still change files only after an explicit Publish action'
-      : 'Drive publishing turned off');
-  } catch (error) {
-    state.drive.error = driveErrorMessage(
-      error,
-      'The Drive publishing preference could not be changed.'
-    );
-    await refreshDriveStatus();
-    setStatus(`Could not change Drive publishing: ${state.drive.error}`);
-  } finally {
-    state.drive.busy = false;
+    state.serviceFolder.sourceBusy = false;
     renderServiceFolder();
   }
 }
@@ -4274,7 +3976,6 @@ async function updateDrivePublishingPreference() {
 async function initializeServiceFolder() {
   state.serviceFolder.requestedDate = serviceDateForProfile();
   elements.serviceFolderDate.value = state.serviceFolder.requestedDate;
-  await refreshDriveStatus();
   renderServiceFolder();
   if (!serviceFolderApiAvailable()) {
     state.serviceFolder.error = 'This build does not include automatic folder loading. You can still choose files on the Load cards.';
@@ -4283,7 +3984,7 @@ async function initializeServiceFolder() {
   }
 
   try {
-    // Native services do not depend on a previously configured PPTX/Drive
+    // Native services do not depend on a previously configured PPTX folder
     // source. Keep its verified offline snapshot available without contacting
     // that source until the operator chooses the Legacy PPTX tab.
     const changeResult = state.loadMode === 'pptx'
@@ -4293,7 +3994,7 @@ async function initializeServiceFolder() {
     state.serviceFolder.sourceChanges = Array.isArray(changeResult?.changes) ? changeResult.changes : [];
     state.serviceFolder.folderChangedSinceLoad = state.serviceFolder.sourceChanges.length > 0;
   } catch (changeError) {
-    // A source-drive problem should not make a verified offline snapshot
+    // An unavailable source folder should not make a verified offline snapshot
     // disappear. The fallback call still verifies the pinned local assets.
     console.warn('[ServiceFolder] Could not compare the source folder:', changeError);
     try {
@@ -4326,14 +4027,7 @@ async function chooseAndLinkServiceFolder() {
   try {
     const folderPath = await window.api.chooseServiceFolder();
     if (!folderPath) return;
-    const previousDriveId = state.profile?.driveConnectionId || null;
     await saveAutomaticLoadingSource({ localServiceFolder: folderPath });
-    if (previousDriveId) {
-      await window.api.disconnectDrive({ connectionId: previousDriveId }).catch(error => {
-        console.warn('[GoogleDrive] The previous connection could not be removed:', error);
-      });
-      await refreshDriveStatus();
-    }
     setStatus(`Linked ${folderBaseName(folderPath)} as the service folder`);
     await scanLinkedServiceFolder({ reason: 'linked' });
   } catch (error) {
@@ -4423,7 +4117,7 @@ async function scanLinkedServiceFolder({ reason = 'manual' } = {}) {
       return;
     }
     console.error('[ServiceFolder] Scan failed:', error);
-    state.serviceFolder.error = driveErrorMessage(error, 'The service folder is unavailable.');
+    state.serviceFolder.error = serviceFolderErrorText(error, 'The service folder is unavailable.');
     setStatus(`Could not check the service folder: ${state.serviceFolder.error}`);
   } finally {
     if (requestVersion === state.serviceFolder.scanVersion) {
@@ -4682,36 +4376,11 @@ function serviceSourceView() {
       scanLabel: folderBaseName(localPath)
     };
   }
-  if (state.profile?.driveConnectionId) {
-    const connection = activeDriveConnection();
-    if (!connection) {
-      return {
-        linked: true,
-        kind: 'drive-missing',
-        name: 'Google Drive needs reconnecting',
-        detail: 'The saved connection is unavailable on this computer.',
-        scanLabel: 'Google Drive'
-      };
-    }
-    const isPublic = connection.mode === 'public';
-    const account = connection.accountEmail || connection.accountLabel || null;
-    const folderName = connection.folderName || connection.name || 'Google Drive folder';
-    return {
-      linked: true,
-      kind: isPublic ? 'drive-public' : 'drive-private',
-      name: folderName,
-      detail: isPublic
-        ? 'Public link · view-only'
-        : `${account ? `${account} · ` : ''}${connection.canWrite ? 'Can publish' : 'Load only'}`,
-      scanLabel: folderName,
-      connection
-    };
-  }
   return {
     linked: false,
     kind: 'none',
     name: 'No source connected',
-    detail: 'Choose Google Drive or a folder on this computer.',
+    detail: 'Choose a folder on this computer.',
     scanLabel: 'shared folder'
   };
 }
@@ -4758,32 +4427,14 @@ function renderServiceFolder() {
   renderLoadSourceSummary();
   const source = serviceSourceView();
   const folderLinked = source.linked;
-  const privateDriveReady = privateDriveIsConfigured();
-  const publicDriveReady = publicDriveIsConfigured();
   const conversionInFlight = presentationConversionInFlight();
   const serviceError = serviceFolderErrorMessage();
   const sourceBusy = state.profileSaveInFlight
-    || state.drive.busy
+    || state.serviceFolder.sourceBusy
     || state.serviceFolder.scanning
     || state.serviceFolder.loading;
   elements.btnRefreshServiceFolder.disabled = !folderLinked || sourceBusy;
   elements.btnChooseServiceFolder.disabled = sourceBusy;
-  elements.btnConnectPrivateDrive.disabled = sourceBusy || !privateDriveReady;
-  elements.btnConnectPrivateDrive.classList.toggle('is-unavailable', !privateDriveReady);
-  elements.privateDriveSourceHelp.textContent = privateDriveReady
-    ? 'Sign in and choose one folder'
-    : 'Not enabled in this copy of SyncShow';
-  elements.publicDriveFolderUrl.disabled = sourceBusy || !publicDriveReady;
-  elements.btnLinkPublicDrive.disabled = sourceBusy || !publicDriveReady;
-  elements.btnLinkPublicDrive.textContent = publicDriveReady ? 'Connect' : 'Unavailable';
-  elements.publicDriveFolderUrl.placeholder = publicDriveReady
-    ? 'Paste a public Google Drive folder link'
-    : 'Public Drive is not enabled';
-  elements.publicDriveSourceOption.classList.toggle('is-unavailable', !publicDriveReady);
-  elements.publicDriveSourceOption.setAttribute('aria-disabled', String(!publicDriveReady));
-  elements.publicDriveSourceHelp.textContent = publicDriveReady
-    ? 'No sign-in · view-only'
-    : 'Not enabled in this copy of SyncShow';
   elements.btnDisconnectServiceSource.hidden = !folderLinked;
   elements.btnDisconnectServiceSource.disabled = sourceBusy;
   elements.serviceFolderDate.disabled = state.serviceFolder.scanning || state.serviceFolder.loading;
@@ -4791,39 +4442,6 @@ function renderServiceFolder() {
   elements.serviceFolderName.textContent = source.name;
   elements.serviceFolderPath.textContent = source.detail;
   elements.serviceFolderLocation.title = source.detail;
-
-  const connection = source.connection || null;
-  const publishingAvailable = Boolean(
-    connection
-    && connection.mode === 'private'
-    && connection.canWrite === true
-  );
-  elements.drivePublishingControl.hidden = !publishingAvailable;
-  elements.drivePublishingEnabled.disabled = sourceBusy;
-  elements.drivePublishingEnabled.checked = publishingAvailable
-    && connection.publishingEnabled === true;
-  elements.drivePublishingHelp.textContent = publishingAvailable
-    ? (connection.publishingEnabled
-      ? 'Allowed for explicit Publish actions. Background loading never changes Drive files.'
-      : 'Off by default. Background loading never changes Drive files.')
-    : 'This Drive connection can load files but cannot publish to the selected folder.';
-
-  const configurationMessages = [];
-  if (!privateDriveReady && !publicDriveReady) {
-    configurationMessages.push(
-      'Google Drive is not enabled in this copy of SyncShow. Install a Drive-enabled build, or choose a folder on this computer.'
-    );
-  } else if (!privateDriveReady) {
-    configurationMessages.push('Private Google Drive sign-in is not enabled in this copy of SyncShow.');
-  } else if (!publicDriveReady) {
-    configurationMessages.push('Public Google Drive links are not enabled in this copy of SyncShow.');
-  }
-  if (state.drive.status?.configurationError) {
-    configurationMessages.push('The Google Drive setup in this copy of SyncShow is invalid.');
-  }
-  if (state.drive.error) configurationMessages.push(state.drive.error);
-  elements.driveSetupNotice.hidden = configurationMessages.length === 0;
-  elements.driveSetupNotice.textContent = configurationMessages.join(' ');
 
   if (!folderLinked) {
     elements.serviceFolderCard.dataset.state = 'unlinked';
@@ -5042,7 +4660,7 @@ async function loadSelectedServiceSet() {
     }
   } catch (error) {
     console.error('[ServiceFolder] Could not load selected service:', error);
-    state.serviceFolder.error = driveErrorMessage(error, 'The service could not be loaded.');
+    state.serviceFolder.error = serviceFolderErrorText(error, 'The service could not be loaded.');
     state.serviceFolder.folderChangedSinceLoad = true;
     setStatus(`Could not load the found service: ${state.serviceFolder.error}`);
   } finally {
@@ -5605,13 +5223,7 @@ function renderProfileEditor() {
   if (!state.profileDraft) return;
   const focusDescriptor = captureProfileEditorFocus();
   elements.profileName.value = state.profileDraft.name || '';
-  const driveConnection = state.profileDraft.driveConnectionId
-    ? activeDriveConnection()
-    : null;
-  const automaticSourceLabel = state.profileDraft.localServiceFolder
-    || (state.profileDraft.driveConnectionId
-      ? `Google Drive · ${driveConnection?.folderName || driveConnection?.name || 'connected folder'}`
-      : '');
+  const automaticSourceLabel = state.profileDraft.localServiceFolder || '';
   elements.profileServiceFolder.value = automaticSourceLabel;
   elements.profileServiceFolder.title = automaticSourceLabel;
   elements.profileTimeZone.value = state.profileDraft.timeZone || '';
@@ -5937,7 +5549,6 @@ async function saveProfileChanges() {
   }
 
   const previousFolder = state.profile?.localServiceFolder || null;
-  const previousDriveConnectionId = state.profile?.driveConnectionId || null;
   const previousTimeZone = state.profile?.timeZone || null;
   const previousScanProfileSignature = serviceFolderScanProfileSignature(state.profile);
   const profileToSave = cloneValue(state.profileDraft);
@@ -5962,17 +5573,9 @@ async function saveProfileChanges() {
       state.preparedServiceRestore = { status: 'incompatible' };
     }
     applyCommittedProfile(result.venueProfile);
-    if (previousDriveConnectionId
-      && previousDriveConnectionId !== result.venueProfile.driveConnectionId) {
-      await window.api.disconnectDrive({ connectionId: previousDriveConnectionId }).catch(error => {
-        console.warn('[GoogleDrive] The previous connection could not be removed:', error);
-      });
-      await refreshDriveStatus();
-    }
     await checkForCachedPresentations();
     if (scanProfileChanged) {
       if (previousFolder !== result.venueProfile.localServiceFolder
-        || previousDriveConnectionId !== result.venueProfile.driveConnectionId
         || previousTimeZone !== result.venueProfile.timeZone) {
         state.serviceFolder.requestedDate = serviceDateForProfile(result.venueProfile);
         elements.serviceFolderDate.value = state.serviceFolder.requestedDate;

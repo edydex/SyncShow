@@ -97,8 +97,8 @@ test('Load separates SyncShow services from the legacy PPTX setup path', () => {
   assert.match(loadEssentials, /<strong>Legacy PPTX files<\/strong>/);
   assert.match(
     appSource,
-    /elements\.btnOpenPptxImportFromLoad\.addEventListener\('click', \(\) => \{\s*openSettings\('google-drive'\)/,
-    'Import PPTXs must open the independent Google Drive and PPTX settings tab'
+    /elements\.btnOpenPptxImportFromLoad\.addEventListener\('click', \(\) => \{\s*openSettings\('pptx'\)/,
+    'Import PPTXs must open the independent local PPTX settings tab'
   );
 });
 
@@ -158,15 +158,15 @@ test('folder, display, output, profile, input, output, and timing controls live 
     'the existing advanced-mode safety warning must be preserved');
 });
 
-test('Admin Settings separates Community, Google Drive, and screens into accessible tabs', () => {
+test('Admin Settings separates Community, local PPTX folders, and screens into accessible tabs', () => {
   const adminDialog = elementBlockById(html, 'advancedSetupDetails');
   const communityPanel = elementBlockById(adminDialog, 'settingsCommunityPanel');
-  const drivePanel = elementBlockById(adminDialog, 'settingsGoogleDrivePanel');
+  const drivePanel = elementBlockById(adminDialog, 'settingsPptxPanel');
   const screensPanel = elementBlockById(adminDialog, 'settingsScreensPanel');
 
   assert.match(adminDialog, /id="adminSettingsTabs"[^>]*role="tablist"/);
   assert.match(adminDialog, /id="settingsTabCommunity"[^>]*role="tab"[^>]*aria-selected="true"[^>]*data-settings-tab="community"/);
-  assert.match(adminDialog, /id="settingsTabGoogleDrive"[^>]*role="tab"[^>]*data-settings-tab="google-drive"/);
+  assert.match(adminDialog, /id="settingsTabPptx"[^>]*role="tab"[^>]*data-settings-tab="pptx"/);
   assert.match(adminDialog, /id="settingsTabScreens"[^>]*role="tab"[^>]*data-settings-tab="screens"/);
 
   assertContainsId(communityPanel, 'communityConnectionSection');
