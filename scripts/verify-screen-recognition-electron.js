@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
 
 async function rehearse({ count, chosen, screenRegression }) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ss-screen-'));
@@ -23,10 +23,28 @@ async function rehearse({ count, chosen, screenRegression }) {
   env.SYNCSHOW_TEST_USER_DATA_DIR = await fs.realpath(profile);
   let log = '';
   const child = spawn(require('electron'), [path.join(__dirname, 'fixtures', 'small-service-electron-app.js'),
-    '--syncshow-test-user-data', '--headless'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    '--syncshow-test-user-data', '--headless'], { env, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { log = (log + bytes).slice(-256 * 1024); });
-  const timeout = setTimeout(() => child.kill(), 160_000);
-  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); }).finally(() => clearTimeout(timeout));
+  let timeout;
+  const code = await new Promise((resolve, reject) => {
+    child.once('error', reject);
+    // A Chromium helper can retain the stdio pipe after the browser exits.
+    // Do not wait forever for close; the actual browser exit is authoritative.
+    child.once('exit', resolve);
+    timeout = setTimeout(() => {
+      if (process.platform === 'win32') {
+        execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { timeout: 5000 }, () => {});
+      } else {
+        try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+      }
+      reject(new Error(`Screen rehearsal exceeded 160 seconds (${count} external displays).\n${log}\nEvidence: ${directory}`));
+    }, 160_000);
+  }).finally(() => {
+    clearTimeout(timeout);
+    child.stdout.destroy();
+    child.stderr.destroy();
+    child.unref();
+  });
   try {
     const report = JSON.parse(await fs.readFile(result, 'utf8'));
     assert.equal(code, 0, report.error || log);
