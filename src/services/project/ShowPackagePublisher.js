@@ -1,4 +1,5 @@
 'use strict';
+const {normalizePresentationScreens, screenIdForChannel} = require('../../../packages/service-core/node/services/project/PresentationScreens');
 const { nextSlideHint, singerSourceCue } = require('./SingerPresentation');
 
 const crypto = require('crypto');
@@ -188,11 +189,12 @@ class ShowPackagePublisher {
     }
   }
 
-  _thumbnailKey(cue, channelId, nextCue, fontSha256, renderOptions) {
+  _thumbnailKey(cue, channelId, nextCue, fontSha256, renderOptions, presentation) {
+    const showHint = Boolean(presentation?.hintScreenIds.includes(screenIdForChannel(channelId)));
     const condensed = cue.channels?.[channelId]?.mode === 'condensed' && cue.channels[channelId].sourceChannelId;
     return sha256(canonicalJson({ rendererVersion: NATIVE_RENDERER_VERSION,
-      fontSha256, renderOptions, channelId, cue: visualCue(cue),
-      nextCue: condensed ? visualCue(nextCue) : null }));
+      fontSha256, renderOptions, channelId, showHint, hintMode: presentation ? (showHint ? 'on' : 'off') : 'legacy', cue: visualCue(cue),
+      nextCue: condensed || showHint ? visualCue(nextCue) : null }));
   }
 
   async _seedThumbnailCache(packageId, expectedManifestSha256, fontSha256, renderOptions) {
@@ -216,7 +218,7 @@ class ShowPackagePublisher {
     for (const channel of previous.channels) {
       await mapBounded(timeline.cueIds, async (cueId, index) => {
         const cue = timeline.cues[cueId], nextCue = timeline.cues[timeline.cueIds[index + 1]] || null;
-        const key = this._thumbnailKey(cue, channel.channelId, nextCue, fontSha256, renderOptions);
+        const key = this._thumbnailKey(cue, channel.channelId, nextCue, fontSha256, renderOptions, timeline.presentation);
         const cached=await this._cachedThumbnail(key);
         if (cached) { reusable.thumbnails.set(key,cached); return; }
         const relative = `${channel.directory}/slide_${String(index + 1).padStart(3, '0')}_thumb.jpg`;
@@ -455,7 +457,7 @@ class ShowPackagePublisher {
       || manifest.compilerVersion !== 3
       // Retain previously supported offline packages, including the last Mac
       // test build, while new preparation receives a fresh renderer identity.
-      || ![11, 15, 16, 17, 18, 19, 20, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
+      || ![11, 15, 16, 17, 18, 19, 20, 21, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
       || !Number.isSafeInteger(manifest.cueCount)
       || manifest.cueCount < 1
       || manifest.cueCount > MAX_PACKAGE_CUES
@@ -660,6 +662,7 @@ class ShowPackagePublisher {
       fail('SHOW_PACKAGE_CORRUPT', 'The Show timeline does not match its package manifest.');
     }
 
+    Object.defineProperty(manifest, 'presentationScreens', {value: normalizePresentationScreens(timeline.presentation)});
     Object.defineProperty(manifest, 'translationCues', { value: timeline.cueIds.map(id => ({ id, ...(timeline.cues[id].translationAction ? { translationAction: timeline.cues[id].translationAction, ...(timeline.cues[id].translationSettings ? {translationSettings:timeline.cues[id].translationSettings} : {}) } : {}) })) });
     let serviceHandoff;
     let handoffSource;
@@ -771,6 +774,7 @@ class ShowPackagePublisher {
             channel.channelId,
             {
               rendererVersion: manifest.rendererVersion,
+              presentation: timeline.presentation,
               width: manifest.renderOptions.width,
               height: manifest.renderOptions.height,
               nextCue: nextCueId ? timeline.cues[nextCueId] : null
@@ -830,6 +834,8 @@ class ShowPackagePublisher {
         projectRevisionId: manifest.projectRevisionId,
         showPackageId: manifest.id,
         serviceHandoff: manifest.serviceHandoff,
+        presentationScreens: manifest.presentationScreens,
+        presentationScreenId: screenIdForChannel(channel.channelId),
         translationCues: manifest.translationCues,
         cacheDir,
         slideCount: manifest.cueCount,
@@ -1044,6 +1050,7 @@ class ShowPackagePublisher {
             const nextCueId = timeline.cueIds[cueIndex + 1];
             const nextCue = nextCueId ? timeline.cues[nextCueId] : null;
             const scene = compileNativeCueScene(cue, channelId, {
+              presentation: timeline.presentation,
               width: renderOptions.width,
               height: renderOptions.height,
               nextCue
@@ -1055,18 +1062,21 @@ class ShowPackagePublisher {
               rootPath: stagingPath
             });
             for (const assetId of sceneAssetIds(scene)) referencedAssetIds.add(assetId);
+            const showHint = timeline.presentation?.hintScreenIds.includes(screenIdForChannel(channelId))
+              && cue.showNextSlideHints !== false && (scene.layout !== 'blank' || screenIdForChannel(channelId) === 'media');
             const condensed = channel?.mode === 'condensed' && channel.sourceChannelId;
             // Every visual input, font, viewport and renderer version is pinned.
             // Singer previews also include the next cue, so editing it invalidates
             // the previous cue's hint. Audit identities never change the pixels.
-            const renderKey = this._thumbnailKey(cue, channelId, nextCue, fontSha256, renderOptions);
+            const renderKey = this._thumbnailKey(cue, channelId, nextCue, fontSha256, renderOptions, timeline.presentation);
             let thumbnail = reusable.thumbnails.get(renderKey) || await this._cachedThumbnail(renderKey);
             const reused = Boolean(thumbnail);
             if (!thumbnail) {
               let rendered;
               try {
-                rendered = condensed
-                  ? await renderer.renderSingerPreview(cue, channel.sourceChannelId, nextCue)
+                const stageHintOff = timeline.presentation && screenIdForChannel(channelId) === 'media' && !timeline.presentation.hintScreenIds.includes('media');
+                rendered = condensed || showHint
+                  ? await renderer.renderSingerPreview(stageHintOff ? {...cue, showNextSlideHints: false} : cue, condensed ? channel.sourceChannelId : channelId, nextCue)
                   : await renderer.renderCue(cue, channelId);
               } catch (error) {
                 if (['TEXT_OVERFLOW', 'TEXT_RENDER_FAILED'].includes(error?.code)) {

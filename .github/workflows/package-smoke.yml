@@ -169,7 +169,7 @@ jobs:
             '',
             'Packaged application launch, PDF, Sharp, service workflow and artifact checks passed. Physical venue testing is still required.',
             '',
-            '[Permanent owner downloads and installation instructions](https://github.com/edydex/SyncShow/blob/main/docs/COMMUNITY_PREVIEW.md#download-and-install). These QA packages support Community and local presentations; direct Google Drive is not configured. They are not a public release.',
+            '[Permanent owner downloads and installation instructions](https://github.com/edydex/SyncShow/blob/main/docs/COMMUNITY_PREVIEW.md#download-and-install). These QA packages support Community and local presentations, including local PowerPoint folders. They are not a public release.',
             '',
           ].join('\n'));
           JS

@@ -1,12 +1,12 @@
 {
   "kind": "shared-community-editor",
   "entry": "community-server/src/components/PlanServiceClient.tsx",
-  "componentSha256": "de5213b72625c1b5ff96c91a88b9e3327f2f1a1334541816ab2c285f7885c630",
+  "componentSha256": "7c39adfe2c19582276b3f25987df1c7c9491f7bd154cb2749cfad3122dc9c6a3",
   "sourceSha256": {
-    "community-server/src/components/PlanServiceClient.tsx": "de5213b72625c1b5ff96c91a88b9e3327f2f1a1334541816ab2c285f7885c630",
+    "community-server/src/components/PlanServiceClient.tsx": "7c39adfe2c19582276b3f25987df1c7c9491f7bd154cb2749cfad3122dc9c6a3",
     "community-server/src/components/plannerSlides.ts": "dac4a2f5dfafe0ad28b7cb3933a4ca85ef5a92705b1c8c1d1f9d3f112147dec1",
     "community-server/src/components/plannerSelection.ts": "4c34f9ae51d747e96d24437a4986a0aa365dd8d35bb3bf75d26dd360ccebd892",
-    "community-server/packages/service-core/node/services/project/ServiceProject.js": "8e883fc91bd7f3a6dcb0efedbf2970138391117991111f6b63d7a8611a85504c"
+    "community-server/packages/service-core/node/services/project/ServiceProject.js": "ca2ed00f46d7bed6417915bbf243137a5fdc5920caa78d1f03d40da9a2505efa"
   },
   "activeService": true
 }

@@ -29,12 +29,34 @@ const {
   configureIsolatedTestUserData
 } = require('./src/services/runtime/IsolatedTestUserData');
 const {
+  diagnosticProbe,
   diagnosticFileName,
   inspectFontFaces,
   safeError,
   sanitizeGpuInfo,
   sanitizeRendererFontDiagnostics
 } = require('./src/services/runtime/SupportDiagnostics');
+const { describeDisplay } = require('./src/services/runtime/DisplayDescriptor');
+const { DisplayDiagnosticsJournal } = require('./src/services/runtime/DisplayDiagnosticsJournal');
+const { matchOutputDisplay } = require('./src/renderer/service-output-plan');
+let displayDiagnosticsJournal = null;
+let lastDisplayDiagnosticSnapshot = null;
+
+function recordScreenDiagnostics(reason, details = {}) {
+  displayDiagnosticsJournal?.record(reason, {
+    displays: appState.displays,
+    outputs: activeVenueProfile?.outputs || [],
+    activeOutputs: (appState.activeLaunchPlan?.outputs || []).map(output => ({
+      id: output.id, displayId: appState.displayAssignments.get(output.id) ?? output.displayId,
+      renderer: output.renderer
+    })),
+    phase: outputLifecyclePhase,
+    cleared: appState.isCleared,
+    previewOnly: activePreviewOnly,
+    osUptimeSeconds: Math.round(os.uptime()),
+    ...details
+  });
+}
 
 const SERMON_RECORDING_PLAYBACK_SCHEME = 'syncshow-sermon-media';
 if (typeof protocol?.registerSchemesAsPrivileged === 'function') {
@@ -111,24 +133,11 @@ const {
 } = require('./src/services/remote');
 const {
   checkSourceChanges,
-  pinRemoteServiceSet,
   pinServiceSet,
   readCurrentServiceSet,
-  scanDriveServiceFiles,
   scanServiceFolder,
   serviceDateForTimeZone
 } = require('./src/services/service-set');
-const {
-  DRIVE_FOLDER_MIME_TYPE,
-  GOOGLE_SLIDES_MIME_TYPE,
-  DriveConnectionStore,
-  GoogleDriveClient,
-  GoogleOAuthFlow,
-  loadGoogleDriveConfig,
-  parseGoogleDriveFolderLink,
-  refreshGoogleAccessToken,
-  sanitizeGoogleDriveConfig
-} = require('./src/services/google-drive');
 const {
   MAX_BUNDLE_BYTES,
   MAX_IMAGE_BYTES,
@@ -328,7 +337,6 @@ const COMMUNITY_SERVICE_PLAN_STALE_PIN_TTL_MS = 60 * 60 * 1000;
 const SERVICE_WATCH_DIRECTORY_LIMIT = 128;
 const SERVICE_WATCH_DEBOUNCE_MS = 750;
 const APPROVED_SERVICE_FOLDER_LIMIT = 8;
-const APPROVED_DRIVE_CONNECTION_LIMIT = 16;
 const APPROVED_PRESENTATION_PATH_LIMIT = 256;
 const REMOTE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const SHOW_REHEARSAL_RENDERED_SLIDE_MAX_BYTES = 128 * 1024 * 1024;
@@ -379,6 +387,8 @@ let outputWindows = new Map();
 let testOutputBackground = null;
 let activeOutputTargets = null;
 let activeTestOutputSettings = null;
+let activePreviewOnly = false;
+const {previewDisplayMap, outputIsPresented} = require('./src/services/show/PreviewShow');
 let outputRecovery = null;
 let translationPreferencesVenue = null;
 let translationSettingsQueue = Promise.resolve();
@@ -499,12 +509,7 @@ const communityServicePlanPreparations = new Map();
 const communityServicePlanStalePins = new Map();
 const communitySermonPublicationVersions = new Map();
 const approvedServiceFolders = new Map();
-const approvedDriveConnections = new Map();
 const approvedPresentationPaths = new Map();
-const googleDriveAccessTokens = new Map();
-let googleDriveServicesPromise = null;
-let googleDriveOperationEpoch = 0;
-let privateDriveOAuthPublicState = Object.freeze({ active: false, revision: 0 });
 let showGateway = null;
 let outputHealthTracker = null;
 let deferredShowStatePublish = null;
@@ -727,224 +732,6 @@ function authorizeServiceFolderChange(previousFolder, nextFolder) {
   }
 }
 
-function rememberApprovedDriveConnection(connectionId) {
-  if (typeof connectionId !== 'string'
-    || !/^[A-Za-z0-9][A-Za-z0-9_-]{7,99}$/.test(connectionId)) {
-    failMainOperation('INVALID_DRIVE_CONNECTION', 'The Google Drive connection is invalid.');
-  }
-  rememberBounded(
-    approvedDriveConnections,
-    connectionId,
-    { grantedAt: Date.now() },
-    APPROVED_DRIVE_CONNECTION_LIMIT
-  );
-  return connectionId;
-}
-
-function authorizeDriveConnectionChange(previousConnectionId, nextConnectionId) {
-  const previous = previousConnectionId || null;
-  const next = nextConnectionId || null;
-  if (previous === next) return;
-  // Keep the former ID briefly authorized so the renderer can save a new
-  // profile first and then securely delete the detached credential record.
-  if (previous) rememberApprovedDriveConnection(previous);
-  if (next && !approvedDriveConnections.has(next)) {
-    failMainOperation(
-      'UNAPPROVED_DRIVE_CONNECTION',
-      'Connect Google Drive through SyncShow before saving it as the automatic loading source.'
-    );
-  }
-}
-
-function publicDriveConnectionSummary(summary) {
-  if (!summary) return null;
-  return {
-    id: summary.id,
-    mode: summary.kind,
-    folderName: summary.folderName,
-    accountEmail: summary.accountEmail || null,
-    accountName: summary.accountName || null,
-    canWrite: summary.canWrite === true,
-    publishingEnabled: summary.writeEnabled === true,
-    access: summary.access,
-    createdAt: summary.createdAt,
-    updatedAt: summary.updatedAt
-  };
-}
-
-function updatePrivateDriveOAuthPublicState(nextState) {
-  const active = nextState?.active === true;
-  if (privateDriveOAuthPublicState.active === active) return privateDriveOAuthPublicState;
-  privateDriveOAuthPublicState = Object.freeze({
-    active,
-    revision: privateDriveOAuthPublicState.revision + 1
-  });
-  if (controlWindow && !controlWindow.isDestroyed()) {
-    controlWindow.webContents.send('drive:privateOAuthStateChanged', privateDriveOAuthPublicState);
-  }
-  return privateDriveOAuthPublicState;
-}
-
-function privateDriveOAuthStatePayload() {
-  return {
-    active: privateDriveOAuthPublicState.active,
-    revision: privateDriveOAuthPublicState.revision
-  };
-}
-
-async function revokeGoogleToken(refreshToken) {
-  try {
-    const response = await fetch('https://oauth2.googleapis.com/revoke', {
-      method: 'POST',
-      redirect: 'error',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: new URLSearchParams({ token: refreshToken })
-    });
-    return response.ok;
-  } catch (_error) {
-    return false;
-  }
-}
-
-async function getGoogleDriveServices() {
-  if (!googleDriveServicesPromise) {
-    googleDriveServicesPromise = (async () => {
-      let config;
-      let configError = null;
-      try {
-        config = await loadGoogleDriveConfig();
-      } catch (error) {
-        console.error('[GoogleDrive] Configuration could not be loaded:', error.message);
-        configError = error.message;
-        config = {
-          clientId: null,
-          clientSecret: null,
-          apiKey: null,
-          oauthConfigured: false,
-          publicAccessConfigured: false
-        };
-      }
-      const store = new DriveConnectionStore({
-        storageRoot: path.join(app.getPath('userData'), 'google-drive'),
-        safeStorage,
-        revokeToken: revokeGoogleToken,
-        onDisconnect: summary => {
-          googleDriveAccessTokens.delete(summary.id);
-          googleDriveOperationEpoch += 1;
-          clearServiceScanProposals();
-        }
-      });
-      const oauthFlow = config.clientId
-        ? new GoogleOAuthFlow({
-          clientId: config.clientId,
-          clientSecret: config.clientSecret,
-          openExternal: url => shell.openExternal(url),
-          onAuthorizationStateChanged: updatePrivateDriveOAuthPublicState
-        })
-        : null;
-      return { config, configError, store, oauthFlow };
-    })();
-  }
-  return googleDriveServicesPromise;
-}
-
-async function driveStatusPayload() {
-  const services = await getGoogleDriveServices();
-  const sanitizedConfig = sanitizeGoogleDriveConfig(services.config);
-  let connection = null;
-  if (activeVenueProfile?.driveConnectionId) {
-    connection = await services.store.getConnectionSummary(activeVenueProfile.driveConnectionId);
-  }
-  return {
-    configuration: {
-      privateOAuthConfigured: sanitizedConfig.oauthConfigured,
-      publicApiKeyConfigured: sanitizedConfig.publicAccessConfigured
-    },
-    connection: publicDriveConnectionSummary(connection),
-    configurationError: services.configError
-  };
-}
-
-async function getDriveConnectionOrFail(connectionId = activeVenueProfile?.driveConnectionId) {
-  if (!connectionId) {
-    failMainOperation('NO_DRIVE_CONNECTION', 'Connect a Google Drive folder first.');
-  }
-  const services = await getGoogleDriveServices();
-  const connection = await services.store.getConnection(connectionId);
-  if (!connection) {
-    failMainOperation(
-      'DRIVE_RECONNECT_REQUIRED',
-      'This Google Drive connection is no longer available. Connect the folder again.'
-    );
-  }
-  return { services, connection };
-}
-
-async function driveClientForConnection(connection, services, { forceRefresh = false } = {}) {
-  if (connection.kind === 'public') {
-    if (!services.config.apiKey) {
-      failMainOperation(
-        'PUBLIC_DRIVE_NOT_CONFIGURED',
-        'This SyncShow build needs a Drive-API-restricted Google API key before it can use public folder links.'
-      );
-    }
-    return new GoogleDriveClient({ apiKey: services.config.apiKey });
-  }
-  if (!services.config.clientId) {
-    failMainOperation(
-      'PRIVATE_DRIVE_NOT_CONFIGURED',
-      'This SyncShow build needs a Google Desktop OAuth client ID before it can open private folders.'
-    );
-  }
-  const cached = googleDriveAccessTokens.get(connection.id);
-  const now = Date.now();
-  let accessToken = !forceRefresh
-    && cached
-    && cached.expiresAt > now + 60 * 1000
-    ? cached.accessToken
-    : null;
-  if (!accessToken) {
-    const refreshed = await refreshGoogleAccessToken({
-      clientId: services.config.clientId,
-      clientSecret: services.config.clientSecret,
-      refreshToken: connection.refreshToken
-    });
-    accessToken = refreshed.accessToken;
-    googleDriveAccessTokens.set(connection.id, {
-      accessToken,
-      expiresAt: now + refreshed.expiresIn * 1000
-    });
-  }
-  return new GoogleDriveClient({ accessToken });
-}
-
-function driveMetadataMatchesCandidate(metadata, candidate) {
-  if (!metadata || !candidate) return false;
-  return metadata.id === candidate.fileId
-    && metadata.mimeType === candidate.sourceMimeType
-    && metadata.modifiedTime === candidate.modifiedTime
-    && (candidate.version === null || metadata.version === candidate.version)
-    && (candidate.size === null || metadata.size === candidate.size)
-    && (!candidate.driveChecksum
-      || candidate.driveChecksumAlgorithm !== 'md5'
-      || metadata.md5Checksum === candidate.driveChecksum);
-}
-
-async function cancelGoogleDriveOperations() {
-  googleDriveOperationEpoch += 1;
-  googleDriveAccessTokens.clear();
-  if (!googleDriveServicesPromise) return;
-  try {
-    const services = await googleDriveServicesPromise;
-    await services.oauthFlow?.cancel();
-  } catch (_error) {
-    // App shutdown/suspend cancellation is best effort.
-  }
-}
-
 function isPathInside(parentPath, childPath) {
   const relative = path.relative(parentPath, childPath);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
@@ -961,7 +748,6 @@ function serviceProfileSignature(profile) {
     timeZone: profile.timeZone,
     serviceDateOrder: profile.serviceDateOrder,
     localServiceFolder: profile.localServiceFolder,
-    driveConnectionId: profile.driveConnectionId,
     inputRoles: profile.inputRoles.map(role => ({
       id: role.id,
       label: role.label,
@@ -1135,16 +921,14 @@ function captureServiceScanContext(requestedDateValue) {
   const profile = activeVenueProfile;
   const profileSignature = serviceProfileSignature(profile);
   const folderPath = canonicalServiceFolderPath(profile?.localServiceFolder);
-  const driveConnectionId = profile?.driveConnectionId || null;
-  if (!folderPath && !driveConnectionId) {
-    failMainOperation('NO_SERVICE_SOURCE', 'Connect Google Drive or choose a local service folder first.');
+  if (!folderPath) {
+    failMainOperation('NO_SERVICE_SOURCE', 'Choose a local service folder first.');
   }
   const { inputRoles, requiredRoleIds } = deriveServiceScanContext(profile);
   return {
     profileSignature,
-    sourceKind: driveConnectionId ? 'google-drive' : 'local-folder',
+    sourceKind: 'local-folder',
     folderPath,
-    driveConnectionId,
     inputRoles,
     requiredRoleIds,
     requestedDate: requestedServiceDate(requestedDateValue, profile?.timeZone),
@@ -1466,6 +1250,7 @@ function applyVenueProfile(profile) {
     translationProjection.manual.clear();
   }
   activeVenueProfile = profile;
+  recordScreenDiagnostics('saved-screen-setup-applied');
   if (previousSignature !== null && previousSignature !== nextSignature) {
     clearServiceScanProposals();
     stopServiceFolderWatchers();
@@ -1506,10 +1291,6 @@ function saveUserSettings(settings) {
     authorizeServiceFolderChange(
       activeVenueProfile?.localServiceFolder || null,
       normalizedSettings.venueProfile.localServiceFolder
-    );
-    authorizeDriveConnectionChange(
-      activeVenueProfile?.driveConnectionId || null,
-      normalizedSettings.venueProfile.driveConnectionId
     );
     const serialized = `${JSON.stringify(normalizedSettings, null, 2)}\n`;
     if (Buffer.byteLength(serialized, 'utf8') > 256 * 1024) {
@@ -2440,8 +2221,8 @@ function readShowRuntimeState() {
           if (available && health?.status === 'unavailable') status = 'unavailable';
           else if (outputLifecyclePhase === 'starting') status = 'starting';
           else if (available && health?.status !== 'healthy') status = 'starting';
-          else if (available && outputLifecyclePhase === 'cleared' && visible) status = 'cleared';
-          else if (available && !visible) status = 'hidden';
+          else if (available && outputLifecyclePhase === 'cleared' && outputIsPresented(entry.win, outputsShouldBeVisible)) status = 'cleared';
+          else if (available && !outputIsPresented(entry.win, outputsShouldBeVisible)) status = 'hidden';
           else if (available && outputLifecyclePhase === 'locally-stopped') status = 'unavailable';
           else if (available) status = 'healthy';
           return {
@@ -3009,17 +2790,19 @@ function diagnosticBounds(value) {
 }
 
 function diagnosticOutputSummary(output) {
+  const safeText = (value, maximum) => safeError({ message: String(value || '') }).message.slice(0, maximum);
   return {
-    id: rendererSafeText(output?.id || '', 160),
-    name: rendererSafeText(output?.name || '', 200),
-    kind: rendererSafeText(output?.kind || '', 80),
-    renderer: rendererSafeText(output?.renderer || '', 80),
-    sourceRoleId: rendererSafeText(output?.sourceRoleId || '', 160),
-    displayId: String(output?.displayId ?? '').slice(0, 160)
+    id: safeText(output?.id, 160),
+    name: safeText(output?.name, 200),
+    kind: safeText(output?.kind, 80),
+    renderer: safeText(output?.renderer, 80),
+    sourceRoleId: safeText(output?.sourceRoleId, 160),
+    displayId: safeText(output?.displayId, 160)
   };
 }
 
 function beginShowStartDiagnostics(options) {
+  recordScreenDiagnostics('start-requested');
   const attempt = {
     startedAt: new Date().toISOString(),
     status: 'starting',
@@ -3063,19 +2846,20 @@ function finishShowStartDiagnostics(attempt, status, error = null) {
   if (error) attempt.error = safeError(error);
   lastShowStartDiagnostics = attempt;
   if (activeShowStartDiagnostics === attempt) activeShowStartDiagnostics = null;
+  recordScreenDiagnostics(`start-${status}`, error ? { error } : {});
 }
 
 async function buildSupportDiagnostics() {
-  updateDisplayList();
+  updateDisplayList('diagnostics-export');
   const selectedFont = getPresentationFont();
   const outputFallbackFont = getOutputWindowFallbackFont();
   const [selectedFontFiles, outputFallbackFiles, gpuInfo] = await Promise.all([
-    inspectFontFaces(
+    diagnosticProbe(() => inspectFontFaces(
       selectedFont,
       selectedFont.family === 'Arial' ? 'system' : 'bundled'
-    ),
-    inspectFontFaces(outputFallbackFont, 'bundled'),
-    app.getGPUInfo('basic').catch(error => ({ diagnosticError: safeError(error) }))
+    ), { label: 'Selected font inspection' }),
+    diagnosticProbe(() => inspectFontFaces(outputFallbackFont, 'bundled'), { label: 'Fallback font inspection' }),
+    diagnosticProbe(() => app.getGPUInfo('basic'), { label: 'GPU information' })
   ]);
   const locale = (() => {
     try { return app.getLocale(); } catch { return ''; }
@@ -3084,7 +2868,7 @@ async function buildSupportDiagnostics() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
   })();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'syncshow-support-diagnostics',
     generatedAt: new Date().toISOString(),
     privacy: {
@@ -3111,6 +2895,7 @@ async function buildSupportDiagnostics() {
       chromium: process.versions.chrome || '',
       node: process.versions.node || ''
     },
+    screenHistory: displayDiagnosticsJournal?.snapshot() || null,
     gpu: {
       featureStatus: app.getGPUFeatureStatus(),
       ...sanitizeGpuInfo(gpuInfo),
@@ -3122,6 +2907,8 @@ async function buildSupportDiagnostics() {
       internal: display.internal === true,
       primary: display.id === screen.getPrimaryDisplay().id,
       control: display.id === getControlDisplayId(),
+      fingerprint: appState.displays.find(item => String(item.id) === String(display.id))?.fingerprint,
+      legacyFingerprint: appState.displays.find(item => String(item.id) === String(display.id))?.legacyFingerprint,
       bounds: diagnosticBounds(display.bounds),
       workArea: diagnosticBounds(display.workArea),
       scaleFactor: display.scaleFactor,
@@ -7724,8 +7511,22 @@ function guardControlWindowClose(event) {
 }
 
 let offlinePlannerBible = null;
+let localPlannerSongs = null;
 async function resolveOfflinePlannerRequest(request) {
   const url = new URL(request.url);
+  if (url.pathname === '/syncshow-local/songs' || /^\/api\/community\/service-documents\/library\/songs\/local-song-[a-f0-9-]{36}$/.test(url.pathname)) {
+    if (!localPlannerSongs) localPlannerSongs = new (require('./src/services/community/LocalPlannerSongs').LocalPlannerSongs)({rootPath: path.join(app.getPath('userData'), 'local-presentation-songs')});
+    return localPlannerSongs.request(request);
+  }
+  if (request.method === 'GET' && url.pathname === '/api/community/service-documents/library/bible-passage') {
+    const {bibleBooks} = require('./src/services/bible/BibleBooks');
+    const {resolveBookId} = require('./packages/service-core/node/services/sermon/BibleRange');
+    const {translations} = require('./src/services/bible/BibleTranslations');
+    return new Response(JSON.stringify({schemaVersion: 1,
+      books: bibleBooks.map(book => ({id: resolveBookId(book.name), name: book.name, chapters: book.chapters})),
+      translations: translations.map(edition => ({...edition, language: edition.language === 'Russian' ? 'ru' : 'en'}))
+    }), {headers: {'Content-Type': 'application/json'}});
+  }
   if (request.method === 'POST' && url.pathname === '/api/community/service-documents/library/bible-passage') {
     if (!offlinePlannerBible) offlinePlannerBible = require('./src/services/community/OfflinePlannerBible').createOfflinePlannerBible({ installedLibrary: installedBibleSource });
     try {
@@ -7839,24 +7640,25 @@ function communityPlannerRequestHeaders(details, plannerOrigin, accessToken) {
   return requestHeaders;
 }
 
-async function openCommunityPlannerWindow({ adjust = null } = {}) {
+async function openCommunityPlannerWindow({ adjust = null, local = null } = {}) {
+  const workspace = adjust || local;
   const approved = await currentCommunityConnectionSummary({
     refreshCapabilities: false
   });
-  const connection = approved || (adjust && {id:'local-show',baseUrl:'https://syncshow.local/',serverName:'This computer'});
-  if (!adjust && (!connection || communityConnectionExpired(connection))) {
+  const connection = approved || (workspace && {id:'local-show',baseUrl:'https://syncshow.local/',serverName:'This computer'});
+  if (!workspace && (!connection || communityConnectionExpired(connection))) {
     failMainOperation(
       'COMMUNITY_RECONNECT_REQUIRED',
       'Connect Heritage Community in Admin Settings before opening Prepare.'
     );
   }
-  if (!adjust && communityReconnectRequired) {
+  if (!workspace && communityReconnectRequired) {
     failMainOperation(
       'COMMUNITY_RECONNECT_REQUIRED',
       communityReconnectRequired.message
     );
   }
-  if (!adjust && (connection.canReadServiceDocuments !== true
+  if (!workspace && (connection.canReadServiceDocuments !== true
     || connection.canWriteServiceDocuments !== true)) {
     failMainOperation(
       'COMMUNITY_PLANNER_PERMISSION_REQUIRED',
@@ -7868,7 +7670,7 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
 
   const plannerUrl = safeCommunityPlannerUrl(connection.baseUrl);
   const plannerOrigin = plannerUrl.origin;
-  const mode=adjust ? `adjust-${adjust.sessionId}` : 'prepare';
+  const mode=workspace ? `${local ? 'local' : 'adjust'}-${workspace.sessionId}` : 'prepare';
   if (communityPlannerView && !communityPlannerView.webContents.isDestroyed()) {
     if (communityPlannerOrigin === plannerOrigin && communityPlannerMode === mode) {
       if(!adjust){communityPlannerView.setVisible(true);communityPlannerView.webContents.focus();}
@@ -7898,7 +7700,7 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
       sandbox: true,
       backgroundThrottling: false,
       preload: path.join(__dirname, 'src', 'community-planner-preload.js'),
-      partition: `persist:syncshow-community-planner-${connection.id}${adjust ? '-adjust' : ''}`
+      partition: `persist:syncshow-community-planner-${connection.id}${local ? '-local' : workspace ? '-adjust' : ''}`
     }
   });
   planner.setBackgroundColor('#0b1220');
@@ -7910,16 +7712,17 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
   communityPlannerMode = mode;
   const plannerSession = planner.webContents.session;
   const { CommunityPlannerCache } = require('./src/services/community/CommunityPlannerCache');
-  const cacheRoot=adjust
-    ? path.join(app.getPath('userData'),'community','planner-adjust',connection.id,adjust.workspaceId)
+  const cacheRoot=workspace
+    ? path.join(app.getPath('userData'),'community',local ? 'planner-local' : 'planner-adjust',connection.id,workspace.workspaceId)
     : path.join(app.getPath('userData'), 'community', 'planner', connection.id);
   const cacheOptions={
     backgroundSync: true,
+    localOnly: workspace?.envelope?.project?.presentation?.localOnly === true,
     rootPath: cacheRoot,
     origin: plannerOrigin,
     inspectImage: bytes => require('sharp')(bytes).metadata(),
     fetch: request => {
-      if (!authenticatedConnection || (adjust && (communityConnectionExpired(connection)
+      if (!authenticatedConnection || (workspace && (communityConnectionExpired(connection)
         || (['PUT','POST','DELETE'].includes(request.method) ? connection.canWriteServiceDocuments : connection.canReadServiceDocuments)!==true))) {
         return Promise.resolve(new Response(JSON.stringify({error:'Saved locally. Reconnect Heritage to sync or fetch resources.'}),{status:503,headers:{'Content-Type':'application/json'}}));
       }
@@ -7947,10 +7750,11 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
   };
   const cache = communityPlannerBackgroundCaches.get(cacheRoot) || new CommunityPlannerCache(cacheOptions);
   communityPlannerCache = cache;
+  cache.localPrepare = Boolean(local);
   await cache.loaded;
-  if(adjust){
-    await cache.pinActiveShow(adjust.envelope,adjust.remoteBase,adjust.assetLoader);
-    communityActiveAdjust={cache,sessionId:adjust.sessionId,projectId:adjust.envelope.syncId};
+  if(workspace){
+    await cache.pinActiveShow(workspace.envelope,workspace.remoteBase,workspace.assetLoader,{refreshCommitted:Boolean(local)});
+    communityActiveAdjust=adjust ? {cache,sessionId:workspace.sessionId,projectId:workspace.envelope.syncId} : null;
     const resourcesRoot=path.join(app.getPath('userData'),'community','planner',connection.id);
     cache.resourceCache=communityPlannerBackgroundCaches.get(resourcesRoot) || new CommunityPlannerCache({...cacheOptions,rootPath:resourcesRoot});
     await cache.resourceCache.loaded;
@@ -8048,7 +7852,7 @@ async function openCommunityPlannerWindow({ adjust = null } = {}) {
   });
 
   try {
-    if(adjust){plannerUrl.pathname='/syncshow-local/adjust/index.html';plannerUrl.searchParams.set('service',adjust.envelope.syncId);}
+    if(workspace){plannerUrl.pathname='/syncshow-local/adjust/index.html';plannerUrl.searchParams.set('service',workspace.envelope.syncId);}
     await planner.webContents.loadURL(plannerUrl.href);
   } catch (_error) {
     if (!planner.webContents.isDestroyed()) planner.webContents.close();
@@ -8433,7 +8237,7 @@ function scheduleControlDisplayRefresh() {
   if (controlDisplayRefreshTimer) clearTimeout(controlDisplayRefreshTimer);
   controlDisplayRefreshTimer = setTimeout(() => {
     controlDisplayRefreshTimer = null;
-    updateDisplayList();
+    updateDisplayList('control-window-moved');
   }, 180);
 }
 
@@ -8466,6 +8270,7 @@ function trackOutputWindowHealth(win, output, sessionId) {
   });
   sender.on('render-process-gone', (_event, details) => {
     if (!isCurrentOutputWindow(win, sessionId, output.id)) return;
+    recordScreenDiagnostics('output-renderer-gone', { error: { message: `${output.id}: ${details.reason} (${details.exitCode})` } });
     translationDiagnostics.outputEvent(output.id, 'process-gone');
     console.error(`[Display] ${output.name} renderer process exited:`, details);
     outputHealthTracker.markProcessGone(identity);
@@ -8495,6 +8300,9 @@ function handleOutputFrameHealth(event, payload = {}) {
     error: payload?.error
   });
   outputHealthTracker.acknowledge(acknowledgement);
+  if (payload.ok === false && [...outputWindows.values()].some(entry => entry.win?.webContents === event.sender)) {
+    recordScreenDiagnostics('output-frame-failed', { error: { message: payload.error || 'Output did not acknowledge its frame' } });
+  }
 }
 
 // This permanent listener records every current-frame result. Startup also
@@ -8546,6 +8354,7 @@ function requestOutputRecovery(reason, { resumeVisible, resumeCleared, force = f
     cleared: resumeCleared ?? appState.isCleared, reason, attempt: 0, phase: 'waiting', timer: null
   };
   console.warn(`[Output recovery] ${reason}; retaining cue ${recovery.cue + 1}`);
+  recordScreenDiagnostics(`recovery-${reason}`);
   try {
     const file = path.join(app.getPath('userData'), 'output-recovery.json');
     let entries = [];
@@ -8573,12 +8382,14 @@ async function recoverOutputWindows(recovery) {
     const controlId = getControlDisplayId();
     const resolved = new Map();
     for (const [id, saved] of activeOutputTargets) {
-      let target = displays.find(display => String(display.id) === String(saved.id));
-      if (!target) {
-        const candidates = appState.displays.filter(display => display.fingerprint === saved.fingerprint && !display.isControl);
-        if (candidates.length === 1) target = displays.find(display => display.id === candidates[0].id);
-      }
-      if (!target || String(target.id) === String(controlId)) {
+      const matched = matchOutputDisplay({ legacyDisplayId: saved.id, displayFingerprint: saved.fingerprint }, appState.displays);
+      const target = activePreviewOnly
+        ? previewDisplayMap(recovery.plan.outputs).get(String(saved.id))
+        : displays.find(display => String(display.id) === String(matched.display?.id));
+      if (!target || String(target.id) === String(controlId)
+        || (!activeTestOutputSettings && [...resolved.values()].some(display => String(display.id) === String(target.id)))) {
+        if (!recovery.waitingForScreenLogged) recordScreenDiagnostics('recovery-waiting-for-screen');
+        recovery.waitingForScreenLogged = true;
         recovery.phase = 'waiting';
         publishShowState('outputs-waiting-for-screen');
         recovery.timer = setTimeout(() => void recoverOutputWindows(recovery), 2000);
@@ -8638,11 +8449,16 @@ async function recoverOutputWindows(recovery) {
     if (recovery.visible) for (const {win} of outputWindows.values()) showOutputWindow(win);
     outputLifecyclePhase = !recovery.visible ? 'locally-stopped' : recovery.cleared ? 'cleared' : 'live';
     outputRecovery = null;
+    for (const [id, target] of resolved) activeOutputTargets.set(id, {
+      id: target.id, fingerprint: appState.displays.find(item => String(item.id) === String(target.id))?.fingerprint
+    });
+    recordScreenDiagnostics('recovery-succeeded');
     publishShowState('outputs-reconnected');
     captureOutputPreviews();
   } catch (error) {
     if (!recoveryIsCurrent(recovery)) return;
     console.warn('[Output recovery] Frame recovery failed:', error.message);
+    recordScreenDiagnostics('recovery-failed', { error });
     for (const {win} of outputWindows.values()) if (!win.isDestroyed()) win.hide();
     recovery.phase = recovery.attempt >= 3 ? 'failed' : 'reconnecting';
     publishShowState('outputs-recovery-retry');
@@ -8693,7 +8509,7 @@ async function createTestOutputBackground(layout, sessionId) {
 }
 
 function showOutputWindow(win) {
-  if (!win || win.isDestroyed()) return;
+  if (!win || win.isDestroyed() || win.syncShowPreviewOnly) return;
 
   // Presentation windows never need keyboard or pointer input. Keeping them
   // inactive prevents Start/Show from taking navigation away from the control
@@ -8713,6 +8529,7 @@ function destroyOutputWindows() {
   cancelOutputRecovery();
   activeOutputTargets = null;
   activeTestOutputSettings = null;
+  activePreviewOnly = false;
   const background = testOutputBackground;
   testOutputBackground = null;
   if (background && !background.isDestroyed()) background.destroy();
@@ -8812,11 +8629,14 @@ function createDisplayWindow(displayInfo, output, sessionId) {
       contextIsolation: true,
       sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      ...(displayInfo.previewOnly ? {offscreen: true} : {})
     },
     show: false
   });
 
+  win.syncShowPreviewOnly = displayInfo.previewOnly === true;
+  if (win.syncShowPreviewOnly) win.webContents.setFrameRate(30);
   if (displayInfo.testOutput) {
     win.syncShowTestOutputBounds = { ...bounds };
     win.syncShowTestOutputRotation = displayInfo.testOutputRotation || 0;
@@ -8912,11 +8732,14 @@ function createSingerWindow(displayInfo, output, sessionId) {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      ...(displayInfo.previewOnly ? {offscreen: true} : {})
     },
     show: false
   });
 
+  win.syncShowPreviewOnly = displayInfo.previewOnly === true;
+  if (win.syncShowPreviewOnly) win.webContents.setFrameRate(30);
   if (displayInfo.testOutput) {
     win.syncShowTestOutputBounds = { ...bounds };
     win.syncShowTestOutputRotation = displayInfo.testOutputRotation || 0;
@@ -9158,30 +8981,17 @@ async function rehearseHiddenShowCues({
   return acknowledgements;
 }
 
-function updateDisplayList() {
+function updateDisplayList(reason = 'screen-snapshot', details = {}) {
   const primaryDisplayId = screen.getPrimaryDisplay().id;
   const controlDisplayId = getControlDisplayId();
-  appState.displays = screen.getAllDisplays().map((display, index) => ({
-    id: display.id,
-    index: index,
-    // Electron does not expose a portable monitor serial on every OS. This
-    // conservative fingerprint omits desktop position so a cable rearrangement
-    // can still reconnect a unique monitor. Duplicate fingerprints are treated
-    // as ambiguous by the renderer rather than guessed.
-    fingerprint: [
-      'display-v1',
-      process.platform,
-      display.internal ? 'internal' : 'external',
-      `${display.size?.width || display.bounds.width}x${display.size?.height || display.bounds.height}`,
-      `scale-${display.scaleFactor || 1}`,
-      `rotation-${display.rotation || 0}`,
-      `touch-${display.touchSupport || 'unknown'}`
-    ].join(':'),
-    label: `Display ${index + 1}${display.internal ? ' (Built-in)' : ''} - ${display.bounds.width}x${display.bounds.height}`,
-    bounds: display.bounds,
-    isPrimary: display.id === primaryDisplayId,
-    isControl: display.id === controlDisplayId
+  appState.displays = screen.getAllDisplays().map((display, index) => describeDisplay(display, index, {
+    platform: process.platform, primaryId: primaryDisplayId, controlId: controlDisplayId
   }));
+  const snapshot = JSON.stringify({ displays: appState.displays, outputs: activeVenueProfile?.outputs });
+  if (reason !== 'screen-snapshot' || snapshot !== lastDisplayDiagnosticSnapshot) {
+    recordScreenDiagnostics(reason, details);
+    lastDisplayDiagnosticSnapshot = snapshot;
+  }
 
   if (controlWindow && !controlWindow.isDestroyed()) {
     controlWindow.webContents.send('displays:updated', appState.displays);
@@ -9203,7 +9013,7 @@ function closeIdentifyWindows() {
 
 async function identifyAllDisplays() {
   closeIdentifyWindows();
-  updateDisplayList();
+  updateDisplayList('identify-screens');
   const electronDisplays = screen.getAllDisplays();
 
   for (const [index, display] of electronDisplays.entries()) {
@@ -9247,7 +9057,7 @@ function handleDisplayRemoved(removedDisplay) {
   if (removedDisplay && [...appState.displayAssignments.values()].some(id => id === removedDisplay.id)) {
     requestOutputRecovery('display-removed');
   }
-  updateDisplayList();
+  updateDisplayList('display-removed', { changedDisplayId: removedDisplay?.id });
 }
 
 // DEPRECATED: Global keyboard shortcuts were disabled because Electron's globalShortcut
@@ -10256,7 +10066,7 @@ function sameVisibleLiveCueTransitionOutputs(expectedOutputs, sessionId) {
       const entry = outputWindows.get(output.outputId);
         return entry?.sessionId === sessionId
         && entry.win?.webContents === output.sender
-        && entry.win.isVisible() === true;
+        && outputIsPresented(entry.win, outputsShouldBeVisible);
     });
 }
 
@@ -10314,7 +10124,7 @@ async function showAllDisplays() {
     const entry = outputWindows.get(output.outputId);
     return entry?.sessionId === sessionId
       && entry.win?.webContents === output.sender
-      && entry.win.isVisible() === true;
+      && outputIsPresented(entry.win, outputsShouldBeVisible);
   }));
   if (
     (initialPhase === 'cleared' && initiallyVisible.some(visible => !visible))
@@ -13994,8 +13804,8 @@ function nativeProjectRoleMapping(project) {
     const searchable = `${channelId} ${channel?.label || ''} ${channel?.language || ''}`.toLowerCase();
     return patterns.some(pattern => pattern.test(searchable));
   });
-  const primary = channelIds.includes('primary') ? 'primary' : channelIds[0];
-  const secondary = channelIds.includes('secondary') ? 'secondary' : channelIds[1] || primary;
+  const primary = channelIds.includes('primary') ? 'primary' : findChannel([/^russian\b/, /\bru\b/]) || channelIds[0];
+  const secondary = channelIds.includes('secondary') ? 'secondary' : findChannel([/^english\b/, /\ben\b/]) || channelIds[1] || primary;
   const media = channelIds.includes('media')
     ? 'media'
     : findChannel([/singer/, /stage/, /media/]) || primary;
@@ -18003,6 +17813,30 @@ ipcMain.handle('prepare:projects:list', async (event, request = {}) => {
   };
 });
 
+ipcMain.handle('prepare:projects:quickStart', async (event, request = {}) => {
+  requireControlSender(event);
+  requireNoActiveShowForPresentationMutation();
+  requirePrepareRequest(request, 4096);
+  requireExactPrepareKeys(request, ['title', 'presentation'], 'Start blank');
+  const {normalizePresentationScreens} = require('./packages/service-core/node/services/project/PresentationScreens');
+  const presentation = normalizePresentationScreens({...request.presentation, localOnly: true});
+  const created = await getPrepareServices().serviceProjectStore.create({
+    id: projectItemId('presentation'),
+    title: prepareText(request.title || 'Untitled presentation', 'Presentation name', 200, {required: true}),
+    serviceDate: serviceDateForTimeZone(new Date(), activeVenueProfile?.timeZone || null),
+    profileId: activeVenueProfile?.id || 'default', presentation,
+    channels: [
+      {id: 'english', label: 'English', language: 'en'},
+      {id: 'russian', label: 'Russian', language: 'ru'},
+      {id: 'media', label: 'Stage-Facing', language: 'und'}
+    ]
+  }, {prepareProject: project => addProjectItem(project, {
+    id: projectItemId('blank'), kind: 'blank', title: 'Blank',
+    channelIds: project.channelIds, presetId: 'blank-black'
+  })});
+  return projectResult(created);
+});
+
 ipcMain.handle('prepare:projects:create', async (event, request = {}) => {
   requireControlSender(event);
   requirePrepareRequest(request, 16 * 1024);
@@ -18010,7 +17844,7 @@ ipcMain.handle('prepare:projects:create', async (event, request = {}) => {
     'title',
     'serviceDate',
     'startTime',
-    'teamNotes'
+    'teamNotes', 'presentation'
   ], 'Create service request');
   const serviceDate = request.serviceDate
     ? prepareText(request.serviceDate, 'Service date', 10, { required: true })
@@ -18031,7 +17865,8 @@ ipcMain.handle('prepare:projects:create', async (event, request = {}) => {
     startTime,
     ...(teamNotes !== undefined ? { teamNotes } : {}),
     profileId: activeVenueProfile?.id || 'default',
-    channels: nativeProjectChannels()
+    channels: request.presentation ? [{id:'english',label:'English',language:'en'},{id:'russian',label:'Russian',language:'ru'},{id:'media',label:'Stage-Facing',language:'und'}] : nativeProjectChannels(),
+    ...(request.presentation ? {presentation: request.presentation} : {})
   });
   return projectResult(created);
 });
@@ -18613,7 +18448,8 @@ ipcMain.handle('community:planner:openActiveAdjust', async (event, request = {})
   requireControlSender(event);
   return communityIpcResult(async () => {
     requirePrepareRequest(request, 1024);
-    requireExactPrepareKeys(request, ['bounds'], 'Adjust');
+    requireExactPrepareKeys(request, ['bounds', 'addCategory'], 'Adjust');
+    if (request.addCategory !== undefined && !['templates','songs','scripture','media'].includes(request.addCategory)) throw new Error('Choose a supported slide category.');
     const bounds=request.bounds ? communityPlannerBounds(request.bounds) : null;
     const handoff=installedServiceHandoff(),pointer=currentPreparedServicePointer;
     if(!appState.activeLaunchPlan || !handoff?.project || !pointer)throw new Error('Start a native service before opening Adjust.');
@@ -18657,8 +18493,37 @@ ipcMain.handle('community:planner:openActiveAdjust', async (event, request = {})
     const {focusPlannerCue}=require('./src/services/community/PlannerCueFocus');
     const focused=await communityPlannerView.webContents.executeJavaScript(`(${focusPlannerCue.toString()})(${JSON.stringify({syncId:project.id,cueId,number,sectionIds})})`);
     if(!focused.focused)throw new Error('The current slide could not be selected. Your local service is safe.');
+    if (request.addCategory) {
+      const {openPlannerAdd} = require('./src/services/community/PlannerAddFocus');
+      const added = await communityPlannerView.webContents.executeJavaScript(`(${openPlannerAdd.toString()})(${JSON.stringify(request.addCategory)})`);
+      if (!added.opened) throw new Error('The add-slide library could not open. Use Add slide in Adjust.');
+    }
     return {opened:true,syncId:project.id,local:true};
   });
+});
+
+ipcMain.handle('community:planner:openLocalService', async (event, request = {}) => {
+  requireControlSender(event);
+  requirePrepareRequest(request, 1024);
+  requireExactPrepareKeys(request, ['projectId'], 'Local presentation');
+  requireNoActiveShowForPresentationMutation();
+  const projectId = prepareId(request.projectId, 'Presentation');
+  const read = await getPrepareServices().serviceProjectStore.read(projectId);
+  if (!read.project.presentation?.localOnly) throw new Error('Open shared services through Heritage Community.');
+  const {validateHeritageServiceDocumentSource} = require('./src/services/community/HeritageServiceDocument');
+  const validated = validateHeritageServiceDocumentSource(serviceDocumentSourceForProject(read.project));
+  const envelope = {...validated, schemaVersion: 1, syncId: projectId, syncVersion: 1, status: 'planning', changedAt: read.project.updatedAt};
+  const assetLoader = async request => {
+    const match = /\/assets\/(sha256(?::|%3A)[a-f0-9]{64})$/i.exec(new URL(request.url).pathname);
+    if (!match) return null;
+    const assetId = decodeURIComponent(match[1]), asset = read.project.assets[assetId];
+    if (!asset) return null;
+    const resolved = await getPrepareServices().serviceProjectStore.resolveAssetPath(projectId, read.revisionId, assetId);
+    const {buffer} = await readFileNoFollow(resolved.assetPath, asset.kind === 'video' ? 250*1024*1024 : 75*1024*1024);
+    return new Response(buffer, {headers: {'Content-Type': asset.mediaType}});
+  };
+  await openCommunityPlannerWindow({local: {sessionId: projectId, workspaceId: projectId, envelope, remoteBase: null, assetLoader}});
+  return {opened: true, projectId, localOnly: true};
 });
 
 ipcMain.handle('community:planner:openService', async (event, request = {}) => {
@@ -18995,6 +18860,13 @@ ipcMain.handle('community:planner:prepareLoad', async event => {
     // The editor's acknowledgement is authoritative: a recovered local save
     // may succeed without another PUT, so an old network error cannot veto it.
     const confirmedId = flushed.serviceDocument?.syncId || null;
+    if (confirmedId && communityPlannerCache?.localPrepare) {
+      const confirmed = communityPlannerCache.envelope(confirmedId);
+      const installed = await installBackstageServiceDocument(confirmed, communityPlannerCache);
+      (communityPlannerCache.state.localInstalledRevisions ||= {})[confirmedId] = confirmed.revision;
+      await communityPlannerCache.persist();
+      return {serviceId: confirmedId, localProject: installed};
+    }
     if (confirmedId) communityPlannerHandoff?.confirmSaved(confirmedId);
     const handoff = confirmedId ? { serviceId: confirmedId }
       : communityPlannerHandoff ? await communityPlannerHandoff.ready() : { serviceId: null };
@@ -27172,6 +27044,8 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     preferredTimelineRoleId,
     settings = {}
   } = options;
+  if (options.previewOnly !== undefined && typeof options.previewOnly !== 'boolean') throw new TypeError('Preview only must be true or false.');
+  if (options.previewOnly && (options.testOutput || options.sourceMode !== 'syncshow')) throw new Error('Preview only requires a native presentation.');
   if (options.testOutput !== undefined && typeof options.testOutput !== 'boolean') throw new TypeError('Test Output must be true or false.');
 
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
@@ -27210,8 +27084,10 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   // output session. A malformed or incomplete Start therefore leaves the
   // currently running show intact.
   const testing = options.testOutput === true;
-  const launchOutputs = testing && Array.isArray(outputs)
-    ? outputs.map(output => ({ ...output, displayId: `test-output:${output.id}` }))
+  const previewOnly = options.previewOnly === true;
+  if (previewOnly && !preparedService) throw new Error('Load a verified native presentation before previewing Show.');
+  const launchOutputs = (testing || previewOnly) && Array.isArray(outputs)
+    ? outputs.map(output => ({ ...output, displayId: `${previewOnly ? 'preview-output' : 'test-output'}:${output.id}` }))
     : outputs;
   const launchPlan = resolveLaunchPlan({
     presentations: appState.presentations,
@@ -27243,7 +27119,8 @@ ipcMain.handle('display:start', async (event, options = {}) => {
   const displays = screen.getAllDisplays();
   const controlDisplayId = getControlDisplayId();
   const testLayout = testing ? buildTestOutputDisplayMap({ settings: readTestOutputSettings(), outputs: launchPlan.outputs, displays, controlDisplayId }) : null;
-  const displayById = testLayout?.displays || new Map(displays.map(display => [String(display.id), display]));
+  const displayById = previewOnly ? previewDisplayMap(launchPlan.outputs)
+    : testLayout?.displays || new Map(displays.map(display => [String(display.id), display]));
   for (const output of launchPlan.outputs) {
     if (!displayById.has(String(output.displayId))) {
       throw new Error(`${output.name} is assigned to a display that is no longer connected`);
@@ -27322,6 +27199,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
     return [output.id, {id:display.id, fingerprint:appState.displays.find(item => item.id === display.id)?.fingerprint}];
   }));
   activeTestOutputSettings = testing ? readTestOutputSettings() : null;
+  activePreviewOnly = previewOnly;
   appState.activeLaunchPlan = launchPlan;
   appState.currentSlide = 0;
   appState.totalSlides = launchPlan.totalSlides;
@@ -27518,6 +27396,7 @@ ipcMain.handle('display:start', async (event, options = {}) => {
 
   const result = {
     success: true,
+    previewOnly: activePreviewOnly,
     totalSlides: appState.totalSlides,
     plan: launchPlan,
     outputSessionId: showState?.outputSessionId || null,
@@ -27899,9 +27778,11 @@ ipcMain.handle('app:getState', async (event) => {
     currentSlide: appState.currentSlide,
     totalSlides: appState.totalSlides,
     activeLaunchPlan: appState.activeLaunchPlan,
+    previewOnly: activePreviewOnly,
     showState: showGateway.getState(),
     displays: appState.displays,
     serviceHandoff: installedServiceHandoff(),
+    presentationScreens: Object.values(appState.presentations).find(p => p?.renderer === 'native-cue')?.presentationScreens || null,
     preparedServiceRestore: currentPreparedServiceRestore,
     presentations: Object.fromEntries((activeVenueProfile?.inputRoles || [])
       .filter(role => role.kind === 'deck')
@@ -27909,6 +27790,7 @@ ipcMain.handle('app:getState', async (event) => {
         role.id,
         appState.presentations[role.id]
           ? { loaded: true, slideCount: appState.presentations[role.id].slideCount,
+            presentationScreenId: appState.presentations[role.id].presentationScreenId || null,
             ...(appState.presentations[role.id].metadata?.nativeFallback ? {
               nativeFallback: appState.presentations[role.id].metadata.nativeFallback
             } : {}) }
@@ -27942,12 +27824,30 @@ ipcMain.handle('support:exportDiagnostics', async event => {
   };
 });
 
+function readInterfacePreferences() {
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'interface-preferences.json'), 'utf8'));
+    return {showStartBlank: value.showStartBlank !== false};
+  } catch { return {showStartBlank: true}; }
+}
+
+ipcMain.handle('interface:save', async (event, request = {}) => {
+  requireControlSender(event);
+  requireExactPrepareKeys(request, ['showStartBlank'], 'Interface preference');
+  if (typeof request.showStartBlank !== 'boolean') throw new TypeError('Start Blank visibility must be true or false.');
+  const {atomicWriteFile} = require('./src/services/project/StorageSafety');
+  await atomicWriteFile(path.join(app.getPath('userData'), 'interface-preferences.json'),
+    JSON.stringify({showStartBlank: request.showStartBlank})+'\n', {maximumBytes: 1024, mode: 0o600, rootPath: app.getPath('userData')});
+  return {showStartBlank: request.showStartBlank};
+});
+
 // User settings handlers
 ipcMain.handle('settings:load', async (event) => {
   requireControlSender(event);
   const settings = loadAndApplyUserSettings();
   return {
     ...settings,
+    interfacePreferences: readInterfacePreferences(),
     recoveryWarning: settingsRecoveryWarning
   };
 });
@@ -28053,175 +27953,6 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle('drive:status', async (event) => {
-  requireControlSender(event);
-  return driveStatusPayload();
-});
-
-ipcMain.handle('drive:privateOAuthState', async (event) => {
-  requireControlSender(event);
-  return privateDriveOAuthStatePayload();
-});
-
-ipcMain.handle('drive:copyPrivateOAuthUrl', async (event) => {
-  requireControlSender(event);
-  const services = await getGoogleDriveServices();
-  const authorizationUrl = services.oauthFlow?.getActiveAuthorizationUrl();
-  if (!authorizationUrl) {
-    failMainOperation(
-      'NO_ACTIVE_PRIVATE_DRIVE_SIGN_IN',
-      'Google sign-in is no longer waiting. Start it again to copy a new link.'
-    );
-  }
-  try {
-    clipboard.writeText(authorizationUrl);
-  } catch (_error) {
-    failMainOperation(
-      'PRIVATE_DRIVE_LINK_COPY_FAILED',
-      'SyncShow could not copy the Google sign-in link.'
-    );
-  }
-  return { copied: true };
-});
-
-ipcMain.handle('drive:cancelPrivateOAuth', async (event) => {
-  requireControlSender(event);
-  const services = await getGoogleDriveServices();
-  return {
-    cancelled: await services.oauthFlow?.cancel() === true
-  };
-});
-
-ipcMain.handle('drive:connectPrivate', async (event) => {
-  requireControlSender(event);
-  const services = await getGoogleDriveServices();
-  if (!services.oauthFlow || !services.config.clientId) {
-    failMainOperation(
-      'PRIVATE_DRIVE_NOT_CONFIGURED',
-      'This SyncShow build needs a Google Desktop OAuth client ID before it can connect a private folder.'
-    );
-  }
-  // Prove the OS credential store works before opening Google sign-in. This
-  // avoids issuing a refresh token that the app cannot persist securely.
-  await services.store.assertSecureStorageAvailable();
-  const operationEpoch = googleDriveOperationEpoch;
-  const authorization = await services.oauthFlow.start();
-  try {
-    if (operationEpoch !== googleDriveOperationEpoch) {
-      failMainOperation('DRIVE_OPERATION_CANCELLED', 'Google Drive connection was cancelled.');
-    }
-    const grantedScopes = String(authorization.scope || '').split(/\s+/).filter(Boolean);
-    if (!grantedScopes.includes('https://www.googleapis.com/auth/drive.file')) {
-      failMainOperation(
-        'DRIVE_SCOPE_NOT_GRANTED',
-        'Google did not grant access to the selected Drive folder.'
-      );
-    }
-    const client = new GoogleDriveClient({ accessToken: authorization.accessToken });
-    const folder = await client.getFileMetadata({ fileId: authorization.folderId });
-    if (folder.mimeType !== DRIVE_FOLDER_MIME_TYPE) {
-      failMainOperation('NOT_A_DRIVE_FOLDER', 'Choose a Google Drive folder, not an individual file.');
-    }
-    if (!folder.capabilities.canListChildren) {
-      failMainOperation(
-        'DRIVE_FOLDER_NOT_READABLE',
-        'Google did not allow SyncShow to read files inside that folder.'
-      );
-    }
-    const summary = await services.store.savePrivateConnection({
-      folderId: folder.id,
-      folderName: folder.name,
-      resourceKey: folder.resourceKey,
-      capabilities: folder.capabilities,
-      refreshToken: authorization.refreshToken,
-      writeEnabled: false
-    });
-    googleDriveAccessTokens.set(summary.id, {
-      accessToken: authorization.accessToken,
-      expiresAt: Date.now() + authorization.expiresIn * 1000
-    });
-    rememberApprovedDriveConnection(summary.id);
-    return { connection: publicDriveConnectionSummary(summary) };
-  } catch (error) {
-    await revokeGoogleToken(authorization.refreshToken);
-    throw error;
-  }
-});
-
-ipcMain.handle('drive:linkPublic', async (event, request = {}) => {
-  requireControlSender(event);
-  if (!request || typeof request !== 'object' || Array.isArray(request)
-    || Object.keys(request).some(key => key !== 'url')) {
-    failMainOperation('INVALID_PUBLIC_DRIVE_LINK', 'Paste a public Google Drive folder link.');
-  }
-  const services = await getGoogleDriveServices();
-  if (!services.config.apiKey) {
-    failMainOperation(
-      'PUBLIC_DRIVE_NOT_CONFIGURED',
-      'This SyncShow build needs a Drive-API-restricted Google API key before it can use public folder links.'
-    );
-  }
-  const parsed = parseGoogleDriveFolderLink(request.url);
-  const client = new GoogleDriveClient({ apiKey: services.config.apiKey });
-  const folder = await client.getFileMetadata({
-    fileId: parsed.folderId,
-    resourceKey: parsed.resourceKey
-  });
-  if (folder.mimeType !== DRIVE_FOLDER_MIME_TYPE) {
-    failMainOperation('NOT_A_DRIVE_FOLDER', 'That link does not point to a Google Drive folder.');
-  }
-  const summary = await services.store.savePublicConnection({
-    folderId: folder.id,
-    folderName: folder.name,
-    resourceKey: folder.resourceKey || parsed.resourceKey,
-    capabilities: folder.capabilities
-  });
-  rememberApprovedDriveConnection(summary.id);
-  return { connection: publicDriveConnectionSummary(summary) };
-});
-
-ipcMain.handle('drive:setPublishingEnabled', async (event, request = {}) => {
-  requireControlSender(event);
-  if (!request || typeof request !== 'object' || Array.isArray(request)
-    || Object.keys(request).some(key => key !== 'enabled')
-    || typeof request.enabled !== 'boolean') {
-    failMainOperation('INVALID_DRIVE_WRITE_SETTING', 'Drive publishing must be on or off.');
-  }
-  const { services, connection } = await getDriveConnectionOrFail();
-  const summary = await services.store.setWriteEnabled(connection.id, request.enabled);
-  return {
-    ...(await driveStatusPayload()),
-    connection: publicDriveConnectionSummary(summary)
-  };
-});
-
-ipcMain.handle('drive:disconnect', async (event, request = {}) => {
-  requireControlSender(event);
-  if (!request || typeof request !== 'object' || Array.isArray(request)
-    || Object.keys(request).some(key => key !== 'connectionId')
-    || (request.connectionId !== undefined
-      && request.connectionId !== null
-      && request.connectionId !== ''
-      && typeof request.connectionId !== 'string')) {
-    failMainOperation('INVALID_DRIVE_CONNECTION', 'The Google Drive connection is invalid.');
-  }
-  const connectionId = request.connectionId || activeVenueProfile?.driveConnectionId || null;
-  if (!connectionId
-    || (connectionId !== activeVenueProfile?.driveConnectionId
-      && !approvedDriveConnections.has(connectionId))) {
-    failMainOperation('UNAPPROVED_DRIVE_CONNECTION', 'That Google Drive connection cannot be removed here.');
-  }
-  const services = await getGoogleDriveServices();
-  const result = await services.store.disconnect(connectionId);
-  approvedDriveConnections.delete(connectionId);
-  googleDriveAccessTokens.delete(connectionId);
-  clearServiceScanProposals();
-  return {
-    ...result,
-    status: await driveStatusPayload()
-  };
-});
-
 ipcMain.handle('dialog:openServiceFolder', async (event) => {
   requireControlSender(event);
   const configuredFolder = activeVenueProfile?.localServiceFolder || null;
@@ -28245,53 +27976,19 @@ ipcMain.handle('service-folder:scan', async (event, request = {}) => {
   // Capture every profile-derived value before the first await. Another IPC
   // request can save a different venue profile while this folder is scanning.
   const scanContext = captureServiceScanContext(request.requestedDate);
-  let scan;
-  let canonicalFolder = null;
-  let directories = [];
-  if (scanContext.sourceKind === 'local-folder') {
-    const preflight = await preflightServiceFolderScan(scanContext.folderPath);
-    canonicalFolder = preflight.canonicalFolder;
-    directories = preflight.directories;
-    scan = await scanServiceFolder({
-      folderPath: canonicalFolder,
-      inputRoles: scanContext.inputRoles,
-      requiredRoleIds: scanContext.requiredRoleIds,
-      requestedDate: scanContext.requestedDate,
-      dateOrder: scanContext.dateOrder,
-      maxDepth: SERVICE_SCAN_MAX_DEPTH,
-      maxFiles: SERVICE_SCAN_MAX_FILES,
-      maxEntries: SERVICE_SCAN_MAX_ENTRIES
-    });
-  } else {
-    const operationEpoch = googleDriveOperationEpoch;
-    const { services, connection } = await getDriveConnectionOrFail(scanContext.driveConnectionId);
-    const client = await driveClientForConnection(connection, services);
-    const listing = await client.listFolder({
-      folderId: connection.folderId,
-      resourceKey: connection.resourceKey,
-      maximumDepth: SERVICE_SCAN_MAX_DEPTH,
-      maximumFiles: SERVICE_SCAN_MAX_ENTRIES,
-      maximumPages: 100
-    });
-    if (operationEpoch !== googleDriveOperationEpoch) {
-      failMainOperation('DRIVE_OPERATION_CANCELLED', 'The Google Drive scan was cancelled.');
-    }
-    scan = scanDriveServiceFiles({
-      sourceType: `google-drive-${connection.kind}`,
-      folderId: connection.folderId,
-      folderResourceKey: connection.resourceKey,
-      files: listing.files,
-      inputRoles: scanContext.inputRoles,
-      requiredRoleIds: scanContext.requiredRoleIds,
-      requestedDate: scanContext.requestedDate,
-      dateOrder: scanContext.dateOrder,
-      maxFiles: SERVICE_SCAN_MAX_ENTRIES
-    });
-    // These stay only in the main-held proposal. The renderer receives neither
-    // folder/file IDs nor resource keys.
-    scan.source.connectionId = connection.id;
-    scan.source.connectionRevision = connection.updatedAt;
-  }
+  const preflight = await preflightServiceFolderScan(scanContext.folderPath);
+  const canonicalFolder = preflight.canonicalFolder;
+  const directories = preflight.directories;
+  const scan = await scanServiceFolder({
+    folderPath: canonicalFolder,
+    inputRoles: scanContext.inputRoles,
+    requiredRoleIds: scanContext.requiredRoleIds,
+    requestedDate: scanContext.requestedDate,
+    dateOrder: scanContext.dateOrder,
+    maxDepth: SERVICE_SCAN_MAX_DEPTH,
+    maxFiles: SERVICE_SCAN_MAX_FILES,
+    maxEntries: SERVICE_SCAN_MAX_ENTRIES
+  });
   if (scan.files.length > SERVICE_SCAN_MAX_FILES) {
     failMainOperation(
       'TOO_MANY_SERVICE_FILES',
@@ -28307,88 +28004,14 @@ ipcMain.handle('service-folder:scan', async (event, request = {}) => {
 ipcMain.handle('service-set:pin', async (event, request = {}) => {
   requireControlSender(event);
   const { proposal, setId } = requireServiceScanProposal(request);
-  let manifest;
-  if (proposal.scan.source?.type === 'local-folder') {
-    manifest = await pinServiceSet({
-      scan: proposal.scan,
-      setId,
-      destinationRoot: getServiceSetRoot(),
-      profileId: activeVenueProfile.id,
-      profileName: activeVenueProfile.name,
-      timeZone: activeVenueProfile.timeZone
-    });
-  } else {
-    const connectionId = proposal.scan.source?.connectionId;
-    if (!connectionId || connectionId !== activeVenueProfile.driveConnectionId) {
-      failMainOperation(
-        'DRIVE_CONNECTION_CHANGED',
-        'The Google Drive connection changed. Refresh the service files and try again.'
-      );
-    }
-    const operationEpoch = googleDriveOperationEpoch;
-    const { services, connection } = await getDriveConnectionOrFail(connectionId);
-    if (`google-drive-${connection.kind}` !== proposal.scan.source.type
-      || connection.folderId !== proposal.scan.source.folderId
-      || (connection.resourceKey || null) !== (proposal.scan.source.resourceKey || null)) {
-      failMainOperation(
-        'DRIVE_CONNECTION_CHANGED',
-        'The Google Drive folder changed. Refresh the service files and try again.'
-      );
-    }
-    let client = await driveClientForConnection(connection, services);
-    const withPrivateRefresh = async operation => {
-      try {
-        return await operation(client);
-      } catch (error) {
-        if (connection.kind !== 'private' || error?.status !== 401) throw error;
-        client = await driveClientForConnection(connection, services, { forceRefresh: true });
-        return operation(client);
-      }
-    };
-    const assertOperationCurrent = () => {
-      if (operationEpoch !== googleDriveOperationEpoch
-        || activeVenueProfile.driveConnectionId !== connectionId) {
-        failMainOperation('DRIVE_OPERATION_CANCELLED', 'The Google Drive download was cancelled.');
-      }
-    };
-    manifest = await pinRemoteServiceSet({
-      scan: proposal.scan,
-      setId,
-      destinationRoot: getServiceSetRoot(),
-      profileId: activeVenueProfile.id,
-      profileName: activeVenueProfile.name,
-      timeZone: activeVenueProfile.timeZone,
-      checkCandidateUnchanged: async candidate => {
-        assertOperationCurrent();
-        const metadata = await withPrivateRefresh(currentClient =>
-          currentClient.getFileMetadata({
-            fileId: candidate.fileId,
-            resourceKey: candidate.resourceKey
-          })
-        );
-        assertOperationCurrent();
-        return driveMetadataMatchesCandidate(metadata, candidate);
-      },
-      materialize: async ({ candidate, destinationPath, maximumBytes }) => {
-        assertOperationCurrent();
-        const buffer = await withPrivateRefresh(currentClient => (
-          candidate.nativeGoogleSlides
-            ? currentClient.exportGoogleSlides({
-              fileId: candidate.fileId,
-              resourceKey: candidate.resourceKey,
-              maximumBytes
-            })
-            : currentClient.downloadFile({
-              fileId: candidate.fileId,
-              resourceKey: candidate.resourceKey,
-              maximumBytes
-            })
-        ));
-        assertOperationCurrent();
-        await fs.promises.writeFile(destinationPath, buffer, { flag: 'wx', mode: 0o600 });
-      }
-    });
-  }
+  const manifest = await pinServiceSet({
+    scan: proposal.scan,
+    setId,
+    destinationRoot: getServiceSetRoot(),
+    profileId: activeVenueProfile.id,
+    profileName: activeVenueProfile.name,
+    timeZone: activeVenueProfile.timeZone
+  });
   grantPinnedPresentationPaths(manifest);
   return sanitizePinnedServiceSet(manifest);
 });
@@ -28532,9 +28155,11 @@ ipcMain.handle('cache:load', async (event, request) => {
   return result;
 });
 
-ipcMain.handle('displays:refresh', async (event) => {
+ipcMain.handle('displays:refresh', async (event, options = {}) => {
   requireControlSender(event);
-  updateDisplayList();
+  requireExactPrepareKeys(options, ['reason'], 'Screen rescan');
+  if (options.reason !== undefined && !['start', 'operator'].includes(options.reason)) throw new Error('Choose a supported screen rescan.');
+  updateDisplayList(options.reason === 'start' ? 'start-rescan' : 'operator-rescan');
   return appState.displays;
 });
 
@@ -28559,6 +28184,11 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    displayDiagnosticsJournal = new DisplayDiagnosticsJournal({
+      filePath: path.join(app.getPath('userData'), 'screen-diagnostics.json'),
+      version: app.getVersion()
+    });
+    updateDisplayList('app-startup');
     const translationHealthTimer = setInterval(() => {
       const previousWarning = translationDiagnostics.warning;
       const state = translationStatePayload();
@@ -28580,15 +28210,13 @@ if (!hasSingleInstanceLock) {
     // Don't register shortcuts on startup - only when presentation starts
 
     // Handle display changes
-    screen.on('display-added', () => updateDisplayList());
+    screen.on('display-added', (event, display) => updateDisplayList('display-added', { changedDisplayId: display?.id }));
     screen.on('display-removed', (event, display) => handleDisplayRemoved(display));
-    screen.on('display-metrics-changed', () => updateDisplayList());
+    screen.on('display-metrics-changed', (event, display, changedMetrics) => updateDisplayList('display-metrics-changed', { changedDisplayId: display?.id, changedMetrics }));
     powerMonitor.on('suspend', () => {
+      updateDisplayList('computer-suspend');
       closeSermonRecordingPlayer().catch(error => {
         console.error('[Sermon] Could not finish recording playback cleanup:', error);
-      });
-      cancelGoogleDriveOperations().catch(error => {
-        console.error('[GoogleDrive] Could not finish suspend cleanup:', error);
       });
       cancelCommunityTransientOperations().catch(error => {
         console.error('[Community] Could not finish suspend cleanup:', error);
@@ -28598,6 +28226,7 @@ if (!hasSingleInstanceLock) {
       });
     });
     powerMonitor.on('resume', () => {
+      updateDisplayList('computer-resume');
       scheduleCommunitySongSync('computer resumed', 1500);
       scheduleCommunityPeriodicSync({ resetBackoff: true });
     });
@@ -28625,9 +28254,9 @@ app.on('before-quit', event => {
 });
 
 app.on('will-quit', () => {
+  if (app.isReady()) recordScreenDiagnostics('app-quit');
   translationScreens.closeAll();
   closeSermonRecordingPlayer().catch(() => {});
-  cancelGoogleDriveOperations().catch(() => {});
   cancelCommunityTransientOperations().catch(() => {});
   clearRemotePairingTimer();
   try {
@@ -28646,7 +28275,5 @@ app.on('will-quit', () => {
   clearCanonicalSermonBodyProjectionProposals();
   clearServiceSermonPacketProposals();
   approvedServiceFolders.clear();
-  approvedDriveConnections.clear();
-  googleDriveAccessTokens.clear();
   approvedPresentationPaths.clear();
 });

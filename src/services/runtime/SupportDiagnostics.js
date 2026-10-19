@@ -35,6 +35,29 @@ function safeError(error) {
   };
 }
 
+// A broken/disconnected graphics driver must not prevent an operator from
+// exporting the very report needed to diagnose it. Optional probes fail open
+// with an explicit error; presentation startup keeps its own strict barriers.
+async function diagnosticProbe(operation, { label = 'Hardware query', timeoutMs = 3000 } = {}) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`${label} did not respond within ${timeoutMs} ms`);
+          error.code = 'DIAGNOSTIC_PROBE_TIMEOUT';
+          reject(error);
+        }, timeoutMs);
+      })
+    ]);
+  } catch (error) {
+    return { diagnosticError: safeError(error) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function safeFileName(value) {
   if (typeof value !== 'string' || value.length < 1) return 'unknown';
   return boundedText(path.basename(value.replace(/\\/g, '/')), 255) || 'unknown';
@@ -122,6 +145,7 @@ function diagnosticFileName(date = new Date()) {
 }
 
 module.exports = {
+  diagnosticProbe,
   diagnosticFileName,
   inspectFontFaces,
   safeError,

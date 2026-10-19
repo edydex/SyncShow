@@ -13,6 +13,10 @@
   <div class="app-container">
     <header class="header" id="setupHeader">
       <div class="header-left">
+        <div class="header-start-actions">
+          <button id="btnOpenSettings" type="button" class="btn btn-secondary" aria-controls="advancedSetupDetails">Admin Settings</button>
+          <button id="btnStartBlank" type="button" class="btn btn-secondary" aria-haspopup="dialog" aria-controls="startBlankDialog">Start Blank</button>
+        </div>
         <div class="app-mark" aria-hidden="true">S</div>
         <div>
           <div class="app-title-row">
@@ -38,11 +42,7 @@
       </nav>
 
       <div class="header-right header-load-actions">
-        <button type="button" class="btn btn-secondary" data-open-translation aria-haspopup="dialog" aria-controls="translationDialog">Translation setup</button>
         <button id="btnTestOutput" class="btn btn-secondary" type="button" hidden>Test Output</button>
-        <button id="btnOpenSettings" class="btn btn-secondary" aria-controls="advancedSetupDetails">
-          Admin Settings
-        </button>
         <button id="btnStartPresentation" class="btn btn-primary btn-start">
           Start Show
         </button>
@@ -823,10 +823,10 @@
             <div class="legacy-pptx-intro">
               <div>
                 <h3>Load the PowerPoints for this service</h3>
-                <p>Choose one, two, three, or more files. Automatic Google Drive and folder loading is optional.</p>
+                <p>Choose one, two, three, or more files. Automatic folder loading is optional.</p>
                 <span id="loadAutoStatus" class="load-auto-status" role="status" aria-live="polite">Checking automatic loading…</span>
               </div>
-              <button type="button" id="btnOpenPptxImportFromLoad" class="btn btn-secondary">Google Drive &amp; folder setup</button>
+              <button type="button" id="btnOpenPptxImportFromLoad" class="btn btn-secondary">PPTX folder setup</button>
             </div>
             <div id="inputCardsHostLoad">
               <div class="setup-grid" id="inputCards" aria-label="Service slideshow inputs"></div>
@@ -861,18 +861,23 @@
                 <span>Heritage Community</span>
                 <small>Account, services, and library sync</small>
               </button>
-              <button type="button" id="settingsTabGoogleDrive" class="admin-settings-tab" role="tab" aria-selected="false" aria-controls="settingsGoogleDrivePanel" data-settings-tab="google-drive" tabindex="-1">
+              <button type="button" id="settingsTabPptx" class="admin-settings-tab" role="tab" aria-selected="false" aria-controls="settingsPptxPanel" data-settings-tab="pptx" tabindex="-1">
                 <span>PPTX Loading</span>
-                <small>Google Drive and local folders</small>
+                <small>Local PowerPoint folders</small>
               </button>
               <button type="button" id="settingsTabScreens" class="admin-settings-tab" role="tab" aria-selected="false" aria-controls="settingsScreensPanel" data-settings-tab="screens" tabindex="-1">
                 <span>Screen Setup</span>
                 <small>Venue screens and Show behavior</small>
               </button>
+              <button type="button" class="admin-settings-tab" role="tab" aria-selected="false" id="settingsTranslationTab" aria-controls="settingsTranslationPanel" data-settings-tab="translation" tabindex="-1"><span>Translation</span><small>Live captions and translation screens</small></button>
             </nav>
 
             <div class="admin-settings-scroll">
-              <section id="settingsGoogleDrivePanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabGoogleDrive" data-settings-panel="google-drive" tabindex="0" hidden>
+              <section id="settingsTranslationPanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTranslationTab" data-settings-panel="translation" tabindex="0" hidden>
+                <h3>Translation setup</h3><p>Configure live translation, captions, and translation-only screens.</p>
+                <button type="button" class="btn btn-secondary" data-open-translation aria-haspopup="dialog" aria-controls="translationDialog">Open Translation setup</button>
+              </section>
+              <section id="settingsPptxPanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabPptx" data-settings-panel="pptx" tabindex="0" hidden>
               <section id="serviceFolderCard" class="service-folder-card" aria-labelledby="serviceFolderHeading">
                 <div class="service-folder-heading">
                   <div class="service-folder-title">
@@ -884,40 +889,21 @@
                     <div>
                       <p class="section-kicker">AUTOMATIC LOADING</p>
                       <h3 id="serviceFolderHeading">Automatic loading source</h3>
-                      <p id="serviceFolderLead">Connect Google Drive directly, paste a public folder link, or use a folder on this computer. Matching slideshows will populate the Load cards automatically.</p>
+                      <p id="serviceFolderLead">Choose a folder on this computer. Matching slideshows will populate the Load cards automatically.</p>
                     </div>
                   </div>
                   <span id="serviceFolderStateBadge" class="service-state-badge">Not linked</span>
                 </div>
 
                 <div class="service-source-options" aria-label="Automatic loading source choices">
-                  <button type="button" id="btnConnectPrivateDrive" class="service-source-option">
-                    <span class="service-source-mark" aria-hidden="true">G</span>
-                    <span>
-                      <strong>Private Google Drive</strong>
-                      <small id="privateDriveSourceHelp">Sign in and choose one folder</small>
-                    </span>
-                  </button>
-                  <label id="publicDriveSourceOption" class="service-source-option service-source-public" for="publicDriveFolderUrl">
-                    <span class="service-source-mark" aria-hidden="true">↗</span>
-                    <span class="service-source-public-copy">
-                      <strong>Public Drive link</strong>
-                      <small id="publicDriveSourceHelp">No sign-in · view-only</small>
-                      <span class="service-public-link-row">
-                        <input id="publicDriveFolderUrl" class="text-input" type="url" maxlength="2048" autocomplete="off" placeholder="Paste a public Google Drive folder link">
-                        <button type="button" id="btnLinkPublicDrive" class="btn btn-outline btn-compact">Connect</button>
-                      </span>
-                    </span>
-                  </label>
                   <button type="button" id="btnChooseServiceFolder" class="service-source-option">
                     <span class="service-source-mark" aria-hidden="true">⌁</span>
                     <span>
                       <strong>Folder on this computer</strong>
-                      <small>Also works with Google Drive Desktop</small>
+                      <small>Keeps a verified offline copy</small>
                     </span>
                   </button>
                 </div>
-                <p id="driveSetupNotice" class="service-source-notice" role="status" aria-live="polite" hidden></p>
 
                 <div class="service-folder-toolbar">
                   <div class="service-folder-location" id="serviceFolderLocation">
@@ -935,13 +921,7 @@
                   </div>
                 </div>
 
-                <label id="drivePublishingControl" class="drive-publishing-control" hidden>
-                  <input type="checkbox" id="drivePublishingEnabled">
-                  <span>
-                    <strong>Allow publishing from SyncShow</strong>
-                    <small id="drivePublishingHelp">Off by default. Background loading never changes Drive files.</small>
-                  </span>
-                </label>
+
 
                 <div id="serviceFolderScanStatus" class="service-scan-status" role="status" aria-live="polite">
                   <span class="service-status-dot" aria-hidden="true"></span>
@@ -1110,11 +1090,18 @@
                   <button id="btnIdentifyDisplays" class="btn btn-outline" title="Show a large number and name on each connected screen">
                     Identify screens
                   </button>
+                  <button id="btnSaveScreenDiagnostics" class="btn btn-quiet" type="button">Save diagnostics…</button>
                 </div>
+                <p id="screenDiagnosticsStatus" class="settings-note" role="status">Screen history is saved automatically across restarts. Export it after a screen problem—even if reassigning the screen fixed it. No passwords or slide contents.</p>
               </section>
 
               <div class="settings-body">
             <input type="checkbox" id="friendlyMode" checked hidden>
+            <section class="settings-section quick-start-preference"><h3>Quick presentations</h3>
+              <label><input type="checkbox" id="showStartBlankPreference" checked> Show Start Blank in the top bar</label>
+              <p class="settings-note">Start a local presentation for a small group or an unplanned service.</p>
+              <p id="interfacePreferenceStatus" class="settings-note" role="status"></p>
+            </section>
 
             <section class="settings-section" id="outputSettingsSection" aria-labelledby="outputSettingsHeading">
               <div class="settings-section-heading">
@@ -1173,7 +1160,7 @@
 
                 <div class="profile-source-grid">
                   <label class="field-group profile-service-folder-field">
-                    <span>Automatic loading source <small>Managed in Google Drive &amp; PPTX</small></span>
+                    <span>Automatic loading source <small>Managed in PPTX files</small></span>
                     <span class="profile-folder-picker">
                       <input type="text" id="profileServiceFolder" class="text-input" readonly placeholder="No source linked">
                       <button type="button" id="btnChooseProfileServiceFolder" class="btn btn-outline">Open setup</button>
@@ -1306,6 +1293,7 @@
           <div class="thumbnails-header">
             <div>
               <h2 id="allSlidesHeading">Service slides</h2>
+              <small id="showPreviewOnly" class="show-preview-only" role="status" hidden>Preview only · no audience screens. End Show to connect screens.</small>
               <small id="backstagePreviewStatus" role="status" hidden></small>
             </div>
             <div class="thumbnails-header-controls">
@@ -1315,6 +1303,9 @@
                 <span class="zoom-level" id="zoomLevel">100%</span>
                 <button class="zoom-btn" id="zoomIn" aria-label="Larger thumbnails">+</button>
               </div>
+              <button class="btn btn-secondary" type="button" data-show-add="songs">＋ Song</button>
+              <button class="btn btn-secondary" type="button" data-show-add="scripture">＋ Passage</button>
+              <button class="btn btn-secondary" type="button" data-show-add="media">＋ Media</button>
               <button id="btnShowAdjust" class="btn btn-secondary" type="button" aria-pressed="false" aria-controls="showAdjustPanel">Adjust</button>
             </div>
           </div>
@@ -1420,6 +1411,11 @@
 
     <section id="showAdjustPanel" class="show-adjust-panel" aria-label="Adjust the service backstage" hidden>
       <header class="show-adjust-header"><div><strong id="showAdjustDraft">Backstage draft · changes are not on screen yet</strong><small id="showAdjustStatus" role="status">Changes are saved backstage. Click a slide or Next to show them.</small></div>
+        <nav class="show-adjust-add" aria-label="Add content backstage">
+          <button type="button" class="btn btn-secondary" data-show-add="songs">+ Song</button>
+          <button type="button" class="btn btn-secondary" data-show-add="scripture">+ Passage</button>
+          <button type="button" class="btn btn-secondary" data-show-add="media">+ Media</button>
+        </nav>
         <button id="btnReviewAdjustConflict" type="button" class="btn btn-secondary" hidden>Review versions</button>
         <button id="btnCloseShowAdjust" type="button" class="btn btn-secondary">Close</button>
       </header>
@@ -1599,22 +1595,6 @@
       <button type="button" id="btnShowHandoffFollowUp" class="btn btn-secondary">Needs follow-up</button>
       <button type="button" id="btnOpenShowSermonHandoff" class="btn btn-outline" aria-controls="preparePanel">Open sermon handoff</button>
       <button type="button" id="btnCloseShowHandoff" class="btn btn-quiet">Keep current status</button>
-    </div>
-  </dialog>
-
-  <dialog id="driveOAuthDialog" class="warning-dialog drive-oauth-dialog" aria-labelledby="driveOAuthTitle" aria-describedby="driveOAuthDescription">
-    <div class="dialog-icon drive-oauth-icon" aria-hidden="true">G</div>
-    <p class="section-kicker">PRIVATE GOOGLE DRIVE</p>
-    <h2 id="driveOAuthTitle">Finish signing in with your browser</h2>
-    <p id="driveOAuthDescription">Google sign-in is waiting in your default browser. Keep SyncShow open while you choose the service folder.</p>
-    <div class="drive-oauth-recovery">
-      <strong>Browser crashed or the folder chooser is blank?</strong>
-      <p>Use SyncShow’s button below to copy the original one-time sign-in link, then open it in Safari, Chrome, Firefox, or another browser on this computer before the three-minute timer expires. Do not copy or replay a callback or Picker URL from the browser address bar, and do not share the link.</p>
-    </div>
-    <p id="driveOAuthActionStatus" class="drive-oauth-action-status" role="status" aria-live="polite">Waiting for Google sign-in…</p>
-    <div class="dialog-actions">
-      <button type="button" id="btnCancelDriveOAuth" class="btn btn-secondary">Cancel sign-in</button>
-      <button type="button" id="btnCopyDriveOAuthLink" class="btn btn-primary" autofocus>Copy sign-in link</button>
     </div>
   </dialog>
 
@@ -2129,11 +2109,23 @@
     </form>
   </dialog>
 
+  <dialog id="startBlankDialog" class="prepare-dialog quick-start-dialog" aria-labelledby="startBlankTitle">
+    <form id="startBlankForm">
+      <h2 id="startBlankTitle">Start a blank presentation</h2>
+      <p class="prepare-dialog-description">Choose the screens for this gathering. Add songs, Scripture, and slides as you go. Everything saves on this computer.</p>
+      <label class="field-group"><span>Presentation name <small>(optional)</small></span><input id="startBlankName" class="text-input" maxlength="200" placeholder="Small group"></label>
+      <div id="startBlankScreens" aria-label="Presentation screens"></div>
+      <p id="startBlankError" class="preflight-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="btnCancelStartBlank" type="button" class="btn btn-secondary">Cancel</button><button id="btnConfirmStartBlank" type="submit" class="btn btn-primary">Start blank</button></div>
+    </form>
+  </dialog>
+
   <dialog id="newServiceProjectDialog" class="prepare-dialog" aria-labelledby="newServiceProjectTitle">
     <form id="newServiceProjectForm">
       <p class="section-kicker">NEW SERVICE</p>
       <h2 id="newServiceProjectTitle">Create a service project</h2>
       <p class="prepare-dialog-description">Give volunteers a clear name, date, and local start time. The new service opens in Planning so its order and weekly checks can be reviewed before Ready.</p>
+      <div id="newServiceProjectScreens" aria-label="Presentation screens"></div>
       <label class="field-group">
         <span>Service name</span>
         <input id="newServiceProjectName" class="text-input" type="text" maxlength="200" autocomplete="off" required value="Sunday Service">
@@ -3133,9 +3125,10 @@
   </aside>
   <script src="remote-navigation-notice.js"></script>
   <script src="error-messages.js"></script>
-  <script src="google-drive-oauth-state.js"></script>
   <script src="service-output-plan.js"></script>
   <script src="presentation-mode.js"></script>
+  <script src="presentation-screen-picker.js"></script>
+  <script src="service-screen-routing.js"></script>
   <script src="show-accessibility.js"></script>
   <script src="service-handoff.js"></script>
   <script src="prepared-service-guard.js"></script>

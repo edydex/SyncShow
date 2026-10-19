@@ -1157,7 +1157,7 @@ test('sermon conflict projection accepts only bounded safe copies and exact guar
 
 test('Community approval polling is bounded, cancellable, and renderer-secret-free', () => {
   const communityStart = appSource.indexOf('const COMMUNITY_POLL_INTERVAL_MS');
-  const communityEnd = appSource.indexOf('function renderPrivateDriveOAuthDialog', communityStart);
+  const communityEnd = appSource.indexOf('function serviceFolderErrorText', communityStart);
   const source = appSource.slice(communityStart, communityEnd);
 
   assert.match(source, /COMMUNITY_POLL_INTERVAL_MS = 2000/);

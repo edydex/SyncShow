@@ -5,6 +5,9 @@
 // Application State
 const state = {
   workflowStage: 'load',
+  presentationScreens: null,
+  interfacePreferences: {showStartBlank: true},
+  quickStartBusy: false,
   presentations: {},
   presentationConversionRecovery: {},
   profile: null,
@@ -16,6 +19,7 @@ const state = {
   totalSlides: 0,
   displays: [],
   isPresenting: false,
+  previewOnly: false,
   activeLaunchPlan: null,
   showState: null,
   showActionRequest: 0,
@@ -82,12 +86,6 @@ const state = {
     scanEpoch: null,
     changeEpoch: 0,
     changeTimer: null
-  },
-  drive: {
-    status: null,
-    busy: false,
-    error: null,
-    oauth: window.SyncShowGoogleDriveOAuthState.createInitialState()
   },
   community: {
     status: null,
@@ -200,21 +198,7 @@ const elements = {
   serviceFolderLocation: document.getElementById('serviceFolderLocation'),
   serviceFolderName: document.getElementById('serviceFolderName'),
   serviceFolderPath: document.getElementById('serviceFolderPath'),
-  driveSetupNotice: document.getElementById('driveSetupNotice'),
-  driveOAuthDialog: document.getElementById('driveOAuthDialog'),
-  driveOAuthActionStatus: document.getElementById('driveOAuthActionStatus'),
-  btnCopyDriveOAuthLink: document.getElementById('btnCopyDriveOAuthLink'),
-  btnCancelDriveOAuth: document.getElementById('btnCancelDriveOAuth'),
-  btnConnectPrivateDrive: document.getElementById('btnConnectPrivateDrive'),
-  privateDriveSourceHelp: document.getElementById('privateDriveSourceHelp'),
-  publicDriveSourceOption: document.getElementById('publicDriveSourceOption'),
-  publicDriveSourceHelp: document.getElementById('publicDriveSourceHelp'),
-  publicDriveFolderUrl: document.getElementById('publicDriveFolderUrl'),
-  btnLinkPublicDrive: document.getElementById('btnLinkPublicDrive'),
   btnDisconnectServiceSource: document.getElementById('btnDisconnectServiceSource'),
-  drivePublishingControl: document.getElementById('drivePublishingControl'),
-  drivePublishingEnabled: document.getElementById('drivePublishingEnabled'),
-  drivePublishingHelp: document.getElementById('drivePublishingHelp'),
   serviceFolderDate: document.getElementById('serviceFolderDate'),
   serviceFolderScanStatus: document.getElementById('serviceFolderScanStatus'),
   serviceSetResults: document.getElementById('serviceSetResults'),
@@ -343,6 +327,8 @@ const elements = {
   btnPreflightBack: document.getElementById('btnPreflightBack'),
   btnPreflightContinue: document.getElementById('btnPreflightContinue'),
   btnSaveDiagnostics: document.getElementById('btnSaveDiagnostics'),
+  btnSaveScreenDiagnostics: document.getElementById('btnSaveScreenDiagnostics'),
+  screenDiagnosticsStatus: document.getElementById('screenDiagnosticsStatus'),
   bibleDialog: document.getElementById('bibleDialog'),
   bibleForm: document.getElementById('bibleForm'),
   bibleReference: document.getElementById('bibleReference'),
@@ -400,6 +386,15 @@ const elements = {
   // Control buttons
   btnRefreshDisplays: document.getElementById('btnRefreshDisplays'),
   btnIdentifyDisplays: document.getElementById('btnIdentifyDisplays'),
+  btnStartBlank: document.getElementById('btnStartBlank'),
+  startBlankDialog: document.getElementById('startBlankDialog'),
+  startBlankForm: document.getElementById('startBlankForm'),
+  startBlankName: document.getElementById('startBlankName'),
+  startBlankError: document.getElementById('startBlankError'),
+  btnConfirmStartBlank: document.getElementById('btnConfirmStartBlank'),
+  btnCancelStartBlank: document.getElementById('btnCancelStartBlank'),
+  showStartBlankPreference: document.getElementById('showStartBlankPreference'),
+  interfacePreferenceStatus: document.getElementById('interfacePreferenceStatus'),
   btnOpenSettings: document.getElementById('btnOpenSettings'),
   btnStartPresentation: document.getElementById('btnStartPresentation'),
   btnRestorePrevious: document.getElementById('btnRestorePrevious'),
@@ -408,6 +403,8 @@ const elements = {
   btnStopDisplays: document.getElementById('btnStopDisplays'),
   btnBackToSetup: document.getElementById('btnBackToSetup'),
   btnShowAdjust: document.getElementById('btnShowAdjust'),
+  showPreviewOnly: document.getElementById('showPreviewOnly'),
+  showAddButtons: [...document.querySelectorAll('[data-show-add]')],
   btnCloseShowAdjust: document.getElementById('btnCloseShowAdjust'),
   showAdjustPanel: document.getElementById('showAdjustPanel'),
   showAdjustViewport: document.getElementById('showAdjustViewport'),
@@ -507,8 +504,10 @@ let communityPlannerStateUnsubscribe = null;
 let communityPlannerLayoutFrame = null;
 let loadFreshnessPromise = null;
 const loadWorkWaiters = new Set();
+let quickStartPicker = null;
 let showAdjustOpen = false;
 let showAdjustBusy = false;
+let showAdjustOpening = false;
 let showAdjustGeneration = 0;
 let plannerConflictReview = null;
 
@@ -607,9 +606,6 @@ async function init() {
   if (typeof window.api.onServiceFolderChanged === 'function') {
     window.api.onServiceFolderChanged(handleServiceFolderChanged);
   }
-  if (typeof window.api.onPrivateDriveOAuthStateChanged === 'function') {
-    window.api.onPrivateDriveOAuthStateChanged(handlePrivateDriveOAuthStateChanged);
-  }
   if (typeof window.api.onCommunityStatus === 'function') {
     const unsubscribe = window.api.onCommunityStatus(handleCommunityStatusChanged);
     if (typeof unsubscribe === 'function') communityStatusUnsubscribe = unsubscribe;
@@ -632,7 +628,6 @@ async function init() {
   // Connection/capability discovery can be slow when offline. Restore the
   // verified local package and finish the bounded revision check first, so
   // these background settings cannot hold a queued start hostage.
-  await refreshPrivateDriveOAuthState();
   await refreshCommunityStatus();
   await refreshCommunityPlannerState();
   await refreshRemoteControl({ refreshBindings: true });
@@ -678,7 +673,7 @@ function setupEventListeners() {
     finally { button.disabled = false; }
   });
   elements.btnOpenPptxImportFromLoad.addEventListener('click', () => {
-    openSettings('google-drive');
+    openSettings('pptx');
   });
   elements.loadModeTabs.forEach(tab => {
     tab.addEventListener('click', () => activateLoadMode(tab.dataset.loadTab));
@@ -718,6 +713,15 @@ function setupEventListeners() {
   // Display controls
   elements.btnRefreshDisplays.addEventListener('click', refreshDisplays);
   elements.btnIdentifyDisplays.addEventListener('click', identifyDisplays);
+  quickStartPicker = window.SyncShowScreenPicker.createPicker(document.getElementById('startBlankScreens'), {
+    value: {screenIds: ['english'], hintScreenIds: []},
+    onChange: value => { elements.btnConfirmStartBlank.disabled = !value.screenIds.length; }
+  });
+  elements.btnStartBlank.addEventListener('click', openStartBlank);
+  elements.btnCancelStartBlank.addEventListener('click', () => elements.startBlankDialog.close());
+  elements.startBlankForm.addEventListener('submit', createBlankPresentation);
+  elements.startBlankDialog.addEventListener('close', scheduleCommunityPlannerLayout);
+  elements.showStartBlankPreference.addEventListener('change', saveInterfacePreferences);
   elements.btnOpenSettings.addEventListener('click', () => openSettings());
   elements.btnCloseAdminSettings.addEventListener('click', closeSettings);
   elements.adminSettingsTabs.forEach(tab => {
@@ -735,30 +739,7 @@ function setupEventListeners() {
   });
   elements.btnRestorePrevious.addEventListener('click', restoreCachedPresentations);
   elements.btnChooseServiceFolder.addEventListener('click', chooseAndLinkServiceFolder);
-  elements.btnConnectPrivateDrive.addEventListener('click', connectPrivateDrive);
-  elements.btnCopyDriveOAuthLink.addEventListener('click', copyPrivateDriveOAuthLink);
-  elements.btnCancelDriveOAuth.addEventListener('click', cancelPrivateDriveOAuth);
-  elements.driveOAuthDialog.addEventListener('cancel', event => {
-    event.preventDefault();
-    cancelPrivateDriveOAuth();
-  });
-  elements.driveOAuthDialog.addEventListener('close', () => {
-    if (!state.drive.oauth.active) return;
-    window.setTimeout(() => {
-      if (state.drive.oauth.active && !elements.driveOAuthDialog.open) {
-        elements.driveOAuthDialog.showModal();
-      }
-    }, 0);
-  });
-  elements.btnLinkPublicDrive.addEventListener('click', linkPublicDrive);
-  elements.publicDriveFolderUrl.addEventListener('keydown', event => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    if (elements.publicDriveFolderUrl.disabled || elements.btnLinkPublicDrive.disabled) return;
-    linkPublicDrive();
-  });
   elements.btnDisconnectServiceSource.addEventListener('click', disconnectServiceSource);
-  elements.drivePublishingEnabled.addEventListener('change', updateDrivePublishingPreference);
   elements.btnRefreshServiceFolder.addEventListener('click', () => scanLinkedServiceFolder({ reason: 'manual' }));
   elements.btnLoadServiceSet.addEventListener('click', loadSelectedServiceSet);
   elements.communityConnectionForm.addEventListener('submit', startCommunityConnection);
@@ -792,7 +773,8 @@ function setupEventListeners() {
   document.getElementById('btnReviewAdjustConflict').addEventListener('click', reviewPlannerConflict);
   document.getElementById('btnPlannerUseCommunity').addEventListener('click', () => resolvePlannerConflict('use-community'));
   document.getElementById('btnPlannerKeepLocal').addEventListener('click', () => resolvePlannerConflict('keep-local'));
-  elements.btnShowAdjust.addEventListener('click', toggleShowAdjust);
+  elements.btnShowAdjust.addEventListener('click', () => toggleShowAdjust());
+  for (const button of elements.showAddButtons) button.addEventListener('click', () => toggleShowAdjust(button.dataset.showAdd));
   elements.btnCloseShowAdjust.addEventListener('click', closeShowAdjust);
   elements.btnShowHandoffCompleted.addEventListener(
     'click',
@@ -838,7 +820,7 @@ function setupEventListeners() {
     );
   });
   elements.btnChooseProfileServiceFolder.addEventListener('click', () => {
-    activateSettingsTab('google-drive', { focusTab: true });
+    activateSettingsTab('pptx', { focusTab: true });
   });
   elements.btnAddInputRole.addEventListener('click', addInputRoleDraft);
   elements.btnAddOutput.addEventListener('click', addOutputDraft);
@@ -862,7 +844,8 @@ function setupEventListeners() {
   elements.preflightForm.addEventListener('submit', handlePreflightSubmit);
   elements.btnCancelPreflight.addEventListener('click', cancelStartAttempt);
   elements.btnPreflightBack.addEventListener('click', goBackInPreflight);
-  elements.btnSaveDiagnostics.addEventListener('click', saveSupportDiagnostics);
+  elements.btnSaveDiagnostics.addEventListener('click', () => saveSupportDiagnostics());
+  elements.btnSaveScreenDiagnostics.addEventListener('click', () => saveSupportDiagnostics(true));
   elements.startPreflightDialog.addEventListener('cancel', (event) => {
     event.preventDefault();
     cancelStartAttempt();
@@ -1482,6 +1465,8 @@ async function saveTestOutputSettings() {
 }
 
 async function openLocalServiceInPrepare(projectId) {
+  const local = await window.api.openServiceProject({projectId});
+  if (local.project?.presentation?.localOnly) return setWorkflowStage('prepare', {localProjectId: projectId});
   await setWorkflowStage('prepare');
   if (state.community.plannerOpen) communityCheckedResult(await window.api.openPlannerService(projectId));
 }
@@ -1533,6 +1518,76 @@ async function openLoadedServiceInPrepare() {
   await openLocalServiceInPrepare(projectId);
 }
 
+function renderInterfacePreferences() {
+  elements.btnStartBlank.hidden = state.interfacePreferences.showStartBlank === false;
+  elements.showStartBlankPreference.checked = state.interfacePreferences.showStartBlank !== false;
+}
+
+async function saveInterfacePreferences() {
+  elements.showStartBlankPreference.disabled = true;
+  try {
+    state.interfacePreferences = await window.api.saveInterfacePreferences({showStartBlank: elements.showStartBlankPreference.checked});
+    renderInterfacePreferences();
+    elements.interfacePreferenceStatus.textContent = 'Saved on this computer.';
+  } catch (error) {
+    renderInterfacePreferences(); elements.interfacePreferenceStatus.textContent = error.message;
+  } finally { elements.showStartBlankPreference.disabled = false; }
+}
+
+async function openStartBlank() {
+  if (state.isPresenting || state.activeLaunchPlan || state.isStarting || state.startAttempt || state.quickStartBusy) return;
+  await window.api.layoutCommunityPlanner?.({visible: false});
+  elements.startBlankName.value = '';
+  elements.startBlankError.hidden = true;
+  elements.btnConfirmStartBlank.disabled = !quickStartPicker.getValue().screenIds.length;
+  elements.startBlankDialog.showModal();
+  elements.startBlankName.focus();
+}
+
+async function createBlankPresentation(event) {
+  event.preventDefault();
+  if (state.quickStartBusy || !quickStartPicker.getValue().screenIds.length) return;
+  state.quickStartBusy = true;
+  elements.btnConfirmStartBlank.disabled = true;
+  elements.btnConfirmStartBlank.setAttribute('aria-busy', 'true');
+  elements.btnConfirmStartBlank.textContent = 'Starting…';
+  elements.btnCancelStartBlank.disabled = true;
+  updateWorkflowNavigationAvailability();
+  try {
+    if (state.community.plannerOpen) {
+      communityCheckedResult(await window.api.flushCommunityPlanner());
+    }
+    const created = await window.api.createQuickPresentation({
+      title: elements.startBlankName.value.trim() || 'Untitled presentation',
+      presentation: quickStartPicker.getValue()
+    });
+    if (!created?.project?.id || !created.revisionId) throw new Error(created?.error || 'The local presentation could not be created.');
+    beginNativeServiceLoad(created.project.id);
+    const published = await window.api.publishServiceProject({projectId: created.project.id, revisionId: created.revisionId});
+    await refreshPublishedProject(published, created);
+    elements.startBlankDialog.close();
+    state.nativeLoadBusy = false;
+    state.loadFreshness.lastResult = {state: 'unshared'};
+    checkReadyState();
+    if (getReadinessState().isReady) {
+      await startPresentation(false);
+    } else {
+      await beginPreviewPresentation();
+    }
+  } catch (error) {
+    elements.startBlankError.textContent = operatorErrorMessage(error, 'The presentation could not start.');
+    elements.startBlankError.hidden = false;
+    if (!elements.startBlankDialog.open) elements.startBlankDialog.showModal();
+  } finally {
+    state.nativeLoadBusy = false; state.quickStartBusy = false;
+    elements.btnConfirmStartBlank.textContent = 'Start blank';
+    elements.btnConfirmStartBlank.removeAttribute('aria-busy');
+    elements.btnConfirmStartBlank.disabled = !quickStartPicker.getValue().screenIds.length;
+    elements.btnCancelStartBlank.disabled = false;
+    updateWorkflowNavigationAvailability(); checkReadyState();
+  }
+}
+
 function activateSettingsTab(tabId, { focusTab = false } = {}) {
   const requestedTab = typeof tabId === 'string' ? tabId : '';
   const activeTab = elements.adminSettingsTabs.find(
@@ -1542,6 +1597,7 @@ function activateSettingsTab(tabId, { focusTab = false } = {}) {
 
   const activeTabId = activeTab.dataset.settingsTab;
   state.settingsTab = activeTabId;
+  scheduleCommunityPlannerLayout();
   elements.adminSettingsTabs.forEach(tab => {
     const selected = tab === activeTab;
     tab.setAttribute('aria-selected', String(selected));
@@ -1571,6 +1627,7 @@ function handleSettingsTabKeydown(event) {
 
 function openSettings(tabId = state.settingsTab) {
   activateSettingsTab(tabId);
+  window.api.layoutCommunityPlanner?.({visible: false}).catch(() => {});
   refreshCommunityStatus();
   if (elements.advancedSetupDetails.open) return;
   if (!state.advancedWarningAcknowledged) {
@@ -1592,6 +1649,7 @@ function closeSettings() {
     return;
   }
   elements.advancedSetupDetails.close();
+  scheduleCommunityPlannerLayout();
 }
 
 function applyFriendlyMode() {
@@ -1667,6 +1725,8 @@ function confirmAdvancedMode() {
 function updateWorkflowNavigationAvailability() {
   const liveShowSession = state.workflowStage === 'show'
     && Boolean(state.isPresenting || state.activeLaunchPlan);
+  elements.btnStartBlank.disabled = liveShowSession || state.quickStartBusy;
+  elements.btnStartBlank.title = liveShowSession ? 'End the current Show before starting a new presentation' : 'Start a local presentation';
   elements.btnStagePrepare.disabled = liveShowSession;
   elements.btnStageLoad.disabled = liveShowSession;
   elements.btnStageShow.disabled = state.workflowStage !== 'show'
@@ -1736,7 +1796,7 @@ function cancelPendingPrepareLoad() {
 async function navigateWorkflowStage(stage) {
   if (stage === state.workflowStage) {
     if (stage === 'prepare' && state.prepareMode === 'community') {
-      await openCommunityPrepare();
+      await activatePrepareMode('community');
     } else if (stage === 'load') {
       await refreshLoadedService();
     }
@@ -1787,7 +1847,10 @@ async function navigateWorkflowStage(stage) {
       ]));
       if (!current()) return;
       setPrepareLoadWarning('');
-      if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId, { isCurrent: current, fresh: false });
+      if (handoff?.localProject) {
+        const local = handoff.localProject;
+        await refreshPublishedProject(await window.api.publishServiceProject({projectId: local.project.id, revisionId: local.revisionId}), local);
+      } else if (handoff?.serviceId) await sharedServiceController.openById(handoff.serviceId, { isCurrent: current, fresh: false });
     } catch (error) {
       if (current()) {
         const warning = `Load is available, but Prepare’s latest edits have not been loaded. ${operatorErrorMessage(error, 'Save in Prepare before loading that service.')}`;
@@ -1816,7 +1879,9 @@ async function loadAppState() {
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
     state.activeLaunchPlan = appState.activeLaunchPlan;
+    setShowPreviewMode(appState.previewOnly === true);
     state.displays = appState.displays;
+    state.presentationScreens = appState.presentationScreens || null;
     applyServiceHandoff(appState.serviceHandoff);
     state.preparedServiceRestore = appState.preparedServiceRestore || {
       status: 'none'
@@ -1872,6 +1937,7 @@ function applyRuntimePresentationState(presentations = {}, options = {}) {
     state.presentations[role.id] = {
       ...previous,
       loaded: true,
+      presentationScreenId: summary.presentationScreenId || null,
       pending: false,
       path: previous.path || null,
       displayPath: previous.displayPath
@@ -1934,6 +2000,7 @@ function renderLoadFreshness() {
 async function refreshLoadedService({ reuseRecent = false } = {}) {
   if (loadFreshnessPromise) return loadFreshnessPromise;
   const loaded = state.serviceHandoff;
+  if (state.presentationScreens?.localOnly) return {state: 'unshared'};
   if (!loaded || !sharedServiceController?.refreshLoaded || state.workflowStage !== 'load'
     || state.loadMode !== 'syncshow' || state.community.handoffBusy
     || state.isPresenting || state.activeLaunchPlan || state.isStarting || state.startAttempt) return;
@@ -2349,6 +2416,7 @@ async function refreshPublishedProject(publishResult, context = {}) {
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
     state.displays = appState.displays;
+    state.presentationScreens = appState.presentationScreens || null;
     applyServiceHandoff(appState.serviceHandoff);
     state.nativeRequestedServiceId = appState.serviceHandoff.project.id;
     state.nativeLoadError = null;
@@ -2384,6 +2452,8 @@ async function loadSavedSettings() {
   state.isApplyingSettings = true;
   try {
     const settings = await window.api.loadSettings();
+    state.interfacePreferences = settings.interfacePreferences || {showStartBlank: true};
+    renderInterfacePreferences();
     state.testOutput = await window.api.getTestOutputSettings();
     renderTestOutputSettings();
     applyCommittedProfile(settings.venueProfile);
@@ -2503,19 +2573,6 @@ function roleInitials(label) {
 function serviceFolderApiAvailable() {
   return ['chooseServiceFolder', 'scanServiceFolder', 'pinServiceSet', 'getCurrentServiceSet', 'checkServiceSetChanges']
     .every(method => typeof window.api?.[method] === 'function');
-}
-
-function driveApiAvailable() {
-  return [
-    'getDriveStatus',
-    'connectPrivateDrive',
-    'getPrivateDriveOAuthState',
-    'copyPrivateDriveOAuthLink',
-    'cancelPrivateDriveOAuth',
-    'linkPublicDrive',
-    'setDrivePublishingEnabled',
-    'disconnectDrive'
-  ].every(method => typeof window.api?.[method] === 'function');
 }
 
 const COMMUNITY_POLL_INTERVAL_MS = 2000;
@@ -3033,12 +3090,14 @@ function renderShowAdjustStatus() {
       : 'Changes are saved backstage. Click a slide or Next to show them.';
 }
 
-async function toggleShowAdjust() {
-  if (showAdjustOpen) return closeShowAdjust();
-  if (showAdjustBusy) return;
+async function toggleShowAdjust(addCategory) {
+  if (showAdjustOpen && !addCategory) return closeShowAdjust();
+  if (showAdjustBusy || showAdjustOpening) return;
   if (!state.serviceHandoff?.project?.id) {
     setStatus('Adjust is available for a prepared native service. Prepare a service before using Adjust.'); return;
   }
+  showAdjustOpening = true;
+  renderVolunteerShowControls();
   showAdjustOpen = true;
   const generation = ++showAdjustGeneration;
   const current = () => generation === showAdjustGeneration && showAdjustOpen && state.workflowStage === 'show';
@@ -3050,7 +3109,7 @@ async function toggleShowAdjust() {
     // Main selects the active local Show and its current cue. No service picker,
     // server page, or remote document read participates in this path.
     const rect=elements.showAdjustViewport.getBoundingClientRect();
-    const result=communityCheckedResult(await window.api.openActiveShowAdjust({bounds:{
+    const result=communityCheckedResult(await window.api.openActiveShowAdjust({...(addCategory ? {addCategory} : {}), bounds:{
       x:Math.max(0,Math.round(rect.left)),y:Math.max(0,Math.round(rect.top)),
       width:Math.round(rect.width),height:Math.round(rect.height)
     }}));
@@ -3058,6 +3117,7 @@ async function toggleShowAdjust() {
     state.community.plannerOpen=result.opened===true;
     await syncCommunityPlannerLayout();
   } catch (error) { if (current()) elements.showAdjustStatus.textContent = error.message; }
+  finally { showAdjustOpening = false; renderVolunteerShowControls(); }
 }
 
 async function closeShowAdjust() {
@@ -3154,6 +3214,8 @@ async function refreshTakenBackstageDraft() {
     const current = await window.api.getAppState();
     state.currentSlide = current.currentSlide; state.totalSlides = current.totalSlides;
     state.activeLaunchPlan = current.activeLaunchPlan;
+    setShowPreviewMode(current.previewOnly === true);
+    state.presentationScreens = current.presentationScreens || null;
     applyServiceHandoff(current.serviceHandoff);
     applyRuntimePresentationState(current.presentations, { replaceSource: true });
     if (current.showState) handleShowStateChanged(current.showState);
@@ -3177,6 +3239,8 @@ function renderCommunityPrepare() {
     elements.communityPrepareStatus.dataset.kind = 'error';
     elements.communityPrepareStatus.textContent =
       'This SyncShow build cannot open the shared Community planner.';
+  } else if (state.community.plannerLocalOnly && state.community.plannerOpen) {
+    elements.communityPrepareStatus.textContent = 'Local presentation · saved on this computer';
   } else if (!connected) {
     elements.communityPrepareStatus.dataset.kind = 'warning';
     elements.communityPrepareStatus.textContent =
@@ -3203,7 +3267,8 @@ function renderCommunityPrepare() {
 function communityPlannerShouldBeVisible() {
   return ((state.workflowStage === 'show' && showAdjustOpen)
     || (state.workflowStage === 'prepare' && state.prepareMode === 'community'))
-    && (showAdjustOpen || communityIsConnected())
+    && (showAdjustOpen || state.community.plannerLocalOnly || communityIsConnected())
+    && !elements.advancedSetupDetails.open && !elements.startBlankDialog.open
     && !document.getElementById('plannerConflictDialog').open
     && state.community.plannerOpen
     && (showAdjustOpen || !elements.communityPrepareShell.hidden);
@@ -3274,12 +3339,18 @@ async function activatePrepareMode(mode, options = {}) {
     return activated;
   }
   window.setTimeout(() => elements.communityPrepareHeading.focus(), 0);
+  const localProjectId = options.localProjectId || (state.presentationScreens?.localOnly ? state.serviceHandoff?.project?.id : null);
+  if (localProjectId) {
+    const result = communityCheckedResult(await window.api.openLocalPlannerService(localProjectId));
+    await refreshCommunityPlannerState(); scheduleCommunityPlannerLayout(); return result.opened;
+  }
   return openCommunityPrepare();
 }
 
 function handleCommunityPlannerStateChanged(payload = {}) {
   const wasOpen = state.community.plannerOpen;
   state.community.plannerOffline = payload.offline === true;
+  state.community.plannerLocalOnly = payload.localOnly === true;
   state.community.plannerPending = payload.pending || 0;
   state.community.plannerConflicts = payload.conflicts || [];
   state.community.plannerShowDraft = payload.showDraft === true;
@@ -3291,8 +3362,8 @@ function handleCommunityPlannerStateChanged(payload = {}) {
   renderBackstagePreviewStatus();
   if (showAdjustOpen) renderShowAdjustStatus();
   const hasConflicts = state.community.plannerConflicts.length > 0;
-  document.getElementById('plannerSyncStrip').hidden = !hasConflicts && !payload.offline && !payload.pending;
-  document.getElementById('plannerSyncStatus').textContent = hasConflicts ? 'Both versions changed. Your local edits are preserved.' : payload.pending ? 'Saved on this computer. Waiting to sync.' : 'Working offline with your downloaded library.';
+  document.getElementById('plannerSyncStrip').hidden = !payload.localOnly && !hasConflicts && !payload.offline && !payload.pending;
+  document.getElementById('plannerSyncStatus').textContent = payload.localOnly ? 'Local presentation · saved on this computer' : hasConflicts ? 'Both versions changed. Your local edits are preserved.' : payload.pending ? 'Saved on this computer. Waiting to sync.' : 'Working offline with your downloaded library.';
   document.getElementById('btnReviewPlannerConflict').hidden = !hasConflicts;
   document.getElementById('btnReviewAdjustConflict').hidden = !hasConflicts;
   state.community.plannerOpen = payload?.open === true;
@@ -3769,102 +3840,12 @@ function disposeCommunityConnectionUi() {
   communityPlannerStateUnsubscribe = null;
 }
 
-function renderPrivateDriveOAuthDialog() {
-  const oauth = state.drive.oauth;
-  elements.btnCopyDriveOAuthLink.disabled = !oauth.active || oauth.actionBusy;
-  elements.btnCancelDriveOAuth.disabled = !oauth.active || oauth.actionBusy;
-  elements.driveOAuthActionStatus.textContent = oauth.actionMessage
-    || (oauth.active ? 'Waiting for Google sign-in…' : 'Google sign-in has finished.');
-
-  if (oauth.active) {
-    if (!elements.driveOAuthDialog.open) elements.driveOAuthDialog.showModal();
-  } else if (elements.driveOAuthDialog.open) {
-    elements.driveOAuthDialog.close();
-  }
-}
-
-function handlePrivateDriveOAuthStateChanged(payload) {
-  const transition = window.SyncShowGoogleDriveOAuthState.applyLifecycleState(
-    state.drive.oauth,
-    payload
-  );
-  if (!transition.accepted) return;
-  state.drive.oauth = transition.state;
-  state.drive.oauth.actionMessage = transition.becameActive
-    ? 'Waiting for Google sign-in…'
-    : '';
-  renderPrivateDriveOAuthDialog();
-}
-
-async function refreshPrivateDriveOAuthState() {
-  if (typeof window.api?.getPrivateDriveOAuthState !== 'function') return;
-  try {
-    handlePrivateDriveOAuthStateChanged(await window.api.getPrivateDriveOAuthState());
-  } catch (_error) {
-    // The lifecycle event remains authoritative; never log an authorization URL.
-  }
-}
-
-async function copyPrivateDriveOAuthLink() {
-  if (!state.drive.oauth.active || state.drive.oauth.actionBusy) return;
-  state.drive.oauth.actionBusy = true;
-  state.drive.oauth.actionMessage = 'Copying the one-time sign-in link…';
-  renderPrivateDriveOAuthDialog();
-  try {
-    const result = await window.api.copyPrivateDriveOAuthLink();
-    state.drive.oauth.actionMessage = result?.copied === true
-      ? 'Copied. Paste the link into another browser on this computer.'
-      : 'The sign-in link was no longer available.';
-  } catch (error) {
-    state.drive.oauth.actionMessage = driveErrorMessage(
-      error,
-      'The sign-in link could not be copied.'
-    );
-  } finally {
-    state.drive.oauth.actionBusy = false;
-    renderPrivateDriveOAuthDialog();
-  }
-}
-
-async function cancelPrivateDriveOAuth() {
-  if (!state.drive.oauth.active || state.drive.oauth.actionBusy) return;
-  state.drive.oauth.actionBusy = true;
-  state.drive.oauth.actionMessage = 'Cancelling Google sign-in…';
-  renderPrivateDriveOAuthDialog();
-  try {
-    await window.api.cancelPrivateDriveOAuth();
-  } catch (error) {
-    state.drive.oauth.actionMessage = driveErrorMessage(
-      error,
-      'Google sign-in could not be cancelled.'
-    );
-  } finally {
-    state.drive.oauth.actionBusy = false;
-    await refreshPrivateDriveOAuthState();
-    renderPrivateDriveOAuthDialog();
-  }
-}
-
-function privateDriveIsConfigured() {
-  return state.drive.status?.configuration?.privateOAuthConfigured === true;
-}
-
-function publicDriveIsConfigured() {
-  return state.drive.status?.configuration?.publicApiKeyConfigured === true;
-}
-
-function driveErrorMessage(error, fallback) {
+function serviceFolderErrorText(error, fallback) {
   return window.SyncShowErrorMessages?.humanizeIpcError(error, fallback) || fallback;
 }
 
 function hasConfiguredServiceSource(profile = state.profile) {
-  return Boolean(profile?.localServiceFolder || profile?.driveConnectionId);
-}
-
-function activeDriveConnection() {
-  const connection = state.drive.status?.connection || null;
-  if (!connection || connection.id !== state.profile?.driveConnectionId) return null;
-  return connection;
+  return Boolean(profile?.localServiceFolder);
 }
 
 // Keep this projection aligned with the main process's scan-token signature.
@@ -3877,7 +3858,6 @@ function serviceFolderScanProfileSignature(profile) {
     timeZone: profile.timeZone,
     serviceDateOrder: profile.serviceDateOrder,
     localServiceFolder: profile.localServiceFolder,
-    driveConnectionId: profile.driveConnectionId,
     inputRoles: (profile.inputRoles || []).map(role => ({
       id: role.id,
       label: role.label,
@@ -3951,29 +3931,6 @@ function isLoadStage() {
   return document.body.classList.contains('load-stage');
 }
 
-async function refreshDriveStatus() {
-  if (!driveApiAvailable()) {
-    state.drive.status = {
-      configured: false,
-      connection: null,
-      message: 'This build does not include direct Google Drive connections.'
-    };
-    return state.drive.status;
-  }
-  try {
-    const status = await window.api.getDriveStatus();
-    state.drive.status = status && typeof status === 'object'
-      ? status
-      : { configured: false, connection: null };
-    state.drive.error = null;
-  } catch (error) {
-    console.warn('[GoogleDrive] Could not read connection status:', error);
-    state.drive.status = { configured: false, connection: null };
-    state.drive.error = driveErrorMessage(error, 'Google Drive status is unavailable.');
-  }
-  return state.drive.status;
-}
-
 function requireCleanProfileForSourceChange() {
   if (!state.profileDirty) return true;
   openSettings('screens');
@@ -3982,10 +3939,11 @@ function requireCleanProfileForSourceChange() {
   return false;
 }
 
-async function saveAutomaticLoadingSource({ localServiceFolder = null, driveConnectionId = null }) {
+async function saveAutomaticLoadingSource({ localServiceFolder = null }) {
   const profileToSave = cloneValue(state.profile);
   profileToSave.localServiceFolder = localServiceFolder;
-  profileToSave.driveConnectionId = driveConnectionId;
+  // Clear only the obsolete link ID when an operator changes the folder.
+  profileToSave.driveConnectionId = null;
   const result = await window.api.saveSettings({ venueProfile: profileToSave });
   if (!result?.success || !result.venueProfile) {
     throw new Error('The automatic loading source could not be saved');
@@ -3997,148 +3955,23 @@ async function saveAutomaticLoadingSource({ localServiceFolder = null, driveConn
   return result.venueProfile;
 }
 
-async function activateDriveConnection(result, label) {
-  const connection = result?.connection || result;
-  if (!connection || typeof connection.id !== 'string') {
-    throw new Error('Google Drive did not return a usable folder connection.');
-  }
-  const previousDriveId = state.profile?.driveConnectionId || null;
-  try {
-    await saveAutomaticLoadingSource({ driveConnectionId: connection.id });
-  } catch (error) {
-    await window.api.disconnectDrive({ connectionId: connection.id }).catch(() => {});
-    throw error;
-  }
-  if (previousDriveId && previousDriveId !== connection.id) {
-    await window.api.disconnectDrive({ connectionId: previousDriveId }).catch(error => {
-      console.warn('[GoogleDrive] The previous connection could not be removed:', error);
-    });
-  }
-  await refreshDriveStatus();
-  setStatus(`${label} connected for automatic loading`);
-  await scanLinkedServiceFolder({ reason: 'linked' });
-}
-
-async function connectPrivateDrive() {
-  if (!driveApiAvailable() || state.drive.busy || state.serviceFolder.loading) return;
-  if (!privateDriveIsConfigured()) {
-    state.drive.error = 'Private Google Drive sign-in is not enabled in this copy of SyncShow.';
-    renderServiceFolder();
-    return;
-  }
-  if (!requireCleanProfileForSourceChange()) return;
-  state.drive.busy = true;
-  state.drive.error = null;
-  renderServiceFolder();
-  setStatus('Opening Google sign-in in your browser…');
-  try {
-    const result = await window.api.connectPrivateDrive();
-    if (!result) {
-      setStatus('Google Drive connection cancelled');
-      return;
-    }
-    await activateDriveConnection(result, 'Private Google Drive folder');
-  } catch (error) {
-    const message = driveErrorMessage(error, 'Google Drive could not be connected.');
-    if (/cancel(?:led|ed)/i.test(message)) {
-      state.drive.error = null;
-      setStatus('Google Drive connection cancelled');
-    } else {
-      console.error('[GoogleDrive] Private connection failed:', message);
-      state.drive.error = message;
-      setStatus(`Could not connect Google Drive: ${state.drive.error}`);
-    }
-  } finally {
-    await refreshPrivateDriveOAuthState();
-    state.drive.busy = false;
-    renderServiceFolder();
-  }
-}
-
-async function linkPublicDrive() {
-  if (!driveApiAvailable() || state.drive.busy || state.serviceFolder.loading) return;
-  if (!publicDriveIsConfigured()) {
-    state.drive.error = 'Public Google Drive links are not enabled in this copy of SyncShow.';
-    renderServiceFolder();
-    return;
-  }
-  if (!requireCleanProfileForSourceChange()) return;
-  const url = elements.publicDriveFolderUrl.value.trim();
-  if (!url) {
-    state.drive.error = 'Paste a public Google Drive folder link first.';
-    renderServiceFolder();
-    elements.publicDriveFolderUrl.focus();
-    return;
-  }
-  state.drive.busy = true;
-  state.drive.error = null;
-  renderServiceFolder();
-  setStatus('Checking the public Google Drive folder…');
-  try {
-    const result = await window.api.linkPublicDrive({ url });
-    await activateDriveConnection(result, 'Public Google Drive folder');
-    elements.publicDriveFolderUrl.value = '';
-  } catch (error) {
-    console.error('[GoogleDrive] Public link failed:', error);
-    state.drive.error = driveErrorMessage(
-      error,
-      'That public Google Drive folder could not be connected.'
-    );
-    setStatus(`Could not use the public Drive folder: ${state.drive.error}`);
-  } finally {
-    state.drive.busy = false;
-    renderServiceFolder();
-  }
-}
-
 async function disconnectServiceSource() {
-  if (state.drive.busy || state.serviceFolder.loading || !hasConfiguredServiceSource()) return;
+  if (state.serviceFolder.sourceBusy || state.serviceFolder.loading || !hasConfiguredServiceSource()) return;
   if (!requireCleanProfileForSourceChange()) return;
-  const driveConnectionId = state.profile?.driveConnectionId || null;
-  state.drive.busy = true;
+  state.serviceFolder.sourceBusy = true;
   renderServiceFolder();
   try {
     await saveAutomaticLoadingSource({});
-    if (driveConnectionId) {
-      await window.api.disconnectDrive({ connectionId: driveConnectionId });
-      await refreshDriveStatus();
-    }
     setStatus('Automatic loading disconnected; the verified offline service copy was kept');
   } catch (error) {
     console.error('[ServiceSource] Disconnect failed:', error);
-    state.drive.error = driveErrorMessage(
+    state.serviceFolder.error = serviceFolderErrorText(
       error,
       'The automatic loading source could not be disconnected.'
     );
-    setStatus(`Could not disconnect automatic loading: ${state.drive.error}`);
+    setStatus(`Could not disconnect automatic loading: ${state.serviceFolder.error}`);
   } finally {
-    state.drive.busy = false;
-    renderServiceFolder();
-  }
-}
-
-async function updateDrivePublishingPreference() {
-  const connection = activeDriveConnection();
-  if (!connection || connection.mode !== 'private' || state.drive.busy) return;
-  const requested = elements.drivePublishingEnabled.checked;
-  state.drive.busy = true;
-  renderServiceFolder();
-  try {
-    const status = await window.api.setDrivePublishingEnabled(requested);
-    state.drive.status = status && typeof status === 'object' ? status : state.drive.status;
-    state.drive.error = null;
-    setStatus(requested
-      ? 'Drive publishing allowed; SyncShow will still change files only after an explicit Publish action'
-      : 'Drive publishing turned off');
-  } catch (error) {
-    state.drive.error = driveErrorMessage(
-      error,
-      'The Drive publishing preference could not be changed.'
-    );
-    await refreshDriveStatus();
-    setStatus(`Could not change Drive publishing: ${state.drive.error}`);
-  } finally {
-    state.drive.busy = false;
+    state.serviceFolder.sourceBusy = false;
     renderServiceFolder();
   }
 }
@@ -4146,7 +3979,6 @@ async function updateDrivePublishingPreference() {
 async function initializeServiceFolder() {
   state.serviceFolder.requestedDate = serviceDateForProfile();
   elements.serviceFolderDate.value = state.serviceFolder.requestedDate;
-  await refreshDriveStatus();
   renderServiceFolder();
   if (!serviceFolderApiAvailable()) {
     state.serviceFolder.error = 'This build does not include automatic folder loading. You can still choose files on the Load cards.';
@@ -4155,7 +3987,7 @@ async function initializeServiceFolder() {
   }
 
   try {
-    // Native services do not depend on a previously configured PPTX/Drive
+    // Native services do not depend on a previously configured PPTX folder
     // source. Keep its verified offline snapshot available without contacting
     // that source until the operator chooses the Legacy PPTX tab.
     const changeResult = state.loadMode === 'pptx'
@@ -4165,7 +3997,7 @@ async function initializeServiceFolder() {
     state.serviceFolder.sourceChanges = Array.isArray(changeResult?.changes) ? changeResult.changes : [];
     state.serviceFolder.folderChangedSinceLoad = state.serviceFolder.sourceChanges.length > 0;
   } catch (changeError) {
-    // A source-drive problem should not make a verified offline snapshot
+    // An unavailable source folder should not make a verified offline snapshot
     // disappear. The fallback call still verifies the pinned local assets.
     console.warn('[ServiceFolder] Could not compare the source folder:', changeError);
     try {
@@ -4198,14 +4030,7 @@ async function chooseAndLinkServiceFolder() {
   try {
     const folderPath = await window.api.chooseServiceFolder();
     if (!folderPath) return;
-    const previousDriveId = state.profile?.driveConnectionId || null;
     await saveAutomaticLoadingSource({ localServiceFolder: folderPath });
-    if (previousDriveId) {
-      await window.api.disconnectDrive({ connectionId: previousDriveId }).catch(error => {
-        console.warn('[GoogleDrive] The previous connection could not be removed:', error);
-      });
-      await refreshDriveStatus();
-    }
     setStatus(`Linked ${folderBaseName(folderPath)} as the service folder`);
     await scanLinkedServiceFolder({ reason: 'linked' });
   } catch (error) {
@@ -4295,7 +4120,7 @@ async function scanLinkedServiceFolder({ reason = 'manual' } = {}) {
       return;
     }
     console.error('[ServiceFolder] Scan failed:', error);
-    state.serviceFolder.error = driveErrorMessage(error, 'The service folder is unavailable.');
+    state.serviceFolder.error = serviceFolderErrorText(error, 'The service folder is unavailable.');
     setStatus(`Could not check the service folder: ${state.serviceFolder.error}`);
   } finally {
     if (requestVersion === state.serviceFolder.scanVersion) {
@@ -4554,36 +4379,11 @@ function serviceSourceView() {
       scanLabel: folderBaseName(localPath)
     };
   }
-  if (state.profile?.driveConnectionId) {
-    const connection = activeDriveConnection();
-    if (!connection) {
-      return {
-        linked: true,
-        kind: 'drive-missing',
-        name: 'Google Drive needs reconnecting',
-        detail: 'The saved connection is unavailable on this computer.',
-        scanLabel: 'Google Drive'
-      };
-    }
-    const isPublic = connection.mode === 'public';
-    const account = connection.accountEmail || connection.accountLabel || null;
-    const folderName = connection.folderName || connection.name || 'Google Drive folder';
-    return {
-      linked: true,
-      kind: isPublic ? 'drive-public' : 'drive-private',
-      name: folderName,
-      detail: isPublic
-        ? 'Public link · view-only'
-        : `${account ? `${account} · ` : ''}${connection.canWrite ? 'Can publish' : 'Load only'}`,
-      scanLabel: folderName,
-      connection
-    };
-  }
   return {
     linked: false,
     kind: 'none',
     name: 'No source connected',
-    detail: 'Choose Google Drive or a folder on this computer.',
+    detail: 'Choose a folder on this computer.',
     scanLabel: 'shared folder'
   };
 }
@@ -4630,32 +4430,14 @@ function renderServiceFolder() {
   renderLoadSourceSummary();
   const source = serviceSourceView();
   const folderLinked = source.linked;
-  const privateDriveReady = privateDriveIsConfigured();
-  const publicDriveReady = publicDriveIsConfigured();
   const conversionInFlight = presentationConversionInFlight();
   const serviceError = serviceFolderErrorMessage();
   const sourceBusy = state.profileSaveInFlight
-    || state.drive.busy
+    || state.serviceFolder.sourceBusy
     || state.serviceFolder.scanning
     || state.serviceFolder.loading;
   elements.btnRefreshServiceFolder.disabled = !folderLinked || sourceBusy;
   elements.btnChooseServiceFolder.disabled = sourceBusy;
-  elements.btnConnectPrivateDrive.disabled = sourceBusy || !privateDriveReady;
-  elements.btnConnectPrivateDrive.classList.toggle('is-unavailable', !privateDriveReady);
-  elements.privateDriveSourceHelp.textContent = privateDriveReady
-    ? 'Sign in and choose one folder'
-    : 'Not enabled in this copy of SyncShow';
-  elements.publicDriveFolderUrl.disabled = sourceBusy || !publicDriveReady;
-  elements.btnLinkPublicDrive.disabled = sourceBusy || !publicDriveReady;
-  elements.btnLinkPublicDrive.textContent = publicDriveReady ? 'Connect' : 'Unavailable';
-  elements.publicDriveFolderUrl.placeholder = publicDriveReady
-    ? 'Paste a public Google Drive folder link'
-    : 'Public Drive is not enabled';
-  elements.publicDriveSourceOption.classList.toggle('is-unavailable', !publicDriveReady);
-  elements.publicDriveSourceOption.setAttribute('aria-disabled', String(!publicDriveReady));
-  elements.publicDriveSourceHelp.textContent = publicDriveReady
-    ? 'No sign-in · view-only'
-    : 'Not enabled in this copy of SyncShow';
   elements.btnDisconnectServiceSource.hidden = !folderLinked;
   elements.btnDisconnectServiceSource.disabled = sourceBusy;
   elements.serviceFolderDate.disabled = state.serviceFolder.scanning || state.serviceFolder.loading;
@@ -4663,39 +4445,6 @@ function renderServiceFolder() {
   elements.serviceFolderName.textContent = source.name;
   elements.serviceFolderPath.textContent = source.detail;
   elements.serviceFolderLocation.title = source.detail;
-
-  const connection = source.connection || null;
-  const publishingAvailable = Boolean(
-    connection
-    && connection.mode === 'private'
-    && connection.canWrite === true
-  );
-  elements.drivePublishingControl.hidden = !publishingAvailable;
-  elements.drivePublishingEnabled.disabled = sourceBusy;
-  elements.drivePublishingEnabled.checked = publishingAvailable
-    && connection.publishingEnabled === true;
-  elements.drivePublishingHelp.textContent = publishingAvailable
-    ? (connection.publishingEnabled
-      ? 'Allowed for explicit Publish actions. Background loading never changes Drive files.'
-      : 'Off by default. Background loading never changes Drive files.')
-    : 'This Drive connection can load files but cannot publish to the selected folder.';
-
-  const configurationMessages = [];
-  if (!privateDriveReady && !publicDriveReady) {
-    configurationMessages.push(
-      'Google Drive is not enabled in this copy of SyncShow. Install a Drive-enabled build, or choose a folder on this computer.'
-    );
-  } else if (!privateDriveReady) {
-    configurationMessages.push('Private Google Drive sign-in is not enabled in this copy of SyncShow.');
-  } else if (!publicDriveReady) {
-    configurationMessages.push('Public Google Drive links are not enabled in this copy of SyncShow.');
-  }
-  if (state.drive.status?.configurationError) {
-    configurationMessages.push('The Google Drive setup in this copy of SyncShow is invalid.');
-  }
-  if (state.drive.error) configurationMessages.push(state.drive.error);
-  elements.driveSetupNotice.hidden = configurationMessages.length === 0;
-  elements.driveSetupNotice.textContent = configurationMessages.join(' ');
 
   if (!folderLinked) {
     elements.serviceFolderCard.dataset.state = 'unlinked';
@@ -4914,7 +4663,7 @@ async function loadSelectedServiceSet() {
     }
   } catch (error) {
     console.error('[ServiceFolder] Could not load selected service:', error);
-    state.serviceFolder.error = driveErrorMessage(error, 'The service could not be loaded.');
+    state.serviceFolder.error = serviceFolderErrorText(error, 'The service could not be loaded.');
     state.serviceFolder.folderChangedSinceLoad = true;
     setStatus(`Could not load the found service: ${state.serviceFolder.error}`);
   } finally {
@@ -5477,13 +5226,7 @@ function renderProfileEditor() {
   if (!state.profileDraft) return;
   const focusDescriptor = captureProfileEditorFocus();
   elements.profileName.value = state.profileDraft.name || '';
-  const driveConnection = state.profileDraft.driveConnectionId
-    ? activeDriveConnection()
-    : null;
-  const automaticSourceLabel = state.profileDraft.localServiceFolder
-    || (state.profileDraft.driveConnectionId
-      ? `Google Drive · ${driveConnection?.folderName || driveConnection?.name || 'connected folder'}`
-      : '');
+  const automaticSourceLabel = state.profileDraft.localServiceFolder || '';
   elements.profileServiceFolder.value = automaticSourceLabel;
   elements.profileServiceFolder.title = automaticSourceLabel;
   elements.profileTimeZone.value = state.profileDraft.timeZone || '';
@@ -5809,7 +5552,6 @@ async function saveProfileChanges() {
   }
 
   const previousFolder = state.profile?.localServiceFolder || null;
-  const previousDriveConnectionId = state.profile?.driveConnectionId || null;
   const previousTimeZone = state.profile?.timeZone || null;
   const previousScanProfileSignature = serviceFolderScanProfileSignature(state.profile);
   const profileToSave = cloneValue(state.profileDraft);
@@ -5834,17 +5576,9 @@ async function saveProfileChanges() {
       state.preparedServiceRestore = { status: 'incompatible' };
     }
     applyCommittedProfile(result.venueProfile);
-    if (previousDriveConnectionId
-      && previousDriveConnectionId !== result.venueProfile.driveConnectionId) {
-      await window.api.disconnectDrive({ connectionId: previousDriveConnectionId }).catch(error => {
-        console.warn('[GoogleDrive] The previous connection could not be removed:', error);
-      });
-      await refreshDriveStatus();
-    }
     await checkForCachedPresentations();
     if (scanProfileChanged) {
       if (previousFolder !== result.venueProfile.localServiceFolder
-        || previousDriveConnectionId !== result.venueProfile.driveConnectionId
         || previousTimeZone !== result.venueProfile.timeZone) {
         state.serviceFolder.requestedDate = serviceDateForProfile(result.venueProfile);
         elements.serviceFolderDate.value = state.serviceFolder.requestedDate;
@@ -6472,8 +6206,8 @@ async function identifyDisplays() {
 
 // Presentation Control
 function getConfiguredOutputs() {
-  return (state.profile?.outputs || [])
-    .filter(output => output.enabled)
+  const outputs = window.SyncShowScreenRouting.enabledOutputs(state.profile?.outputs || [], state.presentations,
+    state.loadMode === 'syncshow' ? state.presentationScreens : null)
     .map(output => {
       const display = resolveOutputDisplay(output);
       return {
@@ -6488,6 +6222,9 @@ function getConfiguredOutputs() {
         operatorPreview: output.operatorPreview
       };
     });
+  return window.SyncShowScreenRouting.presentationOutputs(outputs, state.presentations,
+    state.loadMode === 'syncshow' ? state.presentationScreens : null,
+    state.displays, state.presentationMode === 'auto');
 }
 
 function getLoadedRoles({ requireExtractedText = false } = {}) {
@@ -6501,14 +6238,17 @@ function getLoadedRoles({ requireExtractedText = false } = {}) {
 
 function getSingleScreenRoles() {
   return window.SyncShowPresentationMode.singleScreenRoles(
-    state.profile?.inputRoles, state.presentations, state.profile?.outputs
+    window.SyncShowScreenRouting.selectedRoles(state.profile?.inputRoles || [], state.presentations,
+      state.loadMode === 'syncshow' ? state.presentationScreens : null), state.presentations, state.profile?.outputs,
+    {allowStage: Boolean(state.loadMode === 'syncshow' && state.presentationScreens)}
   ).filter(role => state.presentations[role.id]?.loaded);
 }
 
 function buildSingleScreenOutput(roleId, displayId) {
   return window.SyncShowPresentationMode.singleScreenOutput({
     roleId, displayId, displays: state.displays,
-    roles: state.profile?.inputRoles, presentations: state.presentations,
+    roles: window.SyncShowScreenRouting.selectedRoles(state.profile?.inputRoles || [], state.presentations, state.loadMode === 'syncshow' ? state.presentationScreens : null), presentations: state.presentations,
+    allowStage: Boolean(state.loadMode === 'syncshow' && state.presentationScreens),
     outputs: state.profile?.outputs
   });
 }
@@ -6516,20 +6256,25 @@ function buildSingleScreenOutput(roleId, displayId) {
 function renderPresentationMode() {
   const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
   const mode = window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode);
+  const selection = state.loadMode === 'syncshow' ? state.presentationScreens : null;
+  const names = selection?.screenIds.map(id => ({english:'English',russian:'Russian',media:'Stage-Facing'})[id]).join(' + ');
   elements.presentationMode.value = state.presentationMode;
   elements.presentationMode.disabled = state.isPresenting || state.isStarting || !!state.startAttempt;
-  elements.presentationMode.options[0].textContent = `Automatic · ${external.length <= 1 ? 'one screen' : 'saved screen setup'}`;
+  elements.presentationMode.options[0].textContent = selection ? `Automatic · ${names}` : `Automatic · ${external.length <= 1 ? 'one screen' : 'saved screen setup'}`;
   elements.presentationScreenSummary.textContent = external.length === 0
     ? 'Connect a presentation screen'
     : `${external.length} external ${external.length === 1 ? 'screen' : 'screens'} connected`;
   elements.presentationModeHelp.textContent = external.length === 0
     ? 'Connect a TV or projector in extended-display mode. Your controls stay on this screen.'
+    : selection ? `Using ${names}. Change screens and next-slide hints in Prepare → Screens.`
     : mode === 'single'
       ? 'Start Show asks which language to present full-screen. Your saved screen setup stays unchanged.'
       : 'Use your saved audience and stage screens, or choose One screen for a simpler setup.';
 }
 
 function getReadinessState(testOutput = false) {
+  const presentationScreens = state.loadMode === 'syncshow' ? state.presentationScreens : null;
+  const missingSelectedRoles = (presentationScreens?.screenIds || []).filter(id => !Object.values(state.presentations).some(presentation => presentation.loaded && presentation.presentationScreenId === id));
   const singleScreen = !testOutput && window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode) === 'single';
   const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
   const singleRoles = getSingleScreenRoles();
@@ -6566,10 +6311,12 @@ function getReadinessState(testOutput = false) {
           ? 'The selected service has not been loaded. Try loading it again.' : '')
     : '';
   if (nativeSourceIssue) issues.push(nativeSourceIssue);
+  for (const id of missingSelectedRoles) issues.push(`The selected ${id === 'media' ? 'Stage-Facing' : id} screen is unavailable. Enable its presentation input in Admin Settings → Screen Setup, or change Screens in Prepare.`);
   const demoTarget = state.displays.find(display => String(display.id) === state.testOutput.displayId && !display.isControl);
   const demoReady = !testOutput || (state.testOutput.enabled && !!demoTarget && !state.testOutputSaving);
   if (!demoReady) issues.push('Choose a connected external demo screen in Admin Settings → Screen Setup');
 
+  if (!testOutput && presentationScreens && external.length > 0 && external.length < presentationScreens.screenIds.length) issues.push(`This presentation uses ${presentationScreens.screenIds.length} screens. Connect that many, or change Screens in Prepare.`);
   if (singleScreen && external.length === 0) issues.push('Connect an external presentation screen');
   if (singleScreen && singleRoles.length === 0) issues.push('Load a service or a language slideshow');
   if (!singleScreen && outputs.length === 0) issues.push('Choose at least one output screen in Admin Settings');
@@ -6603,6 +6350,8 @@ function getReadinessState(testOutput = false) {
   if (state.startAttempt && !state.isStarting) issues.push('Finish or cancel the current Start Show choices');
 
   const isReady = demoReady && activeOutputs.length > 0
+    && (testOutput || !presentationScreens || external.length >= presentationScreens.screenIds.length)
+    && missingSelectedRoles.length === 0
     && !nativeSourceIssue
     && !conversionPending
     && !state.loadFreshness?.busy
@@ -6620,6 +6369,7 @@ function getReadinessState(testOutput = false) {
   return {
     isReady,
     singleScreen,
+    singleRoles,
     issues,
     outputs,
     activeOutputs,
@@ -6716,6 +6466,7 @@ function notifyLoadWork() {
 }
 
 function offlineLaunchNotice() {
+  if (state.presentationScreens?.localOnly) return '';
   if (state.loadFreshness.lastResult?.state !== 'unavailable') return '';
   if (state.loadFreshness.lastResult.phase === 'prepare') return 'The update could not be prepared. Using the previously saved local copy.';
   return `${state.loadFreshness.lastResult.offline ? 'No internet connection.' : 'Community is unavailable.'} Using the saved local copy; the latest version could not be checked.`;
@@ -6798,6 +6549,12 @@ function startPresentation(testOutput = false) {
       state.loadActionNotice = { message: state.loadFreshness.message || 'Review the service in Prepare before starting.', kind: 'warning' };
       return;
     }
+    // A monitor may have powered on since Load opened. Always ask the OS again
+    // before readiness; never require the operator to reassign a known screen.
+    action.message = 'Checking connected screens…';
+    renderLoadActionStatus();
+    handleDisplaysUpdated(await window.api.refreshDisplays({ reason: 'start' }));
+    if (!queuedStartIsCurrent(action)) return;
     const readiness = getReadinessState(action.testOutput);
     if (!readiness.isReady) {
       state.loadActionNotice = { message: readiness.issues[0] || 'Load a service before starting.', kind: 'warning' };
@@ -6885,6 +6642,32 @@ function confirmPreparedServiceDate() {
   return false;
 }
 
+function setShowPreviewMode(previewOnly) {
+  state.previewOnly = previewOnly;
+  elements.showPreviewOnly.hidden = !previewOnly;
+  const label = document.querySelector('.live-preview-label');
+  label.lastChild.textContent = previewOnly ? ' OUTPUT PREVIEW' : ' LIVE OUTPUT';
+  label.classList.toggle('is-preview-only', previewOnly);
+}
+
+async function beginPreviewPresentation() {
+  const roles = getSingleScreenRoles();
+  if (!roles.length) throw new Error('No presentation screens are available to preview.');
+  const outputs = roles.map(role => ({
+    id: `preview-${role.id}`, name: role.name || role.label || role.id,
+    kind: 'normal', enabled: true, expectedRole: role.id,
+    displayId: `preview-output:preview-${role.id}`, operatorPreview: true
+  }));
+  state.startAttempt = {
+    id: Date.now(), status: 'launching', error: null, questionIds: [], cursor: 0,
+    decisions: Object.fromEntries(outputs.map(output => [output.id, {mode: 'direct'}])),
+    snapshot: {previewOnly: true, testOutput: false, outputs,
+      preferredTimelineRoleId: roles[0].id, settings: {fadeDuration: 0, syncMode: false,
+        singerFontSize: state.singerFontSize, singerCharLimit: state.singerCharLimit, singerTextPadding: state.singerTextPadding}}
+  };
+  await launchStartAttempt();
+}
+
 async function beginStartPresentation(testOutput = false) {
   testOutput = testOutput === true;
   recheckLoadedPresentationDates();
@@ -6901,6 +6684,16 @@ async function beginStartPresentation(testOutput = false) {
       } }
     };
     checkReadyState();
+    if (state.presentationScreens?.screenIds.length === 1 && readiness.singleRoles.length === 1
+      && window.SyncShowPresentationMode.externalDisplays(state.displays).length === 1) {
+      const roleId = readiness.singleRoles[0].id;
+      const displayId = window.SyncShowPresentationMode.externalDisplays(state.displays)[0].id;
+      const output = buildSingleScreenOutput(roleId, displayId);
+      state.startAttempt.snapshot.outputs = [output];
+      state.startAttempt.snapshot.preferredTimelineRoleId = roleId;
+      state.startAttempt.decisions = {[output.id]: {mode: 'direct', explicit: true}};
+      await launchStartAttempt(); return;
+    }
     renderStartPreflight();
     elements.startPreflightDialog.showModal();
     return;
@@ -7020,21 +6813,23 @@ function renderPreflightDiagnostics(attempt) {
     'Includes display, font, package, and runtime details—never passwords or slide contents.';
 }
 
-async function saveSupportDiagnostics() {
-  elements.btnSaveDiagnostics.disabled = true;
-  elements.btnSaveDiagnostics.textContent = 'Saving…';
-  elements.preflightDiagnosticsStatus.textContent = 'Choose where to save the diagnostic file.';
+async function saveSupportDiagnostics(fromScreenSetup = false) {
+  const button = fromScreenSetup ? elements.btnSaveScreenDiagnostics : elements.btnSaveDiagnostics;
+  const status = fromScreenSetup ? elements.screenDiagnosticsStatus : elements.preflightDiagnosticsStatus;
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  status.textContent = 'Choose where to save the diagnostic file.';
   try {
     const result = await window.api.exportSupportDiagnostics();
-    elements.preflightDiagnosticsStatus.textContent = result?.saved
+    status.textContent = result?.saved
       ? `Saved ${result.fileName || 'the diagnostic file'}. Send that file with the error screenshot.`
       : 'Nothing was saved.';
   } catch (error) {
-    elements.preflightDiagnosticsStatus.textContent =
+    status.textContent =
       `Could not save diagnostics: ${error.message || 'Unknown error'}`;
   } finally {
-    elements.btnSaveDiagnostics.disabled = false;
-    elements.btnSaveDiagnostics.textContent = 'Save diagnostics…';
+    button.disabled = false;
+    button.textContent = 'Save diagnostics…';
   }
 }
 
@@ -7364,6 +7159,7 @@ async function launchStartAttempt() {
         expectedRevisionId: state.serviceHandoff?.project?.revisionId
       } : {}),
       testOutput: attempt.snapshot.testOutput === true,
+      previewOnly: attempt.snapshot.previewOnly === true,
       outputs: attempt.snapshot.outputs,
       decisions,
       preferredTimelineRoleId: attempt.snapshot.preferredTimelineRoleId,
@@ -7378,6 +7174,7 @@ async function launchStartAttempt() {
     state.isStarting = false;
     state.isPresenting = true;
     state.activeLaunchPlan = result.plan || null;
+    setShowPreviewMode(result.previewOnly === true);
     if (result.showState) handleShowStateChanged(result.showState);
     state.bible.isLive = false;
     state.bible.liveOutputIds = [];
@@ -7393,7 +7190,7 @@ async function launchStartAttempt() {
     renderThumbnails();
     updateSlideCounter();
     window.api.requestOutputPreviews();
-    setStatus(attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor'
+    setStatus(state.previewOnly ? 'Preview only — no audience screens. Add songs and passages here, then click a slide to preview it.' : attempt.snapshot.testOutput ? 'Test Output started — all screens on the demo monitor'
       : attempt.snapshot.singleScreen ? `${getRoleLabel(attempt.snapshot.preferredTimelineRoleId)} — presenting on one screen` : 'Presentation started');
     window.setTimeout(() => {
       const target = !elements.btnNextSlide.disabled
@@ -8711,6 +8508,7 @@ function renderVolunteerShowControls(showState = state.showState) {
 
   document.body.classList.toggle('volunteer-show-locked', locked);
   elements.btnShowAdjust.disabled = locked || showAdjustBusy;
+  for (const button of elements.showAddButtons) button.disabled = locked || showAdjustBusy || showAdjustOpening || !state.serviceHandoff?.project?.id;
   elements.volunteerControlBar.hidden = !volunteer;
   elements.btnUnlockVolunteerControls.hidden = !volunteer || !locked;
   elements.btnLockVolunteerControls.hidden = !volunteer || locked;
