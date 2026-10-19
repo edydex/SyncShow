@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
+  diagnosticProbe,
   diagnosticFileName,
   inspectFontFaces,
   safeError,
@@ -13,6 +14,15 @@ const {
 } = require('../src/services/runtime/SupportDiagnostics');
 
 const root = path.join(__dirname, '..');
+
+test('optional diagnostic queries cannot hang export or leak error credentials', async () => {
+  const timedOut = await diagnosticProbe(() => new Promise(() => {}), { label: 'GPU information', timeoutMs: 10 });
+  assert.equal(timedOut.diagnosticError.code, 'DIAGNOSTIC_PROBE_TIMEOUT');
+  assert.match(timedOut.diagnosticError.message, /GPU information did not respond/u);
+  const failed = await diagnosticProbe(() => { throw new Error('token=private /Users/person/private'); });
+  assert.doesNotMatch(JSON.stringify(failed), /private|\/Users\//u);
+  assert.deepEqual(await diagnosticProbe(() => Promise.resolve({ gpuDevice: [] })), { gpuDevice: [] });
+});
 
 test('font diagnostics prove bundled faces are readable without exposing paths', async () => {
   const fontsRoot = path.join(root, 'assets', 'fonts');

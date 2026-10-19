@@ -209,8 +209,19 @@ async function run(){
     await waitFor(()=>renderer('Boolean(state.startAttempt) || state.isPresenting'),'Start reaches review after re-scan');
     const diagnosticFile=path.join(screenshots,'screen-diagnostics.json');
     console.log('Verify diagnostic export');
-    electron.dialog.showSaveDialog=async()=>({canceled:false,filePath:diagnosticFile});
+    electron.dialog.showSaveDialog=async()=>{
+      console.log('Diagnostic destination selected');
+      return {canceled:false,filePath:diagnosticFile};
+    };
+    const getGpuInfo=app.getGPUInfo.bind(app);
+    app.getGPUInfo=async type=>{
+      console.log('Diagnostic GPU query started');
+      const value=await getGpuInfo(type);
+      console.log('Diagnostic GPU query finished');
+      return value;
+    };
     assert.equal((await renderer('window.api.exportSupportDiagnostics()')).saved,true);
+    console.log('Diagnostic export completed');
     const diagnostics=JSON.parse(await fs.readFile(diagnosticFile,'utf8'));
     assert.equal(diagnostics.schemaVersion,2);
     const reasons=diagnostics.screenHistory.events.map(event=>event.reason);

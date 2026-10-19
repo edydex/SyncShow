@@ -29,6 +29,7 @@ const {
   configureIsolatedTestUserData
 } = require('./src/services/runtime/IsolatedTestUserData');
 const {
+  diagnosticProbe,
   diagnosticFileName,
   inspectFontFaces,
   safeError,
@@ -2853,12 +2854,12 @@ async function buildSupportDiagnostics() {
   const selectedFont = getPresentationFont();
   const outputFallbackFont = getOutputWindowFallbackFont();
   const [selectedFontFiles, outputFallbackFiles, gpuInfo] = await Promise.all([
-    inspectFontFaces(
+    diagnosticProbe(() => inspectFontFaces(
       selectedFont,
       selectedFont.family === 'Arial' ? 'system' : 'bundled'
-    ),
-    inspectFontFaces(outputFallbackFont, 'bundled'),
-    app.getGPUInfo('basic').catch(error => ({ diagnosticError: safeError(error) }))
+    ), { label: 'Selected font inspection' }),
+    diagnosticProbe(() => inspectFontFaces(outputFallbackFont, 'bundled'), { label: 'Fallback font inspection' }),
+    diagnosticProbe(() => app.getGPUInfo('basic'), { label: 'GPU information' })
   ]);
   const locale = (() => {
     try { return app.getLocale(); } catch { return ''; }
