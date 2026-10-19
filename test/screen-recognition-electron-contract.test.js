@@ -24,4 +24,7 @@ test('screen rehearsal exercises real hit targets, native view boundaries and ex
   assert.match(fixture, /state\.displays=\[\];startPresentation\(\)/u);
   assert.match(fixture, /window\.api\.exportSupportDiagnostics\(\)/u);
   assert.match(fixture, /'recovery-succeeded'/u);
+  assert.match(fixture, /!state\.isStarting && !state\.startAttempt/u);
+  assert.match(fixture, /body:plannerBody/u);
+  assert.doesNotMatch(fixture, /body:await planner\.executeJavaScript/u);
 });

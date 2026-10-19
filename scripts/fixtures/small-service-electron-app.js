@@ -187,6 +187,7 @@ async function run(){
     assert.equal(await renderer('state.currentSlide'),1);
     assert.ok(BrowserWindow.getAllWindows().filter(win=>win.syncShowPreviewOnly).every(win=>!win.isVisible()&&!win.isFullScreen()),'recovery never projects preview renderers');
   }
+  const plannerBody = await planner.executeJavaScript('document.body.innerText');
   if (process.env.SYNCSHOW_SMALL_SERVICE_SCREEN_REGRESSION === '1') {
     console.log('Verify changed monitor ID and mode');
     assert.ok(count >= 3 && !previewOnly, 'screen regression requires three simulated external monitors');
@@ -206,7 +207,10 @@ async function run(){
     // snapshot. Clicking Start must rescan before deciding anything is missing.
     await renderer('state.displays=[];startPresentation();true');
     await waitFor(()=>renderer('state.displays.length===4 && !state.queuedStart'),'Start uses a fresh OS screen snapshot');
-    await waitFor(()=>renderer('Boolean(state.startAttempt) || state.isPresenting'),'Start reaches review after re-scan');
+    // With every input already chosen, Start launches automatically. Merely
+    // seeing a startAttempt is not completion: wait for every output's startup
+    // barrier before exporting diagnostics or taking further UI actions.
+    await waitFor(()=>renderer("state.workflowStage==='show' && state.isPresenting && !state.isStarting && !state.startAttempt"),'fresh Start finishes on every output after re-scan');
     const diagnosticFile=path.join(screenshots,'screen-diagnostics.json');
     console.log('Verify diagnostic export');
     electron.dialog.showSaveDialog=async()=>{
@@ -229,9 +233,8 @@ async function run(){
     assert.ok(diagnostics.screenHistory.events.some(event=>event.activeOutputs.some(output=>output.displayId==='202')),'journal records the reconnected output target');
     assert.equal(diagnostics.screenHistory.persistenceError,null);
   }
-  // The reconnection case ends in Load's native Start review, not Show.
-  // Reading back a hidden Mac window with that modal open can stall the
-  // compositor; it is neither useful Show evidence nor a functional check.
+  // The three-output fixture uses simulated placement and hidden windows.
+  // Its native frame/route assertions do not depend on optional screenshots.
   if (process.env.SYNCSHOW_SMALL_SERVICE_SCREEN_REGRESSION !== '1') {
     await fs.writeFile(path.join(screenshots,'05-show.png'),(await control.capturePage()).toPNG());
   }
@@ -243,6 +246,6 @@ async function run(){
   await renderer("elements.showStartBlankPreference.checked=false;elements.showStartBlankPreference.dispatchEvent(new Event('change'));true");
   await waitFor(()=>renderer('elements.btnStartBlank.hidden'),'Start Blank hide preference');
   console.log('Write final rehearsal evidence');
-  await fs.writeFile(resultPath,JSON.stringify({ok:true,chosen,count,localOnly:true,profilePreserved:true,previewOnly,quickAdd:true,bibleOverlayVerified:true,createdSongOffline:true,body:await planner.executeJavaScript('document.body.innerText'),appState:await renderer('window.api.getAppState()')},null,2));
+  await fs.writeFile(resultPath,JSON.stringify({ok:true,chosen,count,localOnly:true,profilePreserved:true,previewOnly,quickAdd:true,bibleOverlayVerified:true,createdSongOffline:true,body:plannerBody,appState:await renderer('window.api.getAppState()')},null,2));
 }
 run().then(()=>app.exit(0)).catch(async error=>{await fs.writeFile(resultPath,JSON.stringify({ok:false,error:error.stack,windows:await Promise.all(electron.webContents.getAllWebContents().map(async w=>({url:w.getURL(),type:w.getType(),body:await w.executeJavaScript('document.body.innerText').catch(()=>''),state:w.getURL().includes('/src/renderer/index.html')?await w.executeJavaScript('({stage:state.workflowStage,busy:state.community.handoffBusy,warning:state.prepareLoadWarning,error:state.nativeLoadError})').catch(()=>null):null})))},null,2));app.exit(1);});
