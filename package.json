@@ -30,7 +30,9 @@
     "build:verify-remote-lan": "node scripts/verify-packaged-remote-lan.js",
     "build:verify-release-legal": "node scripts/verify-release-legal.js",
     "generate-icon": "node scripts/generate-icon.js",
-    "build:planner-editor": "node scripts/build-planner-editor.js"
+    "build:planner-editor": "node scripts/build-planner-editor.js",
+    "build:web-prepare": "node scripts/build-web-prepare.mjs",
+    "test:web-prepare-browser": "node scripts/verify-web-prepare-browser.cjs"
   },
   "keywords": [
     "presentation",

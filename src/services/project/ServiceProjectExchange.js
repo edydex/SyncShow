@@ -27,6 +27,8 @@ const {
 const BUNDLE_KIND = 'syncshow-service-project-bundle';
 const BUNDLE_SCHEMA_VERSION = 1;
 const BUNDLE_EXTENSION = '.syncshow-service';
+const LIBRESHOW_EXTENSION = '.libreshow';
+const BUNDLE_FILE_EXTENSIONS = Object.freeze(['libreshow', 'syncshow-service']);
 // JSZip and the project store currently materialize the archive plus verified
 // asset buffers in the Electron main process. Keep this conservative until the
 // exchange path is streaming so a valid file cannot multiply into >1 GiB RAM.
@@ -459,7 +461,19 @@ function assertImageContent(buffer, manifestAsset) {
   }
 }
 
-function suggestedFileName(project) {
+function portableServiceExportPath(filePath) {
+  if (typeof filePath !== 'string' || !filePath || filePath.includes('\0')) {
+    fail('INVALID_BUNDLE_FILENAME', 'Choose a portable service filename.');
+  }
+  return BUNDLE_FILE_EXTENSIONS.some(extension => filePath.toLowerCase().endsWith(`.${extension}`))
+    ? filePath
+    : `${filePath}${LIBRESHOW_EXTENSION}`;
+}
+
+function suggestedFileName(project, fileExtension = BUNDLE_EXTENSION) {
+  if (![BUNDLE_EXTENSION, LIBRESHOW_EXTENSION].includes(fileExtension)) {
+    fail('INVALID_BUNDLE_EXTENSION', 'Choose .libreshow or .syncshow-service.');
+  }
   const slug = project.title
     .normalize('NFKD')
     .replace(/[^\x00-\x7f]/g, '')
@@ -467,7 +481,7 @@ function suggestedFileName(project) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'service';
-  return `${project.serviceDate}-${slug}${BUNDLE_EXTENSION}`;
+  return `${project.serviceDate}-${slug}${fileExtension}`;
 }
 
 class ServiceProjectExchange {
@@ -498,7 +512,7 @@ class ServiceProjectExchange {
     this.appVersion = String(options.appVersion || 'unknown').slice(0, 120) || 'unknown';
   }
 
-  async exportBundle(projectId, revisionId) {
+  async exportBundle(projectId, revisionId, { fileExtension = BUNDLE_EXTENSION } = {}) {
     const selected = await this.projectStore.read(projectId, { revisionId });
     const project = selected.project;
     if (isPowerPointCompanionProject(project)) {
@@ -569,7 +583,7 @@ class ServiceProjectExchange {
     return {
       buffer,
       manifest,
-      fileName: suggestedFileName(project),
+      fileName: suggestedFileName(project, fileExtension),
       projectId: project.id,
       revisionId: selected.revisionId,
       assetCount: assets.length
@@ -712,6 +726,8 @@ class ServiceProjectExchange {
 
 module.exports = {
   BUNDLE_EXTENSION,
+  LIBRESHOW_EXTENSION,
+  BUNDLE_FILE_EXTENSIONS,
   BUNDLE_KIND,
   BUNDLE_SCHEMA_VERSION,
   MAX_BUNDLE_BYTES,
@@ -719,5 +735,7 @@ module.exports = {
   ServiceProjectExchange,
   inspectZipStructure,
   normalizeManifest,
+  portableServiceExportPath,
+  suggestedFileName,
   serializeManifest
 };

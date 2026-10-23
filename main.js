@@ -139,6 +139,8 @@ const {
   serviceDateForTimeZone
 } = require('./src/services/service-set');
 const {
+  BUNDLE_FILE_EXTENSIONS,
+  LIBRESHOW_EXTENSION,
   MAX_BUNDLE_BYTES,
   MAX_IMAGE_BYTES,
   MAX_VIDEO_BYTES,
@@ -158,6 +160,7 @@ const {
   NativeSlideRenderer,
   POWERPOINT_COMPANION_WORKFLOW_MODE,
   ServiceProjectExchange,
+  portableServiceExportPath,
   ServiceProjectStore,
   SONG_FAMILY_REVIEW_CONFIRMATION_AUTHORITY_SCOPE,
   SERMON_SCHEMA_VERSION,
@@ -18114,17 +18117,16 @@ ipcMain.handle('prepare:projects:export', async (event, request = {}) => {
   }
   const exported = await services.serviceProjectExchange.exportBundle(
     projectId,
-    revisionId
+    revisionId,
+    { fileExtension: LIBRESHOW_EXTENSION }
   );
   const selected = await dialog.showSaveDialog(controlWindow, {
     title: 'Export Portable SyncShow Service',
     defaultPath: exported.fileName,
-    filters: [{ name: 'SyncShow service', extensions: ['syncshow-service'] }]
+    filters: [{ name: 'LibreShow / SyncShow service', extensions: [...BUNDLE_FILE_EXTENSIONS] }]
   });
   if (selected.canceled || !selected.filePath) return null;
-  const targetPath = selected.filePath.toLowerCase().endsWith('.syncshow-service')
-    ? selected.filePath
-    : `${selected.filePath}.syncshow-service`;
+  const targetPath = portableServiceExportPath(selected.filePath);
   const publishedPath = await writePortableExport(targetPath, exported.buffer);
   return {
     success: true,
@@ -18139,7 +18141,7 @@ ipcMain.handle('prepare:projects:import', async (event) => {
   requireControlSender(event);
   const selected = await dialog.showOpenDialog(controlWindow, {
     title: 'Import Portable SyncShow Service',
-    filters: [{ name: 'SyncShow service', extensions: ['syncshow-service'] }],
+    filters: [{ name: 'LibreShow / SyncShow service', extensions: [...BUNDLE_FILE_EXTENSIONS] }],
     properties: ['openFile']
   });
   if (selected.canceled || selected.filePaths.length === 0) return null;

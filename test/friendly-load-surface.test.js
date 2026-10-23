@@ -93,7 +93,8 @@ test('Load separates SyncShow services from the legacy PPTX setup path', () => {
   assertContainsId(loadEssentials, 'btnImportSyncShowFileFromLoad');
   assertContainsId(loadEssentials, 'btnOpenPptxImportFromLoad');
   assert.match(loadEssentials, /<strong>Heritage Community<\/strong>/);
-  assert.match(loadEssentials, /<strong>Upload \.syncshow-service file<\/strong>/);
+  assert.match(loadEssentials, /<strong>Open a service file<\/strong>/);
+  assert.match(loadEssentials, /\.libreshow or \.syncshow-service/);
   assert.match(loadEssentials, /<strong>Legacy PPTX files<\/strong>/);
   assert.match(
     appSource,
