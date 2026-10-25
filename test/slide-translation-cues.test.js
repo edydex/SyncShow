@@ -19,6 +19,14 @@ test('late binding lookup cannot start after navigation skipped past Stop', asyn
   resolve({ serviceId: 'service', serviceRevision: 'a'.repeat(64) }); await pending;
   assert.deepEqual(sent, []);
 });
+test('ordinary slides refresh caption visibility without creating a translation session', async () => {
+  let changed = 0;
+  const controller = new SlideTranslationCues({resolve:async()=>{throw new Error('must not resolve');},send:async()=>{throw new Error('must not start');},changed(){changed++;}});
+  const navigation = controller.navigate({translationCues:cues},4);
+  assert.equal(changed,1,'visibility updates immediately, before any asynchronous session stop');
+  await navigation;
+  assert.equal(controller.status.phase,'idle');
+});
 test('staying within a live range does not send repeated starts, ending Show sends Stop', async () => {
   const sent = [];
   const controller = new SlideTranslationCues({ resolve: async () => ({ serviceId: 'service', serviceRevision: 'a'.repeat(64) }),

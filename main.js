@@ -8681,7 +8681,7 @@ function createDisplayWindow(displayInfo, output, sessionId) {
 
     win.syncShowReady = true;
 
-    win.webContents.send('translation:frame', translationProjection.frame(output.id));
+    win.webContents.send('translation:frame', showTranslationFrame(output.id));
 
     console.log(`[Display] Created ${output.name} (${output.id}) on display ${output.displayId} from ${output.sourceRoleId} at ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
   });
@@ -8781,7 +8781,7 @@ function createSingerWindow(displayInfo, output, sessionId) {
 
     win.syncShowReady = true;
 
-    win.webContents.send('translation:frame', translationProjection.frame(output.id));
+    win.webContents.send('translation:frame', showTranslationFrame(output.id));
 
     console.log(`[Singer] Created ${output.name} (${output.id}) on display ${output.displayId} from ${output.sourceRoleId} at ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
   });
@@ -18301,6 +18301,16 @@ function translationStatePayload() {
   return state;
 }
 
+function showTranslationFrame(outputId) {
+  const presentation = appState.presentations[appState.activeLaunchPlan?.timelineRoleId];
+  return require('./src/services/translation/TranslationCueSetup').cueScopedFrame(translationProjection.frame(outputId), {
+    showActive: Boolean(appState.activeLaunchPlan || displayStartInProgress),
+    manual: slideTranslation.manual,
+    cues: presentation?.translationCues || [],
+    index: appState.currentSlide
+  });
+}
+
 function notifyTranslationChanged() {
   const state = translationStatePayload();
   if (controlWindow && !controlWindow.isDestroyed()) {
@@ -18308,7 +18318,7 @@ function notifyTranslationChanged() {
   }
   for (const [outputId, entry] of outputWindows) {
     if (!entry.win.isDestroyed() && entry.win.syncShowReady) {
-      entry.win.webContents.send('translation:frame', translationProjection.frame(outputId));
+      entry.win.webContents.send('translation:frame', showTranslationFrame(outputId));
     }
   }
   translationScreens.sendFrames();

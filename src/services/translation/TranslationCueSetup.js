@@ -1,5 +1,6 @@
  'use strict';
 const { createHeritageServiceDocument, serializeHeritageServiceDocument, heritageServiceDocumentRevision } = require('../community/HeritageServiceDocument');
+const { translationIntent } = require('./SlideTranslationCues');
 function resolveCueBinding(presentation, binding, connection) {
   const project = presentation?.serviceHandoff?.project;
   if (project?.id === presentation.projectId) {
@@ -21,4 +22,10 @@ function cueOutputSettings(output, command, defaults, saved) {
   }
   return saved || { language: defaults.sourceLanguage === 'en' ? 'ru' : 'en', layout: audience ? 'lower-third' : 'hidden', fontScale: 1 };
 }
-module.exports = { resolveCueBinding, cueOutputSettings };
+function cueScopedFrame(frame, { showActive, manual, cues = [], index } = {}) {
+  // Saved layouts describe the next translation session. They must not paint
+  // a band over ordinary slides, even while a feed or Stop is still pending.
+  if (!showActive || manual || frame.manual || translationIntent(cues, index)?.phase === 'live') return frame;
+  return { ...frame, layout: 'hidden', moving: false, phrases: [] };
+}
+module.exports = { resolveCueBinding, cueOutputSettings, cueScopedFrame };

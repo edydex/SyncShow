@@ -1,12 +1,11 @@
-Translation cue and audio setup follow-up: 2.1.1-preview.2.
+Translation cue region follow-up: 2.1.1-preview.3.
 
-- Resolve the loaded Community service by its verified document content, avoiding an obsolete local packaging revision marker. The server still verifies the exact saved service revision.
-- Start Translate cues reveal their chosen caption language/layout even when saved screen defaults are Hidden.
-- Manual Translate reserves caption space in the current native slide and in imported image slides; it restores the original area on Stop and avoids reserving the band twice.
-- Translation setup has a Default audio input selector, Find audio inputs, and a visible saved-input summary. Cues and Translate share that input.
-- Show distinguishes waiting for captions from captions actually being received.
+- Ordinary Show slides before and after a translation cue region use the full screen. Saved lower-third defaults no longer paint an empty band over those slides.
+- Leaving or jumping outside the cue region hides captions immediately, even before a pending processor stop completes. Late captions and reopening settings cannot reveal that band again.
+- The slide immediately before Start still prepares audio without displaying a band.
+- Manual Translate and translation-only screens retain their chosen layouts. Saved screen defaults and the shared default audio input are preserved.
 
-Includes the previous Show settings/session continuity fixes. This follow-up requires no additional church processor restart.
+Includes the previous translation, Show settings, and session continuity fixes. No church processor restart or default settings reset is needed.
 
 Expedited Windows venue-testing build: focused translation/rendering tests and Windows installer launch checks. Full platform regression and physical venue acceptance remain pending.
 

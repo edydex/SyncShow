@@ -41,7 +41,13 @@ class SlideTranslationCues {
     const generation = ++this.sequence;
     const cues = presentation?.translationCues || [];
     const intent = translationIntent(cues, index);
-    if (!intent) { await this.stop().catch(() => {}); return; }
+    if (!intent) {
+      // Clear projection even when no session was started on this computer.
+      // In particular, restored defaults must not cover the opening slides.
+      this.changed();
+      await this.stop().catch(() => {});
+      return;
+    }
     try {
       await this.flushStop();
       if (generation !== this.sequence) return;
