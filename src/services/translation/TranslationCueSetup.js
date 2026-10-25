@@ -1,9 +1,12 @@
  'use strict';
 const { createHeritageServiceDocument, serializeHeritageServiceDocument, heritageServiceDocumentRevision } = require('../community/HeritageServiceDocument');
 const { translationIntent } = require('./SlideTranslationCues');
-function resolveCueBinding(presentation, binding, connection) {
-  const project = presentation?.serviceHandoff?.project;
-  if (project?.id === presentation.projectId) {
+async function resolveCueBinding(presentation, binding, connection, projectStore) {
+  if (projectStore && presentation?.projectId && /^[a-f0-9]{64}$/.test(presentation.projectRevisionId || '')) {
+    // serviceHandoff.project is only display metadata, not a ServiceProject.
+    // Read the immutable full document used to prepare these exact slides.
+    const { project } = await projectStore.read(presentation.projectId, { revisionId: presentation.projectRevisionId });
+    if (project.id !== presentation.projectId) throw new Error('The saved project does not match the loaded service.');
     // The operator verifies this content revision against the authenticated
     // Community plan. A local packaging revision is not a Community revision.
     return { serviceId: project.id, serviceRevision: heritageServiceDocumentRevision(serializeHeritageServiceDocument(createHeritageServiceDocument(project))) };

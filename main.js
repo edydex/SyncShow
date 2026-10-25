@@ -421,7 +421,7 @@ const slideTranslation = new SlideTranslationCues({
     const services = await getCommunityServices();
     const binding = await services.serviceDocumentBindingStore.get(presentation.projectId);
     const connection = await currentCommunityConnectionSummary();
-    return require('./src/services/translation/TranslationCueSetup').resolveCueBinding(presentation, binding, connection);
+    return require('./src/services/translation/TranslationCueSetup').resolveCueBinding(presentation, binding, connection, getPrepareServices().serviceProjectStore);
   },
   send: async command => {
     desiredSlideTranslation = command;
@@ -18348,6 +18348,7 @@ async function connectTranslation({ control = false, hidden = false, serviceId }
     throw new Error('Reconnect Heritage Community in Admin Settings and approve live translation control for this computer.');
   }
   translationAudioInput = await new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).readInput(translationInputScope(connection.id));
+  translationOperator.computerAudioSelected = translationAudioInput?.id === 'syncshow:computer-audio';
   translationFeed.connect(connection.baseUrl);
   if (control) {
     const { connectionStore } = await getCommunityServices();
