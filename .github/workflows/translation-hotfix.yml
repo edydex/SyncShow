@@ -2,6 +2,7 @@ name: Translation hotfix Windows installer
 on:
   push:
     branches: [codex/translation-test-readiness]
+    paths: [package.json]
   workflow_dispatch:
 permissions:
   contents: write
