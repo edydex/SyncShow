@@ -16,3 +16,8 @@
 .translation-manual textarea { min-height: 90px; margin-top: 12px; }
 #translationError { color: #ffb5ae; }
 @media (max-width: 760px) { .translation-row { grid-template-columns: 1fr 1fr; } .translation-output-name { grid-column: 1 / -1; } }
+
+.translation-defaults { border: 1px solid #52657d; border-radius: 8px; padding: 14px; margin: 18px 0; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+.translation-defaults label { display: grid; gap: 6px; }
+.translation-defaults select { background: #1c293b; color: white; padding: 8px; border: 1px solid #52657d; border-radius: 6px; }
+.translation-defaults p { width: 100%; margin-bottom: 0; }

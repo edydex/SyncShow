@@ -143,8 +143,8 @@ class TranslationOperatorWindow {
       if (this.command?.phase && this.command.phase !== 'idle') this.failed('Translation controls stopped unexpectedly. Check Live translation before restarting.');
       this.close();
     });
-    // Closing the controls must not kill a running cue-owned audio input.
-    win.on('close', event => { if (this.command?.phase !== 'idle' && this.command) { event.preventDefault(); win.hide(); } });
+    // Keep the same page and audio stream when returning to Show, including manual sessions.
+    win.on('close', event => { event.preventDefault(); win.hide(); });
     const session = contents.session;
     session.setPermissionRequestHandler((webContents, permission, callback, details) => {
       if(permission==='display-capture') return callback(Boolean(this.computerAudioSelected && webContents===contents && details?.isMainFrame===true && operatorPage(contents.getURL(),origin) && operatorPage(details.requestingUrl,origin)));

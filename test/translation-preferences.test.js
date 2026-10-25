@@ -29,3 +29,15 @@ test('unsafe settings targets are rejected without overwriting them', async t =>
   await assert.rejects(store.write('church-a', new Map()));
   assert.equal(await fs.readFile(target, 'utf8'), 'preserve');
 });
+
+test('OpenAI defaults survive restarting and remain separate per venue', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'translation-defaults-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const store = new TranslationPreferences(directory);
+  assert.equal((await store.readDefaults('church-a')).transcriptionProvider, 'openai');
+  const defaults = { sourceLanguage: 'ru', transcriptionProvider: 'openai', speechEnabled: false };
+  await store.writeDefaults('church-a', defaults);
+  assert.deepEqual(await new TranslationPreferences(directory).readDefaults('church-a'), defaults);
+  assert.equal((await store.readDefaults('church-b')).sourceLanguage, 'en');
+  await assert.rejects(store.writeDefaults('church-a', { ...defaults, apiKey: 'no' }));
+});

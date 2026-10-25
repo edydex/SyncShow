@@ -28,7 +28,7 @@
       const result = await run();
       if (!result?.success) throw new Error(result?.error?.message || 'Translation could not be updated.');
       render(result.data);
-    } catch (cause) { error.textContent = cause.message; }
+    } catch (cause) { error.textContent = cause.message; if (!dialog.open) dialog.showModal(); }
     finally { if (--pending === 0) dialog.removeAttribute('aria-busy'); }
   }
 
@@ -43,6 +43,14 @@
   function render(next) {
     if (!next?.outputs) return;
     state = next;
+    const toggle = document.getElementById('translationToggle');
+    const running = ['live', 'ready', 'starting', 'preparing', 'stopping'].includes(next.automation?.phase);
+    if (toggle) { toggle.textContent = running ? 'Stop translation' : 'Translate'; toggle.disabled = next.automation?.phase === 'stopping'; }
+    if (next.defaults && !dialog.contains(document.activeElement)) {
+      document.getElementById('translationDefaultProvider').value = next.defaults.transcriptionProvider;
+      document.getElementById('translationDefaultSource').value = next.defaults.sourceLanguage;
+      document.getElementById('translationDefaultSpeech').checked = next.defaults.speechEnabled;
+    }
     const cueStatus = document.getElementById('translationCueStatus');
     if (cueStatus) {
       const automation = next.automation || { phase: 'idle' };
@@ -107,10 +115,21 @@
   }
 
   function open() {
+    if (state?.defaults) {
+      document.getElementById('translationDefaultProvider').value = state.defaults.transcriptionProvider;
+      document.getElementById('translationDefaultSource').value = state.defaults.sourceLanguage;
+      document.getElementById('translationDefaultSpeech').checked = state.defaults.speechEnabled;
+    }
     if (!dialog.open) dialog.showModal();
     action(() => window.api.connectTranslation());
   }
   document.querySelectorAll('[data-open-translation]').forEach(button => button.addEventListener('click', open));
+  document.getElementById('translationToggle').addEventListener('click', () => action(() => window.api.toggleTranslation()));
+  document.getElementById('translationSaveDefaults').addEventListener('click', () => action(() => window.api.saveTranslationDefaults({
+    transcriptionProvider: document.getElementById('translationDefaultProvider').value,
+    sourceLanguage: document.getElementById('translationDefaultSource').value,
+    speechEnabled: document.getElementById('translationDefaultSpeech').checked
+  })));
   document.getElementById('translationClose').addEventListener('click', () => dialog.close());
   document.getElementById('translationConnect').addEventListener('click', () => action(() => window.api.connectTranslation()));
   document.getElementById('translationOperator').addEventListener('click', () => action(() => window.api.openTranslationOperator()));

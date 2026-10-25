@@ -391,6 +391,8 @@ let activePreviewOnly = false;
 const {previewDisplayMap, outputIsPresented} = require('./src/services/show/PreviewShow');
 let outputRecovery = null;
 let translationPreferencesVenue = null;
+let translationOutputDefaults = new Map();
+let translationDefaults = { sourceLanguage: 'en', transcriptionProvider: 'openai', speechEnabled: false };
 let translationSettingsQueue = Promise.resolve();
 const translationProjection = new TranslationProjection();
 const translationDiagnostics = new TranslationDiagnostics({ directory: () => path.join(app.getPath('userData'), 'logs') });
@@ -432,11 +434,14 @@ const slideTranslation = new SlideTranslationCues({
     }
     await connectTranslation({ control: true, hidden: true, serviceId: command.serviceId });
     if (desiredSlideTranslation === command) {
-      if (command.settings) {
+      if (command.settings || command.manual) {
         for (const output of appState.activeLaunchPlan?.outputs || activeVenueProfile?.outputs || []) {
           const channel = output.sourceRoleId || output.expectedRoleId || output.expectedRole;
-          const selected = command.settings.captionChannel==='both' || command.settings.captionChannel===channel;
-          translationProjection.configure(output.id,{language:command.settings.targetLanguage,layout:command.phase==='live' && selected && output.kind!=='singer' && output.renderer!=='singer-current-next' ? command.settings.captionStyle : 'hidden',fontScale:1});
+          const settings = command.settings;
+          const audience = output.kind !== 'singer' && output.renderer !== 'singer-current-next';
+          const selected = !settings || settings.captionChannel === 'both' || settings.captionChannel === channel;
+          const saved = translationOutputDefaults.get(output.id);
+          translationProjection.configure(output.id, saved || { language: settings?.targetLanguage || (translationDefaults.sourceLanguage === 'en' ? 'ru' : 'en'), layout: audience && selected ? settings?.captionStyle || 'lower-third' : 'hidden', fontScale: 1 });
         }
         notifyTranslationChanged();
       }
@@ -18270,6 +18275,8 @@ async function ensureTranslationPreferences() {
   const preferences = new TranslationPreferences(path.join(app.getPath('userData'), 'translation'));
   const saved = await preferences.read(venueId);
   if (activeVenueProfile?.id !== venueId) return;
+  translationDefaults = await preferences.readDefaults(venueId);
+  translationOutputDefaults = new Map(saved);
   translationProjection.outputs.clear();
   translationProjection.manual.clear();
   for (const [id, value] of saved) {
@@ -18296,6 +18303,7 @@ function translationOutputs() {
 
 function translationStatePayload() {
   const state = { ...translationProjection.snapshot(), automation: slideTranslation.status, origin: translationFeed.origin,
+    defaults: translationDefaults, manual: slideTranslation.manual,
     operatorOpen: Boolean(translationOperator.window && !translationOperator.window.isDestroyed()),
     outputs: translationOutputs() };
   state.connectionWarning = translationDiagnostics.observe(state);
@@ -18364,7 +18372,7 @@ ipcMain.handle('translation:cue-status', (event, status) => {
   if (!translationOperator.owns(event) || !status || !['idle', 'preparing', 'ready', 'starting', 'live', 'stopping', 'error'].includes(status.phase)
     || (status.message !== undefined && (typeof status.message !== 'string' || status.message.length > 2000))) return;
   translationOperator.report(status);
-  slideTranslation.report({ phase: status.phase, ...(status.message ? { message: status.message } : {}) });
+  slideTranslation.report({ phase: status.phase, manual: status.manual === true, ...(status.message ? { message: status.message } : {}) });
 });
 ipcMain.handle('translation:input:read', event => {
   requireTranslationOperatorSender(event);
@@ -18392,6 +18400,35 @@ ipcMain.handle('translation:operator', event => {
   requireControlSender(event);
   return communityIpcResult(() => serializeCommunityOperation(() => connectTranslation({ control: true })));
 });
+ipcMain.handle('translation:operator:hide', event => {
+  requireTranslationOperatorSender(event);
+  translationOperator.window?.hide(); controlWindow?.focus();
+});
+ipcMain.handle('translation:defaults:read', event => {
+  requireTranslationOperatorSender(event);
+  return translationDefaults;
+});
+ipcMain.handle('translation:defaults:write', (event, value) => {
+  requireControlSender(event);
+  return communityIpcResult(() => serializeTranslationSettings(async () => {
+    const preferences = new TranslationPreferences(path.join(app.getPath('userData'), 'translation'));
+    const defaults = preferences.normalizeDefaults(value);
+    await preferences.writeDefaults(activeVenueProfile.id, defaults);
+    translationDefaults = defaults; notifyTranslationChanged();
+    return translationStatePayload();
+  }));
+});
+ipcMain.handle('translation:toggle', event => {
+  requireControlSender(event);
+  return communityIpcResult(() => serializeTranslationSettings(async () => {
+    if (['live', 'ready', 'starting', 'preparing', 'stopping'].includes(slideTranslation.status.phase)) await slideTranslation.stop();
+    else {
+      await connectTranslation({ control: true, hidden: true });
+      await slideTranslation.startManual(translationDefaults);
+    }
+    return translationStatePayload();
+  }));
+});
 ipcMain.handle('translation:screen:open', (event, request = {}) => {
   requireControlSender(event);
   return communityIpcResult(async () => {
@@ -18418,9 +18455,10 @@ ipcMain.handle('translation:configure', (event, request = {}) => {
     communityRequestKeys(request, ['outputId', 'settings'], 'Translation output');
     requireTranslationOutput(request.outputId);
     const settings = require('./src/services/translation/TranslationProjection').normalizeOutput(request.settings);
-    const saved = new Map(translationProjection.outputs);
+    const saved = new Map(translationOutputDefaults);
     saved.set(request.outputId, settings);
     await new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).write(activeVenueProfile.id, saved);
+    translationOutputDefaults.set(request.outputId, settings);
     translationProjection.configure(request.outputId, settings);
     notifyTranslationChanged();
     return translationStatePayload();

@@ -10,6 +10,21 @@ class TranslationPreferences {
     if (typeof venueId !== 'string' || !venueId || venueId.length > 128) throw new Error('Choose a venue before configuring translation.');
     return path.join(this.directory, `${createHash('sha256').update(venueId).digest('hex')}.json`);
   }
+  normalizeDefaults(value = {}) {
+    const result = { sourceLanguage: value.sourceLanguage ?? 'en', transcriptionProvider: value.transcriptionProvider ?? 'openai', speechEnabled: value.speechEnabled ?? false };
+    if (Object.keys(value).some(key => !Object.hasOwn(result, key)) || !['en', 'ru'].includes(result.sourceLanguage)
+      || !['openai', 'muse', 'auto'].includes(result.transcriptionProvider) || typeof result.speechEnabled !== 'boolean') throw new Error('Invalid translation defaults.');
+    return result;
+  }
+  async readDefaults(venueId) {
+    try {
+      const { buffer } = await readFileNoFollow(this.file(venueId).replace(/\.json$/, '-defaults.json'), 8192);
+      return this.normalizeDefaults(JSON.parse(buffer.toString('utf8')));
+    } catch (error) { if (error.code === 'ENOENT') return this.normalizeDefaults(); throw error; }
+  }
+  async writeDefaults(venueId, value) {
+    await atomicWriteFile(this.file(venueId).replace(/\.json$/, '-defaults.json'), JSON.stringify(this.normalizeDefaults(value)) + '\n', { maximumBytes: 8192 });
+  }
   async readInput(venueId) {
     try {
       const { buffer } = await readFileNoFollow(this.file(venueId).replace(/\.json$/, '-input.json'), 8192);

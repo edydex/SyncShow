@@ -64,3 +64,26 @@ test('failed Stop retains ownership for retry instead of claiming the server is 
   fail = false; await controller.stop();
   assert.equal(controller.status.phase, 'idle');
 });
+
+test('manual translation survives slides and stops when Show ends', async () => {
+  const sent = [];
+  const controller = new SlideTranslationCues({ resolve: async () => { throw new Error('manual must not resolve a service'); }, send: async command => sent.push(command), changed() {} });
+  await controller.startManual({ sourceLanguage: 'en', transcriptionProvider: 'openai', speechEnabled: false });
+  await controller.navigate({ translationCues: cues }, 0);
+  await controller.navigate({ translationCues: cues }, 1);
+  await controller.navigate({ translationCues: cues }, 4);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].manual, true);
+  await controller.stop();
+  assert.deepEqual(sent.map(value => value.phase), ['live', 'idle']);
+});
+test('translation started in the console takes manual ownership in Show', async () => {
+  const sent = [];
+  const controller = new SlideTranslationCues({ resolve: async () => ({}), send: async command => sent.push(command), changed() {} });
+  controller.report({ phase: 'live', manual: true });
+  await controller.navigate({ translationCues: cues }, 1);
+  assert.equal(sent.length, 0);
+  await controller.stop();
+  assert.equal(sent[0].phase, 'idle');
+  assert.equal(sent[0].manual, true);
+});

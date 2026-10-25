@@ -845,6 +845,10 @@
         </section>
         </div>
 
+
+      </div>
+    </section>
+
         <dialog id="advancedSetupDetails" class="admin-settings-dialog" aria-labelledby="adminSettingsHeading">
           <div class="admin-settings-shell">
             <header class="admin-settings-header">
@@ -874,7 +878,7 @@
 
             <div class="admin-settings-scroll">
               <section id="settingsTranslationPanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTranslationTab" data-settings-panel="translation" tabindex="0" hidden>
-                <h3>Translation setup</h3><p>Configure live translation, captions, and translation-only screens.</p>
+                <h3>Translation setup</h3><p>Save the audio source, model, and screen layouts used by Translate in Show.</p>
                 <button type="button" class="btn btn-secondary" data-open-translation aria-haspopup="dialog" aria-controls="translationDialog">Open Translation setup</button>
               </section>
               <section id="settingsPptxPanel" class="admin-settings-tab-panel" role="tabpanel" aria-labelledby="settingsTabPptx" data-settings-panel="pptx" tabindex="0" hidden>
@@ -1279,8 +1283,6 @@
             </div>
           </div>
         </dialog>
-      </div>
-    </section>
 
     <main class="main-content" id="mainContent">
       <div class="main-horizontal-layout">
@@ -1398,6 +1400,8 @@
             </button>
           </div>
           <details class="show-extra-tools"><summary>More controls</summary>
+            <button id="translationToggle" type="button" class="btn btn-primary btn-full">Translate</button>
+            <button type="button" class="btn btn-secondary btn-full" data-open-translation>Translation settings</button>
             <button id="btnStopDisplays" class="btn btn-warning btn-full" title="Hide output windows and stop keyboard control">
               Stop outputs
             </button>
@@ -3102,6 +3106,13 @@
       <button type="button" id="translationClose" class="btn btn-secondary">Done</button>
     </div>
     <p id="translationError" role="alert"></p>
+    <fieldset class="translation-defaults"><legend>Defaults for this computer</legend>
+      <label>Translation model<select id="translationDefaultProvider"><option value="openai">OpenAI · realtime translation</option><option value="muse">Muse recognition + OpenAI translation</option><option value="auto">Automatic recognition</option></select></label>
+      <label>Speaker’s language<select id="translationDefaultSource"><option value="en">English → Russian</option><option value="ru">Russian → English</option></select></label>
+      <label><input type="checkbox" id="translationDefaultSpeech"> Generate translated speech</label>
+      <button type="button" id="translationSaveDefaults" class="btn btn-secondary">Save defaults</button>
+      <p id="translationDefaultsStatus" role="status">Screen language, layout and text size below are saved automatically. Translate uses these saved layouts.</p>
+    </fieldset>
     <p>Choose a layout, then Open screen to display translation without loading slides. During Show, these layouts apply to its screens. Hide makes captions disappear; Close screen returns to the desktop. Translation keeps running for phone listeners.</p>
     <div id="translationOutputs"></div>
     <div class="translation-preview">
