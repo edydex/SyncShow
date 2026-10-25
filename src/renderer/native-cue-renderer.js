@@ -856,7 +856,8 @@ function normalizeBodyOutline(rows, body) {
           body.style.lineHeight = String(lineHeight);
           const bodyMaximumHeight = logicalFitHeight * scale;
           body.style.height = `${bodyMaximumHeight}px`;
-          fitText(body, style.bodySize, bodyMinimumSize, scale);
+          const minimum = scene.captionReservation || runtimeCaptionReservation ? scaledTextMinimum(Math.min(32, style.bodyMinimumSize), scene.canvas) : bodyMinimumSize;
+          fitText(body, style.bodySize, minimum, scale);
           settleFittedTextHeight(body, bodyMaximumHeight);
           if (credit) {
             credit.style.height = `${contentHeight * .10 * scale}px`;
