@@ -3107,6 +3107,9 @@
     </div>
     <p id="translationError" role="alert"></p>
     <fieldset class="translation-defaults"><legend>Defaults for this computer</legend>
+      <label>Default audio input<select id="translationDefaultInput"><option value="">Choose an audio input</option></select></label>
+      <button type="button" id="translationFindInputs" class="btn btn-secondary">Find audio inputs</button>
+      <p id="translationAudioStatus" role="status">Choose the mixer once. Cues and Translate will use this input automatically.</p>
       <label>Translation model<select id="translationDefaultProvider"><option value="openai">OpenAI · realtime translation</option><option value="muse">Muse recognition + OpenAI translation</option><option value="auto">Automatic recognition</option></select></label>
       <label>Speaker’s language<select id="translationDefaultSource"><option value="en">English → Russian</option><option value="ru">Russian → English</option></select></label>
       <label><input type="checkbox" id="translationDefaultSpeech"> Generate translated speech</label>

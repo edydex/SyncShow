@@ -9,6 +9,13 @@
  * tokens plus validated colors/weights/alignment.
  */
 (function exposeNativeCueRenderer(global) {
+  let runtimeCaptionReservation = 0;
+  const captionLayouts = new Set();
+  function setCaptionReservation(value) {
+    if (![0, .12, .29].includes(value) || value === runtimeCaptionReservation) return;
+    runtimeCaptionReservation = value;
+    for (const relayout of captionLayouts) relayout();
+  }
   const SCHEMA_VERSION = 3;
   const KIND = 'syncshow-native-cue-scene';
   const LAYOUTS = new Set(['blank', 'text', 'song-title', 'picture', 'video', 'singer-current-next', 'canvas']);
@@ -698,7 +705,7 @@ function normalizeBodyOutline(rows, body) {
 
   function buildScene(rawScene, options = {}) {
     const scene = validateScene(rawScene);
-    const contentHeight = scene.canvas.height * (1 - (scene.captionReservation || 0));
+    let contentHeight = scene.canvas.height * (1 - (scene.captionReservation || 0));
     const host = document.createElement('div');
     host.className = 'native-scene-host';
     const surface = document.createElement('div');
@@ -1000,7 +1007,7 @@ function normalizeBodyOutline(rows, body) {
       const currentHost = document.createElement('div');
       currentHost.className = 'native-singer-current';
       const current = scene.current.layout === 'text'
-        ? buildStageText(scene.current) : buildScene(scene.current, options);
+        ? buildStageText(scene.current) : buildScene(scene.current, {...options, nestedCaptionLayout:true});
       currentHost.appendChild(current.element);
       const next = document.createElement('div');
       next.className = 'native-singer-next';
@@ -1040,7 +1047,9 @@ function normalizeBodyOutline(rows, body) {
     }
 
     function relayout() {
-      const scale = fitSurface(host, surface, scene.canvas, scene.captionReservation || 0);
+      const reservation = Math.max(scene.captionReservation || 0, options.nestedCaptionLayout ? 0 : runtimeCaptionReservation);
+      contentHeight = scene.canvas.height * (1 - reservation);
+      const scale = fitSurface(host, surface, scene.canvas, reservation);
       for (const child of children) {
         if (typeof child.relayout === 'function') child.relayout(scale);
       }
@@ -1105,7 +1114,10 @@ function normalizeBodyOutline(rows, body) {
       return true;
     }
 
+    const relayoutForCaptions = () => { if (host.isConnected !== false) relayout(); };
+    captionLayouts.add(relayoutForCaptions);
     function destroy() {
+      captionLayouts.delete(relayoutForCaptions);
       for (const video of videos) {
         video.pause();
         video.removeAttribute('src');
@@ -1133,6 +1145,7 @@ function normalizeBodyOutline(rows, body) {
 
   global.SyncShowNativeCueRenderer = Object.freeze({
     buildScene,
+    setCaptionReservation,
     validateScene
   });
 })(window);

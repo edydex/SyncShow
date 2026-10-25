@@ -390,6 +390,8 @@ let activeTestOutputSettings = null;
 let activePreviewOnly = false;
 const {previewDisplayMap, outputIsPresented} = require('./src/services/show/PreviewShow');
 let outputRecovery = null;
+let translationAudioInput = null;
+let translationAudioInputs = [];
 let translationPreferencesVenue = null;
 let translationOutputDefaults = new Map();
 let translationDefaults = { sourceLanguage: 'en', transcriptionProvider: 'openai', speechEnabled: false };
@@ -419,11 +421,7 @@ const slideTranslation = new SlideTranslationCues({
     const services = await getCommunityServices();
     const binding = await services.serviceDocumentBindingStore.get(presentation.projectId);
     const connection = await currentCommunityConnectionSummary();
-    if (!binding?.documentRevision || binding.serverId !== connection?.serverId
-      || binding.localRevisionId !== presentation.projectRevisionId) {
-      throw new Error('Load the saved Community service before using translation cues.');
-    }
-    return { serviceId: binding.syncId, serviceRevision: binding.documentRevision };
+    return require('./src/services/translation/TranslationCueSetup').resolveCueBinding(presentation, binding, connection);
   },
   send: async command => {
     desiredSlideTranslation = command;
@@ -434,17 +432,10 @@ const slideTranslation = new SlideTranslationCues({
     }
     await connectTranslation({ control: true, hidden: true, serviceId: command.serviceId });
     if (desiredSlideTranslation === command) {
-      if (command.settings || command.manual) {
-        for (const output of appState.activeLaunchPlan?.outputs || activeVenueProfile?.outputs || []) {
-          const channel = output.sourceRoleId || output.expectedRoleId || output.expectedRole;
-          const settings = command.settings;
-          const audience = output.kind !== 'singer' && output.renderer !== 'singer-current-next';
-          const selected = !settings || settings.captionChannel === 'both' || settings.captionChannel === channel;
-          const saved = translationOutputDefaults.get(output.id);
-          translationProjection.configure(output.id, saved || { language: settings?.targetLanguage || (translationDefaults.sourceLanguage === 'en' ? 'ru' : 'en'), layout: audience && selected ? settings?.captionStyle || 'lower-third' : 'hidden', fontScale: 1 });
-        }
-        notifyTranslationChanged();
+      for (const output of appState.activeLaunchPlan?.outputs || activeVenueProfile?.outputs || []) {
+        translationProjection.configure(output.id, require('./src/services/translation/TranslationCueSetup').cueOutputSettings(output, command, translationDefaults, translationOutputDefaults.get(output.id)));
       }
+      notifyTranslationChanged();
       translationOperator.dispatch(command);
     }
   }
@@ -18303,7 +18294,7 @@ function translationOutputs() {
 
 function translationStatePayload() {
   const state = { ...translationProjection.snapshot(), automation: slideTranslation.status, origin: translationFeed.origin,
-    defaults: translationDefaults, manual: slideTranslation.manual,
+    defaults: translationDefaults, manual: slideTranslation.manual, audioInput: translationAudioInput, audioInputs: translationAudioInputs,
     operatorOpen: Boolean(translationOperator.window && !translationOperator.window.isDestroyed()),
     outputs: translationOutputs() };
   state.connectionWarning = translationDiagnostics.observe(state);
@@ -18346,6 +18337,7 @@ async function connectTranslation({ control = false, hidden = false, serviceId }
   if (control && !connection.canControlTranslation) {
     throw new Error('Reconnect Heritage Community in Admin Settings and approve live translation control for this computer.');
   }
+  translationAudioInput = await new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).readInput(translationInputScope(connection.id));
   translationFeed.connect(connection.baseUrl);
   if (control) {
     const { connectionStore } = await getCommunityServices();
@@ -18361,9 +18353,9 @@ function requireTranslationOutput(outputId) {
 function requireTranslationOperatorSender(event) {
   if (!translationOperator.owns(event)) throw new Error('Translation controls are not authorized.');
 }
-function translationInputScope() {
-  if (!activeVenueProfile?.id || !translationOperator.connectionId) throw new Error('Choose a venue and connect Community first.');
-  return require('crypto').createHash('sha256').update(`${activeVenueProfile.id}:${translationOperator.connectionId}`).digest('hex');
+function translationInputScope(connectionId = translationOperator.connectionId) {
+  if (!activeVenueProfile?.id || !connectionId) throw new Error('Choose a venue and connect Community first.');
+  return require('crypto').createHash('sha256').update(`${activeVenueProfile.id}:${connectionId}`).digest('hex');
 }
 ipcMain.handle('translation:cue-ready', event => {
   if (translationOperator.owns(event)) translationOperator.markReady();
@@ -18376,19 +18368,42 @@ ipcMain.handle('translation:cue-status', (event, status) => {
 });
 ipcMain.handle('translation:input:read', event => {
   requireTranslationOperatorSender(event);
-  return new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).readInput(translationInputScope()).then(input=>{translationOperator.computerAudioSelected=input?.id==='syncshow:computer-audio';return input});
+  return new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).readInput(translationInputScope()).then(input=>{translationAudioInput=input;translationOperator.computerAudioSelected=input?.id==='syncshow:computer-audio';notifyTranslationChanged();return input});
 });
 ipcMain.handle('translation:input:write', (event, input) => {
   requireTranslationOperatorSender(event);
   const preferences = new TranslationPreferences(path.join(app.getPath('userData'), 'translation'));
   const normalized = preferences.normalizeInput(input);
-  return preferences.writeInput(translationInputScope(), normalized).then(()=>{translationOperator.computerAudioSelected=normalized.id==='syncshow:computer-audio';});
+  return preferences.writeInput(translationInputScope(), normalized).then(()=>{translationAudioInput=normalized;translationOperator.computerAudioSelected=normalized.id==='syncshow:computer-audio';notifyTranslationChanged();});
 });
 
+ipcMain.handle('translation:inputs:list', event => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    await connectTranslation({ control: true, hidden: true });
+    translationAudioInputs = await translationOperator.listAudioInputs();
+    return translationStatePayload();
+  });
+});
+ipcMain.handle('translation:inputs:save', (event, input) => {
+  requireControlSender(event);
+  return communityIpcResult(async () => {
+    const preferences = new TranslationPreferences(path.join(app.getPath('userData'), 'translation'));
+    const normalized = preferences.normalizeInput(input);
+    if (!translationAudioInputs.some(value => value.id === normalized.id && value.label === normalized.label)) throw new Error('Find the audio inputs, then choose a named input.');
+    await preferences.writeInput(translationInputScope(), normalized);
+    translationAudioInput = normalized;
+    translationOperator.computerAudioSelected = normalized.id === 'syncshow:computer-audio';
+    notifyTranslationChanged();
+    return translationStatePayload();
+  });
+});
 ipcMain.handle('translation:state', event => {
   requireControlSender(event);
   return communityIpcResult(() => serializeTranslationSettings(async () => {
     await ensureTranslationPreferences();
+    const connection = await currentCommunityConnectionSummary();
+    if (connection) translationAudioInput = await new TranslationPreferences(path.join(app.getPath('userData'), 'translation')).readInput(translationInputScope(connection.id));
     return translationStatePayload();
   }));
 });

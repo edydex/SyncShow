@@ -279,6 +279,7 @@
     document.documentElement.style.setProperty('--translation-font', String(next.fontScale));
     const band = next.layout === 'ticker' ? 'calc(12 * var(--output-vh, 1vh))' : next.layout === 'lower-third' ? 'calc(29 * var(--output-vh, 1vh))' : '0px';
     document.documentElement.style.setProperty('--translation-band', band);
+    window.SyncShowNativeCueRenderer?.setCaptionReservation(next.layout === 'ticker' ? .12 : next.layout === 'lower-third' ? .29 : 0);
 
     if (next.layout === 'hidden') return;
     if (next.layout === 'ticker') { receiveTicker(next.phrases); return; }

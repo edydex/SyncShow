@@ -409,6 +409,8 @@ contextBridge.exposeInMainWorld('api', {
   openTranslationOperator: () => ipcRenderer.invoke('translation:operator'),
   saveTranslationDefaults: value => ipcRenderer.invoke('translation:defaults:write', value),
   toggleTranslation: () => ipcRenderer.invoke('translation:toggle'),
+  listTranslationInputs: () => ipcRenderer.invoke('translation:inputs:list'),
+  saveTranslationInput: input => ipcRenderer.invoke('translation:inputs:save', { id: input?.id, label: input?.label }),
   openTranslationScreen: (request = {}) => ipcRenderer.invoke('translation:screen:open', { outputId: request?.outputId }),
   closeTranslationScreen: (request = {}) => ipcRenderer.invoke('translation:screen:close', { outputId: request?.outputId }),
   configureTranslationOutput: (request = {}) => ipcRenderer.invoke('translation:configure', {

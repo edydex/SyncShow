@@ -68,6 +68,19 @@ class TranslationOperatorWindow {
     this.ready = false;
   }
 
+  async listAudioInputs() {
+    if (!this.window || this.window.isDestroyed() || !operatorPage(this.window.webContents.getURL(), this.origin)) throw new Error('Open the church translation controls first.');
+    return this.window.webContents.executeJavaScript(`(async () => {
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      if (!devices.some(device => device.kind === 'audioinput' && device.label && !['default', 'communications'].includes(device.deviceId))) {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        try { devices = await navigator.mediaDevices.enumerateDevices(); } finally { stream.getTracks().forEach(track => track.stop()); }
+      }
+      const inputs = devices.filter(device => device.kind === 'audioinput' && device.deviceId && device.label && !['default', 'communications'].includes(device.deviceId)).map(device => ({id:device.deviceId,label:device.label}));
+      if (window.syncShowTranslation?.computerAudio) inputs.push({id:'syncshow:computer-audio',label:'Computer audio (all apps)'});
+      return inputs;
+    })()`, true);
+  }
   owns(event) {
     return this.window && !this.window.isDestroyed() && event.sender === this.window.webContents
       && event.senderFrame === event.sender.mainFrame && operatorPage(event.sender.getURL(), this.origin);

@@ -21,7 +21,7 @@ jobs:
           node --check main.js
           node --check preload.js
           node --check src/renderer/translation-controls.js
-          node --test test/translation-operator.test.js test/slide-translation-cues.test.js test/translation-preferences.test.js
+          node --test test/translation-operator.test.js test/slide-translation-cues.test.js test/translation-preferences.test.js test/translation-cue-setup.test.js test/native-cue-renderer-video.test.js
       - name: Build Windows installer first
         run: npm run build:win -- --x64 --publish never
       - name: Launch packaged application
@@ -35,6 +35,10 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           cd dist
+          for installer in *.exe; do
+            normalized="${installer// /.}"
+            if [ "$installer" != "$normalized" ]; then mv "$installer" "$normalized"; fi
+          done
           sha256sum *.exe > SHA256SUMS
           gh release create "v$VERSION" *.exe SHA256SUMS --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "SyncShow $VERSION — translation service fixes" --notes-file ../docs/TRANSLATION-HOTFIX.md
       - uses: actions/upload-artifact@v4

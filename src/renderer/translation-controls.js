@@ -43,6 +43,17 @@
   function render(next) {
     if (!next?.outputs) return;
     state = next;
+    const audioSelect = document.getElementById('translationDefaultInput');
+    const audioChoices = [...(next.audioInputs || [])];
+    if (next.audioInput && !audioChoices.some(input => input.id === next.audioInput.id)) audioChoices.unshift(next.audioInput);
+    const audioSignature = JSON.stringify(audioChoices);
+    if (audioSelect.dataset.choices !== audioSignature) {
+      audioSelect.dataset.choices = audioSignature;
+      audioSelect.replaceChildren(new Option('Choose an audio input', ''));
+      for (const input of audioChoices) audioSelect.add(new Option(input.label, input.id));
+    }
+    audioSelect.value = next.audioInput?.id || '';
+    document.getElementById('translationAudioStatus').textContent = next.audioInput ? `Saved default: ${next.audioInput.label}. Used by translation cues and Translate.` : 'No default audio input saved. Click Find audio inputs, then choose the mixer.';
     const toggle = document.getElementById('translationToggle');
     const running = ['live', 'ready', 'starting', 'preparing', 'stopping'].includes(next.automation?.phase);
     if (toggle) { toggle.textContent = running ? 'Stop translation' : 'Translate'; toggle.disabled = next.automation?.phase === 'stopping'; }
@@ -56,7 +67,7 @@
       const automation = next.automation || { phase: 'idle' };
       cueStatus.hidden = automation.phase === 'idle';
       const labels = { preparing: 'Preparing the translation audio feed…', ready: 'Translation ready · starts on the next slide',
-        starting: 'Starting translation…', live: 'Translation is live', stopping: 'Stopping translation…', error: 'Translation needs attention' };
+        starting: 'Starting translation…', live: next.captions.en?.length || next.captions.ru?.length ? 'Translation is live · captions received' : 'Translation started · waiting for speech and captions', stopping: 'Stopping translation…', error: 'Translation needs attention' };
       if (automation.phase === 'live' && next.connectionWarning) {
         labels.live = 'Reconnecting caption feed · screens hold their last text';
       }
@@ -124,6 +135,12 @@
     action(() => window.api.connectTranslation());
   }
   document.querySelectorAll('[data-open-translation]').forEach(button => button.addEventListener('click', open));
+  document.getElementById('translationFindInputs').addEventListener('click', () => action(() => window.api.listTranslationInputs()));
+  document.getElementById('translationDefaultInput').addEventListener('change', event => action(() => {
+    const input = state?.audioInputs?.find(value => value.id === event.target.value);
+    if (!input) throw new Error('Click Find audio inputs before choosing a new default.');
+    return window.api.saveTranslationInput(input);
+  }));
   document.getElementById('translationToggle').addEventListener('click', () => action(() => window.api.toggleTranslation()));
   document.getElementById('translationSaveDefaults').addEventListener('click', () => action(() => window.api.saveTranslationDefaults({
     transcriptionProvider: document.getElementById('translationDefaultProvider').value,
