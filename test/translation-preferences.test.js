@@ -29,3 +29,30 @@ test('unsafe settings targets are rejected without overwriting them', async t =>
   await assert.rejects(store.write('church-a', new Map()));
   assert.equal(await fs.readFile(target, 'utf8'), 'preserve');
 });
+
+test('OpenAI defaults survive restarting and remain separate per venue', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'translation-defaults-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const store = new TranslationPreferences(directory);
+  assert.equal((await store.readDefaults('church-a')).transcriptionProvider, 'openai');
+  const defaults = { sourceLanguage: 'ru', transcriptionProvider: 'openai', speechEnabled: false };
+  await store.writeDefaults('church-a', defaults);
+  assert.deepEqual(await new TranslationPreferences(directory).readDefaults('church-a'), defaults);
+  assert.equal((await store.readDefaults('church-b')).sourceLanguage, 'en');
+  await assert.rejects(store.writeDefaults('church-a', { ...defaults, apiKey: 'no' }));
+});
+
+test('the last named input survives restarting and is available to a new venue or connection', async t => {
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'translation-last-input-'));
+  t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+  const store=new TranslationPreferences(directory);
+  assert.equal(await store.readInput('church-a'),null);
+  const mixer={id:'mixer-usb',label:'Church mixer'};
+  await store.writeInput('church-a',mixer);
+  const restarted=new TranslationPreferences(directory);
+  assert.deepEqual(await restarted.readInput('church-a'),mixer);
+  assert.deepEqual(await restarted.readInput('new-connection'),mixer);
+  await restarted.writeInput('new-connection',{id:'syncshow:computer-audio',label:'Computer audio (all apps)'});
+  assert.equal((await new TranslationPreferences(directory).readInput('another-venue')).id,'syncshow:computer-audio');
+  assert.deepEqual(await restarted.readInput('church-a'),mixer,'explicit venue choices keep their own saved input');
+});

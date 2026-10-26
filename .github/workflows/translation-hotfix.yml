@@ -1,0 +1,50 @@
+name: Translation hotfix Windows installer
+on:
+  push:
+    branches: [codex/translation-test-readiness]
+    paths: [package.json]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check translation changes
+        run: |
+          node --check main.js
+          node --check preload.js
+          node --check src/renderer/translation-controls.js
+          node --test test/translation-operator.test.js test/slide-translation-cues.test.js test/translation-preferences.test.js test/translation-cue-setup.test.js test/native-cue-renderer-video.test.js
+      - name: Build Windows installer first
+        run: npm run build:win -- --x64 --publish never
+      - name: Launch packaged application
+        run: npm run build:verify-app-launch -- --root dist
+      - name: Install and launch Windows installer
+        run: pwsh -NoProfile -File scripts/verify-windows-installer.ps1 -DistributionRoot dist
+      - name: Prepare testing installer
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          cd dist
+          for installer in *.exe; do
+            normalized="${installer// /.}"
+            if [ "$installer" != "$normalized" ]; then mv "$installer" "$normalized"; fi
+          done
+          sha256sum *.exe > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: translation-hotfix-windows
+          path: |
+            dist/*.exe
+            dist/SHA256SUMS
+            dist/packaged-launch-*.json
+          if-no-files-found: warn

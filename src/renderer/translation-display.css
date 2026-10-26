@@ -24,3 +24,6 @@
 .translation-sentence.previous { color: #a6adb9; }
 .translation-sentence.current { color: #fff; }
 .translation-layer[data-layout="ticker"] .translation-copy { flex: 0 0 auto; height: auto; white-space: pre; overflow: visible; will-change: transform; }
+
+/* Raster slides fit in the remaining audience area when Translate is started manually. */
+#displayContainer > .slide-image { max-height: calc(100% - var(--translation-band)); top: 0; bottom: var(--translation-band); margin: auto; }

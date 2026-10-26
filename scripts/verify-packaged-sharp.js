@@ -150,7 +150,7 @@ function runPackagedRuntimeSmoke(runtimePath, archivePath) {
     || !result.stdout.includes('SYNCSHOW_SHARP_SMOKE_OK')
   ) {
     const diagnostic = `${result.stdout}\n${result.stderr}`.trim().slice(-2000);
-    fail(`packaged runtime smoke failed.\n${diagnostic}`);
+    fail(`packaged runtime smoke failed (exit ${result.status}, signal ${result.signal || 'none'}).\n${diagnostic}`);
   }
 }
 

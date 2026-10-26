@@ -79,7 +79,8 @@ test('Friendly Load keeps only operator essentials on the normal surface', () =>
     'Start Show must not be buried in Admin Settings');
 
   assertContainsId(setupPanel, 'loadEssentials');
-  assertContainsId(setupPanel, 'advancedSetupDetails');
+  assertDoesNotContainId(setupPanel, 'advancedSetupDetails', 'the modal must stay outside the Load panel so it remains visible during Show');
+  assertContainsId(html, 'advancedSetupDetails');
   assertDoesNotContainId(loadEssentials, 'advancedSetupDetails',
     'Admin Settings must be a sibling surface, not inline Load clutter');
   assertDoesNotContainId(loadEssentials, 'serviceFolderCard',

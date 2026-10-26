@@ -154,3 +154,23 @@ test('text-only scenes have no video control target and can be left safely', asy
     assert.doesNotThrow(() => renderer.destroy());
   }
 });
+
+test('manual translation reserves space on an already visible native slide and restores it on Stop', async () => {
+  const context = vm.createContext({ window: {}, document: { createElement: tagName => new FakeElement(tagName), createTextNode: text => ({text}) }, requestAnimationFrame: callback => callback() });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/renderer/native-cue-renderer.js'), 'utf8'), context);
+  const api = context.window.SyncShowNativeCueRenderer;
+  const renderer = api.buildScene(videoScene(), {resolveAssetUrl:()=> 'file:///tmp/safe-video.mp4'});
+  await renderer.prepare();
+  const surface = renderer.element.children[0];
+  assert.equal(surface.style.height,'1080px');
+  api.setCaptionReservation(.29);
+  assert.equal(surface.style.height,'766px');
+  assert.ok(Number.parseFloat(surface.style.top)<0);
+  api.setCaptionReservation(0);
+  assert.equal(surface.style.height,'1080px');
+  const planned = api.buildScene({...videoScene(),captionReservation:.29},{resolveAssetUrl:()=> 'file:///tmp/safe-video.mp4'});
+  await planned.prepare();
+  api.setCaptionReservation(.29);
+  assert.equal(planned.element.children[0].style.height,'766px','planned and runtime caption bands are not added twice');
+  renderer.destroy(); planned.destroy();
+});

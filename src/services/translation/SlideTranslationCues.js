@@ -19,14 +19,35 @@ class SlideTranslationCues {
   constructor({ send, resolve, changed }) {
     this.send = send; this.resolve = resolve; this.changed = changed;
     this.sequence = 0; this.last = null; this.status = { phase: 'idle' };
-    this.stopCommand = null; this.stopPending = null;
+    this.stopCommand = null; this.stopPending = null; this.manual = false;
   }
-  report(status) { this.status = status; this.changed(); }
+  report(status) {
+    if (status.manual && !['idle', 'error', 'stopping'].includes(status.phase)) {
+      this.manual = true;
+      this.last = this.last?.manual ? this.last : { manual: true, serviceId: 'syncshow-manual', serviceRevision: '0'.repeat(64), segmentId: 'manual', phase: 'live' };
+    }
+    if (status.phase === 'idle') this.manual = false;
+    this.status = status; this.changed();
+  }
+  async startManual(defaults) {
+    await this.flushStop();
+    const command = { manual: true, serviceId: 'syncshow-manual', serviceRevision: '0'.repeat(64), segmentId: 'manual', phase: 'live', defaults };
+    this.manual = true; this.last = command;
+    this.report({ phase: 'starting', manual: true });
+    try { await this.send(command); } catch (error) { this.report({ phase: 'error', message: error.message }); throw error; }
+  }
   async navigate(presentation, index) {
+    if (this.manual) return;
     const generation = ++this.sequence;
     const cues = presentation?.translationCues || [];
     const intent = translationIntent(cues, index);
-    if (!intent) { await this.stop().catch(() => {}); return; }
+    if (!intent) {
+      // Clear projection even when no session was started on this computer.
+      // In particular, restored defaults must not cover the opening slides.
+      this.changed();
+      await this.stop().catch(() => {});
+      return;
+    }
     try {
       await this.flushStop();
       if (generation !== this.sequence) return;
@@ -42,6 +63,7 @@ class SlideTranslationCues {
     }
   }
   stop() {
+    this.manual = false;
     ++this.sequence;
     if (this.last) this.stopCommand = { ...this.last, phase: 'idle' };
     this.last = null;

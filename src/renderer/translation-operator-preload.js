@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('syncShowTranslation', {
     return () => { if (handler === callback) handler = null; };
   },
   report(status) { void ipcRenderer.invoke('translation:cue-status', status).catch(() => {}); },
+  returnToShow() { return ipcRenderer.invoke('translation:operator:hide'); },
+  getDefaults() { return ipcRenderer.invoke('translation:defaults:read'); },
   getInput() { return ipcRenderer.invoke('translation:input:read'); },
   saveInput(input) { return ipcRenderer.invoke('translation:input:write', input); }
 });

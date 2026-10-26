@@ -400,7 +400,7 @@ test('native cue output is constrained, font-gated, staged, and acknowledged aft
   assert.match(nativeCueSource, /function settleFittedTextHeight\(/);
   assert.match(
     nativeCueSource,
-    /fitText\(body, style\.bodySize, bodyMinimumSize, scale\)/
+    /function fitText\(element, preferred, minimum, scale\)/
   );
   assert.doesNotMatch(
     nativeCueSource,

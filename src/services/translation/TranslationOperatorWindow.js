@@ -68,6 +68,19 @@ class TranslationOperatorWindow {
     this.ready = false;
   }
 
+  async listAudioInputs() {
+    if (!this.window || this.window.isDestroyed() || !operatorPage(this.window.webContents.getURL(), this.origin)) throw new Error('Open the church translation controls first.');
+    return this.window.webContents.executeJavaScript(`(async () => {
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      if (!devices.some(device => device.kind === 'audioinput' && device.label && !['default', 'communications'].includes(device.deviceId))) {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        try { devices = await navigator.mediaDevices.enumerateDevices(); } finally { stream.getTracks().forEach(track => track.stop()); }
+      }
+      const inputs = devices.filter(device => device.kind === 'audioinput' && device.deviceId && device.label && !['default', 'communications'].includes(device.deviceId)).map(device => ({id:device.deviceId,label:device.label}));
+      if (window.syncShowTranslation?.computerAudio) inputs.push({id:'syncshow:computer-audio',label:'Computer audio (all apps)'});
+      return inputs;
+    })()`, true);
+  }
   owns(event) {
     return this.window && !this.window.isDestroyed() && event.sender === this.window.webContents
       && event.senderFrame === event.sender.mainFrame && operatorPage(event.sender.getURL(), this.origin);
@@ -143,8 +156,8 @@ class TranslationOperatorWindow {
       if (this.command?.phase && this.command.phase !== 'idle') this.failed('Translation controls stopped unexpectedly. Check Live translation before restarting.');
       this.close();
     });
-    // Closing the controls must not kill a running cue-owned audio input.
-    win.on('close', event => { if (this.command?.phase !== 'idle' && this.command) { event.preventDefault(); win.hide(); } });
+    // Keep the same page and audio stream when returning to Show, including manual sessions.
+    win.on('close', event => { event.preventDefault(); win.hide(); });
     const session = contents.session;
     session.setPermissionRequestHandler((webContents, permission, callback, details) => {
       if(permission==='display-capture') return callback(Boolean(this.computerAudioSelected && webContents===contents && details?.isMainFrame===true && operatorPage(contents.getURL(),origin) && operatorPage(details.requestingUrl,origin)));

@@ -10,11 +10,32 @@ class TranslationPreferences {
     if (typeof venueId !== 'string' || !venueId || venueId.length > 128) throw new Error('Choose a venue before configuring translation.');
     return path.join(this.directory, `${createHash('sha256').update(venueId).digest('hex')}.json`);
   }
+  normalizeDefaults(value = {}) {
+    const result = { sourceLanguage: value.sourceLanguage ?? 'en', transcriptionProvider: value.transcriptionProvider ?? 'openai', speechEnabled: value.speechEnabled ?? false };
+    if (Object.keys(value).some(key => !Object.hasOwn(result, key)) || !['en', 'ru'].includes(result.sourceLanguage)
+      || !['openai', 'muse', 'auto'].includes(result.transcriptionProvider) || typeof result.speechEnabled !== 'boolean') throw new Error('Invalid translation defaults.');
+    return result;
+  }
+  async readDefaults(venueId) {
+    try {
+      const { buffer } = await readFileNoFollow(this.file(venueId).replace(/\.json$/, '-defaults.json'), 8192);
+      return this.normalizeDefaults(JSON.parse(buffer.toString('utf8')));
+    } catch (error) { if (error.code === 'ENOENT') return this.normalizeDefaults(); throw error; }
+  }
+  async writeDefaults(venueId, value) {
+    await atomicWriteFile(this.file(venueId).replace(/\.json$/, '-defaults.json'), JSON.stringify(this.normalizeDefaults(value)) + '\n', { maximumBytes: 8192 });
+  }
   async readInput(venueId) {
     try {
       const { buffer } = await readFileNoFollow(this.file(venueId).replace(/\.json$/, '-input.json'), 8192);
       return this.normalizeInput(JSON.parse(buffer.toString('utf8')));
-    } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      try {
+        const { buffer } = await readFileNoFollow(path.join(this.directory, 'last-input.json'), 8192);
+        return this.normalizeInput(JSON.parse(buffer.toString('utf8')));
+      } catch (fallbackError) { if (fallbackError.code === 'ENOENT') return null; throw fallbackError; }
+    }
   }
   normalizeInput(input) {
     if (!input || Object.keys(input).sort().join(',') !== 'id,label' || typeof input.id !== 'string'
@@ -24,7 +45,9 @@ class TranslationPreferences {
     return { id: input.id, label: input.label };
   }
   async writeInput(venueId, input) {
-    await atomicWriteFile(this.file(venueId).replace(/\.json$/, '-input.json'), JSON.stringify(this.normalizeInput(input)) + '\n', { maximumBytes: 8192 });
+    const source = JSON.stringify(this.normalizeInput(input)) + '\n';
+    await atomicWriteFile(this.file(venueId).replace(/\.json$/, '-input.json'), source, { maximumBytes: 8192 });
+    await atomicWriteFile(path.join(this.directory, 'last-input.json'), source, { maximumBytes: 8192 });
   }
   async read(venueId) {
     try {
