@@ -14,7 +14,7 @@ function textWidth(text, size, weight = '500') {
   const key = weight + ':' + text;
   let advance = advanceCache.get(key);
   if (advance === undefined) {
-    advance = Array.from(text).reduce((width, character) => width + (table[character.codePointAt(0)] ?? .65), 0);
+    advance = Array.from(text).reduce((width, character) => width + (character === '\u2060' ? 0 : table[character.codePointAt(0)] ?? .65), 0);
     if (advanceCache.size >= 4096) advanceCache.clear();
     advanceCache.set(key, advance);
   }
@@ -59,12 +59,14 @@ function cueBodies(cue) {
       .map(block => block.text).join(cue.presetId === 'wotbc-song-stacked' ? '\n' : '\n\n');
   }).filter(Boolean);
 }
-function groupFontSize(cues, maximum, minimum) {
+function groupFontSize(cues, maximum, minimum, {singer = false} = {}) {
   for (let size = maximum; size >= minimum; size--) {
     if (cues.every(cue => {
       const preset = textPreset(cue.presetId);
-      const width = 1920 * (preset.bodyWidthPercent || 98) / 100;
+      const width = singer ? 1920 * .976 * .96 : 1920 * (preset.bodyWidthPercent || 98) / 100;
       let height = Math.min(preset.bodyHeight, 1080 * (1 - (preset.bodyTopPercent || 2) / 100) - 24);
+      if (cue.kind === 'song') height = singer ? 1080 * .7674 * .94
+        : Math.min(height, 1080 * (Math.min(90, Math.round(preset.bodyHeight / 1080 * 100)) - 2) / 100);
       if (Object.values(cue.channels).some(channel => channel.blocks.some(block => block.type === 'bible' && scriptureCredit(block)))) {
         height = Math.min(height, 1080 * (.84 - (preset.bodyTopPercent || 2) / 100));
       }
@@ -80,6 +82,10 @@ function groupFontSize(cues, maximum, minimum) {
             if (size !== minimum && block.text.split('\n').some(line => textWidth(line, blockSize, uniform?.weight || preset.bodyWeight) > width)) return false;
           }
           if (cue.presetId === 'wotbc-song-stacked' && blocks.length > 1) usedHeight += size * .22;
+          // Tight leading still includes the font's ascent/descent outside its
+          // line boxes. Budget that ink at the ends of the group, including the
+          // secondary-language span, so a fixed size also fits Chromium/Pango.
+          usedHeight += size * .25;
           return usedHeight <= height;
         });
       }
@@ -112,7 +118,7 @@ function applyTimelineTypography(project, cues, index) {
   }
   for (const entries of groups.values()) {
     const maximum = Math.min(...entries.map(cue => cue.textStyle?.bodySize || textPreset(cue.presetId).bodySize));
-    const minimum = entries[0].kind === 'song' ? Math.max(32, Math.ceil(maximum * .75)) : Math.min(maximum, 42);
+    const minimum = entries[0].kind === 'song' ? 32 : Math.min(maximum, 42);
     const key = JSON.stringify([maximum, minimum, entries.map(cue => [cue.presetId,cueBodies(cue),Object.values(cue.channels).map(channel => [channel.mode,channel.blocks.map(block => [block.role,block.spans])]),Object.values(cue.channels).some(channel => channel.blocks.some(block => block.type === 'bible' && scriptureCredit(block)))])]);
     let size = fittedCache.get(key);
     if (!size) {
@@ -120,15 +126,20 @@ function applyTimelineTypography(project, cues, index) {
       if (fittedCache.size >= 128) fittedCache.delete(fittedCache.keys().next().value);
       fittedCache.set(key, size);
     }
+    // The singer has its own current-text region and unstacked source lyrics.
+    // Fit the whole song there too, without making audience stacking determine
+    // the stage size or letting a short verse grow independently.
+    const singerCues = entries[0].kind === 'song' ? entries.flatMap(cue =>
+      Object.values(cue.channels).filter(channel => channel.mode === 'condensed' && channel.sourceChannelId)
+        .map(channel => {
+          const source = require('./SingerPresentation').singerSourceCue(cue, channel.sourceChannelId);
+          return {...source, channels:{source:source.channels[channel.sourceChannelId]}};
+        })) : [];
+    const singerMaximum = project.items[entries[0].itemId]?.textStyle?.bodySize || 160;
+    const singerSize = singerCues.length ? groupFontSize(singerCues, singerMaximum, 32, {singer:true}) : null;
     for (const cue of entries) {
-      // Keep a song visually consistent, while letting its shorter default-size
-      // pages grow by at most 20%. Manual sizes keep their ceiling and the
-      // existing safety fit rather than receiving automatic enlargement.
-      const manualSize = project.items[cue.itemId]?.textStyle?.bodySize;
-      const pageMaximum = Math.min(maximum, Math.round(size * 1.2));
-      const pageSize = cue.kind === 'song' && !manualSize
-        ? groupFontSize([cue], pageMaximum, size) : size;
-      cue.textStyle = {...cue.textStyle, bodySize: pageSize};
+      cue.textStyle = {...cue.textStyle, bodySize: size};
+      if (singerSize) cue.singerTextStyle = {...cue.textStyle, bodySize:singerSize};
     }
   }
 }

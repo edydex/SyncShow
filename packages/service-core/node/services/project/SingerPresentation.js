@@ -18,6 +18,7 @@ function singerNextLine(value) {
 
 function singerSourceCue(cue, sourceChannelId) {
   if (!cue) return cue;
+  if (cue.singerTextStyle) cue = {...cue, textStyle:cue.singerTextStyle};
   // Source blocks are captured before audience translation stacking. The
   // condensed cue still retains its original first-lines transform for other
   // consumers; singer displays must use this complete, unstacked source.

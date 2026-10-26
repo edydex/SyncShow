@@ -3,18 +3,20 @@
 function scriptureFlowText(verses) {
   return (verses || []).map(verse => {
     const marker = String(verse.number).replace(/\d/g, digit => '⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(digit)]);
-    return `${marker}\u00a0${String(verse.text).replace(/\s+/g, ' ').trim()}`;
+    return `${marker}\u2060${String(verse.text).replace(/\s+/g, ' ').trim()}`;
   }).join(' ');
 }
 
 function scriptureDisplay(passage, presetId, {localizeReference = true} = {}) {
-  if (passage.displayText !== undefined) return { text: passage.displayText, spans: passage.displaySpans || [], prefixLength: 0, bodyStart: 0, sourceStart: 0 };
+  // Replace the old marker separator with a zero-width no-break character.
+  // Keeping one code unit preserves every saved emphasis/selection offset.
+  if (passage.displayText !== undefined) return { text: passage.displayText.replace(/([⁰¹²³⁴⁵⁶⁷⁸⁹]+)\u00a0/gu, '$1\u2060'), spans: passage.displaySpans || [], prefixLength: 0, bodyStart: 0, sourceStart: 0 };
   const reference = require('./ReadingLabels').localizedReference(passage.displayReference ?? passage.reference, localizeReference && ['SYNO', 'SYNO-W'].includes(passage.translationId) ? 'ru' : 'en');
   const prefix = presetId === 'wotbc-sermon-scripture' && reference ? `${reference} ` : '';
   const flow = scriptureFlowText(passage.verses);
   // A single-verse reference already gives its verse number. Keep the source
   // flow intact for saved formatting; remove only that redundant display marker.
-  const sourceStart = prefix && passage.verses?.length === 1 ? flow.indexOf('\u00a0') + 1 : 0;
+  const sourceStart = prefix && passage.verses?.length === 1 ? flow.indexOf('\u2060') + 1 : 0;
   const prefixLength = prefix.length - sourceStart;
   return { text: prefix + flow.slice(sourceStart), prefixLength, bodyStart: prefix.length, sourceStart,
     spans: [...(prefix ? [{start:0,end:prefix.length - 1,foreground:'#ffc000',weight:'700'}] : []),

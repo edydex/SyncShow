@@ -520,7 +520,7 @@ function normalizeBodyOutline(rows, body) {
 
   function appendStyledText(target, text, textSpans, paragraphGap) {
     // Keep Scripture starts together even across emphasis boundaries.
-    const atoms=[...text.matchAll(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+[ \t\u00a0]+[^\s⁰¹²³⁴⁵⁶⁷⁸⁹]+/gu)].map(m=>({start:m.index,end:m.index+m[0].length}));
+    const atoms=[...text.matchAll(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+[ \t\u00a0\u2060]+[^\s⁰¹²³⁴⁵⁶⁷⁸⁹]+/gu)].map(m=>({start:m.index,end:m.index+m[0].length}));
     const boundaries=[...new Set([0,text.length,...textSpans.flatMap(s=>[s.start,s.end]),...atoms.flatMap(a=>[a.start,a.end])])].sort((a,b)=>a-b);
     let parent=target;
     for(let index=0;index<boundaries.length-1;index++) {
@@ -646,7 +646,7 @@ function normalizeBodyOutline(rows, body) {
       element.append(heading);
     }
     element.append(body);
-    return { element, relayout() {
+    return { element, relayout(scale = 1) {
       if (heading) {
         heading.style.height = `${element.clientHeight * .16}px`;
         fitText(heading, element.clientHeight * .14, 1, 1);
@@ -659,6 +659,9 @@ function normalizeBodyOutline(rows, body) {
       // stage passage. Each candidate must fit both dimensions without wrapping.
       let low = 1;
       let high = Math.max(1, Math.floor(height));
+      if (scene.sourceKind === 'song' && scene.style.bodyMinimumSize === scene.style.bodySize) {
+        high = Math.min(high, Math.max(1, Math.floor(scene.style.bodySize * scale)));
+      }
       while (low < high) {
         const size = Math.ceil((low + high) / 2);
         body.style.fontSize = `${size}px`;
