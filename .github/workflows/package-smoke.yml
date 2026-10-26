@@ -47,7 +47,7 @@ jobs:
             arch: x64
             build_command: npm run build:win -- --x64
           - target: linux-x64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             platform: linux
             arch: x64
             build_command: npm run build:linux -- --x64

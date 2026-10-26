@@ -327,7 +327,7 @@ test('package-smoke workflow is four-target, non-publishing, and evidence-gated'
   }
   for (const runner of [
     'windows-latest',
-    'ubuntu-latest',
+    'ubuntu-24.04',
     'macos-15',
     'macos-15-intel'
   ]) {
