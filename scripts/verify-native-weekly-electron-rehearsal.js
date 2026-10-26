@@ -43,19 +43,19 @@ const SERMON_READING_OUTPUTS = Object.freeze([
   })
 ]);
 const BSB_READING_BODY = [
-  '¹⁰ His purpose was that now, through the church, the manifold wisdom of God should be made known to the rulers and authorities in the heavenly realms,',
-  '¹¹ according to the eternal purpose that He accomplished in Christ Jesus our Lord.',
-  '¹² In Him and through faith in Him we may enter God’s presence with boldness and confidence.'
+  '¹⁰⁠His purpose was that now, through the church, the manifold wisdom of God should be made known to the rulers and authorities in the heavenly realms,',
+  '¹¹⁠according to the eternal purpose that He accomplished in Christ Jesus our Lord.',
+  '¹²⁠In Him and through faith in Him we may enter God’s presence with boldness and confidence.'
 ].join(' ');
 const LSV_READING_BODY = [
-  '¹⁰ that there might be made known now to the principalities and the authorities in the heavenly [places], through the Assembly, the manifold wisdom of God,',
-  '¹¹ according to a purpose of the ages, which He made in Christ Jesus our Lord,',
-  '¹² in whom we have the freedom and the access in confidence through the faith of Him,'
+  '¹⁰⁠that there might be made known now to the principalities and the authorities in the heavenly [places], through the Assembly, the manifold wisdom of God,',
+  '¹¹⁠according to a purpose of the ages, which He made in Christ Jesus our Lord,',
+  '¹²⁠in whom we have the freedom and the access in confidence through the faith of Him,'
 ].join(' ');
 const BSB_READING_SHA256 =
-  '89816606a4a1819988c7b51b21060d832934490f23c2fe041a1e86f2c18ab284';
+  '2299b904df265e5b8190f1c7f70fbb184eb7adc9d8d03cc5a3c6fc8e147471cf';
 const LSV_READING_SHA256 =
-  'd9a7ce0ec5ea0f430fad3589763bacb19bbaa22d9bd545447112a5acfb9004d1';
+  '94bb733fbb656732d2b0b81bbc84783771f7c57e973479cb6bb99a7e0d1d9b78';
 const PRIMARY_SERMON_SOURCE_TEXT =
   'Церковь показывает Божью мудрость.';
 const CONDENSED_SERMON_TEXT = 'The church displays God’s wisdom.';
