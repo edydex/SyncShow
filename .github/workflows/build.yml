@@ -462,7 +462,7 @@ jobs:
             - For legacy slide-deck conversion, Windows prefers PowerPoint and falls back to LibreOffice; macOS/Linux use LibreOffice.
             - Use Heritage Community, local service files, or local PowerPoint folders. Built-in Google Drive integration has been removed.
             - macOS installers are ad-hoc signed, not Developer ID signed or notarized. Windows installers are not Authenticode signed.
-            - All four native targets passed packaged launch, image/PDF, service-core, artifact-integrity, and dependency-source checks. Physical Windows venue rehearsal remains required.
+            - All four native targets passed packaged launch, image/PDF, service-core, artifact-integrity, and dependency-source checks. Physical mixer and projector acceptance remains venue-specific.
             - SHA256SUMS and exact corresponding-source materials are attached to this release.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
