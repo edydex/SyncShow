@@ -4978,7 +4978,12 @@ function populateSingerSourceOptions(selectedRoleId) {
 }
 
 function resolveOutputDisplay(output) {
-  return window.SyncShowServiceOutputPlan.resolveOutputDisplay(output, state.displays);
+  const plan = window.SyncShowServiceOutputPlan;
+  // An unsaved editor choice shows exactly the screen the operator picked.
+  if (state.profileDraft?.outputs?.includes(output)) return plan.resolveOutputDisplay(output, state.displays);
+  // Saved outputs are matched together, so two can never claim one screen.
+  const siblings = (state.profile?.outputs || []).filter(item => item.enabled);
+  return plan.resolveOutputDisplay(output, state.displays, siblings);
 }
 
 function createEditorField(labelText, control) {

@@ -38,8 +38,10 @@ const {
 } = require('./src/services/runtime/SupportDiagnostics');
 const { describeDisplay } = require('./src/services/runtime/DisplayDescriptor');
 const { DisplayDiagnosticsJournal } = require('./src/services/runtime/DisplayDiagnosticsJournal');
-const { matchOutputDisplay } = require('./src/renderer/service-output-plan');
+const { ScreenPositionMemory } = require('./src/services/runtime/ScreenPositionMemory');
+const { matchOutputDisplay, matchOutputDisplays, matchProfileOutputs } = require('./src/renderer/service-output-plan');
 let displayDiagnosticsJournal = null;
+let screenPositionMemory = null;
 let lastDisplayDiagnosticSnapshot = null;
 
 function recordScreenDiagnostics(reason, details = {}) {
@@ -8377,8 +8379,14 @@ async function recoverOutputWindows(recovery) {
     const displays = screen.getAllDisplays();
     const controlId = getControlDisplayId();
     const resolved = new Map();
-    for (const [id, saved] of activeOutputTargets) {
-      const matched = matchOutputDisplay({ legacyDisplayId: saved.id, displayFingerprint: saved.fingerprint }, appState.displays);
+    const liveTargets = [...activeOutputTargets].map(([id, saved]) => ({
+      id, legacyDisplayId: saved.id, displayFingerprint: saved.fingerprint, displayBounds: saved.bounds || null
+    }));
+    const liveMatches = activeTestOutputSettings
+      ? liveTargets.map(target => matchOutputDisplay(target, appState.displays))
+      : matchOutputDisplays(liveTargets, appState.displays);
+    for (const [index, [id, saved]] of [...activeOutputTargets].entries()) {
+      const matched = liveMatches[index];
       const target = activePreviewOnly
         ? previewDisplayMap(recovery.plan.outputs).get(String(saved.id))
         : displays.find(display => String(display.id) === String(matched.display?.id));
@@ -8446,7 +8454,8 @@ async function recoverOutputWindows(recovery) {
     outputLifecyclePhase = !recovery.visible ? 'locally-stopped' : recovery.cleared ? 'cleared' : 'live';
     outputRecovery = null;
     for (const [id, target] of resolved) activeOutputTargets.set(id, {
-      id: target.id, fingerprint: appState.displays.find(item => String(item.id) === String(target.id))?.fingerprint
+      id: target.id, fingerprint: appState.displays.find(item => String(item.id) === String(target.id))?.fingerprint,
+      bounds: target.bounds ? {...target.bounds} : null
     });
     recordScreenDiagnostics('recovery-succeeded');
     publishShowState('outputs-reconnected');
@@ -8980,9 +8989,10 @@ async function rehearseHiddenShowCues({
 function updateDisplayList(reason = 'screen-snapshot', details = {}) {
   const primaryDisplayId = screen.getPrimaryDisplay().id;
   const controlDisplayId = getControlDisplayId();
-  appState.displays = screen.getAllDisplays().map((display, index) => describeDisplay(display, index, {
+  const described = screen.getAllDisplays().map((display, index) => describeDisplay(display, index, {
     platform: process.platform, primaryId: primaryDisplayId, controlId: controlDisplayId
   }));
+  appState.displays = screenPositionMemory ? screenPositionMemory.annotate(described) : described;
   const snapshot = JSON.stringify({ displays: appState.displays, outputs: activeVenueProfile?.outputs });
   if (reason !== 'screen-snapshot' || snapshot !== lastDisplayDiagnosticSnapshot) {
     recordScreenDiagnostics(reason, details);
@@ -8994,6 +9004,19 @@ function updateDisplayList(reason = 'screen-snapshot', details = {}) {
   }
   translationScreens.reconcile();
   notifyTranslationChanged();
+}
+
+// Remember where in the OS screen layout each output runs, so a later
+// Windows renumbering or two identical TVs cannot lose or swap the setup.
+function rememberScreenPositions(placements) {
+  if (!screenPositionMemory) return false;
+  const profileOutputs = new Map((activeVenueProfile?.outputs || []).map(output => [output.id, output]));
+  const electronDisplays = new Map(screen.getAllDisplays().map(display => [String(display.id), display]));
+  const changed = screenPositionMemory.remember(placements.map(({ outputId, displayId }) => ({
+    output: profileOutputs.get(outputId), bounds: electronDisplays.get(String(displayId))?.bounds
+  })));
+  if (changed) appState.displays = screenPositionMemory.annotate(appState.displays);
+  return changed;
 }
 
 function closeIdentifyWindows() {
@@ -27260,8 +27283,12 @@ ipcMain.handle('display:start', async (event, options = {}) => {
 
   activeOutputTargets = new Map(launchPlan.outputs.map(output => {
     const display = displayById.get(String(output.displayId));
-    return [output.id, {id:display.id, fingerprint:appState.displays.find(item => item.id === display.id)?.fingerprint}];
+    return [output.id, {id:display.id, fingerprint:appState.displays.find(item => item.id === display.id)?.fingerprint,
+      bounds: display.bounds ? {...display.bounds} : null}];
   }));
+  if (!testing && !previewOnly) rememberScreenPositions(launchPlan.outputs.map(output => ({
+    outputId: output.id, displayId: output.displayId
+  })));
   activeTestOutputSettings = testing ? readTestOutputSettings() : null;
   activePreviewOnly = previewOnly;
   appState.activeLaunchPlan = launchPlan;
@@ -27923,6 +27950,11 @@ ipcMain.handle('settings:save', async (event, settings) => {
     activeVenueProfile
   );
   const normalized = saveUserSettings(settings);
+  const savedOutputs = activeVenueProfile?.outputs || [];
+  const savedMatches = matchProfileOutputs(savedOutputs, appState.displays);
+  if (rememberScreenPositions(savedOutputs.flatMap((output, index) => output.enabled
+    && ['saved-id-and-fingerprint', 'saved-id'].includes(savedMatches[index]?.reason)
+    ? [{ outputId: output.id, displayId: savedMatches[index].display.id }] : []))) updateDisplayList();
   const nextPreparedVenueRevisionId = preparedServiceVenueRevisionId(
     activeVenueProfile
   );
@@ -28251,6 +28283,9 @@ if (!hasSingleInstanceLock) {
     displayDiagnosticsJournal = new DisplayDiagnosticsJournal({
       filePath: path.join(app.getPath('userData'), 'screen-diagnostics.json'),
       version: app.getVersion()
+    });
+    screenPositionMemory = new ScreenPositionMemory({
+      filePath: path.join(app.getPath('userData'), 'screen-positions.json')
     });
     updateDisplayList('app-startup');
     const translationHealthTimer = setInterval(() => {

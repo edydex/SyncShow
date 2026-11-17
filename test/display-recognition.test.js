@@ -131,3 +131,127 @@ test('unwritable or corrupt history is reported without breaking presentation st
   assert.doesNotThrow(() => blocked.record('app-startup'));
   assert.ok(blocked.snapshot().persistenceError);
 });
+
+// Two identical TVs (same model name) on Windows, as in a bilingual church.
+const { matchOutputDisplays, matchProfileOutputs } = require('../src/renderer/service-output-plan');
+const { ScreenPositionMemory } = require('../src/services/runtime/ScreenPositionMemory');
+
+function tv(id, x, label = 'Samsung TV') {
+  return descriptor({ id, label, bounds: { x, y: 0, width: 1920, height: 1080 } });
+}
+
+function churchOutputs() {
+  const english = tv(101, 1920), russian = tv(102, 3840);
+  return [
+    { id: 'english', enabled: true, legacyDisplayId: 101, displayFingerprint: english.fingerprint },
+    { id: 'russian', enabled: true, legacyDisplayId: 102, displayFingerprint: russian.fingerprint }
+  ];
+}
+
+function remembered(displays, outputs, memoryDir) {
+  const memory = new ScreenPositionMemory({ filePath: path.join(memoryDir, 'screen-positions.json') });
+  memory.remember([
+    { output: outputs[0], bounds: { x: 1920, y: 0, width: 1920, height: 1080 } },
+    { output: outputs[1], bounds: { x: 3840, y: 0, width: 1920, height: 1080 } }
+  ]);
+  return memory.annotate(displays);
+}
+
+function tempDir(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'syncshow-screen-positions-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  return directory;
+}
+
+test('identical TVs keep their language after Windows renumbers the screens', t => {
+  const outputs = churchOutputs();
+  const displays = remembered([tv(201, 1920), tv(202, 3840)], outputs, tempDir(t));
+  const [english, russian] = matchOutputDisplays(outputs, displays);
+  assert.equal(english.display.id, 201);
+  assert.equal(english.reason, 'fingerprint-and-position');
+  assert.equal(russian.display.id, 202);
+});
+
+test('identical TVs without a remembered position are never guessed', () => {
+  const [english, russian] = matchOutputDisplays(churchOutputs(), [tv(201, 1920), tv(202, 3840)]);
+  assert.equal(english.display, null);
+  assert.equal(english.reason, 'ambiguous-fingerprint');
+  assert.equal(russian.display, null);
+});
+
+test('the remembered layout position wins when Windows swaps two identical TVs', t => {
+  const outputs = churchOutputs();
+  const displays = remembered([tv(102, 1920), tv(101, 3840)], outputs, tempDir(t));
+  const [english, russian] = matchOutputDisplays(outputs, displays);
+  assert.equal(english.display.bounds.x, 1920);
+  assert.equal(russian.display.bounds.x, 3840);
+});
+
+test('a TV that reports no name at startup keeps its own output and never takes the other TV', () => {
+  const outputs = churchOutputs();
+  for (const label of ['', 'Generic PnP Monitor']) {
+    const unnamed = tv(101, 1920, label);
+    assert.equal(unnamed.nameAvailable, false);
+    const [english, russian] = matchOutputDisplays(outputs, [unnamed, tv(102, 3840)]);
+    assert.equal(english.display.id, 101);
+    assert.equal(english.reason, 'screen-name-unavailable');
+    assert.equal(russian.display.id, 102);
+    assert.equal(russian.reason, 'saved-id-and-fingerprint');
+  }
+});
+
+test('a different named screen on the old ID is still treated as a different screen', () => {
+  const [english, russian] = matchOutputDisplays(churchOutputs(), [tv(101, 1920, 'Epson Projector'), tv(102, 3840)]);
+  assert.equal(english.display, null);
+  assert.equal(english.reason, 'claimed-by-another-output');
+  assert.equal(russian.display.id, 102);
+  const [alone] = matchOutputDisplays([churchOutputs()[0]], [tv(101, 1920, 'Epson Projector')]);
+  assert.equal(alone.reason, 'identity-changed');
+});
+
+test('two outputs can never be matched to the same screen', () => {
+  // Only one of the two identical TVs is connected and nothing tells which: neither output guesses.
+  const unknown = matchOutputDisplays(churchOutputs(), [tv(301, 0)]);
+  assert.deepEqual(unknown.map(result => [result.display, result.reason]),
+    [[null, 'ambiguous-fingerprint'], [null, 'ambiguous-fingerprint']]);
+  // The same OS ID identifies it: English keeps it and Russian waits for its own TV.
+  const [english, russian] = matchOutputDisplays(churchOutputs(), [tv(101, 0)]);
+  assert.equal(english.display.id, 101);
+  assert.equal(russian.display, null);
+  assert.equal(russian.reason, 'claimed-by-another-output');
+});
+
+test('an output that is turned off never takes a screen from an enabled output', () => {
+  const [english, russian] = churchOutputs();
+  const spare = { ...russian, id: 'spare', enabled: false };
+  const [englishMatch, russianMatch, spareMatch] = matchProfileOutputs([english, russian, spare], [tv(101, 1920), tv(102, 3840)]);
+  assert.equal(englishMatch.display.id, 101);
+  assert.equal(russianMatch.display.id, 102);
+  assert.equal(spareMatch.display.id, 102);
+});
+
+test('remembered positions persist, and only count while the saved screen choice is unchanged', t => {
+  const directory = tempDir(t);
+  const outputs = churchOutputs();
+  remembered([], outputs, directory);
+  const reloaded = new ScreenPositionMemory({ filePath: path.join(directory, 'screen-positions.json') });
+  const annotated = reloaded.annotate([tv(201, 1920), tv(202, 3840)]);
+  assert.deepEqual(annotated[0].rememberedFor.map(entry => entry.outputId), ['english']);
+  assert.equal(matchOutputDisplays(outputs, annotated)[0].display.id, 201);
+  // The operator later picks screens again: the old memory no longer applies.
+  const rechosen = [{ ...outputs[0], legacyDisplayId: 555 }, { ...outputs[1], legacyDisplayId: 556 }];
+  assert.deepEqual(matchOutputDisplays(rechosen, annotated).map(result => result.reason),
+    ['ambiguous-fingerprint', 'ambiguous-fingerprint']);
+  assert.equal(reloaded.remember([{ output: outputs[0], bounds: { x: 1920, y: 0, width: 1920, height: 1080 } }]), false);
+});
+
+test('corrupt or missing screen positions never block startup', t => {
+  const directory = tempDir(t);
+  const filePath = path.join(directory, 'screen-positions.json');
+  fs.writeFileSync(filePath, 'broken JSON');
+  const memory = new ScreenPositionMemory({ filePath });
+  assert.ok(memory.persistenceError);
+  assert.deepEqual(memory.annotate([tv(1, 0)])[0].rememberedFor, []);
+  const blocked = new ScreenPositionMemory({ filePath: path.join(filePath, 'blocked.json') });
+  assert.doesNotThrow(() => blocked.remember([{ output: churchOutputs()[0], bounds: { x: 0, y: 0, width: 1, height: 1 } }]));
+});

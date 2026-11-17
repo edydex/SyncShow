@@ -6,6 +6,9 @@ const { createHash } = require('node:crypto');
 // the OS display ID plus a mode-independent, non-reversible platform label.
 // Labels can describe a model rather than a unique unit: callers must never
 // choose between duplicate labels without the saved OS ID.
+// Names that describe "no real name" rather than a screen model.
+const PLACEHOLDER_LABELS = new Set(['generic pnp monitor', 'generic non-pnp monitor', 'default monitor', 'unknown display']);
+
 function describeDisplay(display, index, { platform, primaryId, controlId }) {
   const legacyFingerprint = [
     'display-v1', platform, display.internal ? 'internal' : 'external',
@@ -19,6 +22,7 @@ function describeDisplay(display, index, { platform, primaryId, controlId }) {
     : legacyFingerprint;
   return {
     id: display.id, index, fingerprint, legacyFingerprint,
+    nameAvailable: Boolean(nativeLabel) && !PLACEHOLDER_LABELS.has(nativeLabel),
     label: `Display ${index + 1}${display.internal ? ' (Built-in)' : ''} - ${display.bounds.width}x${display.bounds.height}`,
     bounds: display.bounds,
     isPrimary: String(display.id) === String(primaryId),
