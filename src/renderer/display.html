@@ -13,6 +13,9 @@
     @font-face {font-family:"SyncShow Presentation";src:url("../../assets/fonts/LiberationSans-Bold.ttf") format("truetype");font-weight:600 900;font-style:normal;font-display:block;}
     @font-face {font-family:"SyncShow Presentation";src:url("../../assets/fonts/LiberationSans-Italic.ttf") format("truetype");font-weight:100 500;font-style:italic;font-display:block;}
     @font-face {font-family:"SyncShow Presentation";src:url("../../assets/fonts/LiberationSans-BoldItalic.ttf") format("truetype");font-weight:600 900;font-style:italic;font-display:block;}
+    /* Liberation Sans has no superscript zero (verse 10, 20, 30...). Supply only that glyph, built from Liberation's own zero. */
+    @font-face {font-family:"SyncShow Superscript Zero";src:url("../../assets/fonts/SyncShowSuperscriptZero-Regular.ttf") format("truetype");font-weight:100 500;font-style:normal;font-display:block;unicode-range:U+2070;}
+    @font-face {font-family:"SyncShow Superscript Zero";src:url("../../assets/fonts/SyncShowSuperscriptZero-Bold.ttf") format("truetype");font-weight:600 900;font-style:normal;font-display:block;unicode-range:U+2070;}
     * {
       margin: 0;
       padding: 0;
@@ -107,7 +110,7 @@
       flex: 0 0 auto;
       overflow: hidden;
       color: #fff;
-      font-family: Arial, "SyncShow Presentation", sans-serif;
+      font-family: Arial, "SyncShow Presentation", "SyncShow Superscript Zero", sans-serif;
       font-kerning: normal;
       text-rendering: geometricPrecision;
     }
@@ -256,7 +259,7 @@
       align-items: center;
       justify-content: center;
       color: #333;
-      font-family: Arial, "SyncShow Presentation", sans-serif;
+      font-family: Arial, "SyncShow Presentation", "SyncShow Superscript Zero", sans-serif;
       font-size: 24px;
     }
     
