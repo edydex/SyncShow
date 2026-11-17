@@ -47,3 +47,49 @@ test('all song lyric slides keep the largest shared size, including short verses
   assert.equal(cues.short.textStyle.bodySize,64);
   assert.equal(cues.dense.textStyle.bodySize,64);
 });
+
+test('captions give a song one shared smaller size instead of per-slide shrinking', () => {
+  const {CAPTION_RESERVATIONS, groupFontSize} = require('../packages/service-core/node/services/project/SlideTypography');
+  const lyrics = text => ({itemId:'song',kind:'song',presetId:'wotbc-song-lyrics',channels:{
+    english:{mode:'content',blocks:[{type:'text',role:'lyrics',text}]}}});
+  const dense = Array(9).fill('Holy holy holy Lord').join('\n');
+  const cues = {short:lyrics('Praise Him\nPraise Him'),dense:lyrics(dense),middle:lyrics('Praise Him\nall creatures\nhere below')};
+  applyTimelineTypography({items:{song:{id:'song'}}},cues,{groupPathByItemId:{}});
+  const size = cues.dense.textStyle.bodySize;
+  const sizes = cues.dense.captionTextSizes;
+  assert.ok(sizes.ticker < size && sizes.lowerThird < sizes.ticker, JSON.stringify({size,sizes}));
+  for (const cue of Object.values(cues)) {
+    assert.equal(cue.textStyle.bodySize, size);
+    assert.deepEqual(cue.captionTextSizes, sizes);
+  }
+  // Each caption size is the largest that fits every slide above that caption band.
+  const entries = Object.values(cues);
+  for (const [name, reservation] of Object.entries(CAPTION_RESERVATIONS)) {
+    assert.equal(groupFontSize(entries, size, 32, {reservation}), sizes[name]);
+    assert.ok(groupFontSize(entries, sizes[name] + 1, sizes[name] + 1, {reservation: 0}) === sizes[name] + 1);
+  }
+  assert.equal(groupFontSize(entries, size, 32, {reservation: 0}), size);
+});
+
+test('a song that still fits above a caption band keeps its normal size', () => {
+  const cues = {one:{itemId:'song',kind:'song',presetId:'wotbc-song-lyrics',channels:{
+    english:{mode:'content',blocks:[{type:'text',role:'lyrics',text:'Amen'}]}}}};
+  applyTimelineTypography({items:{song:{id:'song'}}},cues,{groupPathByItemId:{}});
+  assert.equal(cues.one.captionTextSizes, undefined);
+});
+
+test('caption sizes are validated and never reach the singer screen', () => {
+  const {normalizeCaptionTextSizes} = require('../packages/service-core/node/services/project/SlideTypography');
+  const {singerSourceCue} = require('../packages/service-core/node/services/project/SingerPresentation');
+  assert.deepEqual(normalizeCaptionTextSizes({ticker:80,lowerThird:64}),{ticker:80,lowerThird:64});
+  assert.throws(()=>normalizeCaptionTextSizes({bottom:80}),/Unknown caption/);
+  assert.throws(()=>normalizeCaptionTextSizes({ticker:8}),/between 14 and 240/);
+  assert.throws(()=>normalizeCaptionTextSizes([]),/Invalid caption/);
+  const cue = {kind:'song',presetId:'wotbc-song-lyrics',textStyle:{bodySize:90},singerTextStyle:{bodySize:120},captionTextSizes:{ticker:80},
+    channels:{english:{mode:'content',blocks:[{type:'text',role:'lyrics',text:'Amen'}]},
+      media:{mode:'condensed',sourceChannelId:'english',sourceBlocks:[{type:'text',role:'lyrics',text:'Amen'}],blocks:[]}}};
+  const singer = singerSourceCue(cue,'english');
+  assert.equal(singer.captionTextSizes, undefined);
+  assert.equal(singer.textStyle.bodySize, 120);
+  assert.deepEqual(cue.captionTextSizes, {ticker:80});
+});

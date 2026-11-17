@@ -363,3 +363,19 @@ test('historical song title geometry remains verifiable after the Arial typograp
   assert.equal(compileNativeCueScene(cue,'primary',{...CANVAS,rendererVersion:19}).style.subtitleSize,128);
   assert.equal(compileNativeCueScene(cue,'primary',CANVAS).style.subtitleSize,122);
 });
+
+test('song caption sizes reach both scene validators only for renderer 23 and later', () => {
+  const song = compiledTextCue({kind:'song',presetId:'wotbc-song-lyrics',textStyle:{bodySize:96},captionTextSizes:{ticker:84,lowerThird:70},
+    channels:{english:{mode:'content',blocks:[{type:'text',role:'lyrics',text:'Holy holy holy',spans:[]}]}}});
+  const scene = compileNativeCueScene(song, 'english', CANVAS);
+  assert.deepEqual(scene.style.captionBodySizes, {ticker:84,lowerThird:70});
+  assert.deepEqual(JSON.parse(JSON.stringify(validateBrowserScene(JSON.parse(serializeNativeCueScene(scene))).style.captionBodySizes)), {ticker:84,lowerThird:70});
+  assert.equal(compileNativeCueScene(song, 'english', {...CANVAS,rendererVersion:22}).style.captionBodySizes, undefined);
+  const planned = compileNativeCueScene({...song,translationSettings:{captionStyle:'lower-third',captionChannel:'both'}}, 'english', CANVAS);
+  assert.equal(planned.captionReservation, .29);
+  assert.deepEqual(planned.style.captionBodySizes, {ticker:84,lowerThird:70});
+  for (const captionBodySizes of [{}, {bottom:60}, {ticker:9}, [], null]) {
+    assert.throws(()=>normalizeNativeCueScene({...scene,style:{...scene.style,captionBodySizes}}), /captionBodySizes/);
+    assert.throws(()=>validateBrowserScene({...scene,style:{...scene.style,captionBodySizes}}), /captionBodySizes/);
+  }
+});

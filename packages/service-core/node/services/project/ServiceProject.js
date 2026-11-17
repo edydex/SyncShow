@@ -2,7 +2,7 @@
 const {normalizePresentationScreens} = require('./PresentationScreens');
 const translationCueSettings = require('./TranslationCueSettings');
 const { resolveSermonContext } = require('./SermonContext');
-const {normalizeTextStyle, applyTimelineTypography} = require('./SlideTypography');
+const {normalizeTextStyle, normalizeCaptionTextSizes, applyTimelineTypography} = require('./SlideTypography');
 const { normalizeSermonOptions, sermonSlideBlocks } = require('./SermonPresentation');
 const { normalizeCanvasObjects, canvasAssetIds } = require('./CanvasLayout');
 const { scriptureFlowText } = require('./SlideFormatting');
@@ -560,6 +560,7 @@ function normalizeCue(raw, expectedId = null) {
   if (raw.translationSettings !== undefined) normalized.translationSettings = translationCueSettings.normalizeSettings(raw.translationSettings);
   if (raw.textStyle !== undefined) normalized.textStyle = normalizeTextStyle(raw.textStyle);
   if (raw.singerTextStyle !== undefined) normalized.singerTextStyle = normalizeTextStyle(raw.singerTextStyle);
+  if (raw.captionTextSizes !== undefined) normalized.captionTextSizes = normalizeCaptionTextSizes(raw.captionTextSizes);
   if (raw.sourceLeafKey !== undefined) normalized.sourceLeafKey = text(raw.sourceLeafKey, 'Source slide key', 300, { required: true });
   if (raw.translationAction !== undefined) {
     if (!['start', 'stop'].includes(raw.translationAction)) fail('INVALID_TRANSLATION_CUE', 'Invalid translation action.');

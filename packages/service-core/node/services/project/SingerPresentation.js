@@ -19,6 +19,8 @@ function singerNextLine(value) {
 function singerSourceCue(cue, sourceChannelId) {
   if (!cue) return cue;
   if (cue.singerTextStyle) cue = {...cue, textStyle:cue.singerTextStyle};
+  // Caption bands never cover the singer screen; its text keeps its own size.
+  if (cue.captionTextSizes) { cue = {...cue}; delete cue.captionTextSizes; }
   // Source blocks are captured before audience translation stacking. The
   // condensed cue still retains its original first-lines transform for other
   // consumers; singer displays must use this complete, unstacked source.

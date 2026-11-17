@@ -156,6 +156,7 @@
     exactKeys(value, [
       'bodyAlign',
       ...(value.creditAlign !== undefined ? ['creditAlign'] : []),
+      ...(value.captionBodySizes !== undefined ? ['captionBodySizes'] : []),
       'bodyForeground',
       'bodyHeight',
       'bodyMinimumSize',
@@ -203,7 +204,21 @@
     if (titleMinimumSize > titleSize || bodyMinimumSize > bodySize) {
       throw new TypeError('scene style minimum sizes are invalid');
     }
+    let captionBodySizes;
+    if (value.captionBodySizes !== undefined) {
+      if (!record(value.captionBodySizes) || !Object.keys(value.captionBodySizes).length
+        || Object.keys(value.captionBodySizes).some(key => !['ticker', 'lowerThird'].includes(key))) {
+        throw new TypeError('scene.style.captionBodySizes is invalid');
+      }
+      captionBodySizes = {};
+      for (const key of ['ticker', 'lowerThird']) {
+        if (value.captionBodySizes[key] !== undefined) {
+          captionBodySizes[key] = integer(value.captionBodySizes[key], `scene.style.captionBodySizes.${key}`, 14, 240);
+        }
+      }
+    }
     return {
+      ...(captionBodySizes ? { captionBodySizes } : {}),
       showTitle: value.showTitle,
       titleSize,
       titleMinimumSize,
@@ -598,6 +613,12 @@ function normalizeBodyOutline(rows, body) {
     };
   }
 
+  function captionBodySize(style, reservation) {
+    const name = reservation === .12 ? 'ticker' : reservation === .29 ? 'lowerThird' : '';
+    const size = name ? style.captionBodySizes?.[name] : undefined;
+    return size ? Math.min(size, style.bodySize) : 0;
+  }
+
   function fitText(element, preferred, minimum, scale) {
     const fits = () => (
       element.scrollWidth <= element.clientWidth + 2
@@ -860,7 +881,10 @@ function normalizeBodyOutline(rows, body) {
           const bodyMaximumHeight = logicalFitHeight * scale;
           body.style.height = `${bodyMaximumHeight}px`;
           const minimum = scene.captionReservation || runtimeCaptionReservation ? scaledTextMinimum(Math.min(32, style.bodyMinimumSize), scene.canvas) : bodyMinimumSize;
-          fitText(body, style.bodySize, minimum, scale);
+          // While a caption band is shown, start every slide of the group at the
+          // group's precomputed caption size so the whole song shrinks together.
+          const captionSize = captionBodySize(style, Math.max(scene.captionReservation || 0, options.nestedCaptionLayout ? 0 : runtimeCaptionReservation));
+          fitText(body, captionSize || style.bodySize, captionSize ? Math.min(captionSize, minimum) : minimum, scale);
           settleFittedTextHeight(body, bodyMaximumHeight);
           if (credit) {
             credit.style.height = `${contentHeight * .10 * scale}px`;
