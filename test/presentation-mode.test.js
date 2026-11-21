@@ -70,7 +70,7 @@ function rendererFixture(extra = {}) {
     presentationMode: 'auto', testOutput: { enabled: true, displayId: '2' },
     serviceFolder: { staleRoleIds: [] }, ...extra };
   const source = fs.readFileSync(require.resolve('../src/renderer/app.js'), 'utf8');
-  const scope = vm.createContext({ state, window: { SyncShowPresentationMode: modes, SyncShowScreenRouting: require('../src/renderer/service-screen-routing') }, elements: {},
+  const scope = vm.createContext({ state, window: { SyncShowPresentationMode: modes, SyncShowScreenRouting: require('../src/renderer/service-screen-routing'), SyncShowScreenOmission: require('../src/renderer/screen-omission') }, elements: {},
     presentationElements: Object.fromEntries(roles.map(role => [role.id, {}])),
     resolveOutputDisplay: () => null, isEditableOutputRoute: () => true,
     getServiceOutputDecision: () => ({ mode: 'disabled' }),
@@ -165,4 +165,43 @@ test('the chooser cannot launch without a language or after its screen disconnec
     assert.ok(fixture.attempt.error);
     assert.equal(fixture.attempt.snapshot.outputs.length, 0);
   }
+});
+
+test('a three-screen service on two TVs can leave one screen out for this run, then starts on both TVs', () => {
+  const saved = { screenIds: ['english', 'russian', 'media'], hintScreenIds: ['media'] };
+  const twoTvs = [displays[0], { id: 2, isControl: false }, { id: 3, isControl: false }];
+  const state = { profile: { inputRoles: roles, outputs },
+    presentations: Object.fromEntries(Object.entries(presentations).map(([id, value]) => [id, { ...value, presentationScreenId: id }])),
+    displays: twoTvs, presentationMode: 'auto', testOutput: { enabled: false, displayId: null }, serviceFolder: { staleRoleIds: [] },
+    loadMode: 'syncshow', serviceHandoff: { project: { id: 'sunday' } }, presentationScreens: saved, leftOutScreenIds: [] };
+  const source = fs.readFileSync(require.resolve('../src/renderer/app.js'), 'utf8');
+  const scope = vm.createContext({ state, elements: {}, presentationElements: Object.fromEntries(roles.map(role => [role.id, {}])),
+    window: { SyncShowPresentationMode: modes, SyncShowScreenRouting: require('../src/renderer/service-screen-routing'),
+      SyncShowScreenOmission: require('../src/renderer/screen-omission') },
+    resolveOutputDisplay: () => null, isEditableOutputRoute: () => true, getServiceOutputDecision: () => ({ mode: 'direct' }),
+    decisionSourceRole: output => output.expectedRole, getRoleLabel: role => role });
+  vm.runInContext(source.slice(source.indexOf('function getConfiguredOutputs()'), source.indexOf('function confirmPreparedServiceDate()')), scope);
+  // Values built inside the sandbox compare by content after this.
+  const read = testOutput => JSON.parse(JSON.stringify(vm.runInContext(`getReadinessState(${Boolean(testOutput)})`, scope)));
+
+  const short = read();
+  assert.equal(short.isReady, false);
+  assert.match(short.issues.join(' '), /uses 3 screens, but 2 TVs are connected\. Leave out one screen/);
+  assert.deepEqual(short.screenShortage.suggested, ['media'], 'the screen without a TV is suggested');
+  assert.equal(read(true).screenShortage, null, 'Test Output never needs a screen left out');
+
+  state.leftOutScreenIds = ['media'];
+  const ready = read();
+  assert.equal(ready.isReady, true);
+  assert.equal(ready.screenShortage, null);
+  assert.deepEqual(ready.activeOutputs.map(output => [output.expectedRole, output.displayId]), [['english', 2], ['russian', 3]]);
+  assert.deepEqual(ready.leftOutScreenIds, ['media']);
+  assert.deepEqual(state.presentationScreens, saved, 'the saved service is unchanged');
+
+  // A third TV brings the screen back automatically, so a Sunday never starts short by accident.
+  state.displays = [...twoTvs, { id: 4, isControl: false }];
+  const full = read();
+  assert.deepEqual([...state.leftOutScreenIds], []);
+  assert.equal(full.activeOutputs.length, 3);
+  assert.equal(full.isReady, true);
 });

@@ -839,6 +839,7 @@
             <h3 id="readinessTitle">Checking the venue setup</h3>
             <p id="readinessSummary">SyncShow is checking files and connected screens.</p>
             <ul id="readinessIssues" class="readiness-issues"></ul>
+            <div id="screenShortage" class="screen-shortage" role="group" aria-label="Screens left out for this run" hidden></div>
             <p id="restoreSummary" class="restore-summary" hidden></p>
           </div>
           <button id="btnRestorePrevious" class="btn btn-secondary" hidden>Use last PowerPoints</button>
@@ -1296,6 +1297,7 @@
             <div>
               <h2 id="allSlidesHeading">Service slides</h2>
               <small id="showPreviewOnly" class="show-preview-only" role="status" hidden>Preview only · no audience screens. End Show to connect screens.</small>
+              <small id="showLeftOutNotice" class="show-left-out" role="status" hidden></small>
               <small id="backstagePreviewStatus" role="status" hidden></small>
             </div>
             <div class="thumbnails-header-controls">
@@ -3143,6 +3145,7 @@
   <script src="presentation-mode.js"></script>
   <script src="presentation-screen-picker.js"></script>
   <script src="service-screen-routing.js"></script>
+  <script src="screen-omission.js"></script>
   <script src="show-accessibility.js"></script>
   <script src="service-handoff.js"></script>
   <script src="prepared-service-guard.js"></script>
