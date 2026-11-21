@@ -82,7 +82,7 @@ test('preview packaging and prerelease promotion keep their existing routing', a
   const preview = await fixture(t, { version: '2.0.1-preview.1' });
   assert.deepEqual(await runStep(preview), { preview: 'true', changed: 'false', version: '2.0.1-preview.1' });
   assert.deepEqual(await runStep(preview, { event: 'workflow_dispatch', before: '' }),
-    { preview: 'true', changed: 'false', version: '2.0.1-preview.1' });
+    { preview: 'false', publish_preview: 'true', changed: 'true', version: '2.0.1-preview.1' });
   const promoted = await fixture(t, { version: '2.0.1-beta.1' });
   assert.deepEqual(await runStep(promoted), { preview: 'false', changed: 'false', version: '2.0.1-beta.1' });
 });

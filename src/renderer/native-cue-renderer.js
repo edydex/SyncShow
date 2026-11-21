@@ -156,6 +156,7 @@
     exactKeys(value, [
       'bodyAlign',
       ...(value.creditAlign !== undefined ? ['creditAlign'] : []),
+      ...(value.captionBodySizes !== undefined ? ['captionBodySizes'] : []),
       'bodyForeground',
       'bodyHeight',
       'bodyMinimumSize',
@@ -203,7 +204,21 @@
     if (titleMinimumSize > titleSize || bodyMinimumSize > bodySize) {
       throw new TypeError('scene style minimum sizes are invalid');
     }
+    let captionBodySizes;
+    if (value.captionBodySizes !== undefined) {
+      if (!record(value.captionBodySizes) || !Object.keys(value.captionBodySizes).length
+        || Object.keys(value.captionBodySizes).some(key => !['ticker', 'lowerThird'].includes(key))) {
+        throw new TypeError('scene.style.captionBodySizes is invalid');
+      }
+      captionBodySizes = {};
+      for (const key of ['ticker', 'lowerThird']) {
+        if (value.captionBodySizes[key] !== undefined) {
+          captionBodySizes[key] = integer(value.captionBodySizes[key], `scene.style.captionBodySizes.${key}`, 14, 240);
+        }
+      }
+    }
     return {
+      ...(captionBodySizes ? { captionBodySizes } : {}),
       showTitle: value.showTitle,
       titleSize,
       titleMinimumSize,
@@ -520,7 +535,7 @@ function normalizeBodyOutline(rows, body) {
 
   function appendStyledText(target, text, textSpans, paragraphGap) {
     // Keep Scripture starts together even across emphasis boundaries.
-    const atoms=[...text.matchAll(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+[ \t\u00a0]+[^\s⁰¹²³⁴⁵⁶⁷⁸⁹]+/gu)].map(m=>({start:m.index,end:m.index+m[0].length}));
+    const atoms=[...text.matchAll(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+[ \t\u00a0\u2060]+[^\s⁰¹²³⁴⁵⁶⁷⁸⁹]+/gu)].map(m=>({start:m.index,end:m.index+m[0].length}));
     const boundaries=[...new Set([0,text.length,...textSpans.flatMap(s=>[s.start,s.end]),...atoms.flatMap(a=>[a.start,a.end])])].sort((a,b)=>a-b);
     let parent=target;
     for(let index=0;index<boundaries.length-1;index++) {
@@ -598,6 +613,12 @@ function normalizeBodyOutline(rows, body) {
     };
   }
 
+  function captionBodySize(style, reservation) {
+    const name = reservation === .12 ? 'ticker' : reservation === .29 ? 'lowerThird' : '';
+    const size = name ? style.captionBodySizes?.[name] : undefined;
+    return size ? Math.min(size, style.bodySize) : 0;
+  }
+
   function fitText(element, preferred, minimum, scale) {
     const fits = () => (
       element.scrollWidth <= element.clientWidth + 2
@@ -646,7 +667,7 @@ function normalizeBodyOutline(rows, body) {
       element.append(heading);
     }
     element.append(body);
-    return { element, relayout() {
+    return { element, relayout(scale = 1) {
       if (heading) {
         heading.style.height = `${element.clientHeight * .16}px`;
         fitText(heading, element.clientHeight * .14, 1, 1);
@@ -659,6 +680,9 @@ function normalizeBodyOutline(rows, body) {
       // stage passage. Each candidate must fit both dimensions without wrapping.
       let low = 1;
       let high = Math.max(1, Math.floor(height));
+      if (scene.sourceKind === 'song' && scene.style.bodyMinimumSize === scene.style.bodySize) {
+        high = Math.min(high, Math.max(1, Math.floor(scene.style.bodySize * scale)));
+      }
       while (low < high) {
         const size = Math.ceil((low + high) / 2);
         body.style.fontSize = `${size}px`;
@@ -857,7 +881,10 @@ function normalizeBodyOutline(rows, body) {
           const bodyMaximumHeight = logicalFitHeight * scale;
           body.style.height = `${bodyMaximumHeight}px`;
           const minimum = scene.captionReservation || runtimeCaptionReservation ? scaledTextMinimum(Math.min(32, style.bodyMinimumSize), scene.canvas) : bodyMinimumSize;
-          fitText(body, style.bodySize, minimum, scale);
+          // While a caption band is shown, start every slide of the group at the
+          // group's precomputed caption size so the whole song shrinks together.
+          const captionSize = captionBodySize(style, Math.max(scene.captionReservation || 0, options.nestedCaptionLayout ? 0 : runtimeCaptionReservation));
+          fitText(body, captionSize || style.bodySize, captionSize ? Math.min(captionSize, minimum) : minimum, scale);
           settleFittedTextHeight(body, bodyMaximumHeight);
           if (credit) {
             credit.style.height = `${contentHeight * .10 * scale}px`;

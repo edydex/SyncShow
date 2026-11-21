@@ -19,6 +19,7 @@ jobs:
       version_changed: ${{ steps.check.outputs.changed }}
       version: ${{ steps.check.outputs.version }}
       preview: ${{ steps.check.outputs.preview }}
+      publish_preview: ${{ steps.check.outputs.publish_preview }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,8 +35,15 @@ jobs:
           echo "Current version: $CURRENT_VERSION"
           echo "preview=false" >> "$GITHUB_OUTPUT"
 
-          # Preview pushes and manual runs must produce tested installers, not
-          # silently skip packaging or enter the credentialed public path.
+          # Only an explicit manual dispatch publishes a public preview.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && echo "$CURRENT_VERSION" | grep -qiE '[-]preview([.]|$)'; then
+            echo "publish_preview=true" >> "$GITHUB_OUTPUT"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Preview pushes provide testing installers without publishing.
           if echo "$CURRENT_VERSION" | grep -qiE '[-]preview([.]|$)'; then
             echo "Preview version: building testing installers on all four targets"
             echo "preview=true" >> "$GITHUB_OUTPUT"
@@ -101,7 +109,7 @@ jobs:
 
   prepare-sources:
     needs: check-version
-    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    if: needs.check-version.outputs.version_changed == 'true' && (github.ref == 'refs/heads/main' || needs.check-version.outputs.publish_preview == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -133,7 +141,7 @@ jobs:
     needs: [check-version, prepare-sources]
     env:
       SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
-    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    if: needs.check-version.outputs.version_changed == 'true' && (github.ref == 'refs/heads/main' || needs.check-version.outputs.publish_preview == 'true')
     environment: release-build
     runs-on: windows-latest
     timeout-minutes: 30
@@ -210,7 +218,7 @@ jobs:
     needs: [check-version, prepare-sources]
     env:
       SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
-    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    if: needs.check-version.outputs.version_changed == 'true' && (github.ref == 'refs/heads/main' || needs.check-version.outputs.publish_preview == 'true')
     environment: release-build
     name: Build macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -306,7 +314,7 @@ jobs:
     needs: [check-version, prepare-sources]
     env:
       SYNCSHOW_RELEASE_SOURCE_DIR: ${{ github.workspace }}/release-sources
-    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    if: needs.check-version.outputs.version_changed == 'true' && (github.ref == 'refs/heads/main' || needs.check-version.outputs.publish_preview == 'true')
     environment: release-build
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -381,7 +389,7 @@ jobs:
 
   create-release:
     needs: [check-version, prepare-sources, build-windows, build-mac, build-linux]
-    if: needs.check-version.outputs.version_changed == 'true' && github.ref == 'refs/heads/main'
+    if: needs.check-version.outputs.version_changed == 'true' && (github.ref == 'refs/heads/main' || needs.check-version.outputs.publish_preview == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

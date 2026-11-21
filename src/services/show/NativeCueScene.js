@@ -149,6 +149,7 @@ function normalizeTextStyle(raw) {
   exactKeys(raw, [
     'bodyAlign',
     ...(raw.creditAlign !== undefined ? ['creditAlign'] : []),
+    ...(raw.captionBodySizes !== undefined ? ['captionBodySizes'] : []),
     'bodyForeground',
     'bodyHeight',
     'bodyMinimumSize',
@@ -208,7 +209,20 @@ function normalizeTextStyle(raw) {
       'scene.style minimum text sizes cannot exceed their preferred sizes.'
     );
   }
+  let captionBodySizes;
+  if (raw.captionBodySizes !== undefined) {
+    const sizes = raw.captionBodySizes;
+    if (!sizes || typeof sizes !== 'object' || Array.isArray(sizes)
+      || !Object.keys(sizes).length || Object.keys(sizes).some(key => !['ticker', 'lowerThird'].includes(key))) {
+      fail('INVALID_NATIVE_SCENE', 'scene.style.captionBodySizes is invalid.');
+    }
+    captionBodySizes = {};
+    for (const key of ['ticker', 'lowerThird']) {
+      if (sizes[key] !== undefined) captionBodySizes[key] = boundedInteger(sizes[key], `scene.style.captionBodySizes.${key}`, 14, 240);
+    }
+  }
   return {
+    ...(captionBodySizes ? {captionBodySizes} : {}),
     showTitle: raw.showTitle,
     titleSize,
     titleMinimumSize,
@@ -692,7 +706,11 @@ function textScene(cue, channel, canvas, options = {}) {
     ...(channel.blocks?.find(block => block.type === 'image' && block.role === 'background') ? { backgroundAssetId: channel.blocks.find(block => block.type === 'image' && block.role === 'background').assetId, ...(!legacy ? {backgroundDimOpacity: channel.blocks.find(block => block.type === 'image' && block.role === 'background').dimOpacity ?? 0.55} : {}) } : {}),
     ...(bibleCredit ? { credit: bibleCredit } : {}),
     ...(!bibleBlock && textBlocks.find(block=>block.role==='credit') ? {credit: textBlocks.find(block=>block.role==='credit').text, ...(cue.presetId === 'wotbc-sermon-quote' ? {quoteCredit: true} : {})} : {}),
-    style: resolvedTextStyle(preset, hasTitle, cue.presetId)
+    style: {
+      ...resolvedTextStyle(preset, hasTitle, cue.presetId),
+      // Song-wide sizes for when a caption band shrinks the text area.
+      ...(!(options.rendererVersion < 23) && cue.captionTextSizes ? {captionBodySizes: {...cue.captionTextSizes}} : {})
+    }
   });
 }
 

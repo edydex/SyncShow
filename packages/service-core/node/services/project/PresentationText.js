@@ -21,7 +21,7 @@ function outlineParagraphs(text = '') {
   return rows;
 }
 function verseWordRanges(text = '') {
-  return [...text.matchAll(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+[ \t\u00a0]+[^\s⁰¹²³⁴⁵⁶⁷⁸⁹]+/gu)]
+  return [...text.matchAll(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+[ \t\u00a0\u2060]+[^\s⁰¹²³⁴⁵⁶⁷⁸⁹]+/gu)]
     .map(match => ({start: match.index, end: match.index + match[0].length}));
 }
 module.exports = {sliceSpans, outlineParagraphs, verseWordRanges};

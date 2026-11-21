@@ -6,6 +6,11 @@
 const state = {
   workflowStage: 'load',
   presentationScreens: null,
+  // Screens left out for this run only, because fewer TVs are connected than the service uses.
+  leftOutScreenIds: [],
+  // Ticks in the leave-out panel that are not applied yet; kept across readiness refreshes.
+  leftOutDraft: null,
+  showLeftOutScreenIds: [],
   interfacePreferences: {showStartBlank: true},
   quickStartBusy: false,
   presentations: {},
@@ -446,6 +451,8 @@ const elements = {
   readinessTitle: document.getElementById('readinessTitle'),
   readinessSummary: document.getElementById('readinessSummary'),
   readinessIssues: document.getElementById('readinessIssues'),
+  screenShortage: document.getElementById('screenShortage'),
+  showLeftOutNotice: document.getElementById('showLeftOutNotice'),
   restoreSummary: document.getElementById('restoreSummary'),
   
   // Slide displays
@@ -1881,7 +1888,7 @@ async function loadAppState() {
     state.activeLaunchPlan = appState.activeLaunchPlan;
     setShowPreviewMode(appState.previewOnly === true);
     state.displays = appState.displays;
-    state.presentationScreens = appState.presentationScreens || null;
+    setPresentationScreens(appState.presentationScreens || null);
     applyServiceHandoff(appState.serviceHandoff);
     state.preparedServiceRestore = appState.preparedServiceRestore || {
       status: 'none'
@@ -2416,7 +2423,7 @@ async function refreshPublishedProject(publishResult, context = {}) {
     state.currentSlide = appState.currentSlide;
     state.totalSlides = appState.totalSlides;
     state.displays = appState.displays;
-    state.presentationScreens = appState.presentationScreens || null;
+    setPresentationScreens(appState.presentationScreens || null);
     applyServiceHandoff(appState.serviceHandoff);
     state.nativeRequestedServiceId = appState.serviceHandoff.project.id;
     state.nativeLoadError = null;
@@ -3215,7 +3222,7 @@ async function refreshTakenBackstageDraft() {
     state.currentSlide = current.currentSlide; state.totalSlides = current.totalSlides;
     state.activeLaunchPlan = current.activeLaunchPlan;
     setShowPreviewMode(current.previewOnly === true);
-    state.presentationScreens = current.presentationScreens || null;
+    setPresentationScreens(current.presentationScreens || null);
     applyServiceHandoff(current.serviceHandoff);
     applyRuntimePresentationState(current.presentations, { replaceSource: true });
     if (current.showState) handleShowStateChanged(current.showState);
@@ -4978,7 +4985,12 @@ function populateSingerSourceOptions(selectedRoleId) {
 }
 
 function resolveOutputDisplay(output) {
-  return window.SyncShowServiceOutputPlan.resolveOutputDisplay(output, state.displays);
+  const plan = window.SyncShowServiceOutputPlan;
+  // An unsaved editor choice shows exactly the screen the operator picked.
+  if (state.profileDraft?.outputs?.includes(output)) return plan.resolveOutputDisplay(output, state.displays);
+  // Saved outputs are matched together, so two can never claim one screen.
+  const siblings = (state.profile?.outputs || []).filter(item => item.enabled);
+  return plan.resolveOutputDisplay(output, state.displays, siblings);
 }
 
 function createEditorField(labelText, control) {
@@ -6207,7 +6219,7 @@ async function identifyDisplays() {
 // Presentation Control
 function getConfiguredOutputs() {
   const outputs = window.SyncShowScreenRouting.enabledOutputs(state.profile?.outputs || [], state.presentations,
-    state.loadMode === 'syncshow' ? state.presentationScreens : null)
+    runPresentationScreens())
     .map(output => {
       const display = resolveOutputDisplay(output);
       return {
@@ -6223,8 +6235,36 @@ function getConfiguredOutputs() {
       };
     });
   return window.SyncShowScreenRouting.presentationOutputs(outputs, state.presentations,
-    state.loadMode === 'syncshow' ? state.presentationScreens : null,
+    runPresentationScreens(),
     state.displays, state.presentationMode === 'auto');
+}
+
+/** A different screen choice (another service, or Screens changed in Prepare) includes every screen again. */
+function setPresentationScreens(value) {
+  const before = JSON.stringify(state.presentationScreens?.screenIds || null);
+  state.presentationScreens = value;
+  state.leftOutScreenIds = JSON.stringify(value?.screenIds || null) === before
+    ? window.SyncShowScreenOmission.cleanLeftOut(value, state.leftOutScreenIds || []) : [];
+}
+
+/** The service's screens for this run: the saved Screens choice minus any screen left out for now. */
+function runPresentationScreens() {
+  if (state.loadMode !== 'syncshow' || !state.presentationScreens) return null;
+  return window.SyncShowScreenOmission.withoutScreens(state.presentationScreens, state.leftOutScreenIds || []);
+}
+
+function screenLabel(screenId) {
+  const roleId = Object.keys(state.presentations).find(id => state.presentations[id]?.presentationScreenId === screenId);
+  return roleId ? getRoleLabel(roleId) : ({ english: 'English', russian: 'Russian', media: 'Stage-Facing' }[screenId] || screenId);
+}
+
+function leaveOutScreens(screenIds) {
+  state.leftOutScreenIds = window.SyncShowScreenOmission.cleanLeftOut(state.presentationScreens, screenIds);
+  state.leftOutDraft = null;
+  // The warning from a refused Start no longer applies.
+  if (state.loadActionNotice) { state.loadActionNotice = null; renderLoadActionStatus(); }
+  checkReadyState();
+  if (state.leftOutScreenIds.length) setStatus(`Leaving out ${state.leftOutScreenIds.map(screenLabel).join(', ')} for this run. The saved service is unchanged.`);
 }
 
 function getLoadedRoles({ requireExtractedText = false } = {}) {
@@ -6239,7 +6279,7 @@ function getLoadedRoles({ requireExtractedText = false } = {}) {
 function getSingleScreenRoles() {
   return window.SyncShowPresentationMode.singleScreenRoles(
     window.SyncShowScreenRouting.selectedRoles(state.profile?.inputRoles || [], state.presentations,
-      state.loadMode === 'syncshow' ? state.presentationScreens : null), state.presentations, state.profile?.outputs,
+      runPresentationScreens()), state.presentations, state.profile?.outputs,
     {allowStage: Boolean(state.loadMode === 'syncshow' && state.presentationScreens)}
   ).filter(role => state.presentations[role.id]?.loaded);
 }
@@ -6247,16 +6287,17 @@ function getSingleScreenRoles() {
 function buildSingleScreenOutput(roleId, displayId) {
   return window.SyncShowPresentationMode.singleScreenOutput({
     roleId, displayId, displays: state.displays,
-    roles: window.SyncShowScreenRouting.selectedRoles(state.profile?.inputRoles || [], state.presentations, state.loadMode === 'syncshow' ? state.presentationScreens : null), presentations: state.presentations,
+    roles: window.SyncShowScreenRouting.selectedRoles(state.profile?.inputRoles || [], state.presentations, runPresentationScreens()), presentations: state.presentations,
     allowStage: Boolean(state.loadMode === 'syncshow' && state.presentationScreens),
     outputs: state.profile?.outputs
   });
 }
 
 function renderPresentationMode() {
+  renderShowLeftOutNotice();
   const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
   const mode = window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode);
-  const selection = state.loadMode === 'syncshow' ? state.presentationScreens : null;
+  const selection = runPresentationScreens();
   const names = selection?.screenIds.map(id => ({english:'English',russian:'Russian',media:'Stage-Facing'})[id]).join(' + ');
   elements.presentationMode.value = state.presentationMode;
   elements.presentationMode.disabled = state.isPresenting || state.isStarting || !!state.startAttempt;
@@ -6273,10 +6314,15 @@ function renderPresentationMode() {
 }
 
 function getReadinessState(testOutput = false) {
-  const presentationScreens = state.loadMode === 'syncshow' ? state.presentationScreens : null;
+  const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
+  // Once enough TVs are connected, every screen the service uses is included again.
+  if (state.leftOutScreenIds?.length && state.presentationScreens && external.length >= state.presentationScreens.screenIds.length) {
+    state.leftOutScreenIds = [];
+  }
+  const presentationScreens = runPresentationScreens();
+  const missingScreens = testOutput ? 0 : window.SyncShowScreenOmission.missingScreenCount(presentationScreens, external.length);
   const missingSelectedRoles = (presentationScreens?.screenIds || []).filter(id => !Object.values(state.presentations).some(presentation => presentation.loaded && presentation.presentationScreenId === id));
   const singleScreen = !testOutput && window.SyncShowPresentationMode.presentationMode(state.displays, state.presentationMode) === 'single';
-  const external = window.SyncShowPresentationMode.externalDisplays(state.displays);
   const singleRoles = getSingleScreenRoles();
   const outputs = singleScreen
     ? (external.length && singleRoles.length ? [buildSingleScreenOutput(singleRoles[0].id, external[0].id)] : [])
@@ -6316,7 +6362,7 @@ function getReadinessState(testOutput = false) {
   const demoReady = !testOutput || (state.testOutput.enabled && !!demoTarget && !state.testOutputSaving);
   if (!demoReady) issues.push('Choose a connected external demo screen in Admin Settings → Screen Setup');
 
-  if (!testOutput && presentationScreens && external.length > 0 && external.length < presentationScreens.screenIds.length) issues.push(`This presentation uses ${presentationScreens.screenIds.length} screens. Connect that many, or change Screens in Prepare.`);
+  if (missingScreens) issues.push(`This service uses ${presentationScreens.screenIds.length} screens, but ${external.length} ${external.length === 1 ? 'TV is' : 'TVs are'} connected. Leave out ${missingScreens === 1 ? 'one screen' : `${missingScreens} screens`} for this run, or connect another TV.`);
   if (singleScreen && external.length === 0) issues.push('Connect an external presentation screen');
   if (singleScreen && singleRoles.length === 0) issues.push('Load a service or a language slideshow');
   if (!singleScreen && outputs.length === 0) issues.push('Choose at least one output screen in Admin Settings');
@@ -6380,7 +6426,16 @@ function getReadinessState(testOutput = false) {
     hasDisplayConflict,
     slideCountsMatch,
     conversionPending,
-    nativeSourceIssue
+    nativeSourceIssue,
+    screenShortage: missingScreens ? {
+      missing: missingScreens,
+      connected: external.length,
+      screenIds: presentationScreens.screenIds,
+      // A screen whose output has no TV is the natural one to leave out.
+      suggested: window.SyncShowScreenOmission.suggestLeftOut(presentationScreens, missingScreens,
+        outputs.filter(output => output.displayId === null).map(output => state.presentations[output.expectedRole]?.presentationScreenId).filter(Boolean))
+    } : null,
+    leftOutScreenIds: [...(state.leftOutScreenIds || [])]
   };
 }
 
@@ -6394,9 +6449,11 @@ function renderReadiness(readiness) {
     conversionPending
   } = readiness;
   elements.readinessCard.classList.toggle('ready', isReady);
+  renderScreenShortage(readiness);
   elements.readinessIssues.replaceChildren();
   elements.readinessIssues.hidden = state.friendlyMode;
-  elements.readinessCard.hidden = state.friendlyMode && isReady && needsChoices.length === 0;
+  // A screen left out for this run stays visible as a reminder, even when everything else is ready.
+  elements.readinessCard.hidden = state.friendlyMode && isReady && needsChoices.length === 0 && !readiness.leftOutScreenIds.length;
 
   if (isReady) {
     if (readiness.singleScreen) {
@@ -6409,7 +6466,7 @@ function renderReadiness(readiness) {
       elements.readinessSummary.textContent = `${state.testOutput.enabled ? 'Test Output' : 'Start Show'} will ask what to use for ${needsChoices.length === 1 ? needsChoices[0].name : `${needsChoices.length} outputs`}.`;
     } else {
       elements.readinessIcon.textContent = '✓';
-      elements.readinessTitle.textContent = 'Ready to start';
+      elements.readinessTitle.textContent = readiness.leftOutScreenIds.length ? 'Ready, with a screen left out' : 'Ready to start';
       elements.readinessSummary.textContent = `${activeOutputs.length} ${activeOutputs.length === 1 ? 'output is' : 'outputs are'} assigned and ready for this service.`;
     }
     return;
@@ -6435,6 +6492,10 @@ function renderReadiness(readiness) {
     } else if (state.serviceFolder.staleRoleIds.length > 0) {
       elements.readinessTitle.textContent = 'Finish loading today’s files';
       elements.readinessSummary.textContent = 'A newer service is only partly loaded. The previous service will not be mixed into it.';
+    } else if (readiness.screenShortage) {
+      const { screenIds, connected } = readiness.screenShortage;
+      elements.readinessTitle.textContent = 'More screens than TVs';
+      elements.readinessSummary.textContent = `This service uses ${screenIds.length} screens, but ${connected} ${connected === 1 ? 'TV is' : 'TVs are'} connected. Choose what to leave out for now, or connect another TV.`;
     } else if (readiness.singleScreen) {
       elements.readinessTitle.textContent = 'One-screen presentation';
       elements.readinessSummary.textContent = issues.join(' · ');
@@ -6458,6 +6519,71 @@ function renderReadiness(readiness) {
     fragment.appendChild(item);
   }
   elements.readinessIssues.appendChild(fragment);
+}
+
+/**
+ * When fewer TVs are connected than the service's Screens, let the operator
+ * leave screens out for this run (for example to check slides at home with
+ * two monitors). The saved service and Admin Settings stay unchanged.
+ */
+function renderScreenShortage(readiness) {
+  const panel = elements.screenShortage;
+  panel.replaceChildren();
+  const shortage = readiness.screenShortage;
+  const leftOut = readiness.leftOutScreenIds;
+  panel.hidden = !shortage && !leftOut.length;
+  if (!shortage) state.leftOutDraft = null;
+  if (panel.hidden) return;
+  const heading = document.createElement('p');
+  heading.className = 'screen-shortage-heading';
+  if (!shortage) {
+    heading.textContent = `Left out for this run: ${leftOut.map(screenLabel).join(', ')}. The audience will not see ${leftOut.length === 1 ? 'that screen' : 'those screens'}.`;
+    const include = document.createElement('button');
+    include.type = 'button';
+    include.className = 'btn btn-outline btn-compact';
+    include.textContent = 'Include again';
+    include.disabled = Boolean(state.isPresenting || state.isStarting || state.startAttempt);
+    include.addEventListener('click', () => leaveOutScreens([]));
+    panel.append(heading, include);
+    return;
+  }
+  heading.textContent = shortage.missing === 1 ? 'Leave out one screen for this run:' : `Leave out ${shortage.missing} screens for this run:`;
+  const choices = document.createElement('div');
+  choices.className = 'screen-shortage-choices';
+  for (const screenId of state.presentationScreens.screenIds) {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = screenId;
+    input.checked = (state.leftOutDraft || [...shortage.suggested, ...leftOut]).includes(screenId);
+    label.append(input, ` ${screenLabel(screenId)}`);
+    choices.appendChild(label);
+  }
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'btn btn-primary btn-compact';
+  apply.textContent = 'Leave out and continue';
+  const note = document.createElement('small');
+  note.textContent = 'Only for now: the saved service and Admin Settings stay the same, and the screen comes back when enough TVs are connected.';
+  const update = () => {
+    const chosen = [...choices.querySelectorAll('input:checked')].map(input => input.value);
+    const remaining = state.presentationScreens.screenIds.length - chosen.length;
+    apply.disabled = remaining < 1 || remaining > shortage.connected;
+  };
+  choices.addEventListener('change', () => {
+    state.leftOutDraft = [...choices.querySelectorAll('input:checked')].map(input => input.value);
+    update();
+  });
+  apply.addEventListener('click', () => leaveOutScreens([...choices.querySelectorAll('input:checked')].map(input => input.value)));
+  update();
+  panel.append(heading, choices, apply, note);
+}
+
+function renderShowLeftOutNotice() {
+  const leftOut = state.isPresenting ? state.showLeftOutScreenIds || [] : [];
+  elements.showLeftOutNotice.hidden = !leftOut.length;
+  elements.showLeftOutNotice.textContent = leftOut.length
+    ? `Not shown this run: ${leftOut.map(screenLabel).join(', ')}. Connect another TV and restart Show to include ${leftOut.length === 1 ? 'it' : 'them'}.` : '';
 }
 
 function notifyLoadWork() {
@@ -7173,6 +7299,7 @@ async function launchStartAttempt() {
     state.startAttempt = null;
     state.isStarting = false;
     state.isPresenting = true;
+    state.showLeftOutScreenIds = attempt.snapshot.testOutput || attempt.snapshot.previewOnly ? [] : [...(state.leftOutScreenIds || [])];
     state.activeLaunchPlan = result.plan || null;
     setShowPreviewMode(result.previewOnly === true);
     if (result.showState) handleShowStateChanged(result.showState);

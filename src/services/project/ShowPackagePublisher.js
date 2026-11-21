@@ -457,7 +457,7 @@ class ShowPackagePublisher {
       || manifest.compilerVersion !== 3
       // Retain previously supported offline packages, including the last Mac
       // test build, while new preparation receives a fresh renderer identity.
-      || ![11, 15, 16, 17, 18, 19, 20, 21, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
+      || ![11, 15, 16, 17, 18, 19, 20, 21, 22, NATIVE_RENDERER_VERSION].includes(manifest.rendererVersion)
       || !Number.isSafeInteger(manifest.cueCount)
       || manifest.cueCount < 1
       || manifest.cueCount > MAX_PACKAGE_CUES

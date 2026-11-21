@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { safeError } = require('./SupportDiagnostics');
-const { matchOutputDisplay } = require('../../renderer/service-output-plan');
+const { matchProfileOutputs } = require('../../renderer/service-output-plan');
 
 const MAX_EVENTS = 200;
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -22,7 +22,10 @@ function sanitizeEvent(value) {
     isPrimary: display.isPrimary === true, isControl: display.isControl === true,
     internal: display.internal === true, scaleFactor: number(display.scaleFactor),
     rotation: number(display.rotation), displayFrequency: number(display.displayFrequency),
-    detected: typeof display.detected === 'boolean' ? display.detected : null
+    detected: typeof display.detected === 'boolean' ? display.detected : null,
+    nameAvailable: typeof display.nameAvailable === 'boolean' ? display.nameAvailable : null,
+    rememberedFor: (Array.isArray(display.rememberedFor) ? display.rememberedFor : []).slice(0, 8)
+      .map(entry => text(entry?.outputId))
   }));
   return {
     at: text(value?.at), session: text(value?.session), version: text(value?.version),
@@ -68,11 +71,12 @@ class DisplayDiagnosticsJournal {
   }
 
   record(reason, { displays = [], outputs = [], ...details } = {}) {
+    const matches = matchProfileOutputs(outputs, displays);
     const event = sanitizeEvent({ ...details, reason, displays,
       at: new Date().toISOString(), session: this.session, version: this.version,
       uptimeSeconds: Math.round(process.uptime()),
-      outputs: outputs.map(output => {
-        const match = matchOutputDisplay(output, displays);
+      outputs: outputs.map((output, index) => {
+        const match = matches[index];
         return { ...output, matchedDisplayId: match.display?.id,
           matchReason: match.reason, candidateIds: match.candidateIds,
           operatorScreen: match.display?.isControl === true };

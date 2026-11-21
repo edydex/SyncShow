@@ -291,6 +291,10 @@ async function preparePresentationFont(fontPath, fontFaces) {
         throw error;
       }
     }
+    // Load the superscript-zero faces now, before the first verse 10, 20 or 30
+    // is measured. A failure only means the system fallback zero is used.
+    await Promise.all(['400', '700'].map(weight =>
+      document.fonts.load(`${weight} 16px "SyncShow Superscript Zero"`, '\u2070').catch(() => [])));
     await document.fonts.ready;
     diagnostics.fontSetStatus = document.fonts.status;
     // Chromium's FontFaceSet.check() can return false for a dynamically added

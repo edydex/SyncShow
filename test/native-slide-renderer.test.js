@@ -641,7 +641,7 @@ test('Bible raster output displays a separate credit footer without changing sem
   const visible = await bottom(credited), empty = await bottom(without);
   assert.ok(visible.channels[0].mean > empty.channels[0].mean + .5, 'Required credit must produce visible footer pixels');
   assert.equal(credited.metadata.text, without.metadata.text);
-  assert.equal(credited.metadata.text, '¹\u00a0Exact supplied verse.');
+  assert.equal(credited.metadata.text, '¹\u2060Exact supplied verse.');
 });
 
 

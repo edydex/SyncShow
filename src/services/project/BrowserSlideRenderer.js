@@ -45,6 +45,8 @@ class BrowserSlideRenderer {
           const font = new FontFace('SyncShow Presentation', 'url(' + face.url + ')', {weight:face.weight,style:face.style});
           document.fonts.add(await font.load());
         }
+        await Promise.all(['400', '700'].map(weight =>
+          document.fonts.load(weight + ' 16px "SyncShow Superscript Zero"', '\\u2070').catch(() => [])));
         await document.fonts.ready;
       })()`);
     })();

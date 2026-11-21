@@ -119,9 +119,9 @@ test('a text-fit failure identifies the exact slide and channel and leaves no ac
 test('old renderer packages still open offline while fresh preparation uses a new identity', async t => {
   const fixture = await preparedProject(t);
   const current = await fixture.publisher.publish(fixture.publishOptions);
-  assert.equal(current.manifest.rendererVersion, 22);
+  assert.equal(current.manifest.rendererVersion, 23);
   const legacy = structuredClone(current.manifest);
-  legacy.rendererVersion = 11;
+  legacy.rendererVersion = 22;
   const identity = {};
   for (const key of ['schemaVersion', 'projectId', 'projectRevisionId', 'projectContentHash',
     'timelineSha256', 'handoffSha256', 'compilerVersion', 'rendererVersion', 'roleMapping', 'renderOptions']) {
@@ -133,7 +133,7 @@ test('old renderer packages still open offline while fresh preparation uses a ne
   await fs.cp(current.packagePath, legacyPath, { recursive: true });
   await fs.writeFile(path.join(legacyPath, 'manifest.json'), canonicalJson(legacy));
   const opened = await fixture.publisher.open(legacy.id);
-  assert.equal(opened.manifest.rendererVersion, 11);
+  assert.equal(opened.manifest.rendererVersion, 22);
   assert.equal(opened.presentations.main.scenes[0].body, 'Welcome <everyone> & friends');
   const prepared = await fixture.publisher.publish(fixture.publishOptions);
   assert.equal(prepared.manifest.id, current.manifest.id);

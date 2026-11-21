@@ -11195,3 +11195,14 @@ button.mini-preview-img:focus-visible { outline:2px solid #84a8d0; outline-offse
 
 /* The retired cloud choices leave one straightforward local-folder action. */
 #serviceFolderCard .service-source-options { grid-template-columns: minmax(0, 1fr); }
+
+/* Leaving a screen out for one run when fewer TVs are connected than the service uses. */
+.screen-shortage {display:grid; gap:8px; margin-top:12px; padding:12px 14px; border:1px solid rgba(243,206,130,.55); border-radius:10px; background:rgba(243,206,130,.08);}
+.screen-shortage[hidden] {display:none;}
+.screen-shortage-heading {margin:0; font-weight:600;}
+.screen-shortage-choices {display:flex; flex-wrap:wrap; gap:6px 18px;}
+.screen-shortage-choices label {display:flex; align-items:center; gap:6px; cursor:pointer;}
+.screen-shortage small {opacity:.75; font-size:12px; line-height:1.4;}
+.screen-shortage .btn {justify-self:start;}
+.show-left-out {display:block; max-width:40ch; margin-top:3px; font-size:11px; color:#f3ce82; font-weight:600;}
+.show-left-out[hidden] {display:none;}
